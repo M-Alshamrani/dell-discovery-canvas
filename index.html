@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dell Discovery Canvas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:," />
+</head>
+<body>
+
+  <header id="app-header">
+    <div class="header-brand">
+      <img src="./Logo/delltech-logo-stk-blue-rgb.avif"
+           alt="Dell Technologies"
+           style="height:36px;width:auto;filter:brightness(0) invert(1);"
+           onerror="this.onerror=null;this.src='https://i.dell.com/is/image/DellContent/content/dam/images/logos/dell-technologies/stacked/digital/delltech-logo-stk-blue-rgb.png?wid=1346&amp;hei=710&amp;fit=fit';" />
+      <div>
+        <div class="header-title">Discovery Canvas</div>
+        <div class="header-sub">IT / Enterprise Architecture · Dell Technologies</div>
+      </div>
+    </div>
+    <div class="header-meta" id="sessionMetaHeader">No session loaded</div>
+  </header>
+
+  <nav id="stepper"></nav>
+
+  <div id="main">
+    <div id="main-left"></div>
+    <div id="main-right"></div>
+  </div>
+
+  <footer id="app-footer">
+    <div class="footer-actions">
+      <button id="exportBtn" class="btn-outline">↓ Export JSON</button>
+      <button id="demoBtn"   class="btn-ghost">↺ Load demo</button>
+      <button id="newSessionBtn" class="btn-ghost">+ New session</button>
+    </div>
+    <div class="footer-hint">Auto-saved to browser · data stays on your device</div>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

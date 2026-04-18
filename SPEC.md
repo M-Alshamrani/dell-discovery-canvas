@@ -1,0 +1,622 @@
+# Dell Discovery Canvas v2 — Implementation Spec
+
+**Status**: APPROVED (v2.0 shipped Phases 0-7; v2.1 follow-up APPROVED for Phases 9-12)
+**Date locked**: 2026-04-18 (v2.0) · 2026-04-18 (v2.1 follow-up)
+**Predecessor**: v1.3 (live)
+**Discussion record**: [docs/CHANGELOG_PLAN.md](docs/CHANGELOG_PLAN.md) (full), including v2.1 follow-up section
+
+---
+
+## 0 · North Star
+
+**The Roadmap (Tab 5.5) is the crown jewel.** Everything else earns its place by making the Roadmap credible, clear, and executive-grade.
+
+A Dell presales engineer runs a 30-45 min workshop. At the end, the customer's CxO sees a two-level Roadmap whose **Programs** ladder up to their own stated business drivers, whose **Projects** are bounded, fundable, and tied to real technology decisions, and whose **Phases** reflect realistic delivery timelines. Approval conversations become educated conversations because the data trail is visible and defensible.
+
+---
+
+## 1 · Design Invariants
+
+1. **Tests are the contract.** Failing test = fix the implementation.
+2. **Single source of truth.** Derive, never duplicate. Read-only fields are computed at render time.
+3. **Visual language is unified.** One palette (H/M/L), one shape vocabulary, one tooltip pattern across all tabs.
+4. **JSON-serialisable at all times.** AI agents must be able to read/write the session without special casing.
+5. **Complexity is earned.** Start simple, add a field only when a concrete v1 need demands it.
+6. **Layer discipline.** Only `interactions/` writes session state. Services are pure. Views call commands and services — never mutate directly.
+
+---
+
+## 2 · Data Model
+
+### 2.1 Session
+
+```
+{
+  sessionId:        "sess-{timestamp}-{random}",
+  isDemo:           boolean,
+  customer: {
+    name:           string,
+    vertical:       string,               // from CUSTOMER_VERTICALS
+    segment:        string,               // legacy, retained for backward compat
+    industry:       string,               // legacy, retained for backward compat
+    region:         string,
+    drivers: [                            // NEW — replaces primaryDriver
+      { id, priority, outcomes }
+    ]
+  },
+  sessionMeta: {
+    date, presalesOwner, status, version
+  },
+  instances: Instance[],
+  gaps:      Gap[]
+}
+```
+
+**Removed vs v1.3**: `customer.primaryDriver` (string), `businessOutcomes` (string).
+
+### 2.2 Instance
+
+```
+{
+  id:              string,
+  state:           "current" | "desired",
+  layerId:         string,                // from LAYERS
+  environmentId:   string,                // from ENVIRONMENTS
+  label:           string,
+  vendor:          string,
+  vendorGroup:     "dell" | "nonDell" | "custom",
+  criticality?:    "High" | "Medium" | "Low",  // current only — default "Low"
+  priority?:       "Now" | "Next" | "Later",   // desired only (UI label "Phase")
+  timeline?:       string,                // LEGACY — dropped from UI, ignored on re-save
+  notes?:          string,
+  originId?:       string,                // for mirrored desired instances
+  disposition?:    "keep" | "enhance" | "replace" | "consolidate" | "retire" | "ops" | "introduce"
+}
+```
+
+**Validation** (unchanged): hard-blocks on `id`, `state`, `layerId`, `environmentId`, `label`.
+
+### 2.3 Gap
+
+```
+{
+  id:                        string,
+  description:               string,
+  layerId:                   string,
+  affectedLayers:            string[],
+  affectedEnvironments:      string[],
+  gapType?:                  "rationalize" | "enhance" | "replace" | "introduce" | "consolidate" | "ops",
+  urgency:                   "High" | "Medium" | "Low",   // STRICT DERIVED, never user-edited
+  phase:                     "now" | "next" | "later",    // BIDIRECTIONAL SYNC with linked desired instance
+  mappedDellSolutions:       string,                      // DEPRECATED v2.1 — retained in JSON for legacy
+                                                          //   compat + AI reads; UI no longer edits. Effective
+                                                          //   solutions derived render-time from linked Dell tiles.
+  notes:                     string,
+  status:                    "open" | "in_progress" | "closed" | "deferred",
+  relatedCurrentInstanceIds: string[],
+  relatedDesiredInstanceIds: string[],
+  driverId?:                 string | null,               // Optional strategic-driver assignment (Tab 4 override)
+  reviewed?:                 boolean                      // v2.1 — false on auto-drafted, true on manual create
+                                                          //   or any substantive edit. Drives Tab 4 "Needs review" filter.
+}
+```
+
+**Derivation rules**:
+- `urgency` = `relatedCurrentInstanceIds[0]`'s `criticality` if present, else `"Medium"` (for `introduce` gaps without origin). **Never set manually.**
+- `phase` = synced from the linked desired instance's `priority` at mutation time.
+- `gapType` = `ACTION_TO_GAP_TYPE[disposition]` for auto-drafted gaps; settable once at creation for manual gaps, then locked.
+
+### 2.4 Driver catalog entry (config-level, not per-session)
+
+```
+{
+  id:                   string,       // canonical, stable, lowercase snake_case
+  label:                string,       // display name
+  shortHint:            string,       // one-line plain English
+  conversationStarter:  string        // coaching prompt on right panel
+}
+```
+
+### 2.5 Legacy session migration (on load, before first save)
+
+1. If `customer.primaryDriver` exists and `customer.drivers` is missing:
+   - Map primaryDriver label → closest canonical driver id (see §3.2).
+   - Create `customer.drivers = [{ id, priority: "High", outcomes: session.businessOutcomes || "" }]`.
+   - Delete `customer.primaryDriver` and `customer.businessOutcomes`.
+2. If `instances[*].timeline` exists, preserve on read; drop on next save (don't actively rewrite).
+3. If `gaps[*]` has no `driverId`, leave unset (computed fallback via `suggestDriverId` at render time).
+4. If a session has no `industry` or `segment` keys in `customer`, add them as empty strings on next save (appSpec.js Suite 05 test contract).
+5. Existing instances with no criticality: leave as-is (no retroactive rewrite). New current instances default to `"Low"`.
+6. **v2.1**: If `gaps[*]` has no `reviewed` field:
+   - Auto-drafted gap (has `relatedDesiredInstanceIds` non-empty AND empty `notes`) → `reviewed: false`.
+   - All other gaps → `reviewed: true`.
+   - Only set on first load; any subsequent edits normal-write per §6.2.
+
+---
+
+## 3 · Configuration (`core/config.js`)
+
+### 3.1 Customer verticals (alphabetised)
+
+```
+Education, Energy, Enterprise, Financial Services,
+Government & Security, Healthcare, Public Sector,
+SMB, Telecommunications, Utilities
+```
+
+### 3.2 Business drivers — canonical catalog (8 entries)
+
+| id | label | shortHint |
+|---|---|---|
+| `ai_data` | AI & Data Platforms | "We need to get real value from AI and our data, fast." |
+| `cyber_resilience` | Cyber Resilience | "We must recover from attacks without paying, and prove it." |
+| `cost_optimization` | Cost Optimization | "Cut infrastructure spend without breaking delivery." |
+| `cloud_strategy` | Cloud Strategy | "Right workload, right place — stop cloud bills spiralling." |
+| `modernize_infra` | Modernize Aging Infrastructure | "Too much of our estate is old and fragile." |
+| `ops_simplicity` | Operational Simplicity | "The team is firefighting; we want fewer tools and less toil." |
+| `compliance_sovereignty` | Compliance & Sovereignty | "Auditors and regulators are getting strict; we must be ready." |
+| `sustainability` | Sustainability / ESG | "Leadership is committed to measurable energy / carbon targets." |
+
+Conversation starters: see [docs/CHANGELOG_PLAN.md § Tab 1 Draft conversation starters](docs/CHANGELOG_PLAN.md).
+
+Legacy-label → id mapping (for migration):
+- "Cost Reduction / TCO" → `cost_optimization`
+- "Resilience & Security" → `cyber_resilience`
+- "Cloud Migration / Repatriation" → `cloud_strategy`
+- "AI / Analytics Enablement" → `ai_data`
+- "Infrastructure Modernization" → `modernize_infra`
+- "M&A Integration" → `modernize_infra` (closest)
+- "Compliance & Governance" → `compliance_sovereignty`
+- "Operational Efficiency" → `ops_simplicity`
+
+### 3.3 Layers / Environments
+
+Unchanged from v1.3.
+
+### 3.4 Catalog (`CATALOG[layerId]`)
+
+- Each entry: `{ label, vendor, vendorGroup, environments? }`.
+- `environments?` optional whitelist array; absent = valid everywhere.
+- **On-prem entries** (PowerEdge, Unity XT, PowerStore, VxRail, Cisco Nexus/Catalyst, SmartFabric, etc.) → `environments: ["coreDc","drDc","edge"]`.
+- **Public-cloud entries** (add new): AWS EC2, Azure Virtual Machines, GCP Compute Engine, AWS Outposts; AWS EBS, Azure Blob, Azure Files, GCS; Azure Backup, AWS S3 Glacier, Druva, Commvault Cloud; VMware Cloud on AWS, Azure VMware Solution, GCVE, AWS ECS/EKS, Azure AKS, GKE; Cloudflare, AWS Direct Connect, Azure ExpressRoute, AWS IAM, AWS CloudWatch, Azure Monitor, GCP Cloud Logging. All tagged `environments: ["publicCloud"]`.
+- **Universal entries** (Veeam, CrowdStrike, ServiceNow, etc.) → leave `environments` off.
+
+---
+
+## 4 · Visual Language
+
+### 4.1 Severity palette (CSS custom properties on `:root`)
+
+```
+--crit-high:       #d93025   // red
+--crit-medium:     #f59e0b   // amber
+--crit-low:        #16a34a   // green
+--crit-neutral:    #9ca3af   // grey (No data / not applicable)
+```
+
+WCAG AA against white for all three. Dell brand team can override in one place.
+
+### 4.2 Shape language
+
+Dual-channel (colour + shape) for accessibility. Rendered as a CSS pseudo-element with a Unicode glyph:
+
+| Severity | Glyph | Class |
+|---|---|---|
+| High | ▲ | `.shape-high` |
+| Medium | ● | `.shape-medium` |
+| Low | ○ | `.shape-low` |
+
+### 4.3 Tile accent
+
+On any tile or card inheriting severity:
+- **Left border** 4px solid using the matching `--crit-*` var.
+- **Shape glyph** in the top-right via `.shape-*` class.
+- Tooltip on the shape reveals severity reason (*"High — derived from linked current instance 'Unity XT' criticality."*).
+
+### 4.4 Tooltip pattern
+
+Any derived / locked field gets a `title` attribute tooltip that explains **why** it shows this value and **how** (if anywhere) to change it. Keeps the UI discoverable without adding explainer UI.
+
+### 4.5 Badges
+
+- Urgency / criticality: colour + shape (see 4.2).
+- Phase: pill with label — "Now · 0-12 mo", "Next · 12-24 mo", "Later · >24 mo".
+- Status: pill — grey/blue/green/amber tones — text-only, low visual weight.
+- Gap type: pill — uppercase micro-text.
+- **v2.1 Review marker**: a pulsing small dot in the top-right corner of any `.gap-card` where `reviewed === false`. Tooltip: *"Auto-drafted — review and approve in the detail panel."*
+
+### 4.6 Icon system (v2.1)
+
+Single `ui/icons.js` module exporting inline-SVG helpers. All icons are 14-16px, outline style, `currentColor` stroke so they inherit button text colour.
+
+- `chainIcon()` — two interlocked links, used beside the "Manage links" label.
+- `chevronIcon(open: boolean)` — 180°-rotatable; pairs with chainIcon to signal open/closed.
+- `helpIcon()` — outline circle with "?" inside; placed in every main card's top-right for Help modal.
+- `starSolid()` / `starOutline()` — used in gap-card strategic-driver badge (solid = manually confirmed, outline = auto-suggested).
+
+Accessibility: every icon-only button has `aria-label`; expand/collapse controls add `aria-expanded`.
+
+---
+
+## 5 · Services (`services/`)
+
+### 5.1 Preserved (may see minor updates)
+
+- `healthMetrics.js` — bucket scoring. **No formula change.** Ensure it reads `urgency` which is now strictly derived.
+- `gapsService.js` — unchanged.
+- `vendorMixService.js` — unchanged.
+- `roadmapService.js` — **restructured** to produce Programs + Projects hierarchy (§7.5.5). The health-score and exec-summary functions stay as sub-concerns of this module.
+
+### 5.2 New
+
+- **`programsService.js`**:
+  - `suggestDriverId(gap, session) → string | null` — pure deterministic mapping. v2.1: rule 2 ("cyber" keyword match on mappedDellSolutions) re-grounds on linked-tile labels joined with description/notes.
+  - `groupProjectsByProgram(projects, session) → { [driverId]: Project[], "unassigned": Project[] }`.
+  - **v2.1** `effectiveDellSolutions(gap, session) → string[]` — derive the Dell-solution list from linked desired tiles with `vendorGroup === "dell"`, deduped.
+- **`buildGapFromDisposition` extension** (in `interactions/desiredStateSync.js`):
+  - Set `urgency` from linked current's criticality (or "Medium" for `introduce`).
+  - Set `phase` from desired's priority at creation time.
+  - Do **not** set `driverId` here — leave null; renderer calls `suggestDriverId` at read time.
+  - **v2.1** — sets `reviewed: false` so auto-drafted gaps are flagged for review.
+- **v2.1 health-score rework (roadmapService.js)**:
+  - `computeAccountHealthScore` retained for back-compat but no longer drives Overview UI.
+  - `computeDiscoveryCoverage(session) → { percent, actions: string[] }` — 4-term weighted coverage (disposition-complete, reviewed, driver-assigned, drivers-present) per CHANGELOG_PLAN § v2.1 Item 7a.
+  - `computeRiskPosture(session) → { level: "Stable"|"Moderate"|"Elevated"|"High", colour, actions: string[] }` — heatmap-derived label with first-match rule ladder per Item 7b.
+  - Both pure, JSON-serialisable, snapshot-accepting.
+
+#### 5.2.1 `suggestDriverId` — v1 rule table
+
+Evaluation is first-match; rules ordered from specific to general. Pure function, no side effects.
+
+| # | Match (gap) | Driver |
+|---|---|---|
+| 1 | `layerId === "dataProtection"` | `cyber_resilience` |
+| 2 | `mappedDellSolutions.toLowerCase().includes("cyber")` | `cyber_resilience` |
+| 3 | `gapType === "ops"` | `ops_simplicity` |
+| 4 | `affectedEnvironments.includes("publicCloud")` OR linked instances in publicCloud | `cloud_strategy` |
+| 5 | `gapType === "consolidate"` | `cost_optimization` |
+| 6 | `gapType === "replace"` AND `layerId in ("compute","storage","virtualization")` | `modernize_infra` |
+| 7 | `gapType === "introduce"` AND `layerId === "infrastructure"` AND label matches `/ai|ml|gpu/i` | `ai_data` |
+| 8 | `notes.toLowerCase().includes("compliance")` OR `/audit|nis2|gdpr|hipaa|pci/i` in description/notes | `compliance_sovereignty` |
+| 9 | `notes.toLowerCase().includes("energy")` OR `/carbon|sustainability|esg/i` | `sustainability` |
+| 10 | default | `null` (→ Unassigned) |
+
+**Only proposes an id if that driver is present in `session.customer.drivers[]`.** If a rule fires but the driver isn't in the session, fall through to the next rule. This prevents "ghost programs" in the Roadmap.
+
+---
+
+## 6 · Interactions (`interactions/`)
+
+### 6.1 `matrixCommands.js`
+
+- `addInstance`: if `state === "current"` and no `criticality` provided, default to `"Low"`.
+
+### 6.2 `gapsCommands.js`
+
+- `createGap`: v2.1 — sets `reviewed: true` for manually-created gaps (caller passes no override) so they never trigger the review dot.
+- `updateGap`: v2.1 — any substantive change (description, status, driverId, phase, links, gapType, notes) sets `reviewed: true` automatically. `mappedDellSolutions` no longer counts as substantive (field is deprecated).
+- `unlinkCurrentInstance`, `unlinkDesiredInstance`: keep v1.3 throw rules.
+- `setGapDriverId(session, gapId, driverId | null)` — existing v2.0 command. Setting a driverId also flips `reviewed: true`.
+- **v2.1 `approveGap(session, gapId)`** — explicit review approval without other edits. Sets `reviewed: true`.
+
+### 6.3 `desiredStateSync.js`
+
+- `ACTION_TO_GAP_TYPE`: keep v1.3 map (includes `introduce: "introduce"`).
+- `buildGapFromDisposition`: populate `urgency` from linked current's criticality; populate `phase` from desired's priority; v2.1 sets `reviewed: false` on the drafted gap.
+- `syncGapFromDesired(session, desiredInstanceId)` — re-derives `phase`, `gapType`, and `urgency` on the linked gap.
+- `syncDesiredFromGap(session, gapId)` — called from Tab 4 drag-drop to update the linked desired instance's `priority`.
+- `syncGapsFromCurrentCriticality(session, currentInstanceId)` — propagates criticality changes into linked gap urgencies.
+- **v2.1 `confirmPhaseOnLink(session, gapId, desiredInstanceId)`** — called from the link picker before `linkDesiredInstance`:
+  - If gap.phase maps to the same priority the desired tile already carries → return `"ok"` (no prompt needed).
+  - Otherwise return `"conflict"` with the delta, so the view can show a confirmation modal.
+  - If user confirms → call `linkDesiredInstance` + `syncDesiredFromGap` (gap wins).
+  - If user cancels → no link, no side effects.
+
+---
+
+## 7 · UI Views (`ui/views/`)
+
+### 7.1 Tab 1 · Context
+
+**Landing**: app defaults `currentStep = "context"`.
+
+**Layout**:
+- Card: customer name, vertical (alphabetised dropdown), region, presales owner.
+- **"Your drivers"** panel with `+ Add driver` button → command-palette of 8 drivers with shortHints.
+- Added drivers render as tiles. Click → right panel:
+  - Conversation-starter card (driver's `conversationStarter`).
+  - Priority select (High / Medium / Low).
+  - Business-outcomes textarea with **auto-bullet on Enter** behaviour (§7.1.1).
+  - Save button (persists via `saveToLocalStorage`).
+- Driver tile remove control: silent if outcomes empty; confirm if outcomes have text.
+
+#### 7.1.1 Auto-bullet textarea component
+
+- On first keystroke in empty textarea: prepend `"• "`.
+- On `Enter`: insert `"\n• "`.
+- On `Backspace` at column 2 of a line that reads `"• "`: remove the bullet.
+- Value persisted as-is (bullets are part of the text).
+
+### 7.2 Tab 2 · Current State
+
+**No structural change** to layout. Enhancements only:
+- `+ Add` palette filters by current cell's `environmentId` (§3.4).
+- New current instances default criticality "Low".
+- Tiles render with left-border colour + shape glyph per criticality (§4.3).
+- Current-state view has no mirror tiles (enforced).
+- **v2.1** — when a typed name isn't in the catalog, the palette offers three add paths:
+  1. `+ Add "{name}" — Dell SKU` → `vendor: "Dell"`, `vendorGroup: "dell"`.
+  2. `+ Add "{name}" — 3rd-party vendor...` → inline picker: **HPE · Cisco · NetApp · Pure · IBM · Microsoft · VMware · Nutanix · Red Hat · AWS · Azure · Google · Other (type)**. Picked vendor → `vendor: "{Vendor}"`, `vendorGroup: "nonDell"`.
+  3. `+ Add "{name}" — Custom / internal` → `vendor: "Custom"`, `vendorGroup: "custom"`.
+- The same three-path chooser applies in Desired State mode (§7.3).
+
+### 7.3 Tab 3 · Desired State
+
+- Detail panel renames "Priority" → **"Phase"** with compound labels:
+  - "Now (0-12 months)"
+  - "Next (12-24 months)"
+  - "Later (> 24 months)"
+- Drop the separate `timeline` control.
+- `disposition === "keep"` → hide Phase control and show a subtle **"✓ Keep — no change planned"** summary. Keep criticality accent from origin.
+- On any change to `priority` or `disposition`: call `syncGapFromDesired`.
+- Defaults for net-new `introduce`: phase = "Next". Tooltip explains the default and confirms how to change it.
+- Ghost/mirror tiles inherit `.mirror-tile` class (existing — satisfies Suite 19 T2.15).
+- Criticality carry-through: desired tiles with `originId` inherit the origin's `.crit-*` class and shape glyph.
+
+### 7.4 Tab 4 · Gaps
+
+**Layout**: phase-kanban by default; view toggle to flat list.
+
+**Filter bar** (applies to both views):
+- Layer (multi)
+- Environment (multi)
+- Gap type (multi)
+- Urgency (multi, display only)
+- Status (multi, default = `open` + `in_progress`)
+- **v2.1** "Needs review only" toggle — hides gaps where `reviewed === true`. (Replaces the v2.0 "Unmapped Dell solutions only" toggle.)
+- Text search on description/notes
+
+**Gap card**:
+- Left border + shape per derived urgency.
+- Gap-type pill (read-only).
+- Description (inline-edit).
+- Affected-layer + affected-environment chips (edit via popover).
+- ~~Mapped Dell Solutions~~ — **v2.1: removed input.** Displayed as a derived chip via `effectiveDellSolutions()` (from linked Dell-tagged desired tiles).
+- Linked-instance chips with unlink `×` (honours §6.2 throw rules).
+- Strategic-driver dropdown — options: session's drivers + "Unassigned". Auto-suggested option carries a `★` prefix and "(suggested)" suffix; explicit pick removes both and flips `reviewed: true`.
+- Status pill (editable).
+- `auto-drafted` badge when applicable (tooltip shows origin disposition).
+- **v2.1 review dot** — pulsing marker in the top-right when `reviewed === false`. Vanishes after approval or any edit.
+- `…` menu: Delete, Promote-to-manual (detaches from auto-sync).
+
+**Drag-drop**:
+- Between phase columns → updates `gap.phase` AND calls `syncDesiredFromGap`.
+- Within a column → visual sort only.
+
+**Sort within column**: urgency desc, then insertion order.
+
+**Manual gap creation (`+ New gap`)**:
+- Defaults `phase: "next"`, `urgency: "Medium"` (no linked current), `status: "open"`, `driverId: null`, `reviewed: true` (manually authored → pre-approved).
+- Gap type is set at creation, then read-only.
+
+**Empty state**: "No gaps yet — start in Tab 3 by setting a disposition on a current instance."
+
+**v2.1 Linked-technologies collapsed summary**: The detail panel's linked-instances section starts collapsed as `"{N} linked ({C} current · {D} desired) — Manage links [chain icon][chevron]"`. Expand reveals the full current/desired lists and pickers.
+
+**v2.1 Manual link phase-conflict modal**: The `+ Link desired instance` flow computes `confirmPhaseOnLink`. If gap.phase ≠ desired.priority, a modal asks *"Linking will change '{tile}' from {currentPhase} to {gapPhase}. Proceed?"*. Approve → link + `syncDesiredFromGap`. Cancel → abort.
+
+**v2.1 Approve-draft button**: The detail panel for an unreviewed gap surfaces a primary-colour "Approve draft" button below the status pill. Clicking flips `reviewed: true` and removes the dot without changing anything else.
+
+### 7.5 Tab 5 · Reporting — 5 sub-tabs
+
+#### 7.5.1 Overview
+- **v2.1 two-panel health** (replaces the single health-score card):
+  - **Discovery Coverage** — `.coverage-panel`. Big % with progress bar + inline bullet list naming up to 3 outstanding actions ("4 drafts to review", "1 gap unassigned"). "See details →" links to Tab 4 Needs-review filter.
+  - **Risk Posture** — `.risk-panel`. Coloured label pill (Stable / Moderate / Elevated / High) + inline bullets of 1-2 actions that would lower the level. "See Heatmap →" links to sub-tab 7.5.2.
+  - Palette reuses the Heatmap scale; Elevated adds orange `#ea580c`.
+- Executive summary text with **"Regenerate summary"** button calling existing `generateExecutiveSummary`.
+- Pipeline stats: `{now, next, later}` gap counts + status counts.
+- Strategic Driver chips: session's drivers with priority badges.
+- Empty state: "No gaps yet — start in Tab 3." (shown when `gaps.length === 0`).
+
+#### 7.5.2 Heatmap
+- 5 × 4 grid, bucket score per cell.
+- Colour from §4.1 palette mapped by score thresholds (§CHANGELOG_PLAN T5.4).
+- Shape glyph in each cell header (§4.2).
+- Cell click → navigates to sub-tab 7.5.3 with layer + env filters pre-applied.
+
+#### 7.5.3 Gaps Board (reporting)
+- Read-only mirror of Tab 4 kanban. Same filter bar. No inline edits, no drag.
+- Card click opens a right-panel detail view (read-only).
+- Filter state independent from Tab 4.
+
+#### 7.5.4 Vendor Mix
+- Stacked bars current + desired per layer.
+- Vendor table with instance counts.
+- Row indicator colour reflects max criticality of that vendor's instances.
+
+#### 7.5 · v2.1 additions across all sub-tabs
+
+- **`?` help button** — every sub-tab's main card gets a `.help-icon` button in its top-right. Opens `HelpModal` with prose from `core/helpContent.js[subTabId]`.
+- **Right-panel trim** — tips-lists and long coaching cards removed from Heatmap, Gaps Board, Vendor Mix, Roadmap right panels. Replaced by a single terse placeholder card (`"Select a cell / gap / project"`). Tab 1 driver detail keeps `.coaching-card` — session content, not help.
+
+#### 7.5.5 Roadmap (crown jewel)
+
+**Structure**: swimlanes (Programs) × columns (Phases). Projects at intersections.
+
+**Computation (pure services)**:
+1. `roadmapService.buildProjects(session) → Project[]`
+   - For each gap: key = `(primaryEnv, layerId, gapType)`.
+   - `primaryEnv` = `gap.affectedEnvironments[0]` || linked current's `environmentId` || `"coreDc"`.
+   - Group by key. Each group → one Project.
+   - Project props: `{ id, name, phase, urgency, gapCount, gaps[], layerIds[], envId, dellSolutions[] }`.
+   - `urgency = max` of constituent `gap.urgency`.
+   - `phase = mode` of constituent `gap.phase` (ties → earliest phase).
+   - Name template: `"{Environment label} — {Layer label} {ActionVerb}"` (§CHANGELOG_PLAN action-verb table).
+2. `programsService.groupProjectsByProgram(projects, session) → { [driverId]: Project[], "unassigned": Project[] }`
+   - Each Project's `driverId` = mode of constituent gaps' effective `driverId` (explicit override > `suggestDriverId`).
+   - Projects with no driver → `unassigned`.
+
+**Render**:
+- Portfolio pulse bar: total projects, phase split, **v2.1 unreviewed-gaps count** (replaces v2.0's "unmapped" count).
+- For each driver in `session.customer.drivers[]` → swimlane row.
+  - Swimlane header: driver label, priority chip (from Tab 1), aggregate urgency, project count, optional % mapped.
+  - Swimlane cells: 3 per row (Now / Next / Later). Project cards sorted by urgency desc, then gap count desc.
+- Final swimlane: "Unassigned" (subdued, collapsible).
+- No edits.
+
+**Empty state**: "No gaps yet — start in Tab 3."
+
+---
+
+## 8 · Test Inventory (consolidated)
+
+Total new / modified test assertions: **~112** (v2.0 ~95 + v2.1 ~17). Existing 21 suites remain as regression guards.
+
+| Tab / Area | Range | Count | Reference |
+|---|---|---|---|
+| Tab 1 | T1.1 – T1.19 | 19 | [docs/CHANGELOG_PLAN.md § Tab 1 criteria](docs/CHANGELOG_PLAN.md) |
+| Tab 2 | T2.1 – T2.16 | 16 | Tab 2 criteria |
+| Tab 3 | T3.1 – T3.17 | 17 | Tab 3 criteria |
+| Tab 4 | T4.1 – T4.17 | 17 | Tab 4 criteria |
+| Tab 5 | T5.1 – T5.27 | 27 | Tab 5 criteria (inc. Programs T5.16-T5.26) |
+| v2.1 Dell-solutions derivation | T2b.1 – T2b.3 | 3 | CHANGELOG_PLAN § v2.1 · Item 2 |
+| v2.1 Review flag + phase-link + vendor picker + icons + help | T6.1 – T6.17 | 17 | CHANGELOG_PLAN § v2.1 · Items 1, 3, 4, 5, 6 |
+| v2.1 Coverage + Risk panels | T6.18 – T6.25 | 8 | CHANGELOG_PLAN § v2.1 · Item 7 |
+| v2.1.1 Right-panel drill-downs + Session Brief + Roadmap click unify | T7.1 – T7.6 | 6 | CHANGELOG_PLAN § v2.1.1 · Phases 13 + 14 |
+
+**Regression guards**: all 21 pre-existing suites pass unchanged; updates in Suites 11, 15, 20, 21 are expected to reflect Programs/Projects taxonomy. **T4.15 deprecated** in v2.1 (filter semantics changed).
+
+---
+
+## 9 · Implementation Sequence (9 phases, dependency-ordered)
+
+Each phase is atomic: tests in scope must pass before the next phase begins.
+
+### Phase 0 · Local Dell logo
+Swap external image URL in `index.html` for local `../Logo/delltech-logo-stk-blue-rgb.avif`. Add `<link rel="icon" href="data:,">` to silence favicon 404. *Standalone; no test impact.*
+
+### Phase 1 · Foundation — data model & config
+- `core/config.js`: alphabetise `CUSTOMER_VERTICALS` + add Energy, Utilities; replace flat `BUSINESS_DRIVERS` with the 8-entry driver catalog from §3.2; tag catalog entries with `environments` arrays per §3.4; add Public Cloud catalog additions.
+- `state/sessionStore.js`: migration rules from §2.5 (run on load).
+- Satisfies: **T1.2, T1.3, T1.4, T1.5, T1.18, T2.1, T2.3, T2.4, T3.3**.
+
+### Phase 2 · Visual language
+- `styles.css`: define `--crit-high|medium|low|neutral`; define `.crit-high|medium|low` (left border + background accent); define `.shape-high|medium|low` pseudo-element classes; keep `.mirror-tile` and `.ghost-tile` co-classes.
+- Satisfies: **T2.9, T2.10, T2.11, T2.12**.
+
+### Phase 3 · Tab 1 Context
+- `ui/views/ContextView.js`: implement drivers catalog + add/remove flow + right-panel per-driver form + auto-bullet textarea.
+- `app.js`: landing step = `"context"`.
+- Satisfies: **T1.1, T1.6 – T1.17, T1.19**.
+
+### Phase 4 · Tab 2 Current State
+- `interactions/matrixCommands.js`: default criticality to "Low" on current adds.
+- `ui/views/MatrixView.js`: env-filter the `+ Add` palette; render criticality accent + shape per tile.
+- Satisfies: **T2.2, T2.5, T2.6, T2.7, T2.8, T2.13 – T2.16**.
+
+### Phase 5 · Tab 3 Desired State
+- `interactions/desiredStateSync.js`: `syncGapFromDesired`; urgency derivation in `buildGapFromDisposition`.
+- `ui/views/MatrixView.js` (desired mode): rename "Priority" → "Phase"; compound labels; hide on keep; carry-through criticality accent.
+- Satisfies: **T3.1 – T3.17**.
+
+### Phase 6 · Tab 4 Gaps
+- `interactions/gapsCommands.js`: `setGapDriverId`.
+- `interactions/desiredStateSync.js`: `syncDesiredFromGap`.
+- `services/programsService.js`: `suggestDriverId` (§5.2.1 rule table).
+- `ui/views/GapsEditView.js`: filter bar; view toggle; gap-card rewrite with program dropdown; bidirectional drag-drop; unmapped filter.
+- Satisfies: **T4.1 – T4.17**.
+
+### Phase 7 · Tab 5 Reporting
+- `services/roadmapService.js`: refactor to `buildProjects`.
+- `services/programsService.js`: `groupProjectsByProgram`.
+- `ui/views/ReportingView.js`: regenerable exec summary + drivers chips + empty state.
+- `ui/views/SummaryHealthView.js`: palette/shape updates; cell-click drill.
+- `ui/views/SummaryGapsView.js`: read-only kanban mirror + independent filter state.
+- `ui/views/SummaryRoadmapView.js`: swimlane × column grid; project cards; portfolio pulse bar; unassigned swimlane.
+- Satisfies: **T5.1 – T5.27**.
+
+### Phase 8 · Regression sweep
+- Update `diagnostics/appSpec.js` Suites 05, 11, 15, 20, 21 to reflect the Programs/Projects taxonomy.
+- All 21 pre-existing + ~95 new assertions green.
+
+### Phase 9 · v2.1 · Drop Dell-solutions input + `reviewed` flag + "Needs review" filter + Coverage/Risk rework
+- `gapsCommands.js`: auto-set `reviewed: true` on substantive `updateGap`; new `approveGap`.
+- `desiredStateSync.buildGapFromDisposition`: set `reviewed: false`.
+- `programsService.effectiveDellSolutions()`: new pure helper.
+- `roadmapService.js`: new `computeDiscoveryCoverage()` + `computeRiskPosture()`; keep `computeAccountHealthScore()` for back-compat.
+- `sessionStore.migrateLegacySession`: add v2.1 rule 6 (default `reviewed`).
+- `GapsEditView.js`: remove mappedDellSolutions input; replace filter label + logic; add pulsing review dot on unreviewed cards; add "Approve draft" button.
+- `SummaryRoadmapView.js` + gap cards: switch Dell-solution chip rendering to `effectiveDellSolutions`.
+- `ReportingView.js`: swap the single health-score card for Coverage + Risk two-panel layout with inline actionable hints.
+- Satisfies: **T2b.1-3, T6.4-9, T6.18-25**. Replaces T4.15.
+
+### Phase 10 · v2.1 · Manual-link phase-conflict modal
+- `desiredStateSync.confirmPhaseOnLink()`: new helper.
+- `GapsEditView.openLinkPicker` desired branch: calls confirmPhaseOnLink; mount `<dialog>`-style confirm; on OK → `linkDesiredInstance` + `syncDesiredFromGap`.
+- Satisfies: **T6.1-3**.
+
+### Phase 11 · v2.1 · Vendor picker on custom add
+- `MatrixView.openCommandPalette`: when typed name doesn't match catalog, render three `+ Add …` paths; 3rd-party quick-picker with 12 common vendors + Other.
+- Satisfies: **T6.10-12**.
+
+### Phase 12 · v2.1 · Icon system + help modal + right-panel cleanup
+- `ui/icons.js`: chain, chevron, help, star-solid, star-outline SVG helpers.
+- `ui/views/HelpModal.js` + `core/helpContent.js`: 10 help blurbs keyed by tab/sub-tab.
+- Wire `?` icon into every main card header; "Manage links" switched to chain+chevron.
+- Trim right panels in Matrix, Gaps, Reporting sub-tabs; keep Tab 1 driver-detail coaching card.
+- Satisfies: **T6.13-17**.
+
+### Phase 13 · v2.1.1 · Reporting right-panel drill-downs
+- `ReportingView.js`: move Executive Summary card to the **right** column (CxO dashboard layout).
+- `SummaryGapsView.js`: switch Dell-solutions display to `effectiveDellSolutions`; existing click-to-detail retained.
+- `SummaryVendorView.js`: vendor-table rows clickable; right panel shows per-vendor instance breakdown (by layer, state split, list).
+- `SummaryRoadmapView.js`: swimlane headers clickable → right-panel Strategic Driver detail (label, shortHint, priority, outcomes, project list, aggregate urgency, % mapped). Unassigned swimlane gets its own detail prompting driver assignment.
+- Styles: `.vm-row`, `.swimlane-clickable` hover + focus states.
+- Satisfies: **T7.1 · T7.2 · T7.3 · T7.4**.
+
+### Phase 14 · v2.1.1 · Session Brief + Roadmap click unification
+- `services/roadmapService.js`: new `generateSessionBrief(session)` returning `[{label, text}]` structured rows (Customer · Strategic Drivers · Risk Posture · Discovery Coverage · Pipeline · Top High-Now gaps · Dell solutions mapped · Instances). `generateExecutiveSummary` rewritten to flatten brief into a string for legacy/AI callers. Legacy narrative preserved as unreachable `_legacyNarrativeSummary`.
+- `ReportingView.js`: right-panel card re-titled "Session brief"; button renamed "↻ Refresh" (honest — no pretend AI). Brief renders as labelled definition list inside `.exec-summary-text` container (legacy marker class retained).
+- `SummaryRoadmapView.js`: inline `.project-expand-btn` + `.project-gap-list` removed. Project cards become keyboard-focusable buttons → right-panel project detail on click (urgency shape, Dell solutions, constituent gaps, linked-tech count). Unified click-to-detail pattern with swimlane headers, vendor rows, heatmap cells, gap cards.
+- Styles: `.session-brief`, `.brief-row`, `.brief-label`, `.brief-text`; `.project-card:hover`.
+- Satisfies: **T7.5 · T7.6**.
+
+---
+
+## 10 · Out of Scope for v2 (tracked for later)
+
+- **Containerisation** (Node + Express + SQLite). Retained as a v2.1 task; frontend stays offline-first.
+- **Dell-solutions chip catalog**. v1 stays free-text; revisit after real workshop data.
+- **Manual initiative/program authoring** beyond the driver-based auto-assignment.
+- **Cross-environment project bundling**. Current tuple stays `(env, layer, type)`.
+- **Urgency manual override**. Designed out on purpose; re-open only if workshop data proves need.
+- **AI agent integration endpoints**. Data model is already JSON-serialisable; API layer is a post-v2 concern.
+
+---
+
+## 11 · Acceptance
+
+**v2.0** is shippable when:
+1. All Phase 0–7 steps are complete.
+2. `diagnostics/appSpec.js` reports green banner with 21 regressions + ~95 new assertions.
+3. A fresh session (reset + add drivers + add current + set dispositions + save) produces a Roadmap with correctly named Programs, sorted Projects, and no Unassigned projects.
+4. Demo session still loads and produces a sensible Roadmap without manual curation.
+5. A 2026-vintage browser (Chrome, Firefox, Edge, Safari) renders the UI correctly including the local AVIF logo.
+
+**v2.1** is shippable when:
+1. Phases 9–12 complete.
+2. All v2.0 assertions still green; new **T2b.***, **T6.*** assertions green.
+3. Demo session's auto-drafted gaps start unreviewed with pulsing review dots; approving or editing any gap flips the dot off.
+4. Custom-adding "HPE Nimble X" produces `vendor: "HPE"`, `vendorGroup: "nonDell"`, visible in Vendor Mix counts.
+5. Right panels across Matrix, Gaps, and Summary sub-tabs are help-free — a single terse placeholder only. Tab 1 driver-detail still shows the coaching card.
+6. Help modal opens for every tab/sub-tab with meaningful prose; keyboard Esc and backdrop click both close it.
+7. Overview shows two panels: Coverage as a percent with progress bar and actionable bullet list; Risk as a coloured label with actionable bullet list. Old single-number "health score" card is gone from the UI (function retained in service for back-compat).
+
+**v2.1.1** is shippable when:
+1. Phases 13 + 14 complete.
+2. All v2.1 assertions still green; new **T7.1 – T7.6** green.
+3. Overview right panel hosts the Session Brief (labelled rows, Refresh button with transient feedback).
+4. Every Reporting sub-tab's right panel hosts meaningful detail at rest or on click (no dead space).
+5. Roadmap project cards open right-panel detail on click; no inline expand remains. Swimlane headers open Strategic Driver detail.
+6. Vendor Mix rows open per-vendor detail on click.
