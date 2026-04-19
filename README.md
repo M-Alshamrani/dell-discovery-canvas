@@ -5,10 +5,17 @@ Version 2.1.1 · Vanilla JavaScript ES Modules · No build step required
 
 ---
 
-## Quick start (local)
+## Quick start
+
+### Easy path (reviewers & non-developers)
+
+Windows: double-click **`start.bat`**. macOS / Linux: run **`./start.sh`** in a terminal.
+
+The script checks for Python, launches a local server, and opens your browser. Full step-by-step with troubleshooting: **[HOW_TO_RUN.md](HOW_TO_RUN.md)**.
+
+### Manual (developers)
 
 ```bash
-cd dell-discovery
 python -m http.server 8000
 ```
 
