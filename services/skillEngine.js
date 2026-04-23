@@ -8,6 +8,7 @@
 
 import { loadAiConfig } from "../core/aiConfig.js";
 import { chatCompletion } from "./aiService.js";
+import { getSystemFooter } from "../core/promptGuards.js";
 
 // {{ one.two.three }} with optional whitespace. No helpers, no
 // conditionals — deliberate simplicity. If we need more later, add
@@ -77,13 +78,22 @@ export async function runSkill(skill, session, context) {
 
   var scope = { session: session || {}, context: context || {} };
   var userPrompt = renderTemplate(skill.promptTemplate, scope);
-  var systemPrompt = renderTemplate(skill.systemPrompt || "", scope);
+  var userSystem = renderTemplate(skill.systemPrompt || "", scope);
+
+  // v2.4.3 · non-removable output-format footer, chosen by the skill's
+  // output mode. Appended after the user's system prompt so it's the
+  // last thing the model reads for the system role (positional priority
+  // helps adherence).
+  var footer = getSystemFooter(skill.outputMode || "text-brief");
+  var systemPrompt = userSystem
+    ? userSystem + "\n\n" + footer
+    : footer;
 
   var config = loadAiConfig();
   var active = config.providers[config.activeProvider];
 
   var messages = [];
-  if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
+  messages.push({ role: "system", content: systemPrompt });
   messages.push({ role: "user", content: userPrompt });
 
   try {

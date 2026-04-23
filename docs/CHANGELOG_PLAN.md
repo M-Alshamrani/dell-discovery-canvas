@@ -841,6 +841,39 @@ Tagged `v2.1.2`. No code or test changes.
 
 ---
 
+## v2.4.3 · Phase 19d.1 · Prompt guards + Refine-to-CARE + test-before-save gate — IMPLEMENTED (2026-04-19)
+
+**Goal**: Enforce output quality across every skill. User was getting long-article AI responses unsuitable for live workshop use. Also: give users an AI-powered "rewrite my messy prompt into CARE format" button, and force a test-before-save discipline so broken skills never ship.
+
+### Locked decisions
+
+- Output-format footer is **mode-aware from day one**. Today only `text-brief` is wired; `json-schema` + `action-commands` are declared as stubs that throw with a version pointer. Prevents the universal-footer trap that would break structured-output skills when v2.4.4 introduces them.
+- `text-brief` footer is **non-removable**: ≤120 words, numbered bullets, no preamble / meta / disclaimer. Appended AFTER the user's system prompt so positional priority favours it.
+- **CARE** (Context / Ask / Rules / Examples) is for the **user's own prompt structure**, not the output format. Used by the Refine button as a scaffold, not by the mandatory footer.
+- Refine always shows a **side-by-side diff**. User accepts (replace), keeps (discard refined), or edits the refined side first. No silent AI-on-AI overwrites.
+- **Save-before-test gate** is mandatory. `lastTestedSignature` tracks the last draft that successfully tested; Save disables until current draft signature matches it. Any edit invalidates.
+
+### What shipped
+
+- `core/promptGuards.js` — `getSystemFooter(mode)` + `summaryForMode(mode)` + `REFINE_META_SYSTEM` + `REFINE_META_RULES` + `OUTPUT_MODES` triad.
+- `services/skillEngine.js → runSkill()` — footer injection.
+- `ui/views/SkillAdmin.js` — footer hint, Refine button + diff panel, save-gate logic.
+- `styles.css` — `.skill-form-footer-hint`, `.refine-row`, `.refine-diff`, `.save-gate-hint`.
+- Suite 29 PG1-PG6 (6 new assertions).
+
+### Bugs caught + fixed in flight
+
+1. **`var`-hoisting trap**: three listener attachments (`sysArea`, `tabSel`, `modeSel`) were above `modeSel`'s declaration. `var` hoists the name but not the value, so `modeSel` was undefined when `addEventListener` ran. Fix: moved the wires to after all fields are declared. Five tests (FP5/6/8/9, PG5) were failing from the aborted render; all pass after the fix.
+2. **Browser cache (nginx max-age=300 on JS)** hid the fix on first rebuild. Not a code bug — future sanity: incognito window is the fastest way to confirm a JS change during active development.
+
+### Out of scope, queued
+
+- **v2.4.4** — json-schema mode footer + apply-on-confirm + undo stack + per-skill provider.
+- **v2.4.5+** — action-commands mode (structured session manipulations).
+- **v2.5.0 crown-jewel** — UX/IA/styling review.
+
+---
+
 ## v2.4.2.1 · Phase 19c.1 · Pill-based binding editor + error-message polish — IMPLEMENTED (2026-04-19)
 
 **Goal**: Replace the template textarea with a contenteditable editor hosting inline uneditable pill elements for each binding. Error-proof (no partial `{{path}}` corruption), colour-discriminated (blue scalar / amber array / italic bare), delete-as-unit via Backspace.
@@ -1378,7 +1411,9 @@ Resuming numbering from where we stopped. Tagged releases: `v2.1.1`, `v2.1.2` on
 | **19b** | Skill builder UI — admin list + add/edit form + per-tab dropdown + seeded skill | `v2.4.1` ✅ SHIPPED | — |
 | **19c** | Field-pointer mechanic + LLM coercion + test button | `v2.4.2` ✅ SHIPPED | — |
 | **19c.1** | Pill-based editor + error-message polish | `v2.4.2.1` ✅ SHIPPED | — |
-| **19d** | Output handling + undo stack + per-skill provider assignment | `v2.4.3` | 19c.1 |
+| **19d.1** | Prompt guards (text-brief footer) + Refine-to-CARE + test-before-save gate | `v2.4.3` ✅ SHIPPED | — |
+| **19d** | Output handling (json-schema mode) + undo stack + per-skill provider | `v2.4.4` | 19d.1 |
+| **19e** | Action-command skills (structured session manipulations) | `v2.4.5+` | 19d |
 | **20+** | Multi-user platform (Item 2) — separate v3 work | `v3.0.0-alpha` (new branch `v3-multiuser`) | Architecture design doc, backend stack decision, auth strategy |
 
 Items 5, 6 merged into later phases. Item 10 has no standalone phase (covered by Phase 18 test).

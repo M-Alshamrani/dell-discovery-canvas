@@ -1,7 +1,7 @@
 # Dell Discovery Canvas
 
 **IT / Enterprise Architecture Discovery Tool for Dell Presales**
-Version 2.4.2.1 · Vanilla JavaScript ES Modules · No build step required
+Version 2.4.3 · Vanilla JavaScript ES Modules · No build step required
 
 ---
 
@@ -129,6 +129,7 @@ Session state persists to `localStorage` under key `dell_discovery_v1`. Data sta
 
 ## Version history
 
+- **v2.4.3** (2026-04-19) — Phase 19d.1: Prompt quality guardrails. Mandatory output-format footer (≤120 words, terse bullets, no preamble) appended to every skill's system prompt at run time — kills the "long article" response pattern. "✨ Refine to CARE format" button (Context / Ask / Rules / Examples) AI-rewrites user drafts with side-by-side diff (Accept / Keep / Edit). Save button disabled until a successful test matches the current draft — forces the iteration loop. Mode-aware architecture: text-brief today; json-schema (v2.4.4) and action-commands (v2.4.5+) declared ready. Suite 29 adds 6 PG* assertions; banner now 399/399 green.
 - **v2.4.2.1** (2026-04-19) — Phase 19c.1: Pill-based binding editor. Template textarea in the skill builder replaced with a contenteditable editor hosting inline uneditable pill elements for each binding. Click a field chip → pill appears; Backspace → pill removed as a unit (no partial `{{path}}` corruption). Blue scalars, amber arrays, italic bare (Alt-inserted). Error messages now categorise HTTP status — 401/403 points to the API-key field, 5xx calls out upstream-transient. Suite 28 adds 7 PE* tests; banner 393/393 green.
 - **v2.4.2** (2026-04-19) — Phase 19c: Field-pointer mechanic + LLM-friendly coercion + test-skill. Per-tab manifest of bindable fields; clicking a chip inserts `Label: {{path}}` at the cursor (Alt-click for bare), so presales don't have to type or memorise dot-paths. Live template preview renders against current session. "Test skill now" button dry-runs the draft for iteration. Array/object bindings now serialise as pretty-printed JSON (soft-capped at 1200 chars) so the LLM gets readable content, not `[object Object]`. Suite 27 adds 9 FP* assertions; banner now 386/386 green.
 - **v2.4.1** (2026-04-19) — Phase 19b: Skill Builder. The v2.4.0 hardcoded button becomes a platform. Gear icon → Skills section lists saved skills; `+ Add skill` form lets presales define name, target tab, AI role / instructions, data template (`{{session.*}}` + `{{context.*}}` bindings), output mode. Every tab hosts a `"✨ Use AI ▾"` dropdown of its deployed skills. On first run, a seed skill (Tab 1 driver-question assistant, deployed) keeps v2.4.0 Tab 1 behaviour working unchanged. Suite 26 adds 8 SB* assertions; banner now 377/377 green.
@@ -159,4 +160,4 @@ This is a private internal Dell presales tool. All non-trivial changes go throug
 
 ---
 
-*Dell Technologies Presales · Internal tool · v2.4.2.1*
+*Dell Technologies Presales · Internal tool · v2.4.3*

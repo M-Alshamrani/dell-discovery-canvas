@@ -1,7 +1,7 @@
 # Dell Discovery Canvas v2 — Implementation Spec
 
-**Status**: Phases 0–15.3 + 16 + 18 + 19a/b/c/c.1 SHIPPED. Phases 17 / 19d / 20+ queued.
-**Current tagged releases**: `v2.1.1`, `v2.1.2`, `v2.2.0` (Docker), `v2.2.1` (LAN auth), `v2.2.2` (Dell tokens), `v2.2.3` (visual depth), `v2.3.0` (Phase 18 gap-links), `v2.3.1` (Phase 16 Workload), `v2.4.0` (Phase 19a AI foundations), `v2.4.1` (Phase 19b Skill Builder), `v2.4.2` (Phase 19c Field-pointer + coercion + test-skill), `v2.4.2.1` (Phase 19c.1 Pill editor + error-message categorisation)
+**Status**: Phases 0–15.3 + 16 + 18 + 19a/b/c/c.1/d.1 SHIPPED. Phases 17 / 19d-19d.5 / 20+ queued.
+**Current tagged releases**: `v2.1.1`, `v2.1.2`, `v2.2.0` (Docker), `v2.2.1` (LAN auth), `v2.2.2` (Dell tokens), `v2.2.3` (visual depth), `v2.3.0` (Phase 18 gap-links), `v2.3.1` (Phase 16 Workload), `v2.4.0` (Phase 19a AI foundations), `v2.4.1` (Phase 19b Skill Builder), `v2.4.2` (Phase 19c Field-pointer + coercion + test-skill), `v2.4.2.1` (Phase 19c.1 Pill editor + error-message categorisation), `v2.4.3` (Phase 19d.1 Prompt guards + Refine-to-CARE + test-before-save gate)
 **Predecessor**: v1.3 (legacy)
 **Repo**: https://github.com/M-Alshamrani/dell-discovery-canvas (private)
 **Discussion record**: [docs/CHANGELOG_PLAN.md](docs/CHANGELOG_PLAN.md) — see "Post-v2.1.2 · v2.2+ design review" section for items 2-10 decisions.
@@ -726,7 +726,14 @@ Turn v2.4.0 from "one hardcoded button" into a platform. Users define, deploy, a
 - `styles.css` — `.pill-editor` (contenteditable host with placeholder pseudo), `.binding-pill.is-scalar|is-array|is-bare`.
 - Suite 28 PE1-PE7: labeled-pill detection, bare-pill fallback, serialize emission, round-trip fidelity, textarea-compatible surface, DOM attribute contract, unknown-path rendering.
 
-#### Phase 19d · v2.4.3 · Output handling + undo + per-skill provider — QUEUED
+#### Phase 19d.1 · v2.4.3 · Prompt guards + Refine-to-CARE + test-before-save gate — IMPLEMENTED
+
+- `core/promptGuards.js` — mode-aware output-format footers. `text-brief` live today (≤120 words, terse bullets, no preamble); `json-schema` + `action-commands` declared as stubs that throw with a version pointer. `summaryForMode()` gives the human-readable hint shown under the system-prompt field. `REFINE_META_SYSTEM` + `REFINE_META_RULES` are the CARE-framework meta-prompt sent to the AI by the Refine button.
+- `services/skillEngine.js → runSkill()` — appends the footer to the user's system prompt at run time (non-removable).
+- `ui/views/SkillAdmin.js` — footer-summary hint ("Plus automatic output-format guards…"), **"✨ Refine to CARE format"** button (side-by-side diff, Accept / Keep), test-before-save gate (Save button disabled until `lastTestedSignature === currentSignature()`; any edit invalidates).
+- Suite 29 — 6 new PG* assertions covering footer content, mode dispatch, summary export, admin-UI render, OUTPUT_MODES triad.
+
+#### Phase 19d · v2.4.4 · Output handling + undo + per-skill provider — QUEUED
 
 Three user-requested items bundled (2026-04-19 evening):
 
@@ -821,6 +828,13 @@ A separate `SPEC_v3.md` will capture this architecture when work starts.
    - All static assets (`/app.js`, `/styles.css`, `/Logo/...avif`, etc.) are gated identically.
 4. HEALTHCHECK reaches `(healthy)` within 30 s in both auth modes.
 5. Browser navigates to `http://localhost:8080`, sees the native browser login prompt when auth is on, enters credentials, sees the Dell Discovery Canvas with the green test banner (348 assertions) inside the container's app.
+
+**v2.4.3** is shippable when:
+1. Phase 19d.1 complete (promptGuards + runSkill footer injection + SkillAdmin refine/gate + Suite 29).
+2. Every skill's system prompt carries the mandatory text-brief footer at run time (≤120 words, no preamble, no prose). Verified by real AI response being terse.
+3. "✨ Refine to CARE format" button renders in the edit form, sends the CARE meta-prompt to the active provider, opens a side-by-side diff, lets the user Accept (replace draft) or Keep (discard refined).
+4. Save button is disabled until a successful test matches the current draft signature. Any edit to template / system prompt / tab / output mode re-disables Save.
+5. `appSpec.js` banner: **399 assertions** (393 prior + 6 new PG*).
 
 **v2.4.2.1** is shippable when:
 1. Phase 19c.1 complete (PillEditor module + SkillAdmin pill-editor integration + aiService error categorisation + Suite 28).

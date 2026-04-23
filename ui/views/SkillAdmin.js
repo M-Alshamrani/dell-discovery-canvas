@@ -12,6 +12,8 @@ import { extractBindings, renderTemplate, runSkill } from "../../services/skillE
 import { fieldsForTab, buildPreviewScope } from "../../core/fieldManifest.js";
 import { session as liveSession } from "../../state/sessionStore.js";
 import { loadAiConfig } from "../../core/aiConfig.js";
+import { chatCompletion } from "../../services/aiService.js";
+import { summaryForMode, REFINE_META_SYSTEM, REFINE_META_RULES } from "../../core/promptGuards.js";
 import { createPillEditor } from "../components/PillEditor.js";
 
 var TAB_LABELS = {
@@ -135,6 +137,11 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   var sysArea = mkTextarea(form, "AI role / instructions (optional)", 3,
     existing ? existing.systemPrompt : "",
     "What the AI is and what it should do. Constant per skill — no live-data bindings needed.");
+  // v2.4.3 — advertise the non-removable output-format footer so users
+  // aren't surprised by what the AI actually receives.
+  var footerHint = mkt("div", "skill-form-footer-hint",
+    summaryForMode(existing ? existing.outputMode : "suggest"));
+  form.appendChild(footerHint);
 
   // v2.4.2.1 · pill-based contenteditable editor replaces the textarea.
   // Exposes serialize() / setValue() / insertPillAtCursor() so the
@@ -147,9 +154,53 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   var tplArea = createPillEditor({
     initialValue: existing ? existing.promptTemplate : "",
     manifest:     fieldsForTab(existing ? existing.tabId : "context"),
-    onInput:      function() { refreshBindingsAndPreview(); }
+    onInput:      function() { refreshBindingsAndPreview(); invalidateTest(); }
   });
   tplLabelGroup.appendChild(tplArea);
+
+  // v2.4.3 — "Refine prompt (CARE format)" button + diff panel.
+  var refineRow = mk("div", "refine-row");
+  var refineBtn = mkt("button", "btn-secondary", "✨ Refine to CARE format");
+  refineBtn.title = "Rewrite this draft as a CARE-structured prompt (Context · Ask · Rules · Examples) using the active AI provider.";
+  refineRow.appendChild(refineBtn);
+  var refineStatus = mkt("span", "refine-status", "");
+  refineRow.appendChild(refineStatus);
+  form.appendChild(refineRow);
+  var refineDiff = mk("div", "refine-diff");
+  refineDiff.style.display = "none";
+  form.appendChild(refineDiff);
+
+  refineBtn.addEventListener("click", async function() {
+    var draft = tplArea.serialize().trim();
+    if (!draft) { alert("Write a draft first, or click a chip to insert a binding."); return; }
+    refineBtn.disabled = true;
+    refineStatus.textContent = " · refining via " + (loadAiConfig().activeProvider || "AI") + "…";
+    refineDiff.style.display = "none";
+    try {
+      var cfg = loadAiConfig();
+      var active = cfg.providers[cfg.activeProvider];
+      var res = await chatCompletion({
+        providerKey: cfg.activeProvider,
+        baseUrl:     active.baseUrl,
+        model:       active.model,
+        apiKey:      active.apiKey,
+        messages: [
+          { role: "system", content: REFINE_META_SYSTEM + "\n\n" + REFINE_META_RULES },
+          { role: "user",   content: "Original prompt to rewrite:\n---\n" + draft + "\n---" }
+        ]
+      });
+      renderRefineDiff(refineDiff, draft, res.text || "", function(accepted) {
+        if (accepted) { tplArea.setValue(accepted); refreshBindingsAndPreview(); invalidateTest(); }
+        refineDiff.style.display = "none";
+      });
+      refineDiff.style.display = "block";
+      refineStatus.textContent = "";
+    } catch (e) {
+      refineStatus.textContent = " · refine failed: " + (e.message || String(e));
+    } finally {
+      refineBtn.disabled = false;
+    }
+  });
 
   // Phase 19c · field-pointer chips — click to insert {{path}} at the
   // textarea cursor. Chips refresh whenever the target tab changes.
@@ -217,8 +268,9 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   refreshBindingsAndPreview();
 
   // Phase 19c v2 · "Test skill now" — dry-runs the current unsaved draft
-  // against real AI + live preview scope so the user can iterate on
-  // prompts without save-and-switch-tab round-trips.
+  // against real AI + live preview scope. v2.4.3: a successful test is a
+  // GATE for saving (test-before-save discipline). invalidateTest() is
+  // called from every editor input so the gate re-arms on any edit.
   var testRow = mk("div", "skill-form-test-row");
   var testBtn = mkt("button", "btn-secondary", "Test skill now");
   var testOut = mk("div", "ai-skill-result skill-form-test-out");
@@ -226,7 +278,23 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   testRow.appendChild(testBtn);
   form.appendChild(testRow);
   form.appendChild(testOut);
+
+  // Test-before-save gate state. The `.addEventListener` wiring below
+  // needs to run AFTER modeSel is declared (further down in this fn) —
+  // doing it here would trip on the var-hoisted-but-undefined reference.
+  // Instead we collect the invalidators as a deferred setup call and
+  // invoke it at the bottom of the function.
+  var lastTestedSignature = null;
+  function currentSignature() {
+    return JSON.stringify([tplArea.serialize(), sysArea.value, modeSel.value, tabSel.value]);
+  }
+  function invalidateTest() {
+    lastTestedSignature = null;
+    refreshSaveGate();
+  }
+
   testBtn.addEventListener("click", async function() {
+    var signatureAtStart = currentSignature();
     var draftSkill = {
       name:           (nameInput.value || "Untitled").trim(),
       tabId:          tabSel.value,
@@ -252,6 +320,12 @@ function renderEditForm(adminRoot, list, existing, onChange) {
       var body = mk("pre", "ai-skill-result-body");
       body.textContent = res.text || "(no text returned)";
       testOut.appendChild(body);
+      // Only arm the save gate if the signature is still the tested one
+      // (user might have edited during the async call).
+      if (currentSignature() === signatureAtStart) {
+        lastTestedSignature = signatureAtStart;
+        refreshSaveGate();
+      }
     } else {
       testOut.className = "ai-skill-result skill-form-test-out err";
       testOut.textContent = "Test failed: " + (res.error || "Unknown error") +
@@ -266,6 +340,12 @@ function renderEditForm(adminRoot, list, existing, onChange) {
     return { value: m, label: label };
   }), existing ? existing.outputMode : "suggest");
 
+  // Wire the test-gate invalidators now that every referenced field
+  // (sysArea / tabSel / modeSel) is actually defined.
+  sysArea.addEventListener("input",  invalidateTest);
+  tabSel.addEventListener("change",  invalidateTest);
+  modeSel.addEventListener("change", invalidateTest);
+
   var depLabel = mkt("label", "skill-form-deploy-label", "Deployed");
   var depCb = document.createElement("input");
   depCb.type = "checkbox";
@@ -277,6 +357,22 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   var cancelBtn = mkt("button", "btn-secondary", "Cancel");
   cancelBtn.addEventListener("click", function() { form.remove(); });
   var saveBtn = mkt("button", "btn-primary", existing ? "Save changes" : "Create skill");
+  var saveHint = mkt("span", "save-gate-hint", "");
+
+  function refreshSaveGate() {
+    var gated = lastTestedSignature !== currentSignature();
+    saveBtn.disabled = gated;
+    if (gated) {
+      saveBtn.classList.add("save-disabled");
+      saveHint.textContent = lastTestedSignature === null
+        ? "← Click 'Test skill now' and verify the output before saving."
+        : "← Changes detected — re-run the test to enable Save.";
+    } else {
+      saveBtn.classList.remove("save-disabled");
+      saveHint.textContent = "✓ Tested — safe to save.";
+    }
+  }
+  refreshSaveGate();
   saveBtn.addEventListener("click", function() {
     var name = (nameInput.value || "").trim();
     var tpl  = tplArea.serialize().trim();
@@ -301,10 +397,43 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   });
   actions.appendChild(cancelBtn);
   actions.appendChild(saveBtn);
+  actions.appendChild(saveHint);
   form.appendChild(actions);
 
   adminRoot.appendChild(form);
   nameInput.focus();
+}
+
+// Phase 19d.1 — side-by-side refine diff (draft vs refined). User can
+// accept (callback called with refined text), keep (callback called
+// with null), or edit the refined side before accepting.
+function renderRefineDiff(host, draft, refined, onDecision) {
+  host.innerHTML = "";
+  host.appendChild(mkt("div", "refine-diff-title", "Refined with CARE framework — review before accepting"));
+  var grid = mk("div", "refine-diff-grid");
+  var left = mk("div", "refine-side");
+  left.appendChild(mkt("div", "refine-side-head", "Your draft"));
+  var leftBox = mk("pre", "refine-side-body"); leftBox.textContent = draft;
+  left.appendChild(leftBox);
+  grid.appendChild(left);
+
+  var right = mk("div", "refine-side");
+  right.appendChild(mkt("div", "refine-side-head", "Refined (editable)"));
+  var rightBox = mk("textarea", "refine-side-body refine-side-edit");
+  rightBox.value = refined;
+  rightBox.rows = 10;
+  right.appendChild(rightBox);
+  grid.appendChild(right);
+  host.appendChild(grid);
+
+  var actions = mk("div", "form-actions");
+  var keepBtn = mkt("button", "btn-secondary", "Keep my draft");
+  keepBtn.addEventListener("click", function() { onDecision(null); });
+  var acceptBtn = mkt("button", "btn-primary", "Replace my draft with refined");
+  acceptBtn.addEventListener("click", function() { onDecision(rightBox.value); });
+  actions.appendChild(keepBtn);
+  actions.appendChild(acceptBtn);
+  host.appendChild(actions);
 }
 
 // ── Tiny form helpers. Duplicated (not imported) so SkillAdmin has

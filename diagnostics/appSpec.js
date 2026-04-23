@@ -4289,6 +4289,77 @@ describe("28 · Phase 19c.1 · Pill editor — contenteditable with inline bindi
 
 });
 
+// ── Phase 19d.1 / v2.4.3 · Prompt guards + Refine-to-CARE + test-gate (PG1-PG5) ──
+import { getSystemFooter, summaryForMode, REFINE_META_SYSTEM, OUTPUT_MODES } from "../core/promptGuards.js";
+
+describe("29 · Phase 19d.1 · Prompt guards + Refine-to-CARE button + test-before-save gate", () => {
+
+  function clearSkills() { window.localStorage.removeItem("ai_skills_v1"); }
+
+  it("PG1 · getSystemFooter('text-brief') enforces the pragmatic output contract (length + no-preamble rules)", () => {
+    const f = getSystemFooter("text-brief");
+    assert(typeof f === "string" && f.length > 40, "footer must be a non-trivial string");
+    assert(/120 words/.test(f), "text-brief footer must set the 120-word cap");
+    assert(/preamble/i.test(f), "text-brief footer must ban preamble phrases");
+    assert(/paragraphs/i.test(f) || /prose/i.test(f), "must discourage paragraphs of prose");
+  });
+
+  it("PG2 · getSystemFooter() (no arg) and unknown modes fall back to text-brief — never return empty", () => {
+    const missing = getSystemFooter();
+    const unknown = getSystemFooter("some-future-mode-not-shipped");
+    const brief   = getSystemFooter("text-brief");
+    assertEqual(missing, brief, "missing mode falls back to text-brief");
+    assertEqual(unknown, brief, "unknown mode falls back to text-brief");
+  });
+
+  it("PG3 · unimplemented modes (json-schema / action-commands) throw with a version pointer", () => {
+    throws(() => getSystemFooter("json-schema"),
+      "json-schema mode must throw (ships in v2.4.4)");
+    throws(() => getSystemFooter("action-commands"),
+      "action-commands mode must throw (ships in v2.4.5+)");
+  });
+
+  it("PG4 · summaryForMode + REFINE_META_SYSTEM exposed for the SkillAdmin UI + meta-prompt", () => {
+    assert(typeof summaryForMode === "function", "summaryForMode export must be a function");
+    const s = summaryForMode("text-brief");
+    assert(typeof s === "string" && s.length > 0, "text-brief summary must be non-empty");
+    assert(/guards/i.test(s) || /non-removable/i.test(s),
+      "summary must signal that the footer is automatic / non-removable");
+    assert(typeof REFINE_META_SYSTEM === "string" && REFINE_META_SYSTEM.length > 40,
+      "REFINE_META_SYSTEM meta-prompt must be present for the Refine button");
+    assert(/CARE/.test(REFINE_META_SYSTEM), "meta-prompt must reference the CARE framework");
+  });
+
+  it("PG5 · SkillAdmin edit form renders the Refine button, the footer-summary hint, and a disabled save button pre-test", () => {
+    clearSkills();
+    loadSkills();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    renderSkillAdmin(container);
+    [...container.querySelectorAll("button")].filter(b => b.textContent === "Edit")[0].click();
+    const refineBtn = [...container.querySelectorAll("button")].find(b => b.textContent.indexOf("Refine") >= 0);
+    assert(refineBtn, "'Refine to CARE format' button must render in the edit form");
+    const hint = container.querySelector(".skill-form-footer-hint");
+    assert(hint, "footer-summary hint must render under the system-prompt field");
+    const saveBtn = [...container.querySelectorAll("button")].find(b => /save|create/i.test(b.textContent));
+    assert(saveBtn, "Save/Create button must render");
+    assert(saveBtn.disabled, "Save must be DISABLED before a successful test (gate)");
+    const gateHint = container.querySelector(".save-gate-hint");
+    assert(gateHint, "save-gate hint must render next to Save");
+    assert(/test/i.test(gateHint.textContent), "gate hint must tell user to test first");
+    container.remove();
+    clearSkills();
+  });
+
+  it("PG6 · OUTPUT_MODES export is the v2.4.3-shipped triad (text-brief, json-schema, action-commands)", () => {
+    assertEqual(OUTPUT_MODES.length, 3, "three declared modes total");
+    assert(OUTPUT_MODES.indexOf("text-brief")      >= 0, "text-brief present");
+    assert(OUTPUT_MODES.indexOf("json-schema")     >= 0, "json-schema declared (impl v2.4.4)");
+    assert(OUTPUT_MODES.indexOf("action-commands") >= 0, "action-commands declared (impl v2.4.5+)");
+  });
+
+});
+
 export function runAllTests() {
   return run();
 }
