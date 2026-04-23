@@ -263,14 +263,19 @@ function renderProjectDetail(right, session, proj) {
     panel.appendChild(row);
   });
 
-  // Linked-instance count
-  var linkCount = 0;
+  // Linked-instance count — Phase 18: count UNIQUE instance ids across the
+  // project's gaps. With warn-but-allow double-linking, the same instance
+  // can appear in two gaps' relatedXxx arrays; summing lengths would
+  // double-count and inflate the project's apparent technology footprint.
+  var uniqueInstanceIds = new Set();
   proj.gaps.forEach(function(g) {
-    linkCount += (g.relatedCurrentInstanceIds || []).length + (g.relatedDesiredInstanceIds || []).length;
+    (g.relatedCurrentInstanceIds || []).forEach(function(id) { uniqueInstanceIds.add(id); });
+    (g.relatedDesiredInstanceIds || []).forEach(function(id) { uniqueInstanceIds.add(id); });
   });
+  var linkCount = uniqueInstanceIds.size;
   var linkSep = mk("div", "detail-sep"); linkSep.textContent = "Linked technologies"; panel.appendChild(linkSep);
   var linkRow = mk("div", "detail-text");
-  linkRow.textContent = linkCount + " link" + (linkCount === 1 ? "" : "s") +
+  linkRow.textContent = linkCount + " unique technolog" + (linkCount === 1 ? "y" : "ies") +
     " across " + proj.gapCount + " gap" + (proj.gapCount === 1 ? "" : "s") +
     ". Open in Tab 4 to edit links.";
   panel.appendChild(linkRow);

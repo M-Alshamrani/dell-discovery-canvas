@@ -841,6 +841,48 @@ Tagged `v2.1.2`. No code or test changes.
 
 ---
 
+## v2.3.0 · Phase 18 · Gap-link surfacing + double-link safety + roadmap dedup — IMPLEMENTED (2026-04-19)
+
+**Goal**: make cross-gap links visible and safe. With Phase 12's "Manage links" collapse, presales had to click before they could see what was linked. The locked Item 9 decision (warn-but-allow on double-linking) means the same instance can intentionally appear in multiple gaps — so the UI needed both *visibility at rest* and *visibility at the point of decision*, plus a roadmap-side dedup so multi-linked assets don't inflate project counts.
+
+### Locked decisions (recap)
+
+- **Item 8** — Always-visible inline link sections in the gap detail panel. No toggle, no chevron, no "Manage links" button. Confirmed for ship 2026-04-19 evening.
+- **Item 9** — Warn-but-allow on double-linking. No strict uniqueness constraint, no reverse index. Yellow warning row in the picker; red "linked to N gaps" chip on the asset row in the gap detail.
+- **Item 10** — Cascade safety is already a structural property of the data model (gap owns the link arrays; instances carry no back-references). Documented as a regression test rather than as code change.
+
+### What shipped
+
+- `GapsEditView.js` — Removed `linkedSummaryRow` + `manageBtn` + `manageWrap` collapse machinery. Two `.link-section`s render inline inside a new `.linked-inline-wrap`, always expanded. New helpers `countGapsLinking(session, instanceId)` and `findOtherGapLinking(session, instanceId, excludeGapId)` drive the multi-linked chip and the picker warning row respectively. `openLinkPicker` prepends `.link-warning-row` above any candidate already linked to another gap. `buildLinkRow` appends `.multi-linked-chip` when the count ≥ 2.
+- `SummaryRoadmapView.js` — Project right-panel "Linked technologies" count switched from summing `length` (which double-counted multi-linked assets) to a `Set` of unique instance ids. Copy updated to *"N unique technologies across M gaps"*.
+- `ui/icons.js` — `chainIcon` and `chevronIcon` deleted (no remaining consumers after the Manage-links removal). `helpIcon`, `starSolidIcon`, `starOutlineIcon` retained.
+- `styles.css` — Dropped `.linked-summary-row`, `.linked-manage-btn`, `.linked-manage-wrap`. Added `.linked-inline-wrap` (panel container), `.link-warning-row` (yellow), `.multi-linked-chip` (red, uppercase, small).
+- `.gitattributes` (NEW) — Forces LF endings on shell scripts and container plumbing files (`*.sh`, `docker-entrypoint.d/**`, `Dockerfile`, `nginx.conf`, `docker-compose.yml`). Without this, git on Windows checks out `40-setup-auth.sh` with CRLF and the container loops with `/bin/sh\r: not found` — exactly what bit us in this phase before the fix.
+- `appSpec.js` — New Suite 23: 5 T8.* assertions covering Items 8 (no collapse), 9a (warning row), 9b (multi-linked chip), 10 (cascade-safe deleteGap), and the roadmap dedup invariant.
+
+### Bugs caught + fixed in flight
+
+1. **CRLF in entrypoint script after fresh checkout** — On the new branch, git auto-converted `docker-entrypoint.d/40-setup-auth.sh` from LF to CRLF on the working tree, which broke the shebang and put the container in a restart loop with exit code 127 ("Launching ... not found"). Fixed by adding `.gitattributes` to enforce LF on all container plumbing files and re-normalising. Same root cause would have hit any future Windows-host contributor; now nailed down for the project lifetime.
+2. **Superseded T6.13 still asserting on a removed feature** — The Phase 12 test "Manage-links control renders an SVG with aria-expanded attr" was still in the suite, asserting the existence of the very element Phase 18 deletes. Test correctly went red on first browser run; retired (T8.1 in Suite 23 asserts the inverse contract).
+3. **T8.5 used invalid `affectedEnvironments: ["prod"]`** — `validateGap` rejected it because valid env ids are `coreDc`, `drDc`, `publicCloud`, `edge`. Fixed to `EnvironmentIds[0]` so the test stays correct if env labels evolve.
+
+### Test (manual, local on Windows host)
+
+| Verification | Result |
+|---|---|
+| Container HEALTHCHECK after rebuild | `(healthy)` ✅ |
+| `/health` returns `ok` | ✅ |
+| `appSpec.js` served from container with 6 `T8.*` markers (5 tests + 1 suite) | ✅ |
+| Browser banner inside the running app: 352/352 green | ✅ (after retiring superseded T6.13 + fixing T8.5 env id) |
+
+### Out of scope, queued
+
+- **Strict uniqueness mode** — explicit decision to NOT ship; warn-but-allow is the locked semantic.
+- **Reverse-index** (instance → gap ids) — not needed because the picker scan is O(N gaps) and N is small in workshop sessions. Re-evaluate only if a workshop produces 10k+ gaps, which is not a realistic shape.
+- **Roadmap aggregate de-overlap visualisation** — beyond the count fix, we don't currently visualise *which* assets are shared between projects. Could be a v2.3.x add-on if presales feedback asks for it.
+
+---
+
 ## v2.2.1 · Phase 15.1 · LAN gating with HTTP Basic auth — IMPLEMENTED (2026-04-19)
 
 **Goal**: make it safe to set `BIND_ADDR=0.0.0.0` for shared LAN review without exposing the unauth'd vLLM endpoints alongside the app. Manager and partner reviewers should hit a credential challenge before the canvas loads.
@@ -1045,9 +1087,9 @@ Resuming numbering from where we stopped. Tagged releases: `v2.1.1`, `v2.1.2` on
 | **15** | Docker containerisation for Dell GB10 deployment | `v2.2.0` ✅ SHIPPED | — (decisions captured 2026-04-19) |
 | **15.1** | LAN gating: env-driven HTTP Basic auth via apache2-utils + nginx snippet | `v2.2.1` ✅ SHIPPED | — (env-driven; no host-side setup needed) |
 | **15.2** | Dell-styling token adoption (palette, Inter, card vocabulary from GPLC sample) | `v2.2.2` | None |
-| **16** | Workload Mapping 6th layer (Item 3) | `v2.3.0` | None |
-| **17** | Taxonomy unification + "Action" rename + mandatory-link enforcement for Replace/Consolidate (Item 4) | `v2.3.1` | User sign-off on Item 4 table |
-| **18** | Linked assets always visible (Item 8) + warn-but-allow double-link (Item 9) + cascade-delete regression test (Item 10) | `v2.3.2` | User confirms Item 8 |
+| **18** | Linked assets always visible (Item 8) + warn-but-allow double-link (Item 9) + cascade-delete regression test (Item 10) + roadmap dedup | `v2.3.0` ✅ SHIPPED | — (Item 8 ship-confirmed 2026-04-19 evening) |
+| **16** | Workload Mapping 6th layer (Item 3) | `v2.3.x` | None |
+| **17** | Taxonomy unification + "Action" rename + mandatory-link enforcement for Replace/Consolidate (Item 4) | `v2.3.x` | User sign-off on Item 4 table |
 | **19** | AI slice — Tab 1 strategic-driver question assistant (Item 7 first wave). LLM target: GB10 Code LLM on `:8000` (`model=code-llm`), VLM on `:8001` (`model=vision-vlm`), OpenAI-compatible | `v2.4.0` | None — LLM endpoint shape now known |
 | **20+** | Multi-user platform (Item 2) — separate v3 work | `v3.0.0-alpha` (new branch `v3-multiuser`) | Architecture design doc, backend stack decision, auth strategy |
 

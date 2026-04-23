@@ -1277,15 +1277,6 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .swimlane-clickable:hover { background: var(--brand-faint); }
 .swimlane-clickable:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 
-/* Manage-links inline SVG + rotating chevron */
-.linked-manage-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-}
-.linked-manage-btn .chevron { transition: transform 0.15s ease; }
-
 /* ── v2.1 · Gap review dot + Approve button ─────────────── */
 .gap-card.gap-needs-review { position: relative; }
 .gap-review-dot {
@@ -1373,24 +1364,39 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .risk-level-pill.risk-elevated { background: #ea580c; }
 .risk-level-pill.risk-high     { background: var(--crit-high); }
 
-/* Linked-technologies collapsed summary (gap detail panel) */
-.linked-summary-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+/* Phase 18 · Linked-technologies inline panel + double-link cues
+   (replaces the v2.1 collapsed Manage-links summary). */
+.linked-inline-wrap {
   margin-top: 12px;
-  padding: 8px 10px;
+  padding: 10px 12px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
-.linked-summary-chip {
-  font-size: 12px;
-  color: var(--text-2);
+.linked-inline-wrap .link-section + .link-section { margin-top: 12px; }
+
+.link-warning-row {
+  font-size: 11px;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  margin: 4px 0 2px;
+  line-height: 1.35;
 }
-.linked-manage-btn { font-size: 11px; }
-.linked-manage-wrap { margin-top: 10px; }
+
+.multi-linked-chip {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--crit-high);
+  padding: 2px 6px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
 
 /* ── Tab 5 Roadmap v2 · Phase 7 ─────────────────────────────
    Portfolio pulse bar above a swimlane × phase grid.

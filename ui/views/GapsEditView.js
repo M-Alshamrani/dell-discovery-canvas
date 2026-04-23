@@ -10,7 +10,27 @@ import { suggestDriverId, effectiveDriverId, driverLabel as driverLabelFor,
          effectiveDellSolutions } from "../../services/programsService.js";
 import { saveToLocalStorage } from "../../state/sessionStore.js";
 import { helpButton } from "./HelpModal.js";
-import { chainIcon, chevronIcon } from "../icons.js";
+
+// Phase 18: count how many gaps reference an instance id (in either link
+// list). Used for the "linked to N gaps" multi-link chip and for the
+// link-picker warning row.
+function countGapsLinking(session, instanceId) {
+  return ((session && session.gaps) || []).filter(function(g) {
+    return (g.relatedCurrentInstanceIds || []).indexOf(instanceId) >= 0
+        || (g.relatedDesiredInstanceIds || []).indexOf(instanceId) >= 0;
+  }).length;
+}
+
+// Phase 18: return the FIRST other gap (excluding `excludeGapId`) that
+// already links the given instanceId. null if none. Used by the picker.
+function findOtherGapLinking(session, instanceId, excludeGapId) {
+  var hits = ((session && session.gaps) || []).filter(function(g) {
+    if (g.id === excludeGapId) return false;
+    return (g.relatedCurrentInstanceIds || []).indexOf(instanceId) >= 0
+        || (g.relatedDesiredInstanceIds || []).indexOf(instanceId) >= 0;
+  });
+  return hits.length ? hits[0] : null;
+}
 
 export function renderGapsEditView(left, right, session) {
   var activeLayerIds        = new Set(LAYERS.map(function(l) { return l.id; }));
@@ -429,29 +449,8 @@ export function renderGapsEditView(left, right, session) {
     actions.appendChild(delBtn);
     panel.appendChild(actions);
 
-    // ---- Linked instances section (collapsed by default) ----
-    var curCount = (gap.relatedCurrentInstanceIds || []).length;
-    var desCount = (gap.relatedDesiredInstanceIds || []).length;
-    var totalCount = curCount + desCount;
-    var summaryText = totalCount === 0
-      ? "No linked technologies"
-      : totalCount + " linked (" + curCount + " current · " + desCount + " desired)";
-
-    var linkedSummaryRow = mk("div", "linked-summary-row");
-    linkedSummaryRow.appendChild(mkt("span", "linked-summary-chip", summaryText));
-    // v2.1 · Inline SVG chain + chevron (replaces ▸/▾ triangles).
-    var manageBtn = mk("button", "btn-ghost-sm linked-manage-btn");
-    manageBtn.type = "button";
-    manageBtn.setAttribute("aria-expanded", "false");
-    manageBtn.setAttribute("aria-label", "Manage links");
-    manageBtn.appendChild(chainIcon());
-    manageBtn.appendChild(document.createTextNode(" Manage links "));
-    manageBtn.appendChild(chevronIcon(false));
-    linkedSummaryRow.appendChild(manageBtn);
-    panel.appendChild(linkedSummaryRow);
-
-    var manageWrap = mk("div", "linked-manage-wrap");
-    manageWrap.style.display = "none";
+    // ---- Linked instances section (Phase 18: always-visible, no collapse) ----
+    var linksWrap = mk("div", "linked-inline-wrap");
 
     // Current instances
     var curSection = mk("div", "link-section");
@@ -481,7 +480,7 @@ export function renderGapsEditView(left, right, session) {
       });
     });
     curSection.appendChild(addCurBtn);
-    manageWrap.appendChild(curSection);
+    linksWrap.appendChild(curSection);
 
     // Desired instances
     var desSection = mk("div", "link-section");
@@ -523,25 +522,16 @@ export function renderGapsEditView(left, right, session) {
       });
     });
     desSection.appendChild(addDesBtn);
-    manageWrap.appendChild(desSection);
+    linksWrap.appendChild(desSection);
 
-    panel.appendChild(manageWrap);
-
-    manageBtn.addEventListener("click", function() {
-      var isOpen = manageWrap.style.display !== "none";
-      var nextOpen = !isOpen;
-      manageWrap.style.display = nextOpen ? "block" : "none";
-      manageBtn.setAttribute("aria-expanded", nextOpen ? "true" : "false");
-      // Rebuild the label so the chevron rotates.
-      manageBtn.innerHTML = "";
-      manageBtn.appendChild(chainIcon());
-      manageBtn.appendChild(document.createTextNode(nextOpen ? " Hide links " : " Manage links "));
-      manageBtn.appendChild(chevronIcon(nextOpen));
-    });
-
+    panel.appendChild(linksWrap);
     right.appendChild(panel);
   }
 
+  // buildLinkRow renders one linked-instance row in the gap detail panel.
+  // Phase 18: when the instance is also linked from another gap, append a
+  // red `.multi-linked-chip` so the presales sees the cross-gap link
+  // implication at a glance.
   function buildLinkRow(inst, onUnlink) {
     var row = mk("div", "link-row");
     var dot = mk("span", "cmd-dot cmd-dot-" + (inst.vendorGroup || "custom"));
@@ -549,6 +539,12 @@ export function renderGapsEditView(left, right, session) {
     row.appendChild(mkt("span", "link-row-label", inst.label));
     row.appendChild(mkt("span", "link-row-sub",
       layerName(inst.layerId) + " / " + envName(inst.environmentId)));
+    var totalGaps = countGapsLinking(session, inst.id);
+    if (totalGaps >= 2) {
+      var chip = mkt("span", "multi-linked-chip", "linked to " + totalGaps + " gaps");
+      chip.title = "This instance is linked to " + totalGaps + " gaps. Removing it here unlinks only this gap.";
+      row.appendChild(chip);
+    }
     var unlink = mkt("button", "link-unlink-btn", "x");
     unlink.title = "Unlink";
     unlink.addEventListener("click", onUnlink);
@@ -579,6 +575,16 @@ export function renderGapsEditView(left, right, session) {
     } else {
       var list = mk("div", "link-picker-list");
       candidates.forEach(function(inst) {
+        // Phase 18 · Item 9: warn-but-allow when linking would create a
+        // double-link to another gap. Picker still proceeds on click.
+        var otherGap = findOtherGapLinking(session, inst.id, gap.id);
+        if (otherGap) {
+          var warn = mk("div", "link-warning-row");
+          var otherDesc = otherGap.description ? "'" + otherGap.description + "'" : "another gap";
+          warn.textContent = "⚠ " + inst.label + " is already linked to Gap " + otherDesc +
+                             ". Linking here too will count toward both initiatives.";
+          list.appendChild(warn);
+        }
         var item = mk("div", "link-picker-item");
         var dot  = mk("span", "cmd-dot cmd-dot-" + (inst.vendorGroup || "custom"));
         item.appendChild(dot);

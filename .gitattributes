@@ -1,0 +1,8 @@
+# Ensure scripts that run inside Linux containers always have LF endings,
+# regardless of the host OS. CRLF in a /bin/sh script makes the loader fail
+# with "not found" because the shebang becomes "#!/bin/sh\r".
+*.sh                          text eol=lf
+docker-entrypoint.d/**        text eol=lf
+Dockerfile                    text eol=lf
+nginx.conf                    text eol=lf
+docker-compose.yml            text eol=lf

@@ -18,22 +18,6 @@ function makeSvg(inner, opts) {
   return el;
 }
 
-/** Chain-link glyph used beside the "Manage links" label. */
-export function chainIcon() {
-  return makeSvg(
-    '<path d="M6.5 9.5l3 -3"/>' +
-    '<path d="M4.5 8a2.5 2.5 0 0 1 0 -3.5l1.5 -1.5a2.5 2.5 0 0 1 3.5 3.5l-1 1"/>' +
-    '<path d="M11.5 8a2.5 2.5 0 0 1 0 3.5l-1.5 1.5a2.5 2.5 0 0 1 -3.5 -3.5l1 -1"/>'
-  );
-}
-
-/** Chevron that rotates 180° on `open=true`. Used for expand/collapse affordances. */
-export function chevronIcon(open) {
-  var el = makeSvg('<path d="M4 6l4 4 4 -4"/>', { className: "chevron" });
-  if (open) el.style.transform = "rotate(180deg)";
-  return el;
-}
-
 /** Help ( ? ) icon in an outline circle. */
 export function helpIcon() {
   return makeSvg(

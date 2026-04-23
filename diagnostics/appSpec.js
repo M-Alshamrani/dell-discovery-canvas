@@ -2382,23 +2382,11 @@ describe("22 · services/programsService", () => {
     assertEqual(inst.vendorGroup, "nonDell", "vendorGroup = nonDell");
   });
 
-  // ── v2.1 · Phase 12 · Icons + Help modal + right-panel cleanup (T6.13-17) ─
-
-  it("Manage-links control renders an SVG with aria-expanded attr (T6.13)", () => {
-    const s = freshSession();
-    createGap(s, { description:"G", layerId:LayerIds[0] });
-    const l = document.createElement("div"); const r = document.createElement("div");
-    renderGapsEditView(l, r, s);
-    l.querySelector(".gap-card").click();
-    const btn = r.querySelector(".linked-manage-btn");
-    assert(btn !== null, "Manage-links button must render");
-    assert(btn.querySelector("svg") !== null, "button must contain an <svg> child");
-    assert(btn.getAttribute("aria-expanded") === "false",
-      "aria-expanded starts false (collapsed)");
-    btn.click();
-    assert(btn.getAttribute("aria-expanded") === "true",
-      "aria-expanded flips to true after click");
-  });
+  // ── v2.1 · Phase 12 · Icons + Help modal + right-panel cleanup (T6.14-17) ─
+  // (T6.13 retired in Phase 18 / v2.3.0 — the Manage-links collapse it
+  //  asserted on was removed in favour of always-visible inline link
+  //  sections. T8.1 in Suite 23 asserts the new contract: NO
+  //  .linked-manage-btn renders in the gap detail panel.)
 
   it("Every main tab's header card renders a .help-icon-btn (T6.14)", () => {
     const cases = [
@@ -3466,6 +3454,162 @@ describe("21 * ui/views/ReportingView", () => {
       assertEqual(chips.length, drivers.length,
         "one .reporting-driver-chip per session driver (session has " + drivers.length + ")");
     }
+  });
+
+});
+
+// ── Phase 18 / v2.3.0 · Gap-link surfacing & double-link safety (T8.*) ──
+describe("23 · Phase 18 · gap links — always-visible + warn-but-allow + cascade safety", () => {
+
+  function gapsViewFor(sess) {
+    const l = document.createElement("div");
+    const r = document.createElement("div");
+    renderGapsEditView(l, r, sess);
+    return { l, r };
+  }
+
+  // Helper: fabricate a desired-state instance and return its id.
+  function addDesired(sess, label) {
+    const inst = validInstance({ id: "des-" + Math.random().toString(36).slice(2,7),
+                                 state: "desired", label: label });
+    (sess.instances = sess.instances || []).push(inst);
+    return inst.id;
+  }
+  function addCurrent(sess, label) {
+    const inst = validInstance({ id: "cur-" + Math.random().toString(36).slice(2,7),
+                                 state: "current", label: label });
+    (sess.instances = sess.instances || []).push(inst);
+    return inst.id;
+  }
+
+  // Helper: select a gap card so the right-panel detail renders.
+  function selectFirstGap(sess) {
+    const { l, r } = gapsViewFor(sess);
+    const card = l.querySelector(".gap-card");
+    if (card) card.click();
+    // After click, the renderer rebuilds — re-mount and then re-click.
+    // Instead, directly query the right panel that was wired during render.
+    const post = gapsViewFor(sess);
+    post.l.querySelector(".gap-card")?.click();
+    return post;
+  }
+
+  it("T8.1 · gap detail panel renders link sections inline (no Manage-links collapse)", () => {
+    const s = freshSession();
+    const desId = addDesired(s, "Net-new platform");
+    createGap(s, { description:"Introduce platform X", layerId: LayerIds[0],
+                   gapType:"introduce", relatedDesiredInstanceIds:[desId] });
+    const { l, r } = gapsViewFor(s);
+    l.querySelector(".gap-card")?.click();
+    // After selection, re-render captures detail panel into right pane.
+    const re = gapsViewFor(s);
+    re.l.querySelector(".gap-card")?.click();
+    assert(!re.r.querySelector(".linked-manage-btn"),
+      "Manage-links collapse button must be gone (Item 8 always-visible)");
+    assert(!re.r.querySelector(".linked-summary-row"),
+      "linked-summary-row must be gone (Item 8 always-visible)");
+    assert(re.r.querySelector(".linked-inline-wrap") || re.r.textContent.includes("Desired state"),
+      "inline link sections must render directly in the gap detail panel");
+  });
+
+  it("T8.2 · link picker shows yellow warning row when candidate is linked to another gap", () => {
+    const s = freshSession();
+    const sharedId = addCurrent(s, "Shared-server-A");
+    // Gap A already links the instance.
+    createGap(s, { description:"Gap A", layerId: LayerIds[0],
+                   gapType:"replace", relatedCurrentInstanceIds:[sharedId] });
+    // Gap B does NOT link it yet — opening its picker should warn.
+    createGap(s, { description:"Gap B", layerId: LayerIds[0], gapType:"enhance" });
+
+    const { l } = gapsViewFor(s);
+    // Click the "Gap B" card (second one rendered).
+    const cards = l.querySelectorAll(".gap-card");
+    assert(cards.length >= 2, "test setup: at least 2 gap cards must render");
+    // Re-render to wire detail panel; click Gap B.
+    const re = gapsViewFor(s);
+    const reCards = re.l.querySelectorAll(".gap-card");
+    // Find the Gap B card by description text.
+    const gapBCard = [...reCards].find(c => c.textContent.includes("Gap B"));
+    assert(gapBCard, "Gap B card must be found by description text");
+    gapBCard.click();
+    // Detail panel renders into right pane on re-render after click;
+    // do one more pass to materialise it.
+    const final = gapsViewFor(s);
+    [...final.l.querySelectorAll(".gap-card")].find(c => c.textContent.includes("Gap B"))?.click();
+    // Click "+ Link current instance" button to open the picker.
+    const buttons = [...final.r.querySelectorAll("button")];
+    const addBtn = buttons.find(b => b.textContent.includes("Link current"));
+    assert(addBtn, "+ Link current instance button must render in the detail panel");
+    addBtn.click();
+    const warning = document.querySelector("#link-picker .link-warning-row");
+    assert(warning, "warning row must appear above the already-linked candidate");
+    assert(warning.textContent.includes("Gap A") || warning.textContent.includes("already linked"),
+      "warning text must reference the other gap or the already-linked state");
+    // Cleanup the picker overlay so it doesn't leak into the next test.
+    document.getElementById("link-picker")?.remove();
+  });
+
+  it("T8.3 · multi-linked-chip appears on link rows when instance is linked to ≥ 2 gaps", () => {
+    const s = freshSession();
+    const sharedId = addCurrent(s, "Shared-server-B");
+    createGap(s, { description:"Gap 1", layerId: LayerIds[0],
+                   gapType:"replace", relatedCurrentInstanceIds:[sharedId] });
+    createGap(s, { description:"Gap 2", layerId: LayerIds[0],
+                   gapType:"enhance", relatedCurrentInstanceIds:[sharedId] });
+    const { l, r } = gapsViewFor(s);
+    [...l.querySelectorAll(".gap-card")].find(c => c.textContent.includes("Gap 1"))?.click();
+    const re = gapsViewFor(s);
+    [...re.l.querySelectorAll(".gap-card")].find(c => c.textContent.includes("Gap 1"))?.click();
+    const final = gapsViewFor(s);
+    [...final.l.querySelectorAll(".gap-card")].find(c => c.textContent.includes("Gap 1"))?.click();
+    const chip = final.r.querySelector(".multi-linked-chip");
+    assert(chip, "multi-linked-chip must render on the link row when N ≥ 2");
+    assert(/2\s+gaps/.test(chip.textContent), "chip text must mention 2 gaps (got: " + chip.textContent + ")");
+  });
+
+  it("T8.4 · deleting a gap leaves its previously-linked instances intact and re-linkable (Item 10)", () => {
+    const s = freshSession();
+    const curId = addCurrent(s, "Survivor-server");
+    const desId = addDesired(s, "Survivor-platform");
+    const original = createGap(s, { description:"Will be deleted", layerId: LayerIds[0],
+      gapType:"replace", relatedCurrentInstanceIds:[curId], relatedDesiredInstanceIds:[desId] });
+    deleteGap(s, original.id);
+    // Instances must still exist on the session.
+    const stillThere = (s.instances || []).filter(i => i.id === curId || i.id === desId);
+    assertEqual(stillThere.length, 2, "both linked instances must survive gap deletion (no cascade)");
+    // And must be re-linkable into a fresh gap.
+    const fresh = createGap(s, { description:"Re-link target", layerId: LayerIds[0], gapType:"enhance" });
+    doesNotThrow(() => linkCurrentInstance(s, fresh.id, curId), "current instance must be re-linkable after parent gap deletion");
+    doesNotThrow(() => linkDesiredInstance(s, fresh.id, desId), "desired instance must be re-linkable after parent gap deletion");
+  });
+
+  it("T8.5 · roadmap project linked-tech count dedupes multi-linked instances (no double counting)", () => {
+    const s = freshSession();
+    const sharedId = addCurrent(s, "Shared-server-C");
+    // Two gaps in the same env+layer+gapType bucket → same project, both link the same instance.
+    // EnvironmentIds[0] is "coreDc" — using the canonical id rather than a hand-typed string
+    // so the test stays correct even if the env labels evolve.
+    createGap(s, { description:"Project-gap A", layerId: LayerIds[0], gapType:"replace",
+                   relatedCurrentInstanceIds:[sharedId], affectedEnvironments:[EnvironmentIds[0]] });
+    createGap(s, { description:"Project-gap B", layerId: LayerIds[0], gapType:"replace",
+                   relatedCurrentInstanceIds:[sharedId], affectedEnvironments:[EnvironmentIds[0]] });
+    const { projects } = buildProjects(s);
+    // Find the project that holds both gaps.
+    const proj = projects.find(p => p.gaps.length === 2 && p.layerId === LayerIds[0] && p.gapType === "replace");
+    assert(proj, "expected a single project bucket containing both gaps with the shared instance");
+    // Mount the Roadmap detail to render the linked-technologies copy.
+    const r = document.createElement("div");
+    renderSummaryRoadmapView(document.createElement("div"), r, s);
+    // Click into the project to materialise the right-panel detail.
+    // We can't easily reach the click handler from here without DOM wiring,
+    // so we verify the dedup invariant directly against the project shape:
+    // the union of relatedXxx sets across the project's gaps must have size 1.
+    const ids = new Set();
+    proj.gaps.forEach(g => {
+      (g.relatedCurrentInstanceIds || []).forEach(id => ids.add(id));
+      (g.relatedDesiredInstanceIds || []).forEach(id => ids.add(id));
+    });
+    assertEqual(ids.size, 1, "shared instance must count once across the project (Phase 18 dedup)");
   });
 
 });

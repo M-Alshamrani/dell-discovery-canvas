@@ -1,7 +1,7 @@
 # Dell Discovery Canvas v2 — Implementation Spec
 
-**Status**: Phases 0–15.1 SHIPPED. v2.2+ planning locked; Phases 15.2 / 16-20+ queued.
-**Current tagged releases**: `v2.1.1` (initial), `v2.1.2` (reviewer-handoff scripts), `v2.2.0` (Docker for GB10), `v2.2.1` (LAN Basic auth)
+**Status**: Phases 0–15.1 + 18 SHIPPED. Phases 15.2 / 16 / 17 / 19 / 20+ queued.
+**Current tagged releases**: `v2.1.1` (initial), `v2.1.2` (reviewer-handoff scripts), `v2.2.0` (Docker for GB10), `v2.2.1` (LAN Basic auth), `v2.3.0` (Phase 18 gap-link surfacing + double-link safety)
 **Predecessor**: v1.3 (legacy)
 **Repo**: https://github.com/M-Alshamrani/dell-discovery-canvas (private)
 **Discussion record**: [docs/CHANGELOG_PLAN.md](docs/CHANGELOG_PLAN.md) — see "Post-v2.1.2 · v2.2+ design review" section for items 2-10 decisions.
@@ -655,14 +655,20 @@ See CHANGELOG_PLAN § v2.2+ Item 4 for proposed table (pending user confirm).
 - `createGap` and `buildGapFromDisposition` enforce mandatory linking rules from the table (throw on Replace/Consolidate without required links at create-time, symmetric with existing unlink rule).
 - Tests: new assertions per table row; legacy session loads without error (migration strips rationalize).
 
-### Phase 18 · v2.3 · Linked assets always visible + warn-but-allow double-link (Items 8, 9, 10 regression test)
+### Phase 18 · v2.3.0 · Linked assets always visible + warn-but-allow double-link + roadmap dedup — IMPLEMENTED
 
-See CHANGELOG_PLAN § v2.2+ Items 8, 9, 10.
+See CHANGELOG_PLAN § v2.2+ Items 8, 9, 10 for the design rationale, and § v2.3.0 entry for the as-shipped detail.
 
-- Reverse Phase 12's `Manage links` collapse in `GapsEditView.js`. Remove `.linked-summary-row` / `.linked-manage-btn` / chain+chevron icons from the detail panel. Render `.link-section` for current and desired inline, always expanded.
-- `openLinkPicker`: before each candidate row, check all other gaps for existing link. If found, render a yellow `.link-warning-row` above the candidate with text *"⚠ {label} already linked to Gap '{desc}'. Linking adds it to both."* User proceeds at own choice.
-- New regression test: deleting a gap leaves its previously-linked instances intact and available for re-linking. Asserted via `deleteGap` + re-link into a fresh gap.
-- No strict uniqueness constraint. No reverse index.
+**As shipped**:
+- `GapsEditView.js`: Phase 12's `Manage links` collapse removed. The gap detail panel renders the current + desired link sections inline inside `.linked-inline-wrap` — always visible, no toggle. Imports of `chainIcon` / `chevronIcon` removed.
+- `GapsEditView.js → openLinkPicker`: before each candidate row, scans `session.gaps` for an *other* gap that already links the candidate's id. If found, prepends a yellow `.link-warning-row` reading *"⚠ {label} is already linked to Gap '{desc}'. Linking here too will count toward both initiatives."* — user can still proceed.
+- `GapsEditView.js → buildLinkRow`: when a linked instance is referenced by ≥ 2 gaps in total, appends a red `.multi-linked-chip` reading *"linked to N gaps"* with a tooltip explaining that unlinking here only affects this gap.
+- `services/roadmapService.js` shape unchanged; `SummaryRoadmapView.js` linked-tech count switched from `+= length` summing to a `Set` of unique instance ids — multi-linked instances now count once per project.
+- `ui/icons.js`: `chainIcon` and `chevronIcon` deleted (no remaining consumers).
+- `styles.css`: `.linked-summary-row` / `.linked-manage-btn` / `.linked-manage-wrap` removed; new `.linked-inline-wrap` / `.link-warning-row` / `.multi-linked-chip`.
+- New `.gitattributes` enforces LF endings on `*.sh`, `Dockerfile`, `nginx.conf`, `docker-compose.yml`, `docker-entrypoint.d/**` so the Docker image always builds correctly on Windows hosts.
+- `appSpec.js` Suite 23: T8.1 (no Manage-links collapse), T8.2 (warning row in picker), T8.3 (multi-linked chip), T8.4 (deleteGap leaves instances re-linkable — Item 10 regression), T8.5 (roadmap dedup invariant).
+- No strict uniqueness constraint, no reverse index, no cascade logic — gap is the sole owner of its `relatedXxxInstanceIds` arrays per the locked design.
 
 ### Phase 19 · v2.4 · AI slice — Tab 1 strategic-driver question assistant (Item 7)
 
@@ -757,3 +763,13 @@ A separate `SPEC_v3.md` will capture this architecture when work starts.
    - All static assets (`/app.js`, `/styles.css`, `/Logo/...avif`, etc.) are gated identically.
 4. HEALTHCHECK reaches `(healthy)` within 30 s in both auth modes.
 5. Browser navigates to `http://localhost:8080`, sees the native browser login prompt when auth is on, enters credentials, sees the Dell Discovery Canvas with the green test banner (348 assertions) inside the container's app.
+
+**v2.3.0** is shippable when:
+1. Phase 18 complete (GapsEditView always-visible + warning row + chip; SummaryRoadmapView dedup; icons cleanup; styles update; T8 suite).
+2. Gap detail panel renders both link sections inline on selection — no `Manage links` collapse remains.
+3. Opening the link picker for a gap shows a yellow warning row above any candidate already linked to another gap; clicking still proceeds (warn-but-allow).
+4. When the same instance is linked to ≥ 2 gaps, every gap detail panel that lists it shows a red "linked to N gaps" chip on that row.
+5. The Roadmap project right-panel detail reports linked-technology count as unique instance ids (no double-counting from multi-linked assets).
+6. Deleting a gap with linked instances does not remove or alter the instances; they remain available for re-linking into a new gap (Item 10 regression).
+7. `appSpec.js` test banner reports green for **352 assertions** (348 prior − 1 retired T6.13 + 5 new T8.*) inside the running container. No other previously-passing assertion regresses.
+8. `.gitattributes` keeps `docker-entrypoint.d/40-setup-auth.sh` LF-only on every fresh checkout, so the v2.2.1 auth flow continues to build cleanly on Windows hosts.
