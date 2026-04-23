@@ -3875,27 +3875,157 @@ describe("25 · Phase 19 · AI foundations — config + provider request shapes 
     assert(btn.querySelector("svg") !== null, "settingsBtn must contain an SVG glyph");
   });
 
-  it("AI9 · ContextView driver detail renders the AI demo card with a clickable Suggest button", () => {
-    // Build a session with one driver so renderDriverDetail has something to bind to.
+  it("AI9 · ContextView driver detail renders the AI skill card with a Use-AI surface", () => {
+    // Phase 19b (v2.4.1) replaced the hardcoded .ai-skill-btn with the
+    // generic .use-ai-btn dropdown driven by deployed skills. SB8 covers
+    // the full dropdown contract; AI9 simply pins that the AI card and
+    // *some* interactive entry point still render on Tab 1.
     const s = createEmptySession();
     s.customer = s.customer || {};
     s.customer.drivers = [{ id: "ai_data", priority: "High", outcomes: "" }];
     const l = document.createElement("div");
     const r = document.createElement("div");
     renderContextView(l, r, s);
-    // Click the driver tile to populate the right panel.
     const tile = l.querySelector(".driver-tile");
     assert(tile, "expected at least one driver tile rendered");
     tile.click();
-    // After click, re-mount so detail panel binds (some views re-render on click).
-    const re = (function() { const ll = document.createElement("div"); const rr = document.createElement("div");
-      renderContextView(ll, rr, s); ll.querySelector(".driver-tile")?.click(); return { rr }; })();
-    const card = re.rr.querySelector(".ai-skill-card");
+    // re-mount to materialise the right panel (click rebuilds on some views)
+    const l2 = document.createElement("div"); const r2 = document.createElement("div");
+    renderContextView(l2, r2, s); l2.querySelector(".driver-tile")?.click();
+    const l3 = document.createElement("div"); const r3 = document.createElement("div");
+    renderContextView(l3, r3, s); l3.querySelector(".driver-tile")?.click();
+    const card = r3.querySelector(".ai-skill-card");
     assert(card, "expected an .ai-skill-card in the driver detail panel");
-    const btn = card.querySelector(".ai-skill-btn");
-    assert(btn, "expected a .ai-skill-btn inside the AI skill card");
-    assert(btn.textContent.toLowerCase().indexOf("suggest") >= 0,
-      "button label must reference 'suggest' (got: " + btn.textContent + ")");
+    const useAi = card.querySelector(".use-ai-btn, .ai-skill-btn");
+    assert(useAi, "expected a .use-ai-btn (v2.4.1) or .ai-skill-btn (pre-2.4.1) inside the AI skill card");
+  });
+
+});
+
+// ── Phase 19b / v2.4.1 · Skill Builder (SB1-SB8) ───────────────────────
+import {
+  loadSkills, saveSkills, addSkill, updateSkill, deleteSkill,
+  seedSkills, skillsForTab, getSkill
+} from "../core/skillStore.js";
+import { renderTemplate, extractBindings } from "../services/skillEngine.js";
+import { renderSkillAdmin } from "../ui/views/SkillAdmin.js";
+
+describe("26 · Phase 19b · Skill Builder — store, engine, admin UI", () => {
+
+  function clearSkills() { window.localStorage.removeItem("ai_skills_v1"); }
+
+  it("SB1 · loadSkills seeds the Tab 1 driver-question skill on first run", () => {
+    clearSkills();
+    const skills = loadSkills();
+    assertEqual(skills.length, 1, "fresh install must auto-seed 1 skill");
+    assertEqual(skills[0].tabId, "context", "seeded skill targets the Context tab");
+    assert(skills[0].deployed, "seeded skill must be deployed by default");
+    assert(skills[0].seed, "seeded skill carries seed: true marker");
+  });
+
+  it("SB2 · addSkill / updateSkill / deleteSkill round-trip via localStorage", () => {
+    clearSkills();
+    loadSkills(); // trigger the seed so we start from a known baseline of 1
+    const created = addSkill({
+      name: "Gap description writer",
+      tabId: "gaps",
+      promptTemplate: "Summarise {{context.selectedGap.description}} in 2 sentences.",
+      outputMode: "suggest"
+    });
+    assert(created.id, "addSkill must return a skill with an id");
+    var all = loadSkills();
+    assertEqual(all.length, 2, "persistence must include seed + added skill");
+
+    const updated = updateSkill(created.id, { name: "Renamed skill", deployed: false });
+    assertEqual(updated.name, "Renamed skill", "updateSkill applies patch");
+    assertEqual(updated.deployed, false, "updateSkill persists deploy toggle");
+
+    deleteSkill(created.id);
+    all = loadSkills();
+    assertEqual(all.length, 1, "deleteSkill removes the row (seed remains)");
+    clearSkills();
+  });
+
+  it("SB3 · renderTemplate resolves {{dot.path}}; missing paths render as empty string", () => {
+    const out = renderTemplate(
+      "Customer: {{session.customer.name}}. Missing: {{nope.deep.path}}. Driver: {{context.selectedDriver.label}}.",
+      {
+        session: { customer: { name: "Acme" } },
+        context: { selectedDriver: { label: "Cyber Resilience" } }
+      }
+    );
+    assert(out.indexOf("Customer: Acme") >= 0, "should resolve existing paths");
+    assert(out.indexOf("Missing: .") >= 0, "missing paths must collapse to empty strings (not throw)");
+    assert(out.indexOf("Cyber Resilience") >= 0, "context paths must resolve");
+  });
+
+  it("SB4 · extractBindings lists unique {{path}} references in template text", () => {
+    const bindings = extractBindings(
+      "Hi {{session.customer.name}}, about {{context.selectedDriver.label}}. " +
+      "Again: {{session.customer.name}} — same ref should not duplicate."
+    );
+    assertEqual(bindings.length, 2, "duplicates must collapse");
+    assert(bindings.indexOf("session.customer.name") >= 0, "name binding present");
+    assert(bindings.indexOf("context.selectedDriver.label") >= 0, "driver binding present");
+  });
+
+  it("SB5 · skillsForTab filters by tabId and (by default) by deployed flag", () => {
+    clearSkills();
+    loadSkills(); // seed
+    addSkill({ name: "Deployed gaps skill",   tabId: "gaps", promptTemplate: "x", deployed: true });
+    addSkill({ name: "Undeployed gaps skill", tabId: "gaps", promptTemplate: "x", deployed: false });
+    const ctx  = skillsForTab("context");
+    const gaps = skillsForTab("gaps");
+    assertEqual(ctx.length,  1, "context tab returns the seed only");
+    assertEqual(gaps.length, 1, "gaps tab returns the deployed skill only (undeployed hidden)");
+    const allGaps = skillsForTab("gaps", { onlyDeployed: false });
+    assertEqual(allGaps.length, 2, "onlyDeployed:false includes the undeployed row");
+    clearSkills();
+  });
+
+  it("SB6 · Skills admin renders a row per saved skill + the + Add button", () => {
+    clearSkills();
+    loadSkills(); // seed = 1 row
+    const container = document.createElement("div");
+    renderSkillAdmin(container);
+    const rows = container.querySelectorAll(".skill-row");
+    assertEqual(rows.length, 1, "one row for the seeded skill");
+    const addBtn = [...container.querySelectorAll("button")].find(b => b.textContent.indexOf("Add") >= 0);
+    assert(addBtn, "+ Add skill button must render");
+    clearSkills();
+  });
+
+  it("SB7 · Skills admin empty state when no skills saved (persisted empty)", () => {
+    // Simulate a user who deleted everything (including the seed).
+    saveSkills([]);
+    const container = document.createElement("div");
+    renderSkillAdmin(container);
+    const empty = container.querySelector(".skill-admin-empty");
+    assert(empty, "empty state must render when list is empty");
+    clearSkills();
+  });
+
+  it("SB8 · ContextView driver detail renders the generic Use-AI dropdown (wired to deployed skills)", () => {
+    clearSkills();
+    loadSkills(); // seed is pre-deployed on context
+    const s = createEmptySession();
+    s.customer = s.customer || {};
+    s.customer.drivers = [{ id: "ai_data", priority: "High", outcomes: "" }];
+    const l = document.createElement("div");
+    const r = document.createElement("div");
+    renderContextView(l, r, s);
+    l.querySelector(".driver-tile")?.click();
+    // re-mount + click so the right panel is materialised
+    const l2 = document.createElement("div"); const r2 = document.createElement("div");
+    renderContextView(l2, r2, s);
+    l2.querySelector(".driver-tile")?.click();
+    const l3 = document.createElement("div"); const r3 = document.createElement("div");
+    renderContextView(l3, r3, s);
+    l3.querySelector(".driver-tile")?.click();
+    const btn = r3.querySelector(".use-ai-btn");
+    assert(btn, "Use AI dropdown button must render in driver detail panel");
+    assert(/use\s*ai/i.test(btn.textContent), "button label must say 'Use AI' (got: " + btn.textContent + ")");
+    clearSkills();
   });
 
 });

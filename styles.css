@@ -1404,6 +1404,147 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .risk-level-pill.risk-elevated { background: #ea580c; }
 .risk-level-pill.risk-high     { background: var(--crit-high); }
 
+/* Phase 19b / v2.4.1 — skill builder UI inside the settings modal,
+   plus the per-tab "Use AI" dropdown button. */
+.settings-section-row {
+  display: flex; gap: 6px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-section-pill {
+  font-family: var(--font);
+  font-size: 12px; font-weight: 600;
+  padding: 6px 16px; border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  letter-spacing: -0.01em;
+}
+.settings-section-pill:hover { color: var(--brand); background: var(--brand-faint); }
+.settings-section-pill.active {
+  color: var(--brand-dark); background: var(--brand-faint);
+  border-color: var(--brand-light);
+}
+
+/* Skills admin panel */
+.skill-admin { display: flex; flex-direction: column; gap: 10px; }
+.skill-admin-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.skill-admin-title {
+  font-size: 14px; font-weight: 700; color: var(--text-1);
+  letter-spacing: -0.01em;
+}
+.skill-admin-empty {
+  font-size: 12px; color: var(--text-3); font-style: italic;
+  padding: 20px; text-align: center;
+  background: var(--surface-2); border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+}
+.skill-admin-list { display: flex; flex-direction: column; gap: 6px; }
+
+.skill-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-mid);
+  border-radius: var(--radius-sm);
+}
+.skill-row.deployed { border-left-color: var(--brand); }
+.skill-row-name-col { flex: 1; min-width: 0; }
+.skill-row-name     { font-size: 13px; font-weight: 600; color: var(--text-1); letter-spacing: -0.01em; }
+.skill-row-desc     { font-size: 11px; color: var(--text-2); margin-top: 2px; line-height: 1.4; }
+.skill-row-meta     { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.skill-row-tab, .skill-row-mode, .skill-row-seed {
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 2px 7px; border-radius: 999px;
+}
+.skill-row-tab  { background: var(--brand-faint); color: var(--brand-dark); border: 1px solid var(--brand-light); }
+.skill-row-mode { background: var(--surface-2);   color: var(--text-3);      border: 1px solid var(--border); }
+.skill-row-seed { background: #FBF3E0;            color: #92400E;            border: 1px solid #FCD34D; }
+
+.skill-row-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.skill-row-actions .btn-outline,
+.skill-row-actions .btn-danger { font-size: 11px; padding: 4px 10px; }
+.skill-row-deploy {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 500; color: var(--text-2);
+  cursor: pointer;
+  user-select: none;
+}
+.skill-row-deploy input[type="checkbox"] { cursor: pointer; }
+
+/* Skill edit form */
+.skill-form {
+  margin-top: 12px; padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.skill-form-title {
+  font-size: 13px; font-weight: 700; color: var(--text-1);
+  letter-spacing: -0.01em;
+  margin-bottom: 10px;
+}
+.skill-form-field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+.skill-form-label {
+  font-size: 11px; font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.02em; text-transform: uppercase;
+}
+.skill-form-textarea { font-family: var(--font-mono); font-size: 12px; line-height: 1.45; }
+.skill-form-bindings {
+  font-size: 10px; color: var(--text-3); font-style: italic;
+  padding: 4px 0;
+  font-family: var(--font-mono);
+}
+.skill-form-deploy-label {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 500; color: var(--text-2);
+  margin: 6px 0 10px;
+  cursor: pointer;
+}
+
+/* Per-tab "Use AI ▾" button + dropdown menu */
+.use-ai-wrap { position: relative; display: inline-block; }
+.use-ai-btn {
+  font-family: var(--font);
+  font-size: 11px; font-weight: 600;
+  padding: 5px 12px; border-radius: 999px;
+  background: var(--brand-faint);
+  border: 1px solid var(--brand-light);
+  color: var(--brand-dark);
+  cursor: pointer;
+  letter-spacing: -0.005em;
+}
+.use-ai-btn:hover { background: var(--brand-light); border-color: var(--brand); }
+.use-ai-menu {
+  position: absolute; top: calc(100% + 4px); right: 0;
+  min-width: 260px; max-width: 360px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  z-index: 50;
+  padding: 4px;
+}
+.use-ai-menu-item {
+  display: block; width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  cursor: pointer;
+  font-family: var(--font);
+}
+.use-ai-menu-item:hover { background: var(--brand-faint); }
+.use-ai-menu-name { font-size: 12px; font-weight: 600; color: var(--text-1); letter-spacing: -0.01em; }
+.use-ai-menu-desc { font-size: 10px; color: var(--text-3); margin-top: 2px; line-height: 1.4; }
+
 /* Phase 19 / v2.4.0 — header gear button + AI settings modal. */
 .header-right {
   display: flex;

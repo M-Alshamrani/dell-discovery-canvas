@@ -1,7 +1,7 @@
 # Dell Discovery Canvas v2 — Implementation Spec
 
-**Status**: Phases 0–15.2 + 15.3 + 18 + 16 + 19a SHIPPED. Phases 17 / 19b-d / 20+ queued.
-**Current tagged releases**: `v2.1.1`, `v2.1.2` (reviewer handoff), `v2.2.0` (Docker for GB10), `v2.2.1` (LAN Basic auth), `v2.3.0` (Phase 18 gap-link surfacing), `v2.3.1` (Phase 16 Workload Mapping), `v2.2.2` (Phase 15.2 Dell brand-token + Inter), `v2.2.3` (Phase 15.3 visual depth), `v2.4.0` (Phase 19a AI foundations — 3-provider client, settings modal, demo skill on Tab 1)
+**Status**: Phases 0–15.2 + 15.3 + 18 + 16 + 19a + 19b SHIPPED. Phases 17 / 19c-d / 20+ queued.
+**Current tagged releases**: `v2.1.1`, `v2.1.2`, `v2.2.0` (Docker), `v2.2.1` (LAN auth), `v2.2.2` (Dell tokens), `v2.2.3` (visual depth), `v2.3.0` (Phase 18 gap-links), `v2.3.1` (Phase 16 Workload), `v2.4.0` (Phase 19a AI foundations), `v2.4.1` (Phase 19b Skill Builder — admin panel + per-tab dropdown + templated prompts)
 **Predecessor**: v1.3 (legacy)
 **Repo**: https://github.com/M-Alshamrani/dell-discovery-canvas (private)
 **Discussion record**: [docs/CHANGELOG_PLAN.md](docs/CHANGELOG_PLAN.md) — see "Post-v2.1.2 · v2.2+ design review" section for items 2-10 decisions.
@@ -693,17 +693,24 @@ Three-provider client (OpenAI-compatible vLLM / Anthropic Claude / Google Gemini
 - **Security posture** — API keys live in browser localStorage; visible in DevTools. Acceptable for personal dev; v3 multi-user platform will move keys server-side. `/api/llm/*` paths have `access_log off` to keep keys out of nginx logs.
 - **Tests** — Suite 25 AI1-AI9: loadAiConfig defaults, save/load round-trip, deprecated-model migration, `isActiveProviderReady`, `buildRequest` shape per provider (OpenAI/Anthropic/Gemini), `extractText` per provider, gear-button presence, ContextView AI card render.
 
-#### Phase 19b · v2.4.1 · Skill Builder UI — QUEUED
+#### Phase 19b · v2.4.1 · Skill Builder UI — IMPLEMENTED
 
-- Admin panel in the settings modal (new "Skills" section) listing saved skills.
-- `+ Add skill` form: name, target tab (dropdown), free-text prompt template, output mode (suggest / apply-on-confirm).
-- Save/load to `localStorage` under `ai_skills_v1`.
-- "Use AI assistance" dropdown in each tab driven by `skills.filter(s => s.deployed && s.tabId === currentTab)`.
-- Tests: skill persistence, per-tab dropdown renders, deploy/un-deploy toggles visibility.
+Turn v2.4.0 from "one hardcoded button" into a platform. Users define, deploy, and run their own skills.
+
+- `core/skillStore.js` — localStorage-backed CRUD. Schema: `{id, name, description, tabId, systemPrompt, promptTemplate, outputMode, deployed, seed, createdAt, updatedAt}`. Seeds the Tab 1 driver-question skill on first load so fresh installs work out of the box.
+- `services/skillEngine.js` — `renderTemplate({{dot.path}})` with missing-is-empty semantics; `extractBindings()` returns unique path references for the UI readout; `runSkill(skill, session, context)` composes system + user messages and routes through `aiService.chatCompletion()`.
+- `interactions/skillCommands.js` — generic `runSkillById(id, session, context)` + `skillsForTab(tabId)` exports. Legacy `runDriverQuestionSkill` wrapper preserved over the seeded skill for backward-compat.
+- `ui/views/SkillAdmin.js` — list view (one row per skill with deploy toggle + edit + delete), inline add/edit form with live "detected bindings" readout. Field labels intentionally user-friendly: *"AI role / instructions"* and *"Data for the AI"* rather than the technical `systemPrompt` / `promptTemplate` names.
+- `ui/views/SettingsModal.js` — new top-level section row: *AI Providers* | *Skills*. `initialSection` param routes the body to the right surface.
+- `ui/components/UseAiButton.js` — tab-agnostic dropdown factory. Renders `"✨ Use AI ▾"` with a menu of deployed skills for the given `tabId`. Returns an empty hidden span when no deployed skills exist (avoids empty dropdown chrome).
+- `ui/views/ContextView.js` — driver detail panel now hosts `useAiButton("context")`; output card unchanged so users see the same UX as v2.4.0.
+- Suite 26 — 8 new assertions (SB1-SB8) covering seed-on-first-run, CRUD round-trip, template rendering, binding extraction, per-tab filter with `onlyDeployed` opt-out, admin row render, admin empty state, and the generic dropdown on Tab 1.
 
 #### Phase 19c · v2.4.2 · Field-pointer mechanic — QUEUED
 
-The novel part. When the skill builder is open for a specific tab, every bindable field on that tab becomes clickable. Clicking a field inserts a `{{field.path}}` reference at the cursor of the prompt-template textarea. A live preview panel shows the rendered template against the current session data. Escape/click-outside exits design mode.
+#### Phase 19c · v2.4.2 · Field-pointer mechanic — QUEUED
+
+The novel part. When the skill builder is open for a specific tab, every bindable field on that tab becomes clickable. Clicking a field inserts a `{{field.path}}` reference at the cursor of the "Data for the AI" textarea. A live preview panel shows the rendered template against the current session data. Escape/click-outside exits design mode. Removes the typed-path memorization requirement that v2.4.1 still has.
 
 #### Phase 19d · v2.4.3 · Output handling — QUEUED
 
@@ -796,6 +803,15 @@ A separate `SPEC_v3.md` will capture this architecture when work starts.
    - All static assets (`/app.js`, `/styles.css`, `/Logo/...avif`, etc.) are gated identically.
 4. HEALTHCHECK reaches `(healthy)` within 30 s in both auth modes.
 5. Browser navigates to `http://localhost:8080`, sees the native browser login prompt when auth is on, enters credentials, sees the Dell Discovery Canvas with the green test banner (348 assertions) inside the container's app.
+
+**v2.4.1** is shippable when:
+1. Phase 19b complete (skillStore + skillEngine + skillCommands refactor + SkillAdmin + SettingsModal section routing + UseAiButton + ContextView generic integration + Suite 26).
+2. Fresh install auto-seeds the Tab 1 driver-question skill (deployed by default). Opening the app for the first time gives the same Tab 1 behaviour as v2.4.0 without any user action.
+3. Gear icon settings modal has two top-level pills: *AI Providers* + *Skills*. Clicking *Skills* shows the admin surface.
+4. `+ Add skill` form lets the user set name, description, target tab (5 options), AI role / instructions, data template, output mode, deployed flag. Save persists to localStorage and updates the admin list.
+5. Deployed skills for the current tab appear in a `"✨ Use AI ▾"` dropdown on that tab. Clicking a skill renders the result inline. Un-deploying removes it from the dropdown without deleting it.
+6. Template rendering: `{{session.*}}` resolves against full session; `{{context.*}}` against the tab's passed-in context; missing paths render as empty strings (never throw).
+7. `appSpec.js` test banner reports green for **377 assertions** (369 prior + 8 new SB*; AI9 retargeted to `.use-ai-btn`).
 
 **v2.4.0** is shippable when:
 1. Phase 19a complete (aiConfig + aiService + SettingsModal + gear button + ContextView demo card + skillCommands + nginx proxy + entrypoint script + compose env + Suite 25).

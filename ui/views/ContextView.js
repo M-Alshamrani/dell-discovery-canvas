@@ -13,8 +13,7 @@
 //   3. No session-level businessOutcomes or primaryDriver — those moved under drivers[].
 
 import { BUSINESS_DRIVERS, CUSTOMER_VERTICALS } from "../../core/config.js";
-import { runDriverQuestionSkill } from "../../interactions/skillCommands.js";
-import { loadAiConfig }            from "../../core/aiConfig.js";
+import { useAiButton }             from "../components/UseAiButton.js";
 import { saveToLocalStorage } from "../../state/sessionStore.js";
 import { helpButton } from "./HelpModal.js";
 
@@ -289,59 +288,34 @@ function renderDriverDetail(right, session, driver, onPriorityChange) {
 
   right.appendChild(formCard);
 
-  // Phase 19 / v2.4.0 — demo "Suggest discovery questions" AI button.
-  // Hardcoded skill; v2.4.1 will replace with user-built skills loaded
-  // from the AI admin panel.
-  right.appendChild(buildAiDemoCard(session, driver, meta));
-}
-
-function buildAiDemoCard(session, driver, meta) {
-  var card = mk("div", "card ai-skill-card");
-  card.style.marginTop = "12px";
-  card.appendChild(mkt("div", "ai-skill-title", "✨ AI assistance"));
-  card.appendChild(mkt("div", "card-hint",
-    "Ask the AI for 3 tailored discovery questions for this driver. " +
-    "Configure the AI provider via the gear icon in the header."));
-
-  var btn = mkt("button", "btn-secondary ai-skill-btn", "Suggest discovery questions");
-  card.appendChild(btn);
-
+  // Phase 19b / v2.4.1 — generic "Use AI" button driven by deployed
+  // skills from the Skills admin panel. Replaces the hardcoded v2.4.0
+  // demo card; the seeded driver-question skill is pre-deployed on
+  // first run so this panel still works out of the box.
+  var aiCard = mk("div", "card ai-skill-card");
+  aiCard.style.marginTop = "12px";
+  var aiHead = mk("div", "card-title-row");
+  aiHead.appendChild(mkt("div", "ai-skill-title", "✨ AI assistance"));
   var resultBox = mk("div", "ai-skill-result");
   resultBox.style.display = "none";
-  card.appendChild(resultBox);
-
-  btn.addEventListener("click", async function() {
-    btn.disabled = true;
-    btn.textContent = "Thinking…";
-    resultBox.style.display = "block";
-    resultBox.className = "ai-skill-result running";
-    resultBox.textContent = "Calling " + (loadAiConfigSafe().activeProvider || "AI") + "…";
-    var driverWithMeta = Object.assign({}, driver, {
-      label:     meta ? meta.label     : driver.id,
-      shortHint: meta ? meta.shortHint : ""
-    });
-    var res = await runDriverQuestionSkill(session, driverWithMeta);
-    btn.disabled = false;
-    btn.textContent = "Re-run";
-    if (res.ok) {
-      resultBox.className = "ai-skill-result ok";
-      resultBox.innerHTML = "";
-      var head = mkt("div", "ai-skill-result-head",
-        "Suggested questions (" + res.providerKey + ")");
-      resultBox.appendChild(head);
-      var body = mk("pre", "ai-skill-result-body");
-      body.textContent = res.text || "(no text returned)";
-      resultBox.appendChild(body);
-    } else {
-      resultBox.className = "ai-skill-result err";
-      resultBox.textContent = "Failed: " + (res.error || "Unknown error") +
-        ". Open the gear icon to verify the provider config.";
-    }
-  });
-  return card;
+  aiHead.appendChild(useAiButton("context", {
+    getSession:   function() { return session; },
+    getContext:   function() {
+      return {
+        selectedDriver: Object.assign({}, driver, {
+          label:     meta ? meta.label     : driver.id,
+          shortHint: meta ? meta.shortHint : ""
+        })
+      };
+    },
+    getResultEl:  function() { return resultBox; }
+  }));
+  aiCard.appendChild(aiHead);
+  aiCard.appendChild(mkt("div", "card-hint",
+    "Run any deployed skill for this tab. Manage skills via the gear icon → Skills section."));
+  aiCard.appendChild(resultBox);
+  right.appendChild(aiCard);
 }
-
-function loadAiConfigSafe() { try { return loadAiConfig(); } catch (e) { return { activeProvider: "" }; } }
 
 function renderWelcomePanel(right) {
   right.innerHTML = "";

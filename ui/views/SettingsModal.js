@@ -8,18 +8,56 @@
 
 import { loadAiConfig, saveAiConfig, PROVIDERS } from "../../core/aiConfig.js";
 import { testConnection } from "../../services/aiService.js";
+import { renderSkillAdmin } from "./SkillAdmin.js";
 
-export function openSettingsModal() {
+export function openSettingsModal(opts) {
   document.getElementById("settings-modal")?.remove();
+  var initialSection = (opts && opts.section) || "providers";
 
   var overlay = mk("div", "dialog-overlay settings-overlay");
   overlay.id = "settings-modal";
 
   var box = mk("div", "dialog-box settings-box");
-  box.appendChild(mkt("div", "dialog-title", "Settings — AI Providers"));
-  box.appendChild(mkt("div", "settings-help",
-    "Configure where AI skills run. The active provider is used by every skill " +
-    "you build (or the v2.4.0 demo button on Tab 1)."));
+  box.appendChild(mkt("div", "dialog-title", "Settings"));
+
+  // Top-level section selector: Providers vs Skills.
+  var sectionRow = mk("div", "settings-section-row");
+  var providersPill = mkt("button", "settings-section-pill" + (initialSection === "providers" ? " active" : ""), "AI Providers");
+  providersPill.type = "button";
+  var skillsPill    = mkt("button", "settings-section-pill" + (initialSection === "skills"    ? " active" : ""), "Skills");
+  skillsPill.type   = "button";
+  providersPill.addEventListener("click", function() {
+    overlay.remove(); openSettingsModal({ section: "providers" });
+  });
+  skillsPill.addEventListener("click", function() {
+    overlay.remove(); openSettingsModal({ section: "skills" });
+  });
+  sectionRow.appendChild(providersPill);
+  sectionRow.appendChild(skillsPill);
+  box.appendChild(sectionRow);
+
+  // Body container swaps between the two sections.
+  var body = mk("div", "settings-body");
+  box.appendChild(body);
+
+  if (initialSection === "skills") {
+    renderSkillAdmin(body);
+    var foot = mk("div", "form-actions");
+    var closeBtn = mkt("button", "btn-secondary", "Close");
+    closeBtn.addEventListener("click", function() { overlay.remove(); });
+    foot.appendChild(closeBtn);
+    box.appendChild(foot);
+
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click", function(e) { if (e.target === overlay) overlay.remove(); });
+    return;
+  }
+
+  // ── Providers section (default) ──
+  body.appendChild(mkt("div", "settings-help",
+    "Configure where AI skills run. The active provider is used by every " +
+    "skill you've built and deployed via the Skills tab."));
 
   var config = loadAiConfig();
 
@@ -34,17 +72,18 @@ export function openSettingsModal() {
       config.activeProvider = pkey;
       saveAiConfig(config);
       overlay.remove();
-      openSettingsModal(); // re-render with new active section
+      openSettingsModal({ section: "providers" }); // re-render with new active section
     });
     sel.appendChild(pill);
   });
-  box.appendChild(sel);
+  body.appendChild(sel);
 
   // Provider-specific fields for the ACTIVE provider.
   var activeKey = config.activeProvider;
   var active    = config.providers[activeKey];
 
   var form = mk("div", "settings-form");
+  body.appendChild(form);
 
   var urlGroup = mk("div", "settings-field");
   urlGroup.appendChild(mkt("label", "settings-label", "Endpoint URL"));
@@ -89,8 +128,6 @@ export function openSettingsModal() {
     "Acceptable for personal use; v3 multi-user will move keys server-side."));
   form.appendChild(keyGroup);
 
-  box.appendChild(form);
-
   // Test-connection probe.
   var probeRow = mk("div", "settings-probe-row");
   var probeBtn = mkt("button", "btn-secondary", "Test connection");
@@ -114,7 +151,7 @@ export function openSettingsModal() {
   });
   probeRow.appendChild(probeBtn);
   probeRow.appendChild(probeOut);
-  box.appendChild(probeRow);
+  body.appendChild(probeRow);
 
   // Footer — Save + Close.
   var foot = mk("div", "form-actions");

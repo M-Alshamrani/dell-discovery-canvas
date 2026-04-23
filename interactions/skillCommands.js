@@ -1,54 +1,30 @@
-// interactions/skillCommands.js — Phase 19 / v2.4.0
+// interactions/skillCommands.js — Phase 19b / v2.4.1
 //
-// Skill execution helpers. v2.4.0 ships ONE hardcoded demo skill (Tab 1
-// driver-question assistant) to prove the AI wiring end-to-end. v2.4.1+
-// will replace this with the user-built skills loaded from localStorage.
+// Thin adapter that bridges tab views to skillEngine. Each tab passes
+// its own tab-specific `context` object; the engine handles rendering
+// the template + calling the AI + returning the result.
 
-import { loadAiConfig } from "../core/aiConfig.js";
-import { chatCompletion } from "../services/aiService.js";
+import { runSkill } from "../services/skillEngine.js";
+import { getSkill, skillsForTab } from "../core/skillStore.js";
 
-// Run the Tab 1 demo: given a strategic driver context, ask the AI to
-// suggest 3 customer-discovery questions tailored to that driver and
-// the customer's vertical. Returns { ok, text, error }.
+// Execute a skill by id. Tabs call this from their "Use AI" dropdown.
+export async function runSkillById(skillId, session, context) {
+  var skill = getSkill(skillId);
+  if (!skill) return { ok: false, error: "Skill '" + skillId + "' not found" };
+  return await runSkill(skill, session, context);
+}
+
+// List helper — tabs use this to render their "Use AI" dropdown.
+export { skillsForTab };
+
+// ── Legacy v2.4.0 API preserved so existing ContextView call-sites
+// don't break during the migration to the generic dropdown. Resolves
+// to the seeded Tab 1 skill at run time. ContextView upgrades to the
+// generic UseAiButton in v2.4.1 but this export stays as a safety net.
 export async function runDriverQuestionSkill(session, driver) {
-  if (!driver || !driver.id) {
-    return { ok: false, error: "runDriverQuestionSkill: missing driver" };
-  }
-  var cust = (session && session.customer) || {};
-  var verticalLine = cust.vertical ? "Customer vertical: " + cust.vertical + "." : "";
-  var customerLine = cust.name     ? "Customer name: "     + cust.name     + "." : "";
-
-  var systemPrompt =
-    "You are a senior Dell Technologies presales engineer. Suggest 3 short, " +
-    "open-ended discovery questions a presales would ask in a 30-45 minute " +
-    "workshop. Each question should be 1-2 sentences. Output ONLY the 3 " +
-    "questions, numbered 1. 2. 3. — no preamble, no explanation.";
-
-  var userPrompt =
-    [
-      customerLine,
-      verticalLine,
-      "Strategic driver: " + (driver.label || driver.id) + ".",
-      driver.shortHint ? "Driver hint: " + driver.shortHint : "",
-      driver.priority ? "Driver priority for this customer: " + driver.priority + "." : ""
-    ].filter(Boolean).join("\n");
-
-  var config = loadAiConfig();
-  var active = config.providers[config.activeProvider];
-
-  try {
-    var res = await chatCompletion({
-      providerKey: config.activeProvider,
-      baseUrl:     active.baseUrl,
-      model:       active.model,
-      apiKey:      active.apiKey,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user",   content: userPrompt }
-      ]
-    });
-    return { ok: true, text: res.text, providerKey: config.activeProvider };
-  } catch (e) {
-    return { ok: false, error: e.message || String(e), providerKey: config.activeProvider };
-  }
+  var skills = skillsForTab("context", { onlyDeployed: true });
+  var seed = skills.find(function(s) { return s.id === "skill-driver-questions-seed"; })
+          || skills[0];
+  if (!seed) return { ok: false, error: "No deployed skills on the Context tab" };
+  return await runSkill(seed, session, { selectedDriver: driver });
 }

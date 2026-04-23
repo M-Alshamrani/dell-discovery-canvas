@@ -841,6 +841,53 @@ Tagged `v2.1.2`. No code or test changes.
 
 ---
 
+## v2.4.1 · Phase 19b · Skill Builder (admin panel + per-tab dropdown + templated prompts) — IMPLEMENTED (2026-04-19)
+
+**Goal**: Turn v2.4.0's hardcoded Tab-1 button into an AI *platform*. Presales define and deploy their own skills per tab; the runtime surfaces them via a `"✨ Use AI ▾"` dropdown. No code changes required to add a new skill — it's admin-panel-driven.
+
+### Locked decisions (Phase 19 wave 2 of 4)
+
+- Skills live in browser localStorage under `ai_skills_v1`. Same shape contract as the AI provider config from v2.4.0; revisit at v3 when we move user state server-side.
+- Each skill is bound to exactly one target tab; reads `{ session, context }` where `context` is tab-local state passed in by the view.
+- Template syntax: `{{dot.path}}` against the scope object. Missing paths render as empty strings (deliberate — skills must be robust to partial session data during a live workshop).
+- Seeded on first load: the Tab 1 driver-question skill is auto-created and deployed so fresh installs keep the v2.4.0 UX working unchanged.
+- Output modes declared today: `suggest` (functional), `apply-on-confirm` + `auto-apply` (persisted but no-op; wired in v2.4.3).
+- Settings modal now has two top-level sections: **AI Providers** | **Skills**.
+- UI-friendly labels: fields renamed from technical `systemPrompt` / `promptTemplate` to **"AI role / instructions"** and **"Data for the AI"**.
+
+### What shipped
+
+- `core/skillStore.js` — schema + localStorage CRUD + `seedSkills()`. `normalizeSkill()` pins required fields and coerces unknown `tabId` / `outputMode` to safe defaults so future saves survive.
+- `services/skillEngine.js` — `renderTemplate()` (pure, missing-is-empty), `extractBindings()` (returns unique `{{path}}` references for the UI readout, also used by v2.4.2's field-pointer mechanic), `runSkill(skill, session, context)` composes system + user messages and routes through `aiService.chatCompletion`.
+- `interactions/skillCommands.js` — generic `runSkillById()` + `skillsForTab()` exports. Legacy `runDriverQuestionSkill` wrapper retained over the seeded skill so any existing call site stays functional.
+- `ui/views/SkillAdmin.js` — list view (one row per skill; deploy toggle + edit + delete) + inline edit form with live "detected bindings" readout beneath the data textarea. Empty state when no skills persist.
+- `ui/views/SettingsModal.js` — top-level section row switches the modal body between AI Providers and Skills. `openSettingsModal({ section: "skills" })` opens direct to the admin.
+- `ui/components/UseAiButton.js` — tab-agnostic dropdown factory. `useAiButton(tabId, { getSession, getContext, getResultEl })` renders `"✨ Use AI ▾"` with a menu of deployed skills for that tab. Returns an empty hidden span if no deployed skills (no empty dropdown chrome).
+- `ui/views/ContextView.js` — driver detail panel now uses `useAiButton("context", …)` instead of the v2.4.0 hardcoded button. Output card identical to keep the UX stable.
+- `styles.css` — `.settings-section-*`, `.skill-admin-*`, `.skill-row*`, `.skill-form*`, `.use-ai-*`.
+- `appSpec.js` — Suite 26 SB1-SB8. Also retargeted AI9 from Suite 25 to look for `.use-ai-btn` (the v2.4.1 replacement for the v2.4.0 `.ai-skill-btn`).
+
+### Test (manual, local on Windows host)
+
+| Verification | Result |
+|---|---|
+| Container HEALTHCHECK after rebuild | `(healthy)` ✅ |
+| Browser banner | 377/377 green (369 prior + 8 new SB + 1 AI9 retargeted) ✅ user-confirmed |
+| Tab 1 driver detail → Use AI dropdown lists seeded skill; clicking runs real Gemini | ✅ user-confirmed |
+| Settings modal → *AI Providers* / *Skills* pills → Skills admin renders seed row | ✅ user-confirmed |
+| `+ Add skill` form persists; deploy toggle flips visibility in the Tab 1 dropdown | ✅ user-confirmed |
+
+### Bugs caught + fixed in flight
+
+1. **AI9 test failure after Phase 19b refactor** — v2.4.0's `.ai-skill-btn` was replaced by `.use-ai-btn` in the new UseAiButton component; old AI9 assertion still looked for the retired class. Retargeted with a `.use-ai-btn, .ai-skill-btn` fallback selector so the test stays meaningful without churning every time the component is refactored.
+
+### Out of scope, queued
+
+- **v2.4.2 click-to-bind field-pointer mechanic** — the biggest UX win still outstanding. v2.4.1 requires users to type `{{session.customer.name}}` by hand, which means they need to know the data shape. v2.4.2 will make the target tab's form fields clickable in a design mode; clicking inserts the right path at the prompt-textarea cursor.
+- **v2.4.3 output handling** — parse, propose, apply-on-confirm. Today skills display raw response text only.
+
+---
+
 ## v2.4.0 · Phase 19a · AI foundations (3-provider client + settings + demo skill) — IMPLEMENTED (2026-04-19)
 
 **Goal**: Prove the AI wiring end-to-end against real public endpoints before building the admin skill builder on top. Ship the smallest slice that gives the user a real-feedback loop.
@@ -1261,7 +1308,7 @@ Resuming numbering from where we stopped. Tagged releases: `v2.1.1`, `v2.1.2` on
 | **16** | Workload Mapping 6th layer (Item 3) — N-to-N, upward propagation on explicit confirm | `v2.3.1` ✅ SHIPPED | — |
 | **17** | Taxonomy unification + "Action" rename + mandatory-link enforcement for Replace/Consolidate (Item 4) | `v2.3.x` | User sign-off on Item 4 table |
 | **19a** | AI foundations — 3-provider client (local vLLM / Anthropic / Gemini) + settings modal + demo skill on Tab 1 | `v2.4.0` ✅ SHIPPED | — |
-| **19b** | Skill builder UI — admin list + add/edit form + per-tab dropdown | `v2.4.1` | — |
+| **19b** | Skill builder UI — admin list + add/edit form + per-tab dropdown + seeded skill | `v2.4.1` ✅ SHIPPED | — |
 | **19c** | Field-pointer mechanic — click form field to insert `{{field.path}}` into prompt | `v2.4.2` | 19b |
 | **19d** | Output handling — parse / suggest / apply-on-confirm / optional streaming | `v2.4.3` | 19c |
 | **20+** | Multi-user platform (Item 2) — separate v3 work | `v3.0.0-alpha` (new branch `v3-multiuser`) | Architecture design doc, backend stack decision, auth strategy |
