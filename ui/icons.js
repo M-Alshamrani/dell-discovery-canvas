@@ -18,6 +18,21 @@ function makeSvg(inner, opts) {
   return el;
 }
 
+/** Gear / settings cog. Used in the header to open the AI config modal. */
+export function gearIcon() {
+  return makeSvg(
+    '<circle cx="8" cy="8" r="2"/>' +
+    '<path d="M8 1.2v1.6 M8 13.2v1.6 M14.8 8h-1.6 M2.8 8h-1.6 M12.8 3.2l-1.1 1.1 M4.3 11.7l-1.1 1.1 M12.8 12.8l-1.1-1.1 M4.3 4.3l-1.1-1.1"/>'
+  );
+}
+
+/** Sparkle — used to flag AI-assisted actions. */
+export function sparkleIcon() {
+  return makeSvg(
+    '<path d="M8 1.5l1.5 4 4 1.5 -4 1.5 -1.5 4 -1.5 -4 -4 -1.5 4 -1.5z"/>'
+  );
+}
+
 /** Help ( ? ) icon in an outline circle. */
 export function helpIcon() {
   return makeSvg(

@@ -2,6 +2,7 @@
 
 import { session, resetSession, resetToDemo, saveToLocalStorage } from "./state/sessionStore.js";
 import { runAllTests }               from "./diagnostics/appSpec.js";
+import { openSettingsModal }         from "./ui/views/SettingsModal.js";
 import { renderContextView }         from "./ui/views/ContextView.js";
 import { renderMatrixView }          from "./ui/views/MatrixView.js";
 import { renderGapsEditView }        from "./ui/views/GapsEditView.js";
@@ -37,8 +38,14 @@ document.addEventListener("DOMContentLoaded", function() {
   renderStepper();
   renderStage();
   wireFooter();
+  wireSettingsBtn();
   setTimeout(runAllTests, 150);
 });
+
+function wireSettingsBtn() {
+  var btn = document.getElementById("settingsBtn");
+  if (btn) btn.addEventListener("click", openSettingsModal);
+}
 
 function renderHeaderMeta() {
   var el = document.getElementById("sessionMetaHeader");

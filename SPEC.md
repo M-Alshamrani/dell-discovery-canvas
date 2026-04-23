@@ -1,7 +1,7 @@
 # Dell Discovery Canvas v2 — Implementation Spec
 
-**Status**: Phases 0–15.2 + 18 + 16 SHIPPED. Phases 17 / 19 / 20+ queued.
-**Current tagged releases**: `v2.1.1` (initial), `v2.1.2` (reviewer-handoff scripts), `v2.2.0` (Docker for GB10), `v2.2.1` (LAN Basic auth), `v2.3.0` (Phase 18 gap-link surfacing + double-link safety), `v2.3.1` (Phase 16 Workload Mapping), `v2.2.2` (Phase 15.2 Dell brand-token + Inter typography)
+**Status**: Phases 0–15.2 + 15.3 + 18 + 16 + 19a SHIPPED. Phases 17 / 19b-d / 20+ queued.
+**Current tagged releases**: `v2.1.1`, `v2.1.2` (reviewer handoff), `v2.2.0` (Docker for GB10), `v2.2.1` (LAN Basic auth), `v2.3.0` (Phase 18 gap-link surfacing), `v2.3.1` (Phase 16 Workload Mapping), `v2.2.2` (Phase 15.2 Dell brand-token + Inter), `v2.2.3` (Phase 15.3 visual depth), `v2.4.0` (Phase 19a AI foundations — 3-provider client, settings modal, demo skill on Tab 1)
 **Predecessor**: v1.3 (legacy)
 **Repo**: https://github.com/M-Alshamrani/dell-discovery-canvas (private)
 **Discussion record**: [docs/CHANGELOG_PLAN.md](docs/CHANGELOG_PLAN.md) — see "Post-v2.1.2 · v2.2+ design review" section for items 2-10 decisions.
@@ -676,14 +676,41 @@ See CHANGELOG_PLAN § v2.2+ Items 8, 9, 10 for the design rationale, and § v2.3
 - `appSpec.js` Suite 23: T8.1 (no Manage-links collapse), T8.2 (warning row in picker), T8.3 (multi-linked chip), T8.4 (deleteGap leaves instances re-linkable — Item 10 regression), T8.5 (roadmap dedup invariant).
 - No strict uniqueness constraint, no reverse index, no cascade logic — gap is the sole owner of its `relatedXxxInstanceIds` arrays per the locked design.
 
-### Phase 19 · v2.4 · AI slice — Tab 1 strategic-driver question assistant (Item 7)
+### Phase 19 · v2.4.x · AI Agent Builder — 4-slice delivery
 
-See CHANGELOG_PLAN § v2.2+ Item 7. Pending user upload of AI modules document.
+User's vision is an admin-configured skill platform, not a hardcoded button (captured 2026-04-19 evening). Shipping in 4 waves. See CHANGELOG_PLAN § v2.4.x entries.
 
-- New `services/aiService.js` — OpenAI-compatible `chat.completions.create` client, configurable endpoint + auth.
-- New `core/aiConfig.js` OR localStorage-backed config — endpoint URL, API key, model name.
-- ContextView driver-detail panel: "✨ Suggest discovery questions" button → calls aiService → renders 3 question choices → click to append to notes or conversation-starter override.
-- Tests: aiService is pure + JSON-serialisable snapshot; UI button renders; mocked response populates 3 question choices.
+#### Phase 19a · v2.4.0 · AI foundations — IMPLEMENTED
+
+Three-provider client (OpenAI-compatible vLLM / Anthropic Claude / Google Gemini) reachable from the browser via a same-origin reverse-proxy in our nginx. Settings modal behind a gear icon in the header. One hardcoded demo skill on Tab 1 (driver discovery-question assistant) to prove end-to-end wiring.
+
+- **`core/aiConfig.js`** — per-provider config shape (`activeProvider` + `providers.{local,anthropic,gemini}.{baseUrl,model,apiKey}`), localStorage round-trip, deprecated-model auto-migration (e.g. `gemini-2.0-flash` → `gemini-2.5-flash`).
+- **`services/aiService.js`** — `chatCompletion({providerKey, baseUrl, model, apiKey, messages})`; builds the correct request shape per provider (OpenAI chat-completions, Anthropic `/v1/messages` with `x-api-key` + `anthropic-version`, Gemini `:generateContent` with `key=` query); response parsing per provider; `testConnection` helper for the settings probe.
+- **`ui/views/SettingsModal.js`** — gear-icon-opened modal with three provider pills (switching persists), endpoint URL / model / API key fields (public provider URLs are read-only since they're locked to the nginx proxy), and a Test-connection probe that fires "Reply OK" and surfaces the result inline.
+- **Header** — new `#settingsBtn` (gear) in `.header-right` alongside the session meta. `app.js → wireSettingsBtn()` binds the click to open the modal.
+- **Tab 1 demo skill** — `ContextView.renderDriverDetail` appends an `.ai-skill-card` ("✨ AI assistance") with a "Suggest discovery questions" button that calls `runDriverQuestionSkill(session, driver)` in `interactions/skillCommands.js`. Result renders in a `.ai-skill-result` card with provider label + the raw text (monospace).
+- **Container plumbing** — new `docker-entrypoint.d/45-setup-llm-proxy.sh` writes `/etc/nginx/snippets/llm-proxy.conf` at container start with three `location` blocks: `/api/llm/local/` → `http://${LLM_HOST}:${LLM_LOCAL_PORT}/` (default `host.docker.internal:8000`), `/api/llm/anthropic/` → `https://api.anthropic.com/` (with SNI + resolver), `/api/llm/gemini/` → `https://generativelanguage.googleapis.com/`. `docker-compose.yml` declares `LLM_HOST` + `LLM_LOCAL_PORT` env passthroughs and maps `host.docker.internal:host-gateway` for Linux Docker.
+- **Security posture** — API keys live in browser localStorage; visible in DevTools. Acceptable for personal dev; v3 multi-user platform will move keys server-side. `/api/llm/*` paths have `access_log off` to keep keys out of nginx logs.
+- **Tests** — Suite 25 AI1-AI9: loadAiConfig defaults, save/load round-trip, deprecated-model migration, `isActiveProviderReady`, `buildRequest` shape per provider (OpenAI/Anthropic/Gemini), `extractText` per provider, gear-button presence, ContextView AI card render.
+
+#### Phase 19b · v2.4.1 · Skill Builder UI — QUEUED
+
+- Admin panel in the settings modal (new "Skills" section) listing saved skills.
+- `+ Add skill` form: name, target tab (dropdown), free-text prompt template, output mode (suggest / apply-on-confirm).
+- Save/load to `localStorage` under `ai_skills_v1`.
+- "Use AI assistance" dropdown in each tab driven by `skills.filter(s => s.deployed && s.tabId === currentTab)`.
+- Tests: skill persistence, per-tab dropdown renders, deploy/un-deploy toggles visibility.
+
+#### Phase 19c · v2.4.2 · Field-pointer mechanic — QUEUED
+
+The novel part. When the skill builder is open for a specific tab, every bindable field on that tab becomes clickable. Clicking a field inserts a `{{field.path}}` reference at the cursor of the prompt-template textarea. A live preview panel shows the rendered template against the current session data. Escape/click-outside exits design mode.
+
+#### Phase 19d · v2.4.3 · Output handling — QUEUED
+
+- Parse AI response into structured proposals (free-text → typed field updates).
+- Apply-on-confirm per proposal (default) or auto-apply (opt-in per skill).
+- Optional streaming for long responses.
+- Tests: mocked proposal parsing + apply flow.
 
 ### Phase 20+ · v3 · Multi-user platform (Item 2)
 
@@ -769,6 +796,15 @@ A separate `SPEC_v3.md` will capture this architecture when work starts.
    - All static assets (`/app.js`, `/styles.css`, `/Logo/...avif`, etc.) are gated identically.
 4. HEALTHCHECK reaches `(healthy)` within 30 s in both auth modes.
 5. Browser navigates to `http://localhost:8080`, sees the native browser login prompt when auth is on, enters credentials, sees the Dell Discovery Canvas with the green test banner (348 assertions) inside the container's app.
+
+**v2.4.0** is shippable when:
+1. Phase 19a complete (aiConfig + aiService + SettingsModal + gear button + ContextView demo card + skillCommands + nginx proxy + entrypoint script + compose env + Suite 25).
+2. Container rebuilds clean; `45-setup-llm-proxy.sh` writes the snippet with `LLM_HOST` defaults; HEALTHCHECK reaches `(healthy)`.
+3. Gear icon opens the settings modal; switching provider pills persists; Save + Test-connection both work.
+4. Real AI calls succeed end-to-end against at least one public provider (Anthropic or Gemini) from the browser via the nginx proxy. User-confirmed with Gemini 2026-04-19 evening.
+5. ContextView Tab 1 demo: "Suggest discovery questions" button renders on every driver's detail panel; clicking routes to the active provider and renders a real response (or a friendly error if misconfigured).
+6. `appSpec.js` test banner reports green for **369 assertions** (359 prior + 10 new AI*) inside the running container.
+7. Deprecated-model auto-migration works (saved `gemini-2.0-flash` → loads as `gemini-2.5-flash` while preserving the API key).
 
 **v2.2.2** is shippable when:
 1. `styles.css :root` carries Dell-aligned values for `--brand`/`--text-1`/`--surface*`/`--border*`/`--shadow*` and Inter+JetBrains Mono in `--font`/`--font-mono`.

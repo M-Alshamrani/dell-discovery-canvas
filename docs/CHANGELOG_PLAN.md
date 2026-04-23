@@ -841,6 +841,74 @@ Tagged `v2.1.2`. No code or test changes.
 
 ---
 
+## v2.4.0 · Phase 19a · AI foundations (3-provider client + settings + demo skill) — IMPLEMENTED (2026-04-19)
+
+**Goal**: Prove the AI wiring end-to-end against real public endpoints before building the admin skill builder on top. Ship the smallest slice that gives the user a real-feedback loop.
+
+### Locked decisions (recap)
+
+- **Not a hardcoded button** — the canvas is building toward an AI Agent Builder. v2.4.0 is the foundation layer; v2.4.1 will add the skill-building UI; v2.4.2 the field-pointer mechanic; v2.4.3 output application.
+- **Three providers, same architecture** — local vLLM (GB10), Anthropic Claude, Google Gemini. Reached via a same-origin nginx reverse-proxy so public providers don't trip browser CORS.
+- **Keys in browser localStorage, keys flow through our nginx** — acceptable for personal dev; v3 multi-user will move keys server-side.
+- **Local-LLM URL is editable**; public-provider URLs are locked to the proxy path (editing would 404).
+- **Output mode = suggest** for the demo skill (v2.4.0); apply-on-confirm semantics ship in v2.4.3.
+
+### What shipped
+
+- `core/aiConfig.js` — config schema + localStorage round-trip + deprecated-model auto-migration (`gemini-2.0-flash` → `gemini-2.5-flash`) so a saved stale model repairs itself without touching the user's API key.
+- `services/aiService.js` — provider-aware `chatCompletion()`. Exported `buildRequest()` is pure so tests assert per-provider request shape without a real network call. Handles:
+  - OpenAI-compatible: `POST /chat/completions` with `Authorization: Bearer` header.
+  - Anthropic: `POST /v1/messages` with `x-api-key` + `anthropic-version: 2023-06-01` headers; system message collapsed into body `system` field.
+  - Gemini: `POST /v1beta/models/<model>:generateContent?key=…`; system into `systemInstruction`; `assistant` role renamed to `model` in `contents[]`.
+- `ui/views/SettingsModal.js` — gear-icon-opened modal. Three provider pills (active persists). Endpoint/model/key fields with contextual help. `Test connection` probe fires "Reply OK" and surfaces the result inline (green on success, red on failure).
+- `ui/icons.js` — added `gearIcon()` and `sparkleIcon()`.
+- `index.html` — new `.header-right` container with `#sessionMetaHeader` + `#settingsBtn` (SVG gear).
+- `styles.css` — `.gear-btn`, `.settings-overlay`, `.settings-box`, `.settings-provider-pill`, `.settings-field`, `.settings-probe-out`, `.ai-skill-card`, `.ai-skill-result`.
+- `app.js` — `wireSettingsBtn()` binds the gear click.
+- `interactions/skillCommands.js` — `runDriverQuestionSkill(session, driver)` builds a prompt from driver + customer context, routes through `chatCompletion()`, returns `{ok, text, providerKey}` or `{ok: false, error}`.
+- `ui/views/ContextView.js` — `buildAiDemoCard()` appended to every driver-detail panel. Shows status text during call, re-runs idempotently.
+- **Container plumbing:**
+  - `docker-entrypoint.d/45-setup-llm-proxy.sh` generates `/etc/nginx/snippets/llm-proxy.conf` at container start with all three proxy locations. Env-driven: `LLM_HOST` (default `host.docker.internal`) + `LLM_LOCAL_PORT` (default `8000`).
+  - `nginx.conf` — `include /etc/nginx/snippets/llm-proxy.conf;` at server scope, just after the auth snippet include.
+  - `docker-compose.yml` — declares `LLM_HOST` + `LLM_LOCAL_PORT` env passthroughs; adds `extra_hosts: host.docker.internal:host-gateway` so Linux Docker 20.10+ can resolve the special hostname (no-op on Mac/Windows).
+  - `Dockerfile` — COPY + chmod +x of the new entrypoint script alongside the existing auth script.
+- `appSpec.js` Suite 25 (AI1-AI9 + AI2b) — 10 new assertions covering config defaults, save/load round-trip, deprecated-model migration, `isActiveProviderReady` semantics, request shape per provider, response extraction per provider, gear-button presence, and ContextView AI card render.
+
+### Test (manual, local on Windows host)
+
+| Verification | Result |
+|---|---|
+| Container HEALTHCHECK after rebuild | `(healthy)` ✅ |
+| `45-setup-llm-proxy.sh` entrypoint log: "LLM proxy snippet written…" | ✅ |
+| Served `appSpec.js` carries 10 `AI*` markers | ✅ |
+| Browser: banner 369/369 green | ✅ user-confirmed |
+| Browser: gear icon opens settings modal with 3 provider pills | ✅ |
+| Browser: Test-connection against real Gemini 2.5-flash returns 200 + "OK" sample | ✅ user-confirmed |
+| Browser: Tab 1 "Suggest discovery questions" renders real Gemini response | ✅ user-confirmed with real output |
+
+### Bugs caught + fixed in flight
+
+1. **Gemini 2.0-flash 404'd** — deprecated to new users in 2026-Q1. Default updated to `gemini-2.5-flash`; auto-migration added so saved configs with the old value repair themselves without user action. New AI2b test pins the migration behaviour.
+
+### Out of scope, queued for v2.4.x
+
+- **v2.4.1** — skill builder UI (admin list + add/edit form + per-tab "Use AI" dropdown).
+- **v2.4.2** — field-pointer mechanic (click a form field while editing a skill → insert `{{field.path}}` at cursor).
+- **v2.4.3** — output handling (parse → propose → apply-on-confirm; streaming optional).
+
+---
+
+## v2.2.3 · Phase 15.3 · Visual depth — tighter radii + heading tracking + monospace metrics (2026-04-19)
+
+Small targeted tightening on top of v2.2.2:
+- Radii 6/10/14 → 4/6/10 (halfway between prior and the GPLC reference's 3/5/8).
+- Global heading hardening: `h1-h5 + .card-title + .detail-title + .dialog-title + .header-title` get `font-weight:700` + `letter-spacing:-0.01em`. Body gets `-webkit-font-smoothing: antialiased`.
+- Roadmap project-card `.link-badge` switches to JetBrains Mono + `tabular-nums`. Reads like a financial-report metric line rather than a chat bubble.
+
+359/359 tests green; user-confirmed visual delta.
+
+---
+
 ## v2.2.2 · Phase 15.2 · Dell brand-token refresh + Inter typography — IMPLEMENTED (2026-04-19)
 
 **Goal**: Bring the app's visual tokens in line with the Dell brand reference design (the GPLC sample HTML the user shared). Token-only swap so we get a brand-aligned look without risking layout regressions across the 359-test surface.
@@ -1192,7 +1260,10 @@ Resuming numbering from where we stopped. Tagged releases: `v2.1.1`, `v2.1.2` on
 | **18** | Linked assets always visible (Item 8) + warn-but-allow double-link (Item 9) + cascade-delete regression test (Item 10) + roadmap dedup | `v2.3.0` ✅ SHIPPED | — (Item 8 ship-confirmed 2026-04-19 evening) |
 | **16** | Workload Mapping 6th layer (Item 3) — N-to-N, upward propagation on explicit confirm | `v2.3.1` ✅ SHIPPED | — |
 | **17** | Taxonomy unification + "Action" rename + mandatory-link enforcement for Replace/Consolidate (Item 4) | `v2.3.x` | User sign-off on Item 4 table |
-| **19** | AI slice — Tab 1 strategic-driver question assistant (Item 7 first wave). LLM target: GB10 Code LLM on `:8000` (`model=code-llm`), VLM on `:8001` (`model=vision-vlm`), OpenAI-compatible | `v2.4.0` | None — LLM endpoint shape now known |
+| **19a** | AI foundations — 3-provider client (local vLLM / Anthropic / Gemini) + settings modal + demo skill on Tab 1 | `v2.4.0` ✅ SHIPPED | — |
+| **19b** | Skill builder UI — admin list + add/edit form + per-tab dropdown | `v2.4.1` | — |
+| **19c** | Field-pointer mechanic — click form field to insert `{{field.path}}` into prompt | `v2.4.2` | 19b |
+| **19d** | Output handling — parse / suggest / apply-on-confirm / optional streaming | `v2.4.3` | 19c |
 | **20+** | Multi-user platform (Item 2) — separate v3 work | `v3.0.0-alpha` (new branch `v3-multiuser`) | Architecture design doc, backend stack decision, auth strategy |
 
 Items 5, 6 merged into later phases. Item 10 has no standalone phase (covered by Phase 18 test).

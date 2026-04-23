@@ -1404,6 +1404,112 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .risk-level-pill.risk-elevated { background: #ea580c; }
 .risk-level-pill.risk-high     { background: var(--crit-high); }
 
+/* Phase 19 / v2.4.0 — header gear button + AI settings modal. */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.gear-btn {
+  width: 30px; height: 30px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  padding: 0;
+}
+.gear-btn:hover { background: rgba(255, 255, 255, 0.20); border-color: rgba(255, 255, 255, 0.40); }
+.gear-btn svg   { display: block; }
+
+.settings-overlay { z-index: 100; }
+.settings-box { width: min(640px, 92vw); max-height: 88vh; overflow-y: auto; }
+.settings-help {
+  font-size: 12px; color: var(--text-2); line-height: 1.45;
+  margin-bottom: 14px;
+}
+.settings-provider-row {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  margin-bottom: 14px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-provider-pill {
+  font-family: var(--font);
+  font-size: 12px; font-weight: 500;
+  padding: 6px 14px; border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.settings-provider-pill:hover { border-color: var(--brand); color: var(--brand); }
+.settings-provider-pill.active {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+.settings-form { display: flex; flex-direction: column; gap: 12px; }
+.settings-field { display: flex; flex-direction: column; gap: 4px; }
+.settings-label {
+  font-size: 11px; font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.02em; text-transform: uppercase;
+}
+.settings-input {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-1);
+  background: var(--surface);
+}
+.settings-input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-faint); }
+.settings-input[readonly] { background: var(--surface-2); color: var(--text-3); }
+.settings-help-inline {
+  font-size: 10px; color: var(--text-3); line-height: 1.4;
+  font-style: italic;
+}
+.settings-probe-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.settings-probe-out {
+  flex: 1; min-width: 200px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-3);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.settings-probe-out.probing { color: var(--brand-dark); background: var(--brand-faint); }
+.settings-probe-out.ok      { color: #15803D;          background: #F0FDF4; border: 1px solid #BBF7D0; }
+.settings-probe-out.err     { color: #B91C1C;          background: #FEF2F2; border: 1px solid #FECACA; }
+
+/* Phase 19 — AI skill card on Tab 1 driver detail panel. */
+.ai-skill-card  { border-left: 3px solid var(--brand); }
+.ai-skill-title { font-size: 13px; font-weight: 700; color: var(--brand-dark); margin-bottom: 4px; letter-spacing: -0.01em; }
+.ai-skill-btn   { margin-top: 8px; }
+.ai-skill-result {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.ai-skill-result.running { background: var(--brand-faint); color: var(--brand-dark); font-style: italic; }
+.ai-skill-result.ok      { background: #F0FDF4; border: 1px solid #BBF7D0; color: var(--text-1); }
+.ai-skill-result.err     { background: #FEF2F2; border: 1px solid #FECACA; color: #B91C1C; }
+.ai-skill-result-head    { font-size: 10px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+.ai-skill-result-body    { font-family: var(--font-mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+
 /* Phase 16 · Workload mapping — mapped-infrastructure section in the
    workload tile detail panel. Visually adjacent to but distinct from
    the gap-link panel (which lives in Tab 4). */

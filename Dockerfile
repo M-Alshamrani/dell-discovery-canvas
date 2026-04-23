@@ -12,10 +12,13 @@ RUN rm /etc/nginx/conf.d/default.conf
 # Custom server config: MIME for ESM + AVIF, cache policy, security headers.
 COPY nginx.conf /etc/nginx/conf.d/dell-discovery.conf
 
-# Entrypoint hook for optional Basic auth (env-driven). nginx:alpine runs
-# every executable in /docker-entrypoint.d/ before starting nginx.
-COPY docker-entrypoint.d/40-setup-auth.sh /docker-entrypoint.d/40-setup-auth.sh
-RUN chmod +x /docker-entrypoint.d/40-setup-auth.sh
+# Entrypoint hooks (run before nginx starts):
+#   40-setup-auth.sh        Optional Basic auth (env: AUTH_USERNAME / AUTH_PASSWORD).
+#   45-setup-llm-proxy.sh   Generates the LLM reverse-proxy snippet for the
+#                           three providers (env: LLM_HOST / LLM_LOCAL_PORT).
+COPY docker-entrypoint.d/40-setup-auth.sh      /docker-entrypoint.d/40-setup-auth.sh
+COPY docker-entrypoint.d/45-setup-llm-proxy.sh /docker-entrypoint.d/45-setup-llm-proxy.sh
+RUN chmod +x /docker-entrypoint.d/40-setup-auth.sh /docker-entrypoint.d/45-setup-llm-proxy.sh
 
 # Static app payload. Copy whitelist of folders, not '. .', so junk like the
 # brace-expansion folder and host-only scripts (start.sh/start.bat) stay out.

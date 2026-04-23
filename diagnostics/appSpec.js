@@ -3743,6 +3743,163 @@ describe("24 · Phase 16 · workload layer + asset mapping + upward propagation"
 
 });
 
+// ── Phase 19 / v2.4.0 · AI foundations (AI1-AI7) ──────────────────────
+import { DEFAULT_AI_CONFIG, loadAiConfig, saveAiConfig, isActiveProviderReady } from "../core/aiConfig.js";
+import { buildRequest, extractText } from "../services/aiService.js";
+
+describe("25 · Phase 19 · AI foundations — config + provider request shapes + UI surfaces", () => {
+
+  it("AI1 · loadAiConfig returns the defaults when localStorage is empty", () => {
+    window.localStorage.removeItem("ai_config_v1");
+    const cfg = loadAiConfig();
+    assertEqual(cfg.activeProvider, "local", "default activeProvider must be 'local'");
+    assert(cfg.providers.local && cfg.providers.local.baseUrl === "/api/llm/local/v1",
+      "local provider baseUrl must default to the container proxy path");
+    assertEqual(cfg.providers.anthropic.model, "claude-haiku-4-5",
+      "anthropic default model must be claude-haiku-4-5");
+    assertEqual(cfg.providers.gemini.model, "gemini-2.5-flash",
+      "gemini default model must be gemini-2.5-flash (2.0-flash deprecated 2026-Q1)");
+  });
+
+  it("AI2 · saveAiConfig + loadAiConfig round-trip; merges with defaults on read", () => {
+    saveAiConfig({
+      activeProvider: "anthropic",
+      providers: { anthropic: { apiKey: "test-key-123" } }
+    });
+    const cfg = loadAiConfig();
+    assertEqual(cfg.activeProvider, "anthropic", "saved activeProvider must persist");
+    assertEqual(cfg.providers.anthropic.apiKey, "test-key-123", "saved apiKey must persist");
+    // Defaults must fill in for fields the user didn't override.
+    assertEqual(cfg.providers.gemini.model, "gemini-2.5-flash", "missing fields must fall back to defaults");
+    window.localStorage.removeItem("ai_config_v1");
+  });
+
+  it("AI2b · deprecated gemini model gemini-2.0-flash auto-migrates to gemini-2.5-flash on load", () => {
+    saveAiConfig({
+      activeProvider: "gemini",
+      providers: { gemini: { model: "gemini-2.0-flash", apiKey: "AIza-saved" } }
+    });
+    const cfg = loadAiConfig();
+    assertEqual(cfg.providers.gemini.model, "gemini-2.5-flash",
+      "deprecated gemini-2.0-flash must auto-migrate to gemini-2.5-flash");
+    // Key is preserved across the migration.
+    assertEqual(cfg.providers.gemini.apiKey, "AIza-saved",
+      "user's saved API key must survive the model migration");
+    window.localStorage.removeItem("ai_config_v1");
+  });
+
+  it("AI3 · isActiveProviderReady — local OK without key, public providers require key", () => {
+    saveAiConfig({ activeProvider: "local" });
+    assert(isActiveProviderReady(loadAiConfig()), "local must be ready without an API key");
+    saveAiConfig({ activeProvider: "anthropic", providers: { anthropic: { apiKey: "" } } });
+    assert(!isActiveProviderReady(loadAiConfig()), "anthropic must NOT be ready without an API key");
+    saveAiConfig({ activeProvider: "anthropic", providers: { anthropic: { apiKey: "k" } } });
+    assert(isActiveProviderReady(loadAiConfig()), "anthropic must be ready with an API key");
+    window.localStorage.removeItem("ai_config_v1");
+  });
+
+  it("AI4 · buildRequest('openai-compatible') → POSTs /chat/completions with Bearer auth", () => {
+    const req = buildRequest("openai-compatible", {
+      baseUrl: "/api/llm/local/v1",
+      model: "code-llm",
+      apiKey: "sk-test",
+      messages: [{ role: "user", content: "hello" }]
+    });
+    assertEqual(req.url, "/api/llm/local/v1/chat/completions",
+      "OpenAI-compatible URL must end in /chat/completions");
+    assertEqual(req.headers["Authorization"], "Bearer sk-test",
+      "Authorization header must use Bearer prefix");
+    assertEqual(req.body.model, "code-llm", "body.model must echo the configured model");
+    assert(Array.isArray(req.body.messages), "body.messages must be an array");
+  });
+
+  it("AI5 · buildRequest('anthropic') → POSTs /v1/messages with x-api-key + system collapse", () => {
+    const req = buildRequest("anthropic", {
+      baseUrl: "/api/llm/anthropic",
+      model: "claude-haiku-4-5",
+      apiKey: "sk-ant-xyz",
+      messages: [
+        { role: "system", content: "You are helpful." },
+        { role: "user",   content: "Hi" }
+      ]
+    });
+    assertEqual(req.url, "/api/llm/anthropic/v1/messages",
+      "Anthropic URL must end in /v1/messages");
+    assertEqual(req.headers["x-api-key"], "sk-ant-xyz",
+      "Anthropic must use x-api-key header (NOT Authorization)");
+    assertEqual(req.headers["anthropic-version"], "2023-06-01",
+      "anthropic-version header is required");
+    assertEqual(req.body.system, "You are helpful.",
+      "Anthropic body must collapse system role into top-level system field");
+    assertEqual(req.body.messages.length, 1, "Anthropic body.messages must exclude system messages");
+    assertEqual(req.body.messages[0].role, "user", "remaining message must be user role");
+  });
+
+  it("AI6 · buildRequest('gemini') → POSTs :generateContent with key in query, contents[] shape", () => {
+    const req = buildRequest("gemini", {
+      baseUrl: "/api/llm/gemini",
+      model: "gemini-2.5-flash",
+      apiKey: "AIza-test",
+      messages: [
+        { role: "system",    content: "Be terse." },
+        { role: "user",      content: "Ping" },
+        { role: "assistant", content: "Pong" }
+      ]
+    });
+    assert(req.url.indexOf("/v1beta/models/gemini-2.5-flash:generateContent") >= 0,
+      "Gemini URL must target /v1beta/models/<model>:generateContent");
+    assert(req.url.indexOf("key=AIza-test") >= 0, "Gemini URL must carry key=… query param");
+    assertEqual(req.body.systemInstruction.parts[0].text, "Be terse.",
+      "Gemini body must lift system into systemInstruction");
+    assertEqual(req.body.contents.length, 2, "Gemini contents[] must exclude system messages");
+    assertEqual(req.body.contents[1].role, "model",
+      "Gemini renames 'assistant' role to 'model'");
+  });
+
+  it("AI7 · extractText handles each provider's response shape", () => {
+    assertEqual(extractText("openai-compatible",
+      { choices: [{ message: { content: "hi" } }] }), "hi",
+      "OpenAI-compatible: choices[0].message.content");
+    assertEqual(extractText("anthropic",
+      { content: [{ type: "text", text: "hi" }, { type: "text", text: " there" }] }), "hi there",
+      "Anthropic: concatenate content[].text where type==='text'");
+    assertEqual(extractText("gemini",
+      { candidates: [{ content: { parts: [{ text: "hi" }] } }] }), "hi",
+      "Gemini: candidates[0].content.parts[].text");
+  });
+
+  it("AI8 · #settingsBtn (gear icon) is present in the header markup", () => {
+    const btn = document.getElementById("settingsBtn");
+    assert(btn !== null, "header must include a #settingsBtn (gear icon)");
+    assert(btn.classList.contains("gear-btn"), "settingsBtn must carry .gear-btn class");
+    assert(btn.querySelector("svg") !== null, "settingsBtn must contain an SVG glyph");
+  });
+
+  it("AI9 · ContextView driver detail renders the AI demo card with a clickable Suggest button", () => {
+    // Build a session with one driver so renderDriverDetail has something to bind to.
+    const s = createEmptySession();
+    s.customer = s.customer || {};
+    s.customer.drivers = [{ id: "ai_data", priority: "High", outcomes: "" }];
+    const l = document.createElement("div");
+    const r = document.createElement("div");
+    renderContextView(l, r, s);
+    // Click the driver tile to populate the right panel.
+    const tile = l.querySelector(".driver-tile");
+    assert(tile, "expected at least one driver tile rendered");
+    tile.click();
+    // After click, re-mount so detail panel binds (some views re-render on click).
+    const re = (function() { const ll = document.createElement("div"); const rr = document.createElement("div");
+      renderContextView(ll, rr, s); ll.querySelector(".driver-tile")?.click(); return { rr }; })();
+    const card = re.rr.querySelector(".ai-skill-card");
+    assert(card, "expected an .ai-skill-card in the driver detail panel");
+    const btn = card.querySelector(".ai-skill-btn");
+    assert(btn, "expected a .ai-skill-btn inside the AI skill card");
+    assert(btn.textContent.toLowerCase().indexOf("suggest") >= 0,
+      "button label must reference 'suggest' (got: " + btn.textContent + ")");
+  });
+
+});
+
 export function runAllTests() {
   return run();
 }

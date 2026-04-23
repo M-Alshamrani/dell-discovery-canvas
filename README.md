@@ -1,7 +1,7 @@
 # Dell Discovery Canvas
 
 **IT / Enterprise Architecture Discovery Tool for Dell Presales**
-Version 2.2.2 · Vanilla JavaScript ES Modules · No build step required
+Version 2.4.0 · Vanilla JavaScript ES Modules · No build step required
 
 ---
 
@@ -129,6 +129,8 @@ Session state persists to `localStorage` under key `dell_discovery_v1`. Data sta
 
 ## Version history
 
+- **v2.4.0** (2026-04-19) — Phase 19a: AI foundations. Three-provider client (local vLLM / Anthropic Claude / Google Gemini) reached via nginx reverse-proxy (avoids CORS). Gear icon in header → settings modal with per-provider endpoint/model/API-key + connection-test probe. One demo skill on Tab 1 ("Suggest discovery questions" button on each driver) that calls the active provider and renders the response. Real Anthropic + Gemini calls verified end-to-end. Deprecated Gemini model auto-migrates (`gemini-2.0-flash` → `gemini-2.5-flash`) on load. API keys live in browser localStorage for now; v3 will move them server-side. Suite 25 adds 10 AI* assertions; banner now 369/369 green.
+- **v2.2.3** (2026-04-19) — Phase 15.3: Visual depth. Radii 6/10/14 → 4/6/10 (sharper corners). Global heading hardening (font-weight: 700 + letter-spacing: -0.01em). JetBrains Mono with tabular-nums on Roadmap project-card metric badges. Body antialiasing so Inter renders crisp.
 - **v2.2.2** (2026-04-19) — Phase 15.2: Dell brand-token refresh. CSS variable VALUES updated to Dell official palette (Dell Blue `#0076CE`, ink `#0B2A4A`, cooler greys, ink-tinted shadows). Header gradient updated to Dell deep→blue. Typography swapped from DM Sans + DM Mono → Inter + JetBrains Mono (matches the GPLC reference). Variable NAMES preserved across all components — zero component-CSS rewrites, zero behavioural change. 359/359 tests still green.
 - **v2.3.1** (2026-04-19) — Phase 16: Workload Mapping. New `workload` layer at the top of the matrix; 14 catalog entries (Dell Validated Designs, business apps, industry verticals, data/analytics, application footprints). Workload tiles get a "Mapped infrastructure" panel: map any number of other-layer assets (N-to-N), then click "↑ Propagate criticality" to walk per-asset confirms upgrading any asset with lower criticality than the workload. Upward-only by design — never silently downgrades. New W1-W5 assertions; banner now 358/358 green.
 - **v2.3.0** (2026-04-19) — Phase 18: gap-link surfacing & double-link safety. Linked current + desired technologies render inline in the gap detail panel (no more `Manage links` collapse). Link picker shows a yellow warning row above any candidate already linked to another gap; selection still proceeds (warn-but-allow). Asset rows show a red `linked to N gaps` chip when shared. Roadmap project counts unique linked technologies (no double-counting from multi-linked assets). New T8.* assertions; T6.13 (Manage-links collapse) retired since the feature is gone; banner now 352/352 green. `.gitattributes` enforces LF endings on container plumbing.
@@ -154,4 +156,4 @@ This is a private internal Dell presales tool. All non-trivial changes go throug
 
 ---
 
-*Dell Technologies Presales · Internal tool · v2.2.2*
+*Dell Technologies Presales · Internal tool · v2.4.0*
