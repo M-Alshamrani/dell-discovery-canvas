@@ -1,7 +1,7 @@
 # Dell Discovery Canvas
 
 **IT / Enterprise Architecture Discovery Tool for Dell Presales**
-Version 2.2.0 · Vanilla JavaScript ES Modules · No build step required
+Version 2.2.1 · Vanilla JavaScript ES Modules · No build step required
 
 ---
 
@@ -29,7 +29,13 @@ Open http://localhost:8000 — that's it. No npm, no bundler, no dependencies.
 docker compose up -d --build
 ```
 
-Open http://localhost:8080. Localhost-only by default; opt into LAN exposure with `BIND_ADDR=0.0.0.0 docker compose up -d`. See [HOW_TO_RUN.md § Option C](HOW_TO_RUN.md) for full guidance.
+Open http://localhost:8080. Localhost-only by default. For LAN exposure with HTTP Basic auth (v2.2.1+):
+
+```bash
+AUTH_USERNAME=<your-username> AUTH_PASSWORD=<strong-password> BIND_ADDR=0.0.0.0 docker compose up -d --build
+```
+
+See [HOW_TO_RUN.md § Option C](HOW_TO_RUN.md) for full guidance.
 
 ---
 
@@ -123,6 +129,7 @@ Session state persists to `localStorage` under key `dell_discovery_v1`. Data sta
 
 ## Version history
 
+- **v2.2.1** (2026-04-19) — Phase 15.1: LAN gating. Optional HTTP Basic auth driven by `AUTH_USERNAME` + `AUTH_PASSWORD` env vars; htpasswd generated at container start via `apache2-utils`. `/health` stays open for monitoring. Backward-compatible — unset env vars = no auth (same as v2.2.0).
 - **v2.2.0** (2026-04-19) — Phase 15: Docker containerisation. `nginx:alpine` static-file image with hardened headers, multi-arch (linux/amd64 + linux/arm64 for Dell GB10 / Grace), localhost-only binding by default, opt-in LAN exposure via `BIND_ADDR`, configurable host port (default 8080 to avoid the GB10's vLLM containers).
 - **v2.1.2** (2026-04-19) — Reviewer-handoff scripts (`start.bat`, `start.sh`, `HOW_TO_RUN.md`) plus noindex safety net.
 - **v2.1.1** (2026-04-18) — Right-panel drill-downs, Session Brief, Roadmap click unification, SVG icons, contextual help modal, review flag.
@@ -144,4 +151,4 @@ This is a private internal Dell presales tool. All non-trivial changes go throug
 
 ---
 
-*Dell Technologies Presales · Internal tool · v2.2.0*
+*Dell Technologies Presales · Internal tool · v2.2.1*

@@ -2,11 +2,20 @@
 # Base: nginx:alpine (multi-arch, includes linux/arm64 for Dell GB10 / Grace).
 FROM nginx:1.27-alpine
 
+# apache2-utils provides the `htpasswd` binary used by the optional Basic
+# auth entrypoint. ~200KB; nothing else in the image needs it.
+RUN apk add --no-cache apache2-utils
+
 # Drop the default site config; we ship our own.
 RUN rm /etc/nginx/conf.d/default.conf
 
 # Custom server config: MIME for ESM + AVIF, cache policy, security headers.
 COPY nginx.conf /etc/nginx/conf.d/dell-discovery.conf
+
+# Entrypoint hook for optional Basic auth (env-driven). nginx:alpine runs
+# every executable in /docker-entrypoint.d/ before starting nginx.
+COPY docker-entrypoint.d/40-setup-auth.sh /docker-entrypoint.d/40-setup-auth.sh
+RUN chmod +x /docker-entrypoint.d/40-setup-auth.sh
 
 # Static app payload. Copy whitelist of folders, not '. .', so junk like the
 # brace-expansion folder and host-only scripts (start.sh/start.bat) stay out.

@@ -1,14 +1,20 @@
 # Dell Discovery Canvas — single-service compose file.
 #
-# Default: localhost-only on the Docker host.
+# Localhost-only (default — no auth needed):
 #   docker compose up -d
 #   open http://localhost:8080
 #
-# Open to LAN reviewers (Phase 15.x — once the auth_basic shim lands):
-#   BIND_ADDR=0.0.0.0 docker compose up -d
-#   open http://<GB10_IP>:8080
+# LAN-exposed with Basic auth (v2.2.1+):
+#   AUTH_USERNAME=<your-username> AUTH_PASSWORD=<strong-password> \
+#     BIND_ADDR=0.0.0.0 docker compose up -d --build
+#   open http://<host-IP>:8080  (browser will prompt for username/password)
 #
-# Override the host port if 8080 is taken (e.g. another service on the GB10):
+# WARNING: never set BIND_ADDR=0.0.0.0 without also setting AUTH_USERNAME +
+# AUTH_PASSWORD. The vLLM endpoints on this host (Code LLM :8000, VLM :8001)
+# are unauth'd; exposing this app without a credential gate alongside them
+# implies anyone on the LAN can reach the inference APIs.
+#
+# Override the host port if 8080 is taken (e.g. another service on the host):
 #   HOST_PORT=8888 docker compose up -d
 
 services:
@@ -20,9 +26,13 @@ services:
     container_name: dell-discovery-canvas
     restart: unless-stopped
     ports:
-      # ${BIND_ADDR:-127.0.0.1} keeps it loopback-only by default — safer
-      # while we don't have auth in front of the LLM endpoints.
+      # ${BIND_ADDR:-127.0.0.1} keeps it loopback-only by default.
       - "${BIND_ADDR:-127.0.0.1}:${HOST_PORT:-8080}:80"
+    environment:
+      # Optional Basic auth — leave unset for no auth (localhost-only mode).
+      # Both must be set together to enable auth.
+      AUTH_USERNAME: "${AUTH_USERNAME:-}"
+      AUTH_PASSWORD: "${AUTH_PASSWORD:-}"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
       interval: 30s

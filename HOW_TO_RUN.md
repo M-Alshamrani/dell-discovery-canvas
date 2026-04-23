@@ -49,19 +49,41 @@ docker compose up -d --build
 
 Open **http://localhost:8080**.
 
-By default the container binds to `127.0.0.1` (localhost only — safe even on a shared host). To expose to the LAN once your gating is in place:
-
-```bash
-BIND_ADDR=0.0.0.0 docker compose up -d --build
-```
-
-Then reach it at `http://<host-IP>:8080` from any browser on the same network.
+By default the container binds to `127.0.0.1` (localhost only — safe even on a shared host).
 
 To stop: `docker compose down`. To follow logs: `docker compose logs -f`.
 
 > **Note**: Port 8080 was chosen to avoid clashing with NVIDIA vLLM containers
 > on the GB10 (Code LLM uses :8000, VLM uses :8001). If you need a different
 > host port: `HOST_PORT=8888 docker compose up -d`.
+
+#### Exposing to the LAN with Basic auth (v2.2.1+)
+
+Don't open the container to the LAN without a credential gate — the LLM
+endpoints on the same host are unauth'd, and any reviewer who can reach
+the app could also reach inference if both are LAN-visible. Set both
+`AUTH_USERNAME` and `AUTH_PASSWORD` to enable HTTP Basic auth, **and**
+flip `BIND_ADDR=0.0.0.0`:
+
+```bash
+AUTH_USERNAME=<your-username> \
+AUTH_PASSWORD=<strong-password> \
+BIND_ADDR=0.0.0.0 \
+  docker compose up -d --build
+```
+
+> **Naming convention**: when standing up a versioned deployment for shared
+> testing (e.g., a clone alongside `main` for parallel review), use the form
+> `dell-discovery-canvas-vX.Y.Z[-purpose]` for the directory and any
+> identifying labels. Keep the container name as `dell-discovery-canvas`.
+
+Authorised users reach `http://<host-IP>:8080`, get a browser login prompt,
+and need the chosen username/password to access the app. The `/health`
+endpoint stays open for monitoring.
+
+To rotate credentials: `docker compose down`, change the env vars, `docker compose up -d`.
+
+To turn auth back off (localhost-only): unset the two env vars and recreate the container with the default `BIND_ADDR=127.0.0.1`.
 
 ---
 
@@ -106,6 +128,8 @@ Then restart `start.bat` / `start.sh`.
 | "Port 8000 is already in use" | Close whatever else is using port 8000, or edit the last line of `start.bat` / `start.sh` to use a different port (e.g. `python -m http.server 8081` and open http://localhost:8081). |
 | Docker: "port is already allocated" on 8080 | Another container or service is using 8080. Either stop it, or run with `HOST_PORT=8888 docker compose up -d` and open http://localhost:8888. |
 | Docker: app loads but logo missing / fonts wrong | The browser may have cached an older build. Hard-refresh (Ctrl+F5 / Cmd+Shift+R) once after `docker compose up --build`. |
+| Docker auth: every request gets 500 instead of 200 with correct creds | Old `.htpasswd` from a previous build is cached. Run `docker compose down && docker compose up -d --build`. |
+| Docker auth: enabled both env vars but no prompt appears | Verify: `docker logs dell-discovery-canvas \| grep entrypoint` should say *"Enabling Basic auth"*. If it says *"not set"*, the shell didn't propagate the vars — try the explicit `VAR=val docker compose up` form (single line, no newlines). |
 | Browser didn't open automatically | Open it yourself and go to http://localhost:8000. |
 | Test banner is red | Hard-refresh with Ctrl+F5 (Windows) or Cmd+Shift+R (macOS). If still red, send Mahmoud the failing assertion from the browser console (F12). |
 | Need to clear demo and start fresh | Click "New session" in the footer (bottom right). |

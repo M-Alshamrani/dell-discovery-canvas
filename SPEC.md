@@ -1,7 +1,7 @@
 # Dell Discovery Canvas v2 — Implementation Spec
 
-**Status**: Phases 0–15 SHIPPED. v2.2+ planning locked; Phases 16-20+ queued.
-**Current tagged releases**: `v2.1.1` (initial), `v2.1.2` (reviewer-handoff scripts), `v2.2.0` (Docker for GB10)
+**Status**: Phases 0–15.1 SHIPPED. v2.2+ planning locked; Phases 15.2 / 16-20+ queued.
+**Current tagged releases**: `v2.1.1` (initial), `v2.1.2` (reviewer-handoff scripts), `v2.2.0` (Docker for GB10), `v2.2.1` (LAN Basic auth)
 **Predecessor**: v1.3 (legacy)
 **Repo**: https://github.com/M-Alshamrani/dell-discovery-canvas (private)
 **Discussion record**: [docs/CHANGELOG_PLAN.md](docs/CHANGELOG_PLAN.md) — see "Post-v2.1.2 · v2.2+ design review" section for items 2-10 decisions.
@@ -605,9 +605,35 @@ Swap external image URL in `index.html` for local `../Logo/delltech-logo-stk-blu
 6. `docker compose down` shuts cleanly.
 
 **Out of scope, captured for v2.2.x**:
-- LAN gating (auth_basic) → **Phase 15.1 / v2.2.1**.
+- ~~LAN gating (auth_basic)~~ → **shipped in Phase 15.1 / v2.2.1** (see below).
 - Dell-styling token adoption from the GPLC sample → **Phase 15.2 / v2.2.2**.
 - AI endpoint settings page → groundwork in **Phase 19 / v2.4.0**.
+
+### Phase 15.1 · v2.2.1 · LAN gating with HTTP Basic auth — IMPLEMENTED
+
+**Goal**: make it safe to flip `BIND_ADDR=0.0.0.0` for shared LAN review without exposing the unauth'd vLLM endpoints alongside.
+
+**Locked decisions (2026-04-19 afternoon)**:
+- **Auth scheme**: HTTP Basic via nginx `auth_basic`. Cheap, browser-native, no app code changes. Acceptable inside Dell internal networks; not a public-internet hardening.
+- **Trigger**: env-var driven, not file-mounted. `AUTH_USERNAME` + `AUTH_PASSWORD` set together = auth on; either unset = auth off (backward-compatible with v2.2.0).
+- **htpasswd generator**: `htpasswd` from `apache2-utils` (~200KB). Cleaner than `openssl passwd` and openssl CLI isn't preinstalled in `nginx:1.27-alpine`.
+- **Hash algorithm**: apr1 (MD5) via `htpasswd -m`. Universally supported; bcrypt would need extra build steps in alpine.
+- **Healthcheck exemption**: `/health` overrides with `auth_basic off;` so the container HEALTHCHECK and any external monitor can probe without creds.
+- **File ownership**: htpasswd owned `nginx:nginx 0640` so workers (run as user `nginx` per upstream config) can read it; root master process writes it from the entrypoint.
+
+**Deliverables (shipped)**:
+- `docker-entrypoint.d/40-setup-auth.sh` — POSIX-sh script invoked automatically by the upstream `nginx:alpine` entrypoint chain. Reads env vars, generates `/etc/nginx/.htpasswd` and `/etc/nginx/snippets/auth.conf`. Fails the container start (exit 1) on htpasswd-write failure rather than silently serving with broken auth.
+- `Dockerfile` — `apk add --no-cache apache2-utils`; COPY + chmod +x of the entrypoint script.
+- `nginx.conf` — `include /etc/nginx/snippets/auth.conf;` at server scope (snippet is empty when no auth is configured); `auth_basic off;` inside `location = /health`.
+- `docker-compose.yml` — declared `AUTH_USERNAME` + `AUTH_PASSWORD` env passthroughs (default empty); inline header comment warning never to set `BIND_ADDR=0.0.0.0` without auth.
+- `README.md` + `HOW_TO_RUN.md` — LAN-with-auth quick-start; troubleshooting rows for the common auth misconfigurations.
+
+**Test (manual, local)**:
+1. `docker compose up -d --build` (no env vars) → `curl http://localhost:8080/` returns 200, no challenge. Backward-compatible with v2.2.0. ✓
+2. `AUTH_USERNAME=u AUTH_PASSWORD=p docker compose up -d --build` → `curl /` returns 401; `curl -u u:p /` returns 200; `curl -u u:wrong /` returns 401. ✓
+3. `/health` returns "ok" without creds in both modes. ✓
+4. HEALTHCHECK reaches `(healthy)` within 30s in both modes. ✓
+5. Browser at `http://localhost:8080` with auth on: native login prompt, then green test banner inside the app once authenticated.
 
 ### Phase 16 · v2.3 · Workload Mapping — 6th layer (Item 3)
 
@@ -719,3 +745,15 @@ A separate `SPEC_v3.md` will capture this architecture when work starts.
 4. Browsing to `http://localhost:8080` renders the Dell Discovery Canvas with the local AVIF logo (no fallback to `i.dell.com`), and the test banner reports green for all 22 suites inside the container's app.
 5. Default bind address is `127.0.0.1` (verified via `docker port dell-discovery-canvas` showing the loopback mapping); `BIND_ADDR=0.0.0.0 docker compose up` exposes the service on the LAN at `<host-IP>:8080`.
 6. Image runs unmodified on linux/arm64 (Dell GB10 / Grace) — confirmed by reviewer test on the GB10.
+
+**v2.2.1** is shippable when:
+1. Phase 15.1 complete (entrypoint script + nginx.conf include + Dockerfile apache2-utils + compose env vars + docs).
+2. `docker compose up -d --build` with no env vars behaves identically to v2.2.0 (backward-compatible).
+3. `AUTH_USERNAME=… AUTH_PASSWORD=… docker compose up -d --build` produces a healthy container in which:
+   - `curl /` without creds returns 401 with `WWW-Authenticate: Basic`.
+   - `curl -u user:wrongpass /` returns 401.
+   - `curl -u user:rightpass /` returns 200.
+   - `curl /health` returns `ok` regardless of creds.
+   - All static assets (`/app.js`, `/styles.css`, `/Logo/...avif`, etc.) are gated identically.
+4. HEALTHCHECK reaches `(healthy)` within 30 s in both auth modes.
+5. Browser navigates to `http://localhost:8080`, sees the native browser login prompt when auth is on, enters credentials, sees the Dell Discovery Canvas with the green test banner (348 assertions) inside the container's app.

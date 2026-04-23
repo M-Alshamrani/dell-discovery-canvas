@@ -841,6 +841,59 @@ Tagged `v2.1.2`. No code or test changes.
 
 ---
 
+## v2.2.1 · Phase 15.1 · LAN gating with HTTP Basic auth — IMPLEMENTED (2026-04-19)
+
+**Goal**: make it safe to set `BIND_ADDR=0.0.0.0` for shared LAN review without exposing the unauth'd vLLM endpoints alongside the app. Manager and partner reviewers should hit a credential challenge before the canvas loads.
+
+### Locked decisions
+
+1. **Auth scheme — HTTP Basic via nginx `auth_basic`**. Cheap, browser-native, no app code changes. Acceptable inside a Dell internal network; this is *not* a public-internet hardening (no rate-limit, no MFA, no session token rotation) — those belong in the v3 multi-user platform.
+2. **Trigger — env vars, not file mounts**. `AUTH_USERNAME` + `AUTH_PASSWORD` in compose env. Both set = auth on; either unset = auth off (preserves the v2.2.0 zero-config localhost path).
+3. **Generator — `htpasswd` from apache2-utils**. Adds ~200KB to the image. Cleaner than rolling our own with `openssl passwd` (and `openssl` CLI isn't preinstalled in `nginx:1.27-alpine`).
+4. **Hash — apr1 (MD5)** via `htpasswd -m`. Universally supported by `auth_basic`. Bcrypt would need extra build steps in alpine.
+5. **Healthcheck exemption — `/health` overrides with `auth_basic off;`**. The container HEALTHCHECK and any external monitor stay credential-free.
+6. **File ownership — `chown nginx:nginx 0640`** on the generated htpasswd. Required because nginx workers run as `nginx` user (not root) per upstream image config. Skipping this manifests as a 500 even with correct credentials, because the worker can't read the file.
+7. **Failure mode — entrypoint exits non-zero** if `htpasswd` write fails. Better than silently serving with broken auth.
+
+### What shipped
+
+- `docker-entrypoint.d/40-setup-auth.sh` — POSIX-sh script invoked automatically by the upstream `nginx:alpine` entrypoint chain (any executable in `/docker-entrypoint.d/` runs before nginx). Reads env vars, generates the htpasswd + auth snippet, sets ownership, exits cleanly.
+- `Dockerfile` — `apk add --no-cache apache2-utils`; COPY + chmod +x of the entrypoint script.
+- `nginx.conf` — `include /etc/nginx/snippets/auth.conf;` at server scope (snippet is empty when no auth is configured); `auth_basic off;` inside `location = /health`.
+- `docker-compose.yml` — declared `AUTH_USERNAME` + `AUTH_PASSWORD` env passthroughs (default empty); added inline header comment warning never to set `BIND_ADDR=0.0.0.0` without auth.
+- `README.md` + `HOW_TO_RUN.md` — LAN-with-auth quick-start command; troubleshooting rows for the two common misconfig modes (forgot to rebuild after env change; only one env var set).
+
+### Test (manual, local on Windows host with Docker Desktop 29.4.0)
+
+| Mode | Curl | Expected | Got |
+|---|---|---|---|
+| No env vars | `/` | 200, no challenge | ✅ |
+| No env vars | `/health` | 200 "ok" | ✅ |
+| Auth on | `/health` | 200 "ok" (no creds) | ✅ |
+| Auth on | `/` no creds | 401 + WWW-Authenticate | ✅ |
+| Auth on | `/` wrong creds | 401 | ✅ |
+| Auth on | `/` right creds | 200 + full headers | ✅ |
+| Auth on | `/app.js` no creds | 401 | ✅ |
+| Auth on | `/app.js` right creds | 200 + `application/javascript` | ✅ |
+| Both modes | HEALTHCHECK | `(healthy)` within 30s | ✅ |
+
+Browser verification: native auth prompt → enter creds → green banner (348/348) inside the app.
+
+### Bugs caught + fixed in flight
+
+1. **Initial implementation used `openssl passwd`** — `openssl` CLI not in `nginx:alpine`. Switched to `htpasswd` from `apache2-utils`.
+2. **Initial chmod left htpasswd as `root:root 0640`** — nginx workers (user `nginx`) couldn't read it, so correct creds returned 500. Added `chown nginx:nginx`.
+
+Both caught by the local smoke-test loop before any push to origin (per the test-before-push rule established 2026-04-19).
+
+### Out of scope
+
+- **Per-reviewer credentials** — current shape is a single shared user/password. Multi-user RBAC is v3 work.
+- **Credential rotation UX** — today is "down + new env vars + up". Acceptable for the v2.2.x review window; a settings UI is a v3 multi-user concern.
+- **TLS termination** — Basic auth credentials cross the wire base64-encoded, not encrypted. For internal Dell network use that's acceptable; for any external exposure, terminate TLS at a reverse proxy in front (Cloudflare, nginx-with-Let's-Encrypt, etc.). v3 will include this.
+
+---
+
 ## v2.2.0 · Phase 15 · Docker for Dell GB10 — IMPLEMENTED (2026-04-19)
 
 **Goal**: shippable container image so the app can be served from a Dell GB10 (NVIDIA Grace, ARM64) for shared internal review, without changing the frontend.
@@ -990,7 +1043,7 @@ Resuming numbering from where we stopped. Tagged releases: `v2.1.1`, `v2.1.2` on
 | Phase | Scope | Tag on completion | Dependencies |
 |---|---|---|---|
 | **15** | Docker containerisation for Dell GB10 deployment | `v2.2.0` ✅ SHIPPED | — (decisions captured 2026-04-19) |
-| **15.1** | LAN gating: nginx `auth_basic` + hashed password file | `v2.2.1` | None — straightforward sidecar config |
+| **15.1** | LAN gating: env-driven HTTP Basic auth via apache2-utils + nginx snippet | `v2.2.1` ✅ SHIPPED | — (env-driven; no host-side setup needed) |
 | **15.2** | Dell-styling token adoption (palette, Inter, card vocabulary from GPLC sample) | `v2.2.2` | None |
 | **16** | Workload Mapping 6th layer (Item 3) | `v2.3.0` | None |
 | **17** | Taxonomy unification + "Action" rename + mandatory-link enforcement for Replace/Consolidate (Item 4) | `v2.3.1` | User sign-off on Item 4 table |
