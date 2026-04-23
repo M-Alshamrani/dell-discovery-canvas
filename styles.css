@@ -47,12 +47,12 @@
   --nondell-strip:#9CA3AF;
   --custom-strip: #F59E0B;
 
-  /* Radius scale (kept current values — tightening to 3/5/8 like the
-     reference HTML would visibly shrink every rounded corner across
-     thousands of elements; out of scope for v2.2.2). */
-  --radius-sm:    6px;
-  --radius:       10px;
-  --radius-lg:    14px;
+  /* Radius scale — Phase 15.3 / v2.2.3 tightened from 6/10/14 to 4/6/10
+     for a sharper, more enterprise read. The GPLC reference uses 3/5/8;
+     we land halfway so corners feel firmer without being clinical. */
+  --radius-sm:    4px;
+  --radius:       6px;
+  --radius-lg:    10px;
 
   /* Shadow scale — ink-tinted instead of pure rgba(0,0,0,…) so depth
      reads as "Dell brand-blue shadow" rather than generic darkness. */
@@ -85,6 +85,18 @@ body {
   font-size: 13px;
   line-height: 1.5;
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Phase 15.3 — global heading hardening. Inter at 700-800 with negative
+   tracking matches the GPLC reference's typographic feel. Specific
+   selectors below (.card-title, .detail-title, etc.) override font-size
+   and color but inherit weight + tracking. */
+h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
 }
 
 /* ── Header ─────────────────────────────────────────────────── */
@@ -333,7 +345,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .detail-ph-title { font-size: 14px; font-weight: 600; color: var(--text-3); }
 .detail-ph-hint  { font-size: 12px; color: var(--text-3); line-height: 1.6; max-width: 220px; }
 .detail-panel    { display: flex; flex-direction: column; gap: 8px; }
-.detail-title    { font-size: 14px; font-weight: 700; color: var(--text-1); line-height: 1.3; }
+.detail-title    { font-size: 14px; font-weight: 700; color: var(--text-1); line-height: 1.3; letter-spacing: -0.01em; }
 .detail-sub      { font-size: 11px; color: var(--text-3); }
 .detail-badges   { display: flex; flex-wrap: wrap; gap: 4px; }
 .detail-sep      { font-size: 10px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
@@ -1588,7 +1600,18 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   font-weight: 700;
   color: var(--text-1);
   line-height: 1.3;
+  letter-spacing: -0.01em;
   flex: 1;
+}
+
+/* Phase 15.3 · monospace metric numbers in roadmap project cards.
+   Reads more enterprise — counts and quantities in JetBrains Mono align
+   visually like a financial table rather than a chat bubble. */
+.project-card .link-badge {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
 }
 .project-card-badges { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .project-card-solutions {
