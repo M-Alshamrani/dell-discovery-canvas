@@ -1,9 +1,10 @@
 # Dell Discovery Canvas v2 — Implementation Spec
 
-**Status**: APPROVED (v2.0 shipped Phases 0-7; v2.1 follow-up APPROVED for Phases 9-12)
-**Date locked**: 2026-04-18 (v2.0) · 2026-04-18 (v2.1 follow-up)
-**Predecessor**: v1.3 (live)
-**Discussion record**: [docs/CHANGELOG_PLAN.md](docs/CHANGELOG_PLAN.md) (full), including v2.1 follow-up section
+**Status**: Phases 0–14 SHIPPED. v2.2+ planning locked; Phases 15-20+ queued.
+**Current tagged releases**: `v2.1.1` (initial), `v2.1.2` (reviewer-handoff scripts)
+**Predecessor**: v1.3 (legacy)
+**Repo**: https://github.com/M-Alshamrani/dell-discovery-canvas (private)
+**Discussion record**: [docs/CHANGELOG_PLAN.md](docs/CHANGELOG_PLAN.md) — see "Post-v2.1.2 · v2.2+ design review" section for items 2-10 decisions.
 
 ---
 
@@ -574,6 +575,83 @@ Swap external image URL in `index.html` for local `../Logo/delltech-logo-stk-blu
 - `SummaryRoadmapView.js`: swimlane headers clickable → right-panel Strategic Driver detail (label, shortHint, priority, outcomes, project list, aggregate urgency, % mapped). Unassigned swimlane gets its own detail prompting driver assignment.
 - Styles: `.vm-row`, `.swimlane-clickable` hover + focus states.
 - Satisfies: **T7.1 · T7.2 · T7.3 · T7.4**.
+
+### Phase 15 · v2.2 · Docker containerisation for Dell GB10
+
+**Goal**: shippable container for internal testing on a Dell GB10. Frontend unchanged.
+
+**Deliverables**:
+- `Dockerfile` — minimal image (nginx:alpine or python:alpine serving static files).
+- `docker-compose.yml` — single service, port 8080 host → 8000 container (configurable).
+- `.dockerignore` — exclude `.git`, docs, junk folder.
+- Updated `README.md` + `HOW_TO_RUN.md` with Docker quick-start.
+
+**Pending user decisions before implementation**:
+- Target OS (Dell GB10 is ARM; likely Ubuntu/Linux).
+- Container runtime: Docker, Podman, or containerd.
+- Reachability: localhost-only on GB10 vs LAN-exposed.
+- Persistence: browser-localStorage-only (today) or server-side session store (defers to v3).
+- AI endpoint colocated on GB10 or separate box (affects env var defaults).
+- Single-user at a time or concurrent reviewers.
+
+**Tests**: container builds clean from a fresh clone; `docker compose up` yields a reachable app at the expected URL; banner green inside the container's app.
+
+### Phase 16 · v2.3 · Workload Mapping — 6th layer (Item 3)
+
+See CHANGELOG_PLAN § v2.2+ Item 3 for locked decisions.
+
+- Add `workload` to `LAYERS` array in `core/config.js`.
+- Extend `Instance` schema with optional `mappedAssetIds: string[]` for workload instances.
+- New UI flow in MatrixView: workload tile detail panel → `+ Map asset` → picker (other 5 layers) → append id.
+- New interaction command `propagateCriticalityUpward(session, workloadId)` in `matrixCommands.js` — prompts confirm on each mapped asset that would be upgraded.
+- Tests: W1 workload creates, W2 mapping adds ids, W3 upward-only propagation confirmed, W4 downward never touches.
+
+### Phase 17 · v2.3 · Taxonomy unification + "Action" rename (Item 4)
+
+See CHANGELOG_PLAN § v2.2+ Item 4 for proposed table (pending user confirm).
+
+- `DISPOSITION_ACTIONS` → renamed `ACTION_ITEMS` (or keep key, update labels).
+- UI label "Disposition" → "Action" across ContextView / MatrixView / GapsEditView / SummaryGapsView.
+- Drop `rationalize` from ACTION_TO_GAP_TYPE and the gap-type enum; migrate any legacy sessions at load time (bump migration rule).
+- `createGap` and `buildGapFromDisposition` enforce mandatory linking rules from the table (throw on Replace/Consolidate without required links at create-time, symmetric with existing unlink rule).
+- Tests: new assertions per table row; legacy session loads without error (migration strips rationalize).
+
+### Phase 18 · v2.3 · Linked assets always visible + warn-but-allow double-link (Items 8, 9, 10 regression test)
+
+See CHANGELOG_PLAN § v2.2+ Items 8, 9, 10.
+
+- Reverse Phase 12's `Manage links` collapse in `GapsEditView.js`. Remove `.linked-summary-row` / `.linked-manage-btn` / chain+chevron icons from the detail panel. Render `.link-section` for current and desired inline, always expanded.
+- `openLinkPicker`: before each candidate row, check all other gaps for existing link. If found, render a yellow `.link-warning-row` above the candidate with text *"⚠ {label} already linked to Gap '{desc}'. Linking adds it to both."* User proceeds at own choice.
+- New regression test: deleting a gap leaves its previously-linked instances intact and available for re-linking. Asserted via `deleteGap` + re-link into a fresh gap.
+- No strict uniqueness constraint. No reverse index.
+
+### Phase 19 · v2.4 · AI slice — Tab 1 strategic-driver question assistant (Item 7)
+
+See CHANGELOG_PLAN § v2.2+ Item 7. Pending user upload of AI modules document.
+
+- New `services/aiService.js` — OpenAI-compatible `chat.completions.create` client, configurable endpoint + auth.
+- New `core/aiConfig.js` OR localStorage-backed config — endpoint URL, API key, model name.
+- ContextView driver-detail panel: "✨ Suggest discovery questions" button → calls aiService → renders 3 question choices → click to append to notes or conversation-starter override.
+- Tests: aiService is pure + JSON-serialisable snapshot; UI button renders; mocked response populates 3 question choices.
+
+### Phase 20+ · v3 · Multi-user platform (Item 2)
+
+Separate architectural workstream. Out of scope for incremental v2.x phases.
+
+Scope (from CHANGELOG_PLAN § v2.2+ Item 2):
+- Backend server (Node/Express or FastAPI) with `/api/sessions`, `/api/users`, `/api/analytics`.
+- Database: SQLite → PostgreSQL.
+- Auth: GitHub OAuth or email+password + JWT sessions.
+- RBAC: `presales`, `manager`, `director`, `admin` roles.
+- Analytics: gap trends, per-presales discovery completion, global hotspots.
+- AI config and container-status surfaces in-app.
+- WAF via Cloudflare or NGINX+ModSecurity at ingress.
+
+A separate `SPEC_v3.md` will capture this architecture when work starts.
+
+---
+
+## Legacy phase blocks below (for reference)
 
 ### Phase 14 · v2.1.1 · Session Brief + Roadmap click unification
 - `services/roadmapService.js`: new `generateSessionBrief(session)` returning `[{label, text}]` structured rows (Customer · Strategic Drivers · Risk Posture · Discovery Coverage · Pipeline · Top High-Now gaps · Dell solutions mapped · Instances). `generateExecutiveSummary` rewritten to flatten brief into a string for legacy/AI callers. Legacy narrative preserved as unreachable `_legacyNarrativeSummary`.

@@ -827,3 +827,144 @@ Post-v2.1 refinements raised during hands-on review. Both phases shipped inline 
 - Roadmap project cards open right-panel detail on click; no inline expand remains.
 - Every Reporting sub-tab's right panel hosts something meaningful at rest or on click.
 - Session Brief rows render comfortably in the narrow right column — labels stacked above text.
+
+---
+
+## v2.1.2 · Reviewer handoff scripts (2026-04-18)
+
+Small non-app-surface release:
+- `start.bat` (Windows) + `start.sh` (macOS/Linux) — one-click local runners that check for Python, launch `python -m http.server 8000`, auto-open the browser.
+- `HOW_TO_RUN.md` — 2-minute setup guide for non-developer reviewers (ZIP or git, both covered).
+- `README.md` — links to HOW_TO_RUN from the Quick Start section.
+
+Tagged `v2.1.2`. No code or test changes.
+
+---
+
+## Post-v2.1.2 · v2.2+ design review (2026-04-19)
+
+Ten items raised in morning review. Triaged into near-term phases vs v3. Decisions captured here as living reference for any future session picking up this project.
+
+### Item 1 · dropped (no longer relevant)
+
+### Item 2 · Multi-user platform — DEFERRED to v3
+
+**Scope**: user registration, login, per-presales data isolation, manager/director global-view role, analytics dashboards, container/AI-config management UI, WAF layer.
+
+**Why v3, not v2.x**: requires a backend server, database, auth, RBAC — none of which exist in the current client-only localStorage model. Estimate 2–4 weeks focused work.
+
+**Architecture direction for v3** (draft, not locked):
+- Keep the existing browser app essentially unchanged — it remains AI-ready, JSON-serialisable, modular.
+- Add a thin Node/Express or FastAPI server that exposes `/api/sessions/{id}` CRUD + `/api/users` + `/api/analytics` endpoints.
+- Database: start with SQLite (single file, Docker volume), migrate to PostgreSQL if concurrency demands it.
+- Auth: GitHub OAuth or email+password with bcrypt + JWT sessions.
+- RBAC: roles `presales`, `manager`, `director`, `admin`. Managers see their team's sessions; directors see all.
+- WAF: Cloudflare in front of the server (free tier covers OWASP Top 10). Alternatively NGINX + ModSecurity at the Docker ingress.
+- Deployment: Docker Compose → VPS / internal Dell infrastructure.
+
+### Item 3 · Workload Mapping layer — LOCKED (Phase 16)
+
+**Locked decisions**:
+- Workload is a **6th layer** in `LAYERS` array (appears as its own row in the matrix).
+- Cardinality: **N-to-N** — a workload maps to multiple asset instances; an asset can appear in multiple workloads.
+- Criticality propagation: **upward only, on explicit confirm**. If a workload is High-criticality and a mapped asset is Low, a confirmation dialog prompts *"This will upgrade {asset} criticality from Low to High to match workload {W}. Proceed?"* — presales confirms, asset criticality gets upgraded. Downward: never auto-demote.
+- UI: workload tile detail panel gets a `+ Map asset` button that opens a picker (scoped to the other 5 layers) to add mapped-asset references.
+- Data model: workload instances carry `mappedAssetIds: string[]` — each entry is an instance id from any other layer.
+
+### Item 4 · Taxonomy unification — PROPOSED, pending explicit user sign-off
+
+**Proposed unified Action table** (Phase 17):
+
+| Term | Meaning | Requires current link? | Requires desired link? |
+|---|---|---|---|
+| Keep | No change | Yes | No |
+| Enhance | Upgrade in place | Yes (one) | Optional |
+| Replace | One-for-one swap | Yes (one) | Yes (one) |
+| Consolidate | Many-to-one merge | Yes (2+) | Yes (one) |
+| Retire | Decommission, no replacement | Yes (one) | No |
+| Introduce | Net-new capability | No | Yes (one) |
+| Operational | Process/ops change | Optional | Optional |
+
+**Proposed changes**:
+- Rename UI label "Disposition" → **"Action"** everywhere. JSON field name may stay `disposition` for back-compat, or migrate to `action` at refactor time.
+- Drop `rationalize` gap type (rationalization is a business outcome, not a technical action).
+- Enforce mandatory linking at create-time for Replace and Consolidate (symmetric with existing unlink throw rule).
+- `ACTION_TO_GAP_TYPE` map consolidates to 7 entries matching the table.
+
+**Pending user confirmation** before refactor starts.
+
+### Item 5 · merged into Item 4
+
+### Item 6 · AI auto-drafted gaps — DEFERRED to v2.4 or later
+
+Dependent on Item 7 infrastructure (AI API client). Concept: AI reads current + desired + sales-play catalog → suggests gap props that flow into `createGap(session, { ...props, reviewed: false })`. Out of scope for near-term phases.
+
+### Item 7 · AI integration — slice for Phase 19, larger waves later
+
+**Phase 19 target** (one concrete entry point): **Tab 1 strategic-driver question assistant**.
+- Presales clicks a driver → button "Suggest discovery questions".
+- App calls `aiService.suggestQuestions(driver, customer)` which hits user's manager's deployed AI modules (OpenAI-compatible endpoint per user note).
+- Returns 3 tailored discovery questions; presales picks one, appends to notes or conversation starter.
+
+**Required infrastructure**:
+- `services/aiService.js` wrapper — configurable endpoint URL + auth, OpenAI-compatible protocol (`chat.completions.create`).
+- Endpoint configuration — Phase 19 stores in localStorage or env; migrates to the v3 settings UI later.
+- User-provided AI modules document — NOT YET RECEIVED; user will upload.
+
+**Future AI waves (v2.4+)**:
+- Criticality suggestions from current-tile label + notes.
+- Gap description summarisation.
+- Roadmap executive summary via Claude / GPT.
+- Voice-to-text note capture on mobile (Phase 20+).
+
+### Item 8 · Linked assets always visible — PENDING confirm, small (Phase 18)
+
+Reverse Phase 12's `Manage links` collapse. In gap detail panel, render current + desired linked-instance lists inline, always expanded. `+ Link current instance` and `+ Link desired instance` buttons stay. Remove the chain+chevron collapse control.
+
+Awaiting explicit "ship" confirmation from user.
+
+### Item 9 · One-to-one asset→gap link — LOCKED (Phase 18)
+
+**Locked decisions**: **warn-but-allow**, not strict enforcement.
+- Link picker checks all gaps for existing link to the same instance.
+- If already linked: show yellow warning row *"⚠ {asset} is already linked to Gap '{description}'. Linking here too will count toward both initiatives."* — user can still proceed.
+- Asset tiles in gap detail show a red "multi-linked" chip if linked to 2+ gaps (visibility aid).
+- Roadmap aggregation (existing `buildProjects`) may need a dedup pass for multi-linked assets — design call when we get there.
+
+No strict uniqueness constraint. No reverse index needed.
+
+### Item 10 · Cascade delete on gap deletion — ALREADY SAFE
+
+Current model: `gap.relatedCurrentInstanceIds[]` and `gap.relatedDesiredInstanceIds[]` live on the gap only. Deleting the gap removes those arrays automatically. Instances don't carry back-references. No cascade logic needed.
+
+**Action**: add a regression test in Phase 17 or Phase 18 when we touch `gapsCommands.js` — assert "deleting a gap leaves its previously-linked instances intact and available for re-linking".
+
+**Future risk**: if we ever add a reverse index (instance → gap id) for performance, we'd need explicit sync logic. With the warn-but-allow pattern (Item 9), we avoid needing that index at all — link-picker scans existing gaps each open (O(N), fine for N ≤ thousands).
+
+---
+
+## Phase roadmap (post-v2.1.2)
+
+Resuming numbering from where we stopped. Tagged releases: `v2.1.1`, `v2.1.2` on GitHub.
+
+| Phase | Scope | Tag on completion | Dependencies |
+|---|---|---|---|
+| **15** | Docker containerisation for Dell GB10 deployment | `v2.2.0` | User Docker-target answers (OS, runtime, networking, persistence, AI endpoint, concurrency) |
+| **16** | Workload Mapping 6th layer (Item 3) | `v2.3.0` | None |
+| **17** | Taxonomy unification + "Action" rename + mandatory-link enforcement for Replace/Consolidate (Item 4) | `v2.3.1` | User sign-off on Item 4 table |
+| **18** | Linked assets always visible (Item 8) + warn-but-allow double-link (Item 9) + cascade-delete regression test (Item 10) | `v2.3.2` | User confirms Item 8 |
+| **19** | AI slice — Tab 1 strategic-driver question assistant (Item 7 first wave) | `v2.4.0` | User uploads AI modules doc; `services/aiService.js` built |
+| **20+** | Multi-user platform (Item 2) — separate v3 work | `v3.0.0-alpha` (new branch `v3-multiuser`) | Architecture design doc, backend stack decision, auth strategy |
+
+Items 5, 6 merged into later phases. Item 10 has no standalone phase (covered by Phase 18 test).
+
+---
+
+## Open decisions still needed from user (as of 2026-04-19 morning)
+
+1. **Phase 15 Docker target specifics**: OS, container runtime, networking reachability, session persistence model for today, AI endpoint location, concurrency expectations.
+2. **Item 4 taxonomy table**: thumbs-up or edits to the 7-term Action table above.
+3. **Item 8 ship confirmation**: "yes ship always-visible linked assets in Phase 18".
+4. **AI modules document**: upload / paste for Phase 19 design.
+
+Once these land, Phases 15 → 18 can execute without further blocking.
