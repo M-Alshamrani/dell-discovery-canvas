@@ -1,23 +1,37 @@
 /* ============================================================
    Dell Discovery Canvas — styles.css
-   Design system: clean enterprise, Dell Blue accent, DM Sans
+   Design system: Dell brand palette + Inter typography, aligned
+   to the GPLC reference design tokens (Phase 15.2 / v2.2.2).
+   Variable NAMES are preserved from earlier versions so every
+   component continues to pick up the right value automatically;
+   only the VALUES were refreshed to the Dell tokens.
    ============================================================ */
 
 /* ── CSS variables ─────────────────────────────────────────── */
 :root {
-  --brand:        #007DB8;
-  --brand-dark:   #005F8E;
-  --brand-light:  #E0F2FC;
-  --brand-faint:  #F0F8FD;
-  --bg:           #F2F4F7;
+  /* Brand — Dell official palette (replaces the prior #007DB8 family).
+     `--brand`/`--dell-strip` keep their names for backward compatibility
+     with every existing component selector. */
+  --brand:        #0076CE;   /* Dell Blue */
+  --brand-dark:   #0063AE;   /* deep */
+  --brand-light:  #E8F2FB;   /* soft */
+  --brand-faint:  #F5F9FD;   /* faint background tint */
+
+  /* Surfaces — slightly cooler greys aligned to the Dell brand. */
+  --bg:           #F4F6F9;
   --surface:      #FFFFFF;
-  --surface-2:    #F8F9FB;
-  --border:       #E2E6ED;
-  --border-mid:   #CDD2DB;
-  --text-1:       #0F1729;
-  --text-2:       #3D4A5C;
-  --text-3:       #7A8599;
+  --surface-2:    #FAFBFC;
+  --border:       #E4E8EE;
+  --border-mid:   #CBD2DC;
+
+  /* Ink scale — subtly bluer than pure neutral grey, per Dell. */
+  --text-1:       #0B2A4A;   /* primary text */
+  --text-2:       #3E4C62;
+  --text-3:       #6B7A90;
   --text-inv:     #FFFFFF;
+
+  /* Signal — kept the existing tokens (Tailwind-flavoured red/amber/green
+     pair well with the Dell ink and beat WCAG-AA on white). */
   --high:         #DC2626;
   --high-bg:      #FEF2F2;
   --high-border:  #FECACA;
@@ -27,21 +41,34 @@
   --low:          #16A34A;
   --low-bg:       #F0FDF4;
   --low-border:   #BBF7D0;
-  --dell-strip:   #007DB8;
+
+  /* Vendor strip accents */
+  --dell-strip:   #0076CE;
   --nondell-strip:#9CA3AF;
   --custom-strip: #F59E0B;
+
+  /* Radius scale (kept current values — tightening to 3/5/8 like the
+     reference HTML would visibly shrink every rounded corner across
+     thousands of elements; out of scope for v2.2.2). */
   --radius-sm:    6px;
   --radius:       10px;
   --radius-lg:    14px;
-  --shadow-sm:    0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow:       0 2px 8px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04);
-  --shadow-lg:    0 8px 24px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
-  --font:         "DM Sans", system-ui, -apple-system, sans-serif;
-  --font-mono:    "DM Mono", "Cascadia Code", monospace;
+
+  /* Shadow scale — ink-tinted instead of pure rgba(0,0,0,…) so depth
+     reads as "Dell brand-blue shadow" rather than generic darkness. */
+  --shadow-sm:    0 1px 2px rgba(11, 42, 74, 0.06);
+  --shadow:       0 4px 16px rgba(11, 42, 74, 0.08), 0 1px 2px rgba(11, 42, 74, 0.04);
+  --shadow-lg:    0 12px 40px rgba(11, 42, 74, 0.14), 0 2px 6px rgba(11, 42, 74, 0.05);
+
+  /* Typography — Inter + JetBrains Mono (matches the GPLC sample).
+     index.html loads them from Google Fonts; CSP already allow-lists
+     fonts.googleapis.com + fonts.gstatic.com. */
+  --font:         "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   /* Severity palette (Phase 2 · SPEC §4.1) — WCAG-AA against white.
-     These are the authoritative hues for criticality AND urgency; Dell
-     brand can override in one place without touching component CSS. */
+     Authoritative hues for criticality + urgency; same values as before
+     so heatmaps and chips don't shift. */
   --crit-high:    #d93025;
   --crit-medium:  #f59e0b;
   --crit-low:     #16a34a;
@@ -63,7 +90,8 @@ body {
 /* ── Header ─────────────────────────────────────────────────── */
 #app-header {
   height: 52px;
-  background: linear-gradient(135deg, #005F8E 0%, #007DB8 60%, #0099DB 100%);
+  /* Dell brand gradient: deep -> blue -> highlight, ink-grounded. */
+  background: linear-gradient(135deg, #00447C 0%, #0063AE 50%, #0076CE 100%);
   display: flex;
   align-items: center;
   justify-content: space-between;

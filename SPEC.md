@@ -1,7 +1,7 @@
 # Dell Discovery Canvas v2 — Implementation Spec
 
-**Status**: Phases 0–15.1 + 18 + 16 SHIPPED. Phases 15.2 / 17 / 19 / 20+ queued.
-**Current tagged releases**: `v2.1.1` (initial), `v2.1.2` (reviewer-handoff scripts), `v2.2.0` (Docker for GB10), `v2.2.1` (LAN Basic auth), `v2.3.0` (Phase 18 gap-link surfacing + double-link safety), `v2.3.1` (Phase 16 Workload Mapping — 6th layer)
+**Status**: Phases 0–15.2 + 18 + 16 SHIPPED. Phases 17 / 19 / 20+ queued.
+**Current tagged releases**: `v2.1.1` (initial), `v2.1.2` (reviewer-handoff scripts), `v2.2.0` (Docker for GB10), `v2.2.1` (LAN Basic auth), `v2.3.0` (Phase 18 gap-link surfacing + double-link safety), `v2.3.1` (Phase 16 Workload Mapping), `v2.2.2` (Phase 15.2 Dell brand-token + Inter typography)
 **Predecessor**: v1.3 (legacy)
 **Repo**: https://github.com/M-Alshamrani/dell-discovery-canvas (private)
 **Discussion record**: [docs/CHANGELOG_PLAN.md](docs/CHANGELOG_PLAN.md) — see "Post-v2.1.2 · v2.2+ design review" section for items 2-10 decisions.
@@ -769,6 +769,14 @@ A separate `SPEC_v3.md` will capture this architecture when work starts.
    - All static assets (`/app.js`, `/styles.css`, `/Logo/...avif`, etc.) are gated identically.
 4. HEALTHCHECK reaches `(healthy)` within 30 s in both auth modes.
 5. Browser navigates to `http://localhost:8080`, sees the native browser login prompt when auth is on, enters credentials, sees the Dell Discovery Canvas with the green test banner (348 assertions) inside the container's app.
+
+**v2.2.2** is shippable when:
+1. `styles.css :root` carries Dell-aligned values for `--brand`/`--text-1`/`--surface*`/`--border*`/`--shadow*` and Inter+JetBrains Mono in `--font`/`--font-mono`.
+2. `index.html` Google Fonts link loads Inter (300-800) + JetBrains Mono (400-600).
+3. CSS variable NAMES are unchanged so every existing component continues to render without per-selector edits.
+4. Container rebuilds clean and HEALTHCHECK reaches `(healthy)`.
+5. Browser banner reports 359/359 green inside the running container — no logic-test regression.
+6. Visual eyeball across Tab 1-5: header gradient now uses Dell deep→blue stack; primary buttons + accent surfaces show Dell Blue; body type renders in Inter; the test banner, Roadmap project cards, gap detail panel, mapped-assets section, and vendor strips all read coherently.
 
 **v2.3.1** is shippable when:
 1. Phase 16 complete (workload layer + catalog + Instance.mappedAssetIds + mapAsset/unmapAsset/proposeCriticalityUpgrades + MatrixView wiring + styles + Suite 24).

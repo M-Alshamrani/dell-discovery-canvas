@@ -841,6 +841,49 @@ Tagged `v2.1.2`. No code or test changes.
 
 ---
 
+## v2.2.2 · Phase 15.2 · Dell brand-token refresh + Inter typography — IMPLEMENTED (2026-04-19)
+
+**Goal**: Bring the app's visual tokens in line with the Dell brand reference design (the GPLC sample HTML the user shared). Token-only swap so we get a brand-aligned look without risking layout regressions across the 359-test surface.
+
+### Locked decisions
+
+1. **Variable NAMES preserved, VALUES refreshed.** Every existing component (`.btn-primary`, `.card`, `.kanban-col`, `.gap-card`, the new `.linked-inline-wrap` and `.mapped-assets-section`, etc.) continues to reference `var(--brand)`, `var(--text-1)`, `var(--surface-2)`, `var(--shadow)`, etc. — only the values changed. Zero per-component edits, zero behaviour change, zero test fallout.
+2. **Radii NOT changed** (kept 6/10/14). The GPLC sample uses sharper 3/5/8 radii, but tightening would visibly shrink rounded corners across thousands of elements and is out of scope for a token swap. Re-open if a future polish pass calls for it.
+3. **Component-pattern adoption (cards, eyebrows, monospace nums) NOT pulled in.** The GPLC sample is a static document with a heavier visual vocabulary; the Discovery Canvas is interactive and benefits from the lighter touch already in place. Adopt selectively if user calls it out.
+
+### What shipped
+
+- `styles.css :root` — every brand/ink/surface/shadow value refreshed to Dell tokens. Highlights:
+  - `--brand` `#007DB8` → **`#0076CE`** (Dell Blue official)
+  - `--brand-dark` `#005F8E` → `#0063AE` (deep)
+  - `--brand-light` `#E0F2FC` → `#E8F2FB` (soft)
+  - `--text-1` `#0F1729` → **`#0B2A4A`** (Dell ink — bluer than generic grey)
+  - `--text-2`, `--text-3` shifted to Dell ink scale
+  - `--bg`, `--surface-2`, `--border`, `--border-mid` aligned to Dell cooler greys
+  - `--shadow*` switched from `rgba(0,0,0,…)` → `rgba(11, 42, 74, …)` so depth reads as Dell ink rather than generic darkness
+  - `--dell-strip` updated to `#0076CE`
+  - `--font` `"DM Sans"` → **`"Inter"`** (300-800)
+  - `--font-mono` `"DM Mono"` → **`"JetBrains Mono"`** (400-600)
+- `styles.css #app-header` — gradient updated from `#005F8E → #007DB8 → #0099DB` to `#00447C → #0063AE → #0076CE` (Dell deep → Dell blue).
+- `index.html` — Google Fonts `<link>` swapped from DM Sans + DM Mono to Inter + JetBrains Mono. CSP allow-list already covers `fonts.googleapis.com` + `fonts.gstatic.com` (set in v2.2.0); no nginx changes needed.
+
+### Test (manual, local on Windows host)
+
+| Verification | Result |
+|---|---|
+| Container HEALTHCHECK after rebuild | `(healthy)` ✅ |
+| Served `styles.css` carries Dell Blue (`#0076CE`) and Inter | ✅ (3 hits each) |
+| Browser banner: 359/359 still green (no logic touched) | ✅ user-confirmed |
+| Visual regression eyeball across all tabs | ✅ "looks very similar to before" — token swap was conservative by design |
+
+### Out of scope (queued or not planned)
+
+- **Tighter radii** (3/5/8) — would shrink corners app-wide; revisit if next workshop feedback prefers sharper.
+- **Adopt GPLC card vocabulary** (eyebrow text, monospace nums, 1px hairline rules) — the sample is a document, the canvas is interactive; bring across only when a specific surface needs it.
+- **Type hierarchy uplift** (heading sizes, weight 800 for the cover, monospace for metrics) — pair with the deferred crown-jewel review where Reporting overview gets its own attention.
+
+---
+
 ## v2.3.1 · Phase 16 · Workload Mapping (6th layer + N-to-N + upward propagation) — IMPLEMENTED (2026-04-19)
 
 **Goal**: Give presales a way to capture *what the customer actually does* (workloads, business apps) on top of *what they run on* (compute / storage / network etc.), and let workload criticality flow down to the underlying infrastructure on explicit confirm. This is foundational for the "crown-jewel alignment" review later — once workloads exist as first-class citizens, the Gaps and Roadmap views can speak the customer's language.
@@ -1145,7 +1188,7 @@ Resuming numbering from where we stopped. Tagged releases: `v2.1.1`, `v2.1.2` on
 |---|---|---|---|
 | **15** | Docker containerisation for Dell GB10 deployment | `v2.2.0` ✅ SHIPPED | — (decisions captured 2026-04-19) |
 | **15.1** | LAN gating: env-driven HTTP Basic auth via apache2-utils + nginx snippet | `v2.2.1` ✅ SHIPPED | — (env-driven; no host-side setup needed) |
-| **15.2** | Dell-styling token adoption (palette, Inter, card vocabulary from GPLC sample) | `v2.2.2` | None |
+| **15.2** | Dell-styling token adoption (palette + Inter typography; conservative token-only swap) | `v2.2.2` ✅ SHIPPED | — |
 | **18** | Linked assets always visible (Item 8) + warn-but-allow double-link (Item 9) + cascade-delete regression test (Item 10) + roadmap dedup | `v2.3.0` ✅ SHIPPED | — (Item 8 ship-confirmed 2026-04-19 evening) |
 | **16** | Workload Mapping 6th layer (Item 3) — N-to-N, upward propagation on explicit confirm | `v2.3.1` ✅ SHIPPED | — |
 | **17** | Taxonomy unification + "Action" rename + mandatory-link enforcement for Replace/Consolidate (Item 4) | `v2.3.x` | User sign-off on Item 4 table |
