@@ -1,7 +1,7 @@
 # Dell Discovery Canvas v2 — Implementation Spec
 
-**Status**: Phases 0–14 SHIPPED. v2.2+ planning locked; Phases 15-20+ queued.
-**Current tagged releases**: `v2.1.1` (initial), `v2.1.2` (reviewer-handoff scripts)
+**Status**: Phases 0–15 SHIPPED. v2.2+ planning locked; Phases 16-20+ queued.
+**Current tagged releases**: `v2.1.1` (initial), `v2.1.2` (reviewer-handoff scripts), `v2.2.0` (Docker for GB10)
 **Predecessor**: v1.3 (legacy)
 **Repo**: https://github.com/M-Alshamrani/dell-discovery-canvas (private)
 **Discussion record**: [docs/CHANGELOG_PLAN.md](docs/CHANGELOG_PLAN.md) — see "Post-v2.1.2 · v2.2+ design review" section for items 2-10 decisions.
@@ -576,25 +576,38 @@ Swap external image URL in `index.html` for local `../Logo/delltech-logo-stk-blu
 - Styles: `.vm-row`, `.swimlane-clickable` hover + focus states.
 - Satisfies: **T7.1 · T7.2 · T7.3 · T7.4**.
 
-### Phase 15 · v2.2 · Docker containerisation for Dell GB10
+### Phase 15 · v2.2.0 · Docker containerisation for Dell GB10 — IMPLEMENTED
 
 **Goal**: shippable container for internal testing on a Dell GB10. Frontend unchanged.
 
-**Deliverables**:
-- `Dockerfile` — minimal image (nginx:alpine or python:alpine serving static files).
-- `docker-compose.yml` — single service, port 8080 host → 8000 container (configurable).
-- `.dockerignore` — exclude `.git`, docs, junk folder.
-- Updated `README.md` + `HOW_TO_RUN.md` with Docker quick-start.
+**Locked decisions (2026-04-19)**:
+- **OS**: Linux (Dell GB10 is ARM/Grace; nginx:alpine ships multi-arch including linux/arm64).
+- **Runtime**: Docker (Dockerfile + compose are OCI-standard — Podman pivot is near-zero cost via `podman-compose`).
+- **Reachability**: localhost-only by default (`BIND_ADDR=127.0.0.1`), opt-in LAN exposure via `BIND_ADDR=0.0.0.0`. LAN auth shim (nginx `auth_basic`) deferred to **Phase 15.1 / v2.2.1**.
+- **Persistence**: browser localStorage only — image is stateless. Shared-DB persistence deferred to v3 (Phase 20+ multi-user platform).
+- **AI endpoint location**: out of scope for Phase 15. Wired in Phase 19 via `services/aiService.js` reading endpoint URL from localStorage / settings UI.
+- **Concurrency**: nginx serves static files concurrently out of the box — no app-side work needed.
+- **Host port**: **8080** by default (8000/8001 reserved on the GB10 by the vLLM containers — Code LLM and VLM respectively). Override via `HOST_PORT`.
 
-**Pending user decisions before implementation**:
-- Target OS (Dell GB10 is ARM; likely Ubuntu/Linux).
-- Container runtime: Docker, Podman, or containerd.
-- Reachability: localhost-only on GB10 vs LAN-exposed.
-- Persistence: browser-localStorage-only (today) or server-side session store (defers to v3).
-- AI endpoint colocated on GB10 or separate box (affects env var defaults).
-- Single-user at a time or concurrent reviewers.
+**Deliverables (shipped)**:
+- `Dockerfile` — `nginx:1.27-alpine` base, explicit COPY whitelist (avoids the OneDrive brace-expansion junk folder), `HEALTHCHECK` against `/health`.
+- `nginx.conf` — explicit MIME map covering `.mjs` (ESM) + `.avif` (Dell logo); cache-busts `index.html`; 5-min cache for assets; `gzip` for text payloads; security headers (`X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy`); CSP allow-list scoped to Google Fonts (`fonts.googleapis.com`, `fonts.gstatic.com`) and `i.dell.com` (logo fallback) only.
+- `docker-compose.yml` — single service `dell-discovery-canvas`, `restart: unless-stopped`, port mapping `${BIND_ADDR:-127.0.0.1}:${HOST_PORT:-8080}:80`.
+- `.dockerignore` — excludes `.git`, `docs/`, host scripts, the brace-expansion junk folder.
+- `README.md` + `HOW_TO_RUN.md` — Docker quick-start sections added; troubleshooting rows for port collisions and stale browser cache after rebuild.
 
-**Tests**: container builds clean from a fresh clone; `docker compose up` yields a reachable app at the expected URL; banner green inside the container's app.
+**Test (manual on GB10)**:
+1. `git clone … && cd dell-discovery-canvas`
+2. `docker compose up -d --build`
+3. `curl http://localhost:8080/health` → `ok`
+4. Open `http://localhost:8080` in a browser; confirm green test banner (all 22 suites pass) inside the container's app.
+5. Logo loads from `/Logo/delltech-logo-stk-blue-rgb.avif` (no fallback to i.dell.com unless local copy 404s).
+6. `docker compose down` shuts cleanly.
+
+**Out of scope, captured for v2.2.x**:
+- LAN gating (auth_basic) → **Phase 15.1 / v2.2.1**.
+- Dell-styling token adoption from the GPLC sample → **Phase 15.2 / v2.2.2**.
+- AI endpoint settings page → groundwork in **Phase 19 / v2.4.0**.
 
 ### Phase 16 · v2.3 · Workload Mapping — 6th layer (Item 3)
 
@@ -664,7 +677,7 @@ A separate `SPEC_v3.md` will capture this architecture when work starts.
 
 ## 10 · Out of Scope for v2 (tracked for later)
 
-- **Containerisation** (Node + Express + SQLite). Retained as a v2.1 task; frontend stays offline-first.
+- **Server-side session persistence** (Node/Express + SQLite/Postgres). Frontend stays offline-first; deferred to v3 multi-user platform. Static-file containerisation **shipped in Phase 15** (v2.2.0).
 - **Dell-solutions chip catalog**. v1 stays free-text; revisit after real workshop data.
 - **Manual initiative/program authoring** beyond the driver-based auto-assignment.
 - **Cross-environment project bundling**. Current tuple stays `(env, layer, type)`.
@@ -698,3 +711,11 @@ A separate `SPEC_v3.md` will capture this architecture when work starts.
 4. Every Reporting sub-tab's right panel hosts meaningful detail at rest or on click (no dead space).
 5. Roadmap project cards open right-panel detail on click; no inline expand remains. Swimlane headers open Strategic Driver detail.
 6. Vendor Mix rows open per-vendor detail on click.
+
+**v2.2.0** is shippable when:
+1. Phase 15 complete (Dockerfile + nginx.conf + docker-compose.yml + .dockerignore + docs).
+2. `docker compose up -d --build` from a fresh clone produces a healthy container (HEALTHCHECK passes within 30 s).
+3. `curl http://localhost:8080/health` returns `ok`.
+4. Browsing to `http://localhost:8080` renders the Dell Discovery Canvas with the local AVIF logo (no fallback to `i.dell.com`), and the test banner reports green for all 22 suites inside the container's app.
+5. Default bind address is `127.0.0.1` (verified via `docker port dell-discovery-canvas` showing the loopback mapping); `BIND_ADDR=0.0.0.0 docker compose up` exposes the service on the LAN at `<host-IP>:8080`.
+6. Image runs unmodified on linux/arm64 (Dell GB10 / Grace) — confirmed by reviewer test on the GB10.

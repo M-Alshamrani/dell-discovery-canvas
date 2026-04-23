@@ -37,6 +37,32 @@ Then run `start.bat` (Windows) or `./start.sh` (macOS / Linux).
 
 To pull the latest changes later: `git pull`, then restart.
 
+### Option C — Docker (Linux hosts, e.g. Dell GB10)
+
+For shared internal deployments. Requires Docker + Docker Compose installed.
+
+```bash
+git clone https://github.com/M-Alshamrani/dell-discovery-canvas.git
+cd dell-discovery-canvas
+docker compose up -d --build
+```
+
+Open **http://localhost:8080**.
+
+By default the container binds to `127.0.0.1` (localhost only — safe even on a shared host). To expose to the LAN once your gating is in place:
+
+```bash
+BIND_ADDR=0.0.0.0 docker compose up -d --build
+```
+
+Then reach it at `http://<host-IP>:8080` from any browser on the same network.
+
+To stop: `docker compose down`. To follow logs: `docker compose logs -f`.
+
+> **Note**: Port 8080 was chosen to avoid clashing with NVIDIA vLLM containers
+> on the GB10 (Code LLM uses :8000, VLM uses :8001). If you need a different
+> host port: `HOST_PORT=8888 docker compose up -d`.
+
 ---
 
 ## What to expect
@@ -77,7 +103,9 @@ Then restart `start.bat` / `start.sh`.
 | Problem | Fix |
 |---|---|
 | "Python is not installed" | Install from https://python.org/downloads — on Windows, tick "Add to PATH". Restart the runner script. |
-| "Port 8000 is already in use" | Close whatever else is using port 8000, or edit the last line of `start.bat` / `start.sh` to use a different port (e.g. `python -m http.server 8080` and open http://localhost:8080). |
+| "Port 8000 is already in use" | Close whatever else is using port 8000, or edit the last line of `start.bat` / `start.sh` to use a different port (e.g. `python -m http.server 8081` and open http://localhost:8081). |
+| Docker: "port is already allocated" on 8080 | Another container or service is using 8080. Either stop it, or run with `HOST_PORT=8888 docker compose up -d` and open http://localhost:8888. |
+| Docker: app loads but logo missing / fonts wrong | The browser may have cached an older build. Hard-refresh (Ctrl+F5 / Cmd+Shift+R) once after `docker compose up --build`. |
 | Browser didn't open automatically | Open it yourself and go to http://localhost:8000. |
 | Test banner is red | Hard-refresh with Ctrl+F5 (Windows) or Cmd+Shift+R (macOS). If still red, send Mahmoud the failing assertion from the browser console (F12). |
 | Need to clear demo and start fresh | Click "New session" in the footer (bottom right). |

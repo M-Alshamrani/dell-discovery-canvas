@@ -841,6 +841,46 @@ Tagged `v2.1.2`. No code or test changes.
 
 ---
 
+## v2.2.0 · Phase 15 · Docker for Dell GB10 — IMPLEMENTED (2026-04-19)
+
+**Goal**: shippable container image so the app can be served from a Dell GB10 (NVIDIA Grace, ARM64) for shared internal review, without changing the frontend.
+
+### Locked decisions
+
+Captured from the morning Q&A; binding for the v2.2.x series:
+
+1. **OS** — Linux (the GB10 is ARM/Grace; nginx:alpine ships multi-arch including linux/arm64, no `--platform` needed).
+2. **Runtime** — Docker. The Dockerfile + compose file are OCI-standard. Pivoting to Podman later is `podman-compose up` with the same files; Kubernetes would require a manifest/Helm chart but the image itself is portable. **No lock-in.**
+3. **Reachability** — localhost-only by default (`BIND_ADDR=127.0.0.1`), opt-in LAN exposure via `BIND_ADDR=0.0.0.0`. **LAN gating (auth_basic shim) deferred to Phase 15.1 / v2.2.1** — until that lands, never bind to 0.0.0.0 on a network where the LLM endpoints are reachable.
+4. **Persistence** — none server-side. Image is stateless; reviewer sessions stay in their own browser localStorage. Shared-DB persistence belongs to v3 (Phase 20+ multi-user platform).
+5. **AI endpoint** — out of scope for Phase 15. The vLLM containers on the GB10 (Code LLM on :8000, VLM on :8001 per the *LLMs on GB10* doc) will be addressed in Phase 19 via `services/aiService.js` reading `baseUrl` from localStorage / a future settings UI.
+6. **Concurrency** — nginx serves static files concurrently out of the box. No app-side work. MVP single-reviewer assumption is automatically satisfied; multi-reviewer falls out for free.
+7. **Host port** — **8080** by default, because the GB10 already binds **:8000** (Code LLM) and **:8001** (VLM). Configurable via `HOST_PORT` env var (`HOST_PORT=8888 docker compose up`).
+
+### What shipped
+
+- `Dockerfile` — `nginx:1.27-alpine` base; explicit COPY whitelist of source folders (avoids dragging in `.git`, docs, the OneDrive brace-expansion junk folder, host-only `start.sh`/`start.bat`); built-in `HEALTHCHECK` polling `/health`.
+- `nginx.conf` — explicit MIME map (default alpine list lacks `.mjs` and `.avif`); `/health` endpoint returning `ok`; cache-busts `index.html`, 5-min cache for everything else; gzip for text payloads; `.dotfile` deny rule; security headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy` zeroing camera/mic/geo); CSP allow-list scoped to Google Fonts + `i.dell.com` (logo fallback) only.
+- `docker-compose.yml` — single service `dell-discovery-canvas`, `restart: unless-stopped`, port mapping `${BIND_ADDR:-127.0.0.1}:${HOST_PORT:-8080}:80`, healthcheck wired to `/health`.
+- `.dockerignore` — keeps the build context lean.
+- `README.md` + `HOW_TO_RUN.md` — Docker quick-start sections; troubleshooting rows for port collisions and stale browser cache after rebuild.
+
+### Test (manual on GB10)
+
+1. Clone, `cd`, `docker compose up -d --build`.
+2. `curl http://localhost:8080/health` → `ok`.
+3. Browser to `http://localhost:8080`; logo loads from `/Logo/...avif` (no fallback); test banner reports green for all 22 suites.
+4. `BIND_ADDR=0.0.0.0 docker compose up -d` exposes the service on the LAN at `<host-IP>:8080`.
+5. `docker compose down` shuts cleanly.
+
+### Out of scope (queued)
+
+- **Phase 15.1 / v2.2.1** — LAN gating: nginx `auth_basic` block + hashed password file mounted via compose secret, so we can flip `BIND_ADDR=0.0.0.0` safely.
+- **Phase 15.2 / v2.2.2** — Dell-styling token adoption from the GPLC reference HTML (palette tokens, Inter font, card vocabulary). Distinct PR so visual-regression review is bisectable from the Docker plumbing.
+- **Phase 19 / v2.4.0** — AI endpoint settings page + `services/aiService.js` for the GB10 Code LLM / VLM.
+
+---
+
 ## Post-v2.1.2 · v2.2+ design review (2026-04-19)
 
 Ten items raised in morning review. Triaged into near-term phases vs v3. Decisions captured here as living reference for any future session picking up this project.
@@ -949,22 +989,24 @@ Resuming numbering from where we stopped. Tagged releases: `v2.1.1`, `v2.1.2` on
 
 | Phase | Scope | Tag on completion | Dependencies |
 |---|---|---|---|
-| **15** | Docker containerisation for Dell GB10 deployment | `v2.2.0` | User Docker-target answers (OS, runtime, networking, persistence, AI endpoint, concurrency) |
+| **15** | Docker containerisation for Dell GB10 deployment | `v2.2.0` ✅ SHIPPED | — (decisions captured 2026-04-19) |
+| **15.1** | LAN gating: nginx `auth_basic` + hashed password file | `v2.2.1` | None — straightforward sidecar config |
+| **15.2** | Dell-styling token adoption (palette, Inter, card vocabulary from GPLC sample) | `v2.2.2` | None |
 | **16** | Workload Mapping 6th layer (Item 3) | `v2.3.0` | None |
 | **17** | Taxonomy unification + "Action" rename + mandatory-link enforcement for Replace/Consolidate (Item 4) | `v2.3.1` | User sign-off on Item 4 table |
 | **18** | Linked assets always visible (Item 8) + warn-but-allow double-link (Item 9) + cascade-delete regression test (Item 10) | `v2.3.2` | User confirms Item 8 |
-| **19** | AI slice — Tab 1 strategic-driver question assistant (Item 7 first wave) | `v2.4.0` | User uploads AI modules doc; `services/aiService.js` built |
+| **19** | AI slice — Tab 1 strategic-driver question assistant (Item 7 first wave). LLM target: GB10 Code LLM on `:8000` (`model=code-llm`), VLM on `:8001` (`model=vision-vlm`), OpenAI-compatible | `v2.4.0` | None — LLM endpoint shape now known |
 | **20+** | Multi-user platform (Item 2) — separate v3 work | `v3.0.0-alpha` (new branch `v3-multiuser`) | Architecture design doc, backend stack decision, auth strategy |
 
 Items 5, 6 merged into later phases. Item 10 has no standalone phase (covered by Phase 18 test).
 
 ---
 
-## Open decisions still needed from user (as of 2026-04-19 morning)
+## Open decisions still needed from user (as of 2026-04-19 afternoon)
 
-1. **Phase 15 Docker target specifics**: OS, container runtime, networking reachability, session persistence model for today, AI endpoint location, concurrency expectations.
+1. ~~**Phase 15 Docker target specifics**~~ — ✅ resolved 2026-04-19; see v2.2.0 entry above.
 2. **Item 4 taxonomy table**: thumbs-up or edits to the 7-term Action table above.
 3. **Item 8 ship confirmation**: "yes ship always-visible linked assets in Phase 18".
-4. **AI modules document**: upload / paste for Phase 19 design.
+4. ~~**AI modules document**~~ — ✅ received 2026-04-19; `LLMs on GB10.docx`. Endpoints, model names, and OpenAI-compatible client examples captured for Phase 19 design.
 
-Once these land, Phases 15 → 18 can execute without further blocking.
+Items 2 + 3 still block Phases 17 + 18. Phases 15.1 / 15.2 / 16 / 19 can execute now.

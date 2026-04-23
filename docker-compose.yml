@@ -1,0 +1,31 @@
+# Dell Discovery Canvas — single-service compose file.
+#
+# Default: localhost-only on the Docker host.
+#   docker compose up -d
+#   open http://localhost:8080
+#
+# Open to LAN reviewers (Phase 15.x — once the auth_basic shim lands):
+#   BIND_ADDR=0.0.0.0 docker compose up -d
+#   open http://<GB10_IP>:8080
+#
+# Override the host port if 8080 is taken (e.g. another service on the GB10):
+#   HOST_PORT=8888 docker compose up -d
+
+services:
+  dell-discovery-canvas:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dell-discovery-canvas:latest
+    container_name: dell-discovery-canvas
+    restart: unless-stopped
+    ports:
+      # ${BIND_ADDR:-127.0.0.1} keeps it loopback-only by default — safer
+      # while we don't have auth in front of the LLM endpoints.
+      - "${BIND_ADDR:-127.0.0.1}:${HOST_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
