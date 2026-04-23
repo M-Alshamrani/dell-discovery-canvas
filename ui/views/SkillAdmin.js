@@ -12,6 +12,7 @@ import { extractBindings, renderTemplate, runSkill } from "../../services/skillE
 import { fieldsForTab, buildPreviewScope } from "../../core/fieldManifest.js";
 import { session as liveSession } from "../../state/sessionStore.js";
 import { loadAiConfig } from "../../core/aiConfig.js";
+import { createPillEditor } from "../components/PillEditor.js";
 
 var TAB_LABELS = {
   context:   "Context",
@@ -135,9 +136,20 @@ function renderEditForm(adminRoot, list, existing, onChange) {
     existing ? existing.systemPrompt : "",
     "What the AI is and what it should do. Constant per skill — no live-data bindings needed.");
 
-  var tplArea = mkTextarea(form, "Data for the AI *", 7,
-    existing ? existing.promptTemplate : "",
-    "Sent to the AI on every run. Click any field chip below to insert a {{binding}} at the cursor. Missing paths render as empty strings.");
+  // v2.4.2.1 · pill-based contenteditable editor replaces the textarea.
+  // Exposes serialize() / setValue() / insertPillAtCursor() so the
+  // rest of the form code doesn't care about the DOM shape.
+  var tplLabelGroup = mk("div", "skill-form-field");
+  tplLabelGroup.appendChild(mkt("label", "skill-form-label", "Data for the AI *"));
+  tplLabelGroup.appendChild(mkt("div", "settings-help-inline",
+    "Sent to the AI on every run. Click any field chip below to insert a pill; the pill is uneditable as a unit (Backspace removes it whole). Alt-click a chip for a bare-path pill."));
+  form.appendChild(tplLabelGroup);
+  var tplArea = createPillEditor({
+    initialValue: existing ? existing.promptTemplate : "",
+    manifest:     fieldsForTab(existing ? existing.tabId : "context"),
+    onInput:      function() { refreshBindingsAndPreview(); }
+  });
+  tplLabelGroup.appendChild(tplArea);
 
   // Phase 19c · field-pointer chips — click to insert {{path}} at the
   // textarea cursor. Chips refresh whenever the target tab changes.
@@ -145,19 +157,6 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   form.appendChild(chipsLabel);
   var chipsWrap = mk("div", "field-chip-list");
   form.appendChild(chipsWrap);
-
-  function insertAtCursor(text) {
-    tplArea.focus();
-    var start = tplArea.selectionStart || 0;
-    var end   = tplArea.selectionEnd   || 0;
-    var before = tplArea.value.substring(0, start);
-    var after  = tplArea.value.substring(end);
-    tplArea.value = before + text + after;
-    var caret = start + text.length;
-    tplArea.selectionStart = tplArea.selectionEnd = caret;
-    // Fire input so the detected-bindings + preview refresh.
-    tplArea.dispatchEvent(new Event("input", { bubbles: true }));
-  }
 
   function refreshChips() {
     chipsWrap.innerHTML = "";
@@ -170,25 +169,26 @@ function renderEditForm(adminRoot, list, existing, onChange) {
     fields.forEach(function(f) {
       var chip = mkt("button", "field-chip" + (f.kind === "array" ? " is-array" : ""), f.label);
       chip.type = "button";
-      chip.title = "Click: insert '" + f.label + ": {{" + f.path + "}}'. Alt-click: insert bare {{" + f.path + "}}.";
+      chip.title = "Click: insert labeled pill for " + f.label + ". Alt-click: insert bare {{" + f.path + "}} pill.";
       chip.addEventListener("click", function(e) {
         e.preventDefault();
-        // Labeled insertion = LLM sees "Customer name: Acme Corp" instead
-        // of just "Acme Corp" — the label tells the model what the value
-        // represents. Alt-click opts out for cases where the template
-        // already describes the field nearby.
-        var bare = e.altKey;
-        var snippet = bare ? "{{" + f.path + "}}"
-                           : f.label + ": {{" + f.path + "}}";
-        insertAtCursor(snippet);
+        tplArea.insertPillAtCursor(f.path, e.altKey);
       });
-      // Data attribute used by tests to assert mapping.
       chip.setAttribute("data-path", f.path);
       chipsWrap.appendChild(chip);
     });
   }
   refreshChips();
-  tabSel.addEventListener("change", refreshChips);
+  // On tab change: only refresh the chip palette + preview. DO NOT
+  // re-create the editor — pills carry their own label metadata via
+  // data-label attrs; re-parsing against a different tab's manifest
+  // would strand the label prefix as plain text when the new tab
+  // doesn't know the path. Existing pills persist correctly through
+  // target-tab edits.
+  tabSel.addEventListener("change", function() {
+    refreshChips();
+    refreshBindingsAndPreview();
+  });
 
   // Detected-bindings readout (kept from v2.4.1).
   var bindingsEl = mkt("div", "skill-form-bindings", "");
@@ -202,18 +202,18 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   form.appendChild(previewBox);
 
   function refreshBindingsAndPreview() {
-    var found = extractBindings(tplArea.value);
+    var serialized = tplArea.serialize();
+    var found = extractBindings(serialized);
     if (found.length === 0) {
       bindingsEl.textContent = "No {{template.bindings}} detected.";
     } else {
       bindingsEl.textContent = "Detected bindings: " + found.map(function(b) { return "{{" + b + "}}"; }).join(", ");
     }
     var scope = buildPreviewScope(liveSession, tabSel.value);
-    var rendered = renderTemplate(tplArea.value || "", scope);
+    var rendered = renderTemplate(serialized, scope);
     previewBox.textContent = rendered || "(empty — write a template above, or click a field chip to insert)";
   }
-  tplArea.addEventListener("input", refreshBindingsAndPreview);
-  tabSel.addEventListener("change", refreshBindingsAndPreview);
+  // onInput callback already wired in createPillEditor; prime the display.
   refreshBindingsAndPreview();
 
   // Phase 19c v2 · "Test skill now" — dry-runs the current unsaved draft
@@ -231,7 +231,7 @@ function renderEditForm(adminRoot, list, existing, onChange) {
       name:           (nameInput.value || "Untitled").trim(),
       tabId:          tabSel.value,
       systemPrompt:   sysArea.value,
-      promptTemplate: tplArea.value,
+      promptTemplate: tplArea.serialize(),
       outputMode:     modeSel.value
     };
     testBtn.disabled = true;
@@ -279,9 +279,9 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   var saveBtn = mkt("button", "btn-primary", existing ? "Save changes" : "Create skill");
   saveBtn.addEventListener("click", function() {
     var name = (nameInput.value || "").trim();
-    var tpl  = (tplArea.value   || "").trim();
+    var tpl  = tplArea.serialize().trim();
     if (!name) { alert("Name is required."); return; }
-    if (!tpl)  { alert("Prompt template is required."); return; }
+    if (!tpl)  { alert("Data for the AI is required — click a field chip or type text."); return; }
     var props = {
       name:           name,
       description:    (descInput.value || "").trim(),

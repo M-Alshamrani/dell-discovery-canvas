@@ -43,8 +43,23 @@ export async function chatCompletion(opts) {
   if (!resp.ok) {
     var bodyText = "";
     try { bodyText = await resp.text(); } catch (e) { /* swallow */ }
-    throw new Error("aiService " + providerKey + " HTTP " + resp.status +
-      (bodyText ? ": " + bodyText.slice(0, 240) : ""));
+    // Categorise common HTTP statuses so the UI can render a useful
+    // hint instead of just the raw JSON blob:
+    //   401/403 → auth / missing-key problem (user fixes by updating key)
+    //   429     → rate-limited (wait a bit or switch provider)
+    //   5xx     → upstream transient (not our bug; retry later)
+    var prefix;
+    if (resp.status === 401 || resp.status === 403) {
+      prefix = "auth failed — check your API key in gear icon → " + providerKey;
+    } else if (resp.status === 429) {
+      prefix = "rate-limited — wait a moment or switch provider";
+    } else if (resp.status >= 500 && resp.status < 600) {
+      prefix = "upstream temporary error — try again or switch provider";
+    } else {
+      prefix = "HTTP " + resp.status;
+    }
+    throw new Error("aiService " + providerKey + " " + prefix +
+      " (" + resp.status + ")" + (bodyText ? ": " + bodyText.slice(0, 200) : ""));
   }
   var json = await resp.json();
   return { text: extractText(providerKind, json), raw: json };

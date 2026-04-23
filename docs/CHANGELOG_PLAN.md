@@ -841,6 +841,30 @@ Tagged `v2.1.2`. No code or test changes.
 
 ---
 
+## v2.4.2.1 · Phase 19c.1 · Pill-based binding editor + error-message polish — IMPLEMENTED (2026-04-19)
+
+**Goal**: Replace the template textarea with a contenteditable editor hosting inline uneditable pill elements for each binding. Error-proof (no partial `{{path}}` corruption), colour-discriminated (blue scalar / amber array / italic bare), delete-as-unit via Backspace.
+
+### What shipped
+
+- `ui/components/PillEditor.js` — `createPillEditor({initialValue, manifest, onInput})` returns a DOM element with textarea-compatible API. `parseToSegments` + `serializeEditor` exported pure.
+- `ui/views/SkillAdmin.js` — edit form swaps the textarea for the pill editor; save/test/preview paths route through `editor.serialize()`.
+- `services/aiService.js` — error-message categorisation: 401/403 → API-key hint, 429 → rate-limited hint, 5xx → upstream-transient hint.
+- `styles.css` — `.pill-editor`, `.binding-pill.is-scalar|is-array|is-bare`.
+- Suite 28 PE1-PE7 (7 new assertions); FP6/FP8 updated to the pill-editor contract.
+
+### Bugs caught + fixed in flight
+
+1. **Tab-change rebuilt the editor** against the new tab's manifest, stranding labels from tab-specific bindings as plain text next to bare pills (user saw "text instead of pills" on Desired/Current). Fix: tab-change now only refreshes chips + preview; editor state persists.
+2. **Gemini 403 vs 503 looked identical** in the UI. Error categorisation now distinguishes auth failures (user-fixable) from upstream transients (retry-or-switch).
+
+### Out of scope, queued
+
+- **v2.4.3** — output handling + undo stack + per-skill provider assignment (3-item bundle).
+- **v2.5.0 crown-jewel** — "Use AI" button placement on Tabs 2-5, right-panel drill-down interactivity, whitespace/density pass.
+
+---
+
 ## v2.4.2 · Phase 19c · Field-pointer mechanic + LLM-friendly coercion + test-skill — IMPLEMENTED (2026-04-19)
 
 **Goal**: Make the skill builder point-and-click instead of type-from-memory. Plus two correctness fixes that became visible when we started exercising the pipeline with non-scalar bindings.
@@ -1353,7 +1377,7 @@ Resuming numbering from where we stopped. Tagged releases: `v2.1.1`, `v2.1.2` on
 | **19a** | AI foundations — 3-provider client (local vLLM / Anthropic / Gemini) + settings modal + demo skill on Tab 1 | `v2.4.0` ✅ SHIPPED | — |
 | **19b** | Skill builder UI — admin list + add/edit form + per-tab dropdown + seeded skill | `v2.4.1` ✅ SHIPPED | — |
 | **19c** | Field-pointer mechanic + LLM coercion + test button | `v2.4.2` ✅ SHIPPED | — |
-| **19c.1** | Pill-based editor (contenteditable with inline uneditable binding pills) | `v2.4.2.1` | — |
+| **19c.1** | Pill-based editor + error-message polish | `v2.4.2.1` ✅ SHIPPED | — |
 | **19d** | Output handling + undo stack + per-skill provider assignment | `v2.4.3` | 19c.1 |
 | **20+** | Multi-user platform (Item 2) — separate v3 work | `v3.0.0-alpha` (new branch `v3-multiuser`) | Architecture design doc, backend stack decision, auth strategy |
 

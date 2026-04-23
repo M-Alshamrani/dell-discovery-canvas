@@ -1,7 +1,7 @@
 # Dell Discovery Canvas v2 — Implementation Spec
 
-**Status**: Phases 0–15.3 + 16 + 18 + 19a + 19b + 19c SHIPPED. Phases 17 / 19d / 20+ queued.
-**Current tagged releases**: `v2.1.1`, `v2.1.2`, `v2.2.0` (Docker), `v2.2.1` (LAN auth), `v2.2.2` (Dell tokens), `v2.2.3` (visual depth), `v2.3.0` (Phase 18 gap-links), `v2.3.1` (Phase 16 Workload), `v2.4.0` (Phase 19a AI foundations), `v2.4.1` (Phase 19b Skill Builder), `v2.4.2` (Phase 19c Field-pointer + LLM-friendly coercion + test-skill button)
+**Status**: Phases 0–15.3 + 16 + 18 + 19a/b/c/c.1 SHIPPED. Phases 17 / 19d / 20+ queued.
+**Current tagged releases**: `v2.1.1`, `v2.1.2`, `v2.2.0` (Docker), `v2.2.1` (LAN auth), `v2.2.2` (Dell tokens), `v2.2.3` (visual depth), `v2.3.0` (Phase 18 gap-links), `v2.3.1` (Phase 16 Workload), `v2.4.0` (Phase 19a AI foundations), `v2.4.1` (Phase 19b Skill Builder), `v2.4.2` (Phase 19c Field-pointer + coercion + test-skill), `v2.4.2.1` (Phase 19c.1 Pill editor + error-message categorisation)
 **Predecessor**: v1.3 (legacy)
 **Repo**: https://github.com/M-Alshamrani/dell-discovery-canvas (private)
 **Discussion record**: [docs/CHANGELOG_PLAN.md](docs/CHANGELOG_PLAN.md) — see "Post-v2.1.2 · v2.2+ design review" section for items 2-10 decisions.
@@ -718,9 +718,13 @@ Turn v2.4.0 from "one hardcoded button" into a platform. Users define, deploy, a
 - `services/skillEngine.js` — `coerceForLLM()` now handles non-scalar bindings: arrays/objects serialise as pretty-printed JSON (2-space indent, 1200-char soft cap). Previously `{{session.gaps}}` rendered as `"[object Object],[object Object]"`; now it's valid JSON the LLM can actually read.
 - Suite 27 FP1-FP9: manifest completeness, tab-scope isolation, preview scope, chip render count, labeled insertion (default), coercion behaviour, Alt-click bare insertion, test-button render.
 
-#### Phase 19c.1 · v2.4.2.1 · Pill-based editor — QUEUED (next)
+#### Phase 19c.1 · v2.4.2.1 · Pill-based editor + error-message polish — IMPLEMENTED
 
-User-proposed 2026-04-19 evening. Replace the template `<textarea>` with a `<div contenteditable="true">` editor hosting inline uneditable `<span>` pills for bindings. Clicking a field chip inserts a pill (color-coded, delete-as-unit, no accidental path corruption). Free-text between pills remains editable. On send: serialize pills back to `"Label: {{path}}"` form so the engine contract stays unchanged. Full spec + locked decisions in `project_deferred_design_review.md`.
+- `ui/components/PillEditor.js` — new. `createPillEditor({initialValue, manifest, onInput})` returns a DOM element with a textarea-compatible surface (`serialize()` / `setValue()` / `insertPillAtCursor(path, bare)`). Pills are `<span class="binding-pill" contenteditable="false" data-path data-label data-bare>`. Backspace/Delete at a pill boundary removes the whole pill as a unit. `parseToSegments(template, labelByPath)` + `serializeEditor(editor)` exported pure for tests.
+- `ui/views/SkillAdmin.js` — edit form uses the pill editor in place of the textarea. Save/test paths use `editor.serialize()`. Tab-change no longer rebuilds the editor (stranded-label bug fix).
+- `services/aiService.js` — error-message categorisation: 401/403 "auth failed — check your API key", 429 "rate-limited", 5xx "upstream temporary error — try again or switch provider". Raw response body still included but truncated at 200 chars.
+- `styles.css` — `.pill-editor` (contenteditable host with placeholder pseudo), `.binding-pill.is-scalar|is-array|is-bare`.
+- Suite 28 PE1-PE7: labeled-pill detection, bare-pill fallback, serialize emission, round-trip fidelity, textarea-compatible surface, DOM attribute contract, unknown-path rendering.
 
 #### Phase 19d · v2.4.3 · Output handling + undo + per-skill provider — QUEUED
 
@@ -817,6 +821,15 @@ A separate `SPEC_v3.md` will capture this architecture when work starts.
    - All static assets (`/app.js`, `/styles.css`, `/Logo/...avif`, etc.) are gated identically.
 4. HEALTHCHECK reaches `(healthy)` within 30 s in both auth modes.
 5. Browser navigates to `http://localhost:8080`, sees the native browser login prompt when auth is on, enters credentials, sees the Dell Discovery Canvas with the green test banner (348 assertions) inside the container's app.
+
+**v2.4.2.1** is shippable when:
+1. Phase 19c.1 complete (PillEditor module + SkillAdmin pill-editor integration + aiService error categorisation + Suite 28).
+2. Template editor renders stored skills as inline pills + free text; chip click inserts a pill at the cursor; Alt-click inserts a bare pill.
+3. Backspace immediately after a pill removes the pill as a unit (no partial `{{path}}` corruption). Delete before a pill does the same on the other side.
+4. Tab-change in the edit form preserves editor state (pills remain pills, label info intact).
+5. `editor.serialize()` emits the exact template form the engine stored — `"Label: {{path}}"` for labeled, `"{{path}}"` for bare — round-trips without drift.
+6. HTTP errors render with human hints — 401/403 points to the API-key field, 429 suggests waiting, 5xx names upstream-transient status.
+7. `appSpec.js` banner: **393 assertions** (386 prior + 7 new PE*; FP6/FP8 updated to pill-editor contract).
 
 **v2.4.2** is shippable when:
 1. Phase 19c complete (fieldManifest + SkillAdmin chip row + live preview + test button + coerceForLLM + Suite 27).

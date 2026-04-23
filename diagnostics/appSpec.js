@@ -4103,7 +4103,7 @@ describe("27 · Phase 19c · Field manifest + click-to-insert in skill builder",
     clearSkills();
   });
 
-  it("FP6 · chip click inserts LABELED binding (label + ': {{path}}') at cursor — helps the LLM understand the value", () => {
+  it("FP6 · chip click inserts LABELED binding pill into the pill-editor; serialize reads back as 'Label: {{path}}'", () => {
     clearSkills();
     loadSkills();
     var container = document.createElement("div");
@@ -4111,16 +4111,17 @@ describe("27 · Phase 19c · Field manifest + click-to-insert in skill builder",
     renderSkillAdmin(container);
     var editBtns = [...container.querySelectorAll("button")].filter(b => b.textContent === "Edit");
     editBtns[0].click();
-    var textareas = container.querySelectorAll("textarea.skill-form-textarea");
-    var tplArea   = textareas[textareas.length - 1];
-    var before = tplArea.value;
-    tplArea.focus();
-    tplArea.selectionStart = tplArea.selectionEnd = tplArea.value.length;
+    var editor = container.querySelector(".pill-editor");
+    assert(editor, "edit form must render a .pill-editor (not a textarea) for the template");
+    // Clear editor so the insertion is easy to assert.
+    editor.innerHTML = "";
+    editor.focus();
     var chip = container.querySelector('.field-chip[data-path="session.customer.name"]');
     assert(chip, "expected a chip with data-path=session.customer.name");
     chip.click();
-    assertEqual(tplArea.value, before + "Customer name: {{session.customer.name}}",
-      "default chip click inserts 'Label: {{path}}' form so the LLM knows what the value represents");
+    var serialized = editor.serialize();
+    assert(serialized.indexOf("Customer name: {{session.customer.name}}") >= 0,
+      "default chip click must insert a LABELED pill that serializes to 'Customer name: {{session.customer.name}}' (got: " + serialized + ")");
     container.remove();
     clearSkills();
   });
@@ -4139,25 +4140,26 @@ describe("27 · Phase 19c · Field manifest + click-to-insert in skill builder",
     assert(longArr.indexOf("truncated") >= 0, "cap is visible to the LLM");
   });
 
-  it("FP8 · Alt-click on a chip inserts the BARE {{path}} (no label) — for templates that describe fields inline", () => {
+  it("FP8 · Alt-click on a chip inserts a BARE pill; serialize reads back as bare {{path}} (no label)", () => {
     clearSkills();
     loadSkills();
     var container = document.createElement("div");
     document.body.appendChild(container);
     renderSkillAdmin(container);
     [...container.querySelectorAll("button")].filter(b => b.textContent === "Edit")[0].click();
-    var textareas = container.querySelectorAll("textarea.skill-form-textarea");
-    var tplArea   = textareas[textareas.length - 1];
-    tplArea.value = ""; // clear template so the insertion is easy to assert
-    tplArea.focus();
-    tplArea.selectionStart = tplArea.selectionEnd = 0;
+    var editor = container.querySelector(".pill-editor");
+    editor.innerHTML = "";
+    editor.focus();
     var chip = container.querySelector('.field-chip[data-path="session.customer.vertical"]');
     assert(chip, "expected a chip with data-path=session.customer.vertical");
-    // Simulate an Alt-click by dispatching a MouseEvent with altKey: true.
     var evt = new MouseEvent("click", { bubbles: true, cancelable: true, altKey: true });
     chip.dispatchEvent(evt);
-    assertEqual(tplArea.value, "{{session.customer.vertical}}",
-      "Alt-click inserts the bare binding without the label");
+    var serialized = editor.serialize();
+    // Trailing NBSP becomes a space via the serializer; allow either form.
+    assert(serialized.indexOf("{{session.customer.vertical}}") === 0,
+      "Alt-click must emit a bare pill (serialize starts with {{path}}, got: " + serialized + ")");
+    assert(serialized.indexOf("vertical: {{") < 0,
+      "bare pill must NOT carry the label prefix");
     container.remove();
     clearSkills();
   });
@@ -4175,6 +4177,114 @@ describe("27 · Phase 19c · Field manifest + click-to-insert in skill builder",
     assert(testOut, "test-output target .skill-form-test-out must exist (starts hidden)");
     container.remove();
     clearSkills();
+  });
+
+});
+
+// ── Phase 19c.1 / v2.4.2.1 · Pill-based editor (PE1-PE7) ──────────────
+import { parseToSegments, serializeEditor, createPillEditor } from "../ui/components/PillEditor.js";
+
+describe("28 · Phase 19c.1 · Pill editor — contenteditable with inline binding pills", () => {
+
+  var LABEL_LOOKUP = {
+    "session.customer.name":        { label: "Customer name",     kind: "scalar" },
+    "session.customer.vertical":    { label: "Customer vertical", kind: "scalar" },
+    "session.gaps":                 { label: "All gaps (array)",  kind: "array"  },
+    "context.selectedDriver.label": { label: "Selected driver label", kind: "scalar" }
+  };
+
+  it("PE1 · parseToSegments detects a labeled pill when the preceding text ends with 'Label: '", () => {
+    const segs = parseToSegments(
+      "Hello Customer name: {{session.customer.name}} end",
+      LABEL_LOOKUP
+    );
+    // Expect: text("Hello "), pill(labeled, name), text(" end")
+    assertEqual(segs.length, 3, "three segments expected (text + pill + text)");
+    assertEqual(segs[0].type, "text");
+    assertEqual(segs[0].value, "Hello ", "label must be consumed from preceding text");
+    assertEqual(segs[1].type, "pill");
+    assertEqual(segs[1].bare, false, "pill is labeled because 'Customer name: ' preceded the binding");
+    assertEqual(segs[2].value, " end");
+  });
+
+  it("PE2 · parseToSegments falls back to a BARE pill when no matching label precedes the binding", () => {
+    const segs = parseToSegments(
+      "Intro {{session.customer.name}} outro",
+      LABEL_LOOKUP
+    );
+    assertEqual(segs.length, 3);
+    assertEqual(segs[1].bare, true, "pill is bare when preceding text is not the matching label");
+    assertEqual(segs[0].value, "Intro ", "preceding text preserved verbatim");
+  });
+
+  it("PE3 · serializeEditor emits 'Label: {{path}}' for labeled pills and bare {{path}} for bare pills", () => {
+    const editor = createPillEditor({
+      initialValue: "Hi Customer name: {{session.customer.name}} and raw {{session.customer.vertical}}.",
+      manifest: [
+        { path: "session.customer.name",     label: "Customer name",     kind: "scalar" },
+        { path: "session.customer.vertical", label: "Customer vertical", kind: "scalar" }
+      ],
+      onInput: function() {}
+    });
+    const out = serializeEditor(editor);
+    assert(out.indexOf("Customer name: {{session.customer.name}}") >= 0,
+      "labeled pill must serialize back to 'Label: {{path}}'");
+    assert(out.indexOf("raw {{session.customer.vertical}}") >= 0,
+      "bare pill must serialize back to just {{path}}");
+    assert(out.indexOf("raw Customer vertical: {{") < 0,
+      "bare pill must NOT suddenly gain a label on serialize");
+  });
+
+  it("PE4 · createPillEditor round-trips a template through parse + serialize without drift", () => {
+    const tpl = "Intro text Customer name: {{session.customer.name}} mid {{session.gaps}} end.";
+    const manifest = [
+      { path: "session.customer.name", label: "Customer name",   kind: "scalar" },
+      { path: "session.gaps",          label: "All gaps (array)", kind: "array"  }
+    ];
+    const editor = createPillEditor({ initialValue: tpl, manifest: manifest, onInput: function(){} });
+    const out = editor.serialize();
+    assertEqual(out, tpl, "round-trip must preserve the exact template text");
+  });
+
+  it("PE5 · editor exposes a textarea-compatible surface (serialize / setValue / insertPillAtCursor)", () => {
+    const editor = createPillEditor({ initialValue: "", manifest: [
+      { path: "session.customer.name", label: "Customer name", kind: "scalar" }
+    ], onInput: function(){} });
+    assert(typeof editor.serialize === "function",          "editor.serialize must be a function");
+    assert(typeof editor.setValue === "function",           "editor.setValue must be a function");
+    assert(typeof editor.insertPillAtCursor === "function", "editor.insertPillAtCursor must be a function");
+    editor.setValue("Hello Customer name: {{session.customer.name}}");
+    assert(editor.serialize().indexOf("{{session.customer.name}}") >= 0,
+      "setValue followed by serialize must round-trip");
+  });
+
+  it("PE6 · pill is rendered contenteditable=false with data-path / data-label / data-bare attrs", () => {
+    const editor = createPillEditor({
+      initialValue: "Customer name: {{session.customer.name}}",
+      manifest: [{ path: "session.customer.name", label: "Customer name", kind: "scalar" }],
+      onInput: function(){}
+    });
+    const pill = editor.querySelector(".binding-pill");
+    assert(pill, "a .binding-pill must render for the binding");
+    assertEqual(pill.getAttribute("contenteditable"), "false", "pill must be contenteditable=false");
+    assertEqual(pill.getAttribute("data-path"),   "session.customer.name");
+    assertEqual(pill.getAttribute("data-label"),  "Customer name");
+    assertEqual(pill.getAttribute("data-bare"),   "false");
+  });
+
+  it("PE7 · a bare binding with no manifest entry still renders as a bare pill (no crash)", () => {
+    // Even if the manifest doesn't know the path, the editor must still
+    // render a pill (bare) so the user can see + delete it as a unit.
+    const editor = createPillEditor({
+      initialValue: "Unknown {{unknown.some.path}} test",
+      manifest: [],
+      onInput: function(){}
+    });
+    const pill = editor.querySelector(".binding-pill");
+    assert(pill, "unknown-path binding must still render a pill");
+    assertEqual(pill.getAttribute("data-path"), "unknown.some.path");
+    assertEqual(pill.getAttribute("data-bare"), "true",
+      "unknown path is bare (no manifest label to use)");
   });
 
 });
