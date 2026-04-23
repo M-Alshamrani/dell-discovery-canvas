@@ -1,7 +1,7 @@
 # Dell Discovery Canvas
 
 **IT / Enterprise Architecture Discovery Tool for Dell Presales**
-Version 2.3.0 · Vanilla JavaScript ES Modules · No build step required
+Version 2.3.1 · Vanilla JavaScript ES Modules · No build step required
 
 ---
 
@@ -129,6 +129,7 @@ Session state persists to `localStorage` under key `dell_discovery_v1`. Data sta
 
 ## Version history
 
+- **v2.3.1** (2026-04-19) — Phase 16: Workload Mapping. New `workload` layer at the top of the matrix; 14 catalog entries (Dell Validated Designs, business apps, industry verticals, data/analytics, application footprints). Workload tiles get a "Mapped infrastructure" panel: map any number of other-layer assets (N-to-N), then click "↑ Propagate criticality" to walk per-asset confirms upgrading any asset with lower criticality than the workload. Upward-only by design — never silently downgrades. New W1-W5 assertions; banner now 358/358 green.
 - **v2.3.0** (2026-04-19) — Phase 18: gap-link surfacing & double-link safety. Linked current + desired technologies render inline in the gap detail panel (no more `Manage links` collapse). Link picker shows a yellow warning row above any candidate already linked to another gap; selection still proceeds (warn-but-allow). Asset rows show a red `linked to N gaps` chip when shared. Roadmap project counts unique linked technologies (no double-counting from multi-linked assets). New T8.* assertions; T6.13 (Manage-links collapse) retired since the feature is gone; banner now 352/352 green. `.gitattributes` enforces LF endings on container plumbing.
 - **v2.2.1** (2026-04-19) — Phase 15.1: LAN gating. Optional HTTP Basic auth driven by `AUTH_USERNAME` + `AUTH_PASSWORD` env vars; htpasswd generated at container start via `apache2-utils`. `/health` stays open for monitoring. Backward-compatible — unset env vars = no auth (same as v2.2.0).
 - **v2.2.0** (2026-04-19) — Phase 15: Docker containerisation. `nginx:alpine` static-file image with hardened headers, multi-arch (linux/amd64 + linux/arm64 for Dell GB10 / Grace), localhost-only binding by default, opt-in LAN exposure via `BIND_ADDR`, configurable host port (default 8080 to avoid the GB10's vLLM containers).
@@ -152,4 +153,4 @@ This is a private internal Dell presales tool. All non-trivial changes go throug
 
 ---
 
-*Dell Technologies Presales · Internal tool · v2.3.0*
+*Dell Technologies Presales · Internal tool · v2.3.1*

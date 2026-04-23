@@ -50,7 +50,8 @@ import {
 
 import {
   addInstance, updateInstance,
-  deleteInstance, moveInstance
+  deleteInstance, moveInstance,
+  mapAsset, unmapAsset, proposeCriticalityUpgrades
 } from "../interactions/matrixCommands.js";
 
 import {
@@ -146,8 +147,9 @@ describe("01 · core/config — layer & environment definitions", () => {
     assert(Array.isArray(LAYERS) && LAYERS.length > 0, "LAYERS must be a non-empty array");
   });
 
-  it("LAYERS has exactly 5 entries", () => {
-    assertEqual(LAYERS.length, 5, "Must define exactly 5 architecture layers");
+  it("LAYERS has exactly 6 entries (5 infrastructure layers + workload)", () => {
+    // v2.3.1 / Phase 16 — workload was added as the 6th layer at LAYERS[0].
+    assertEqual(LAYERS.length, 6, "Must define exactly 6 architecture layers (1 workload + 5 infrastructure)");
   });
 
   it("every LAYER has a non-empty string id", () => {
@@ -168,13 +170,15 @@ describe("01 · core/config — layer & environment definitions", () => {
     assertEqual(unique.size, ids.length, "All layer ids must be unique");
   });
 
-  it("LAYERS contains the 5 required architecture groups", () => {
+  it("LAYERS contains the 5 required infrastructure groups (plus workload as the 6th)", () => {
     const required = [
       "compute", "storage", "dataProtection", "virtualization", "infrastructure"
     ];
     required.forEach(id =>
       assert(LAYERS.some(l => l.id === id), `Required layer '${id}' must exist`)
     );
+    // v2.3.1 / Phase 16 — workload is the topmost layer.
+    assert(LAYERS.some(l => l.id === "workload"), "workload layer must exist (Phase 16)");
   });
 
   it("ENVIRONMENTS is a non-empty array", () => {
@@ -3610,6 +3614,131 @@ describe("23 · Phase 18 · gap links — always-visible + warn-but-allow + casc
       (g.relatedDesiredInstanceIds || []).forEach(id => ids.add(id));
     });
     assertEqual(ids.size, 1, "shared instance must count once across the project (Phase 18 dedup)");
+  });
+
+});
+
+// ── Phase 16 / v2.3.1 · Workload Mapping (W1-W4) ──────────────────────
+describe("24 · Phase 16 · workload layer + asset mapping + upward propagation", () => {
+
+  it("W1 · workload layer exists at the top of LAYERS and accepts an instance with mappedAssetIds=[]", () => {
+    assertEqual(LAYERS[0].id, "workload", "workload must be the first (topmost) layer");
+    const s = freshSession();
+    const wl = addInstance(s, {
+      state: "current", layerId: "workload", environmentId: EnvironmentIds[0],
+      label: "Order-management ERP", vendorGroup: "nonDell",
+      mappedAssetIds: [] // explicit empty; validateInstance must accept on workload only
+    });
+    assert(wl.id, "addInstance must return a workload with an id");
+    assertEqual(wl.layerId, "workload", "instance must remain on workload layer");
+  });
+
+  it("W1b · validateInstance rejects mappedAssetIds on a non-workload layer", () => {
+    const s = freshSession();
+    throws(() => addInstance(s, {
+      state: "current", layerId: "compute", environmentId: EnvironmentIds[0],
+      label: "Misplaced", mappedAssetIds: ["cur-1"]
+    }), "mappedAssetIds on a compute-layer instance must throw");
+  });
+
+  it("W2 · mapAsset adds the id (deduped) and refuses cross-state or workload-to-workload", () => {
+    const s = freshSession();
+    const wl = addInstance(s, { state:"current", layerId:"workload", environmentId:EnvironmentIds[0],
+                                label:"Critical workload" });
+    const cmp = addInstance(s, { state:"current", layerId:"compute", environmentId:EnvironmentIds[0],
+                                 label:"Production cluster" });
+    mapAsset(s, wl.id, cmp.id);
+    mapAsset(s, wl.id, cmp.id); // dedup
+    assertEqual(wl.mappedAssetIds.length, 1, "duplicate mapAsset call must not append");
+    assertEqual(wl.mappedAssetIds[0], cmp.id, "the compute id must be the mapped one");
+
+    // refuse self-map
+    throws(() => mapAsset(s, wl.id, wl.id), "mapping a workload to itself must throw");
+
+    // refuse workload→workload
+    const wl2 = addInstance(s, { state:"current", layerId:"workload", environmentId:EnvironmentIds[0],
+                                 label:"Other workload" });
+    throws(() => mapAsset(s, wl.id, wl2.id), "mapping a workload to another workload must throw");
+
+    // refuse cross-state
+    const desCmp = addInstance(s, { state:"desired", layerId:"compute", environmentId:EnvironmentIds[0],
+                                    label:"Future cluster" });
+    throws(() => mapAsset(s, wl.id, desCmp.id), "mapping a current workload to a desired asset must throw");
+
+    // unmapAsset removes
+    unmapAsset(s, wl.id, cmp.id);
+    assertEqual(wl.mappedAssetIds.length, 0, "unmapAsset must remove the id");
+  });
+
+  it("W3 · proposeCriticalityUpgrades returns Low/Medium mapped assets when workload is High (upward only, opt-in apply)", () => {
+    const s = freshSession();
+    const wl = addInstance(s, { state:"current", layerId:"workload", environmentId:EnvironmentIds[0],
+                                label:"High-criticality workload", criticality:"High" });
+    const lowCmp  = addInstance(s, { state:"current", layerId:"compute", environmentId:EnvironmentIds[0],
+                                     label:"Low compute",  criticality:"Low" });
+    const medSto  = addInstance(s, { state:"current", layerId:"storage", environmentId:EnvironmentIds[0],
+                                     label:"Medium storage", criticality:"Medium" });
+    mapAsset(s, wl.id, lowCmp.id);
+    mapAsset(s, wl.id, medSto.id);
+
+    const proposals = proposeCriticalityUpgrades(s, wl.id);
+    assertEqual(proposals.length, 2, "both lower-criticality assets must be proposed for upgrade");
+    proposals.forEach(p => {
+      assertEqual(p.newCrit, "High", "newCrit must match the workload's criticality");
+    });
+
+    // Apply via existing updateInstance (caller's responsibility); verify mutation
+    updateInstance(s, lowCmp.id, { criticality: "High" });
+    const lc = s.instances.find(i => i.id === lowCmp.id);
+    assertEqual(lc.criticality, "High", "updateInstance must apply the upgrade");
+  });
+
+  it("W4 · propagation never downgrades — assets meeting/exceeding workload criticality are excluded", () => {
+    const s = freshSession();
+    const wl = addInstance(s, { state:"current", layerId:"workload", environmentId:EnvironmentIds[0],
+                                label:"Medium workload", criticality:"Medium" });
+    const equalCmp = addInstance(s, { state:"current", layerId:"compute", environmentId:EnvironmentIds[0],
+                                      label:"Equal compute", criticality:"Medium" });
+    const highSto = addInstance(s, { state:"current", layerId:"storage", environmentId:EnvironmentIds[0],
+                                     label:"High storage", criticality:"High" });
+    mapAsset(s, wl.id, equalCmp.id);
+    mapAsset(s, wl.id, highSto.id);
+
+    const proposals = proposeCriticalityUpgrades(s, wl.id);
+    assertEqual(proposals.length, 0, "no proposals when all mapped assets meet or exceed workload criticality");
+  });
+
+  it("W6 · mapAsset refuses cross-environment mapping (workload + asset must share environment)", () => {
+    const s = freshSession();
+    const wl = addInstance(s, { state:"current", layerId:"workload", environmentId:EnvironmentIds[0],
+                                label:"Cloud-hosted ERP" });
+    // Same state, same layer constraints satisfied; only environment differs.
+    const otherEnvAsset = addInstance(s, { state:"current", layerId:"compute",
+                                           environmentId:EnvironmentIds[1],
+                                           label:"On-prem cluster" });
+    throws(() => mapAsset(s, wl.id, otherEnvAsset.id),
+      "mapping a workload to an asset in a different environment must throw");
+    // Hybrid workloads are modelled as one workload tile per environment;
+    // a same-env asset still maps cleanly.
+    const sameEnvAsset = addInstance(s, { state:"current", layerId:"compute",
+                                          environmentId:EnvironmentIds[0],
+                                          label:"Cloud cluster" });
+    doesNotThrow(() => mapAsset(s, wl.id, sameEnvAsset.id),
+      "same-env mapping must still succeed");
+  });
+
+  it("W5 · proposeCriticalityUpgrades is pure — never mutates instances", () => {
+    const s = freshSession();
+    const wl = addInstance(s, { state:"current", layerId:"workload", environmentId:EnvironmentIds[0],
+                                label:"Workload", criticality:"High" });
+    const lowCmp = addInstance(s, { state:"current", layerId:"compute", environmentId:EnvironmentIds[0],
+                                    label:"Low compute", criticality:"Low" });
+    mapAsset(s, wl.id, lowCmp.id);
+    const beforeCrit = lowCmp.criticality;
+    proposeCriticalityUpgrades(s, wl.id);
+    proposeCriticalityUpgrades(s, wl.id);
+    const after = s.instances.find(i => i.id === lowCmp.id);
+    assertEqual(after.criticality, beforeCrit, "asset criticality must be unchanged after pure propose calls");
   });
 
 });

@@ -1,7 +1,8 @@
 // ui/views/MatrixView.js -- current / desired state matrix (fixed disposition workflow)
 
 import { LAYERS, ENVIRONMENTS, CATALOG } from "../../core/config.js";
-import { addInstance, updateInstance, deleteInstance } from "../../interactions/matrixCommands.js";
+import { addInstance, updateInstance, deleteInstance,
+         mapAsset, unmapAsset, proposeCriticalityUpgrades } from "../../interactions/matrixCommands.js";
 import { createGap } from "../../interactions/gapsCommands.js";
 import { saveToLocalStorage } from "../../state/sessionStore.js";
 import {
@@ -564,7 +565,162 @@ export function renderMatrixView(left, right, session, opts) {
     });
     actions.appendChild(delBtn);
     panel.appendChild(actions);
+
+    // Phase 16 — Mapped infrastructure section, only on workload tiles.
+    if (inst.layerId === "workload") {
+      panel.appendChild(buildMappedAssetsSection(right, inst));
+    }
+
     right.appendChild(panel);
+  }
+
+  // Phase 16 helper: render the "Mapped infrastructure" section beneath
+  // the standard tile detail when the instance is a workload. Shows the
+  // currently mapped asset rows, a `+ Map asset` picker button, and an
+  // `↑ Propagate criticality` button gated on having both a workload
+  // criticality and at least one mapped asset.
+  function buildMappedAssetsSection(right, workload) {
+    var section = mk("div", "mapped-assets-section");
+    section.appendChild(mkt("div", "mapped-assets-title", "Mapped infrastructure"));
+
+    var mapped = (workload.mappedAssetIds || [])
+      .map(function(id) { return (session.instances || []).find(function(i) { return i.id === id; }); })
+      .filter(Boolean);
+
+    var list = mk("div", "mapped-asset-list");
+    if (mapped.length === 0) {
+      list.appendChild(mkt("div", "mapped-asset-empty", "No assets mapped yet. Map the infrastructure this workload runs on so its criticality can propagate down."));
+    } else {
+      mapped.forEach(function(asset) {
+        var row = mk("div", "mapped-asset-row");
+        var dot = mk("span", "cmd-dot cmd-dot-" + (asset.vendorGroup || "custom"));
+        row.appendChild(dot);
+        row.appendChild(mkt("span", "mapped-asset-label", asset.label));
+        var layerObj = LAYERS.find(function(l) { return l.id === asset.layerId; });
+        var envObj   = ENVIRONMENTS.find(function(e) { return e.id === asset.environmentId; });
+        row.appendChild(mkt("span", "mapped-asset-sub",
+          (layerObj ? layerObj.label : asset.layerId) + " / " + (envObj ? envObj.label : asset.environmentId)));
+        if (asset.criticality) {
+          row.appendChild(mkt("span", "mapped-asset-crit crit-" + asset.criticality.toLowerCase(), asset.criticality));
+        }
+        var unmap = mkt("button", "link-unlink-btn", "x");
+        unmap.title = "Unmap this asset";
+        unmap.addEventListener("click", function() {
+          try { unmapAsset(session, workload.id, asset.id); saveToLocalStorage(); showDetailPanel(right, workload); }
+          catch(e) { alert(e.message); }
+        });
+        row.appendChild(unmap);
+        list.appendChild(row);
+      });
+    }
+    section.appendChild(list);
+
+    var btnRow = mk("div", "mapped-asset-actions");
+    var addBtn = mkt("button", "btn-ghost-sm", "+ Map asset");
+    addBtn.addEventListener("click", function() { openAssetPicker(workload, right); });
+    btnRow.appendChild(addBtn);
+
+    if (workload.criticality && mapped.length > 0) {
+      var propBtn = mkt("button", "btn-ghost-sm propagate-btn", "↑ Propagate criticality");
+      propBtn.title = "Upgrade any mapped asset whose criticality is lower than this workload's.";
+      propBtn.addEventListener("click", function() { runPropagation(workload, right); });
+      btnRow.appendChild(propBtn);
+    }
+    section.appendChild(btnRow);
+    return section;
+  }
+
+  // Phase 16 helper: open a modal picker for assets to map. Scoped to the
+  // workload's same state (current/desired) and to the other 5 layers.
+  function openAssetPicker(workload, right) {
+    document.getElementById("map-asset-picker")?.remove();
+    var overlay = mk("div", "dialog-overlay"); overlay.id = "map-asset-picker";
+    var box     = mk("div", "dialog-box");
+    box.appendChild(mkt("div", "dialog-title", "Map an asset to '" + workload.label + "'"));
+
+    var alreadyMapped = workload.mappedAssetIds || [];
+    // v2.3.1 — restrict the picker to assets in the workload's same
+    // environment. A hybrid workload is modelled as separate per-env tiles.
+    var candidates = (session.instances || []).filter(function(i) {
+      return i.state === workload.state
+          && i.environmentId === workload.environmentId
+          && i.layerId !== "workload"
+          && alreadyMapped.indexOf(i.id) < 0;
+    });
+
+    var envObj = ENVIRONMENTS.find(function(e) { return e.id === workload.environmentId; });
+    var envLabel = envObj ? envObj.label : workload.environmentId;
+    box.appendChild(mkt("div", "detail-ph-hint",
+      "Showing " + workload.state + " assets in " + envLabel +
+      " only. To map a hybrid workload, create a separate workload tile in the other environment."));
+
+    if (candidates.length === 0) {
+      box.appendChild(mkt("div", "detail-ph-hint",
+        "No unmapped " + workload.state + " assets available in " + envLabel +
+        ". Add infrastructure tiles in this environment's column first."));
+    } else {
+      var list = mk("div", "link-picker-list");
+      candidates.forEach(function(asset) {
+        var item = mk("div", "link-picker-item");
+        var dot  = mk("span", "cmd-dot cmd-dot-" + (asset.vendorGroup || "custom"));
+        item.appendChild(dot);
+        item.appendChild(mkt("span", "cmd-item-name", asset.label));
+        var layerObj = LAYERS.find(function(l) { return l.id === asset.layerId; });
+        var envObj   = ENVIRONMENTS.find(function(e) { return e.id === asset.environmentId; });
+        item.appendChild(mkt("span", "cmd-item-vendor",
+          (layerObj ? layerObj.label : asset.layerId) + " / " + (envObj ? envObj.label : asset.environmentId)));
+        item.addEventListener("click", function() {
+          try { mapAsset(session, workload.id, asset.id); saveToLocalStorage(); overlay.remove(); showDetailPanel(right, workload); }
+          catch(e) { alert(e.message); }
+        });
+        list.appendChild(item);
+      });
+      box.appendChild(list);
+    }
+    var foot = mk("div", "form-actions");
+    var cancel = mkt("button", "btn-secondary", "Cancel");
+    cancel.addEventListener("click", function() { overlay.remove(); });
+    foot.appendChild(cancel);
+    box.appendChild(foot);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click", function(e) { if (e.target === overlay) overlay.remove(); });
+  }
+
+  // Phase 16 helper: walk through criticality upgrade proposals one at a
+  // time, asking the presales to confirm each. Per-asset confirm matches
+  // the locked decision (no silent bulk upgrades).
+  function runPropagation(workload, right) {
+    var proposals = proposeCriticalityUpgrades(session, workload.id);
+    if (proposals.length === 0) {
+      alert("All mapped assets already meet or exceed '" + workload.label + "' criticality (" + workload.criticality + "). Nothing to propagate.");
+      return;
+    }
+    var applied = [];
+    proposals.forEach(function(p) {
+      var msg = "Upgrade '" + p.label + "' criticality from " +
+                (p.currentCrit || "(unset)") + " to " + p.newCrit +
+                " to match workload '" + workload.label + "'?";
+      if (window.confirm(msg)) {
+        try {
+          updateInstance(session, p.assetId, { criticality: p.newCrit });
+          applied.push(p);
+        } catch(e) { alert("Failed to upgrade " + p.label + ": " + e.message); }
+      }
+    });
+    saveToLocalStorage();
+    // Refresh each upgraded asset's matrix cell so the new criticality colour
+    // is visible immediately (without leaving + returning to the tab).
+    applied.forEach(function(p) {
+      var asset = (session.instances || []).find(function(i) { return i.id === p.assetId; });
+      if (asset) refreshCell(asset.layerId, asset.environmentId);
+    });
+    // Re-render the workload detail so the mapped-asset chips reflect the new criticalities.
+    showDetailPanel(right, workload);
+    if (applied.length > 0) {
+      try { showToast(applied.length + " asset" + (applied.length === 1 ? "" : "s") + " upgraded to " + workload.criticality, "ok"); }
+      catch(e) { /* showToast is module-scoped; ignore if unreachable */ }
+    }
   }
 }
 

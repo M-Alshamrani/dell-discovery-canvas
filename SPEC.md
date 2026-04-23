@@ -1,7 +1,7 @@
 # Dell Discovery Canvas v2 — Implementation Spec
 
-**Status**: Phases 0–15.1 + 18 SHIPPED. Phases 15.2 / 16 / 17 / 19 / 20+ queued.
-**Current tagged releases**: `v2.1.1` (initial), `v2.1.2` (reviewer-handoff scripts), `v2.2.0` (Docker for GB10), `v2.2.1` (LAN Basic auth), `v2.3.0` (Phase 18 gap-link surfacing + double-link safety)
+**Status**: Phases 0–15.1 + 18 + 16 SHIPPED. Phases 15.2 / 17 / 19 / 20+ queued.
+**Current tagged releases**: `v2.1.1` (initial), `v2.1.2` (reviewer-handoff scripts), `v2.2.0` (Docker for GB10), `v2.2.1` (LAN Basic auth), `v2.3.0` (Phase 18 gap-link surfacing + double-link safety), `v2.3.1` (Phase 16 Workload Mapping — 6th layer)
 **Predecessor**: v1.3 (legacy)
 **Repo**: https://github.com/M-Alshamrani/dell-discovery-canvas (private)
 **Discussion record**: [docs/CHANGELOG_PLAN.md](docs/CHANGELOG_PLAN.md) — see "Post-v2.1.2 · v2.2+ design review" section for items 2-10 decisions.
@@ -635,15 +635,21 @@ Swap external image URL in `index.html` for local `../Logo/delltech-logo-stk-blu
 4. HEALTHCHECK reaches `(healthy)` within 30s in both modes. ✓
 5. Browser at `http://localhost:8080` with auth on: native login prompt, then green test banner inside the app once authenticated.
 
-### Phase 16 · v2.3 · Workload Mapping — 6th layer (Item 3)
+### Phase 16 · v2.3.1 · Workload Mapping — 6th layer (Item 3) — IMPLEMENTED
 
-See CHANGELOG_PLAN § v2.2+ Item 3 for locked decisions.
+See CHANGELOG_PLAN § v2.3.1 entry for as-shipped detail.
 
-- Add `workload` to `LAYERS` array in `core/config.js`.
-- Extend `Instance` schema with optional `mappedAssetIds: string[]` for workload instances.
-- New UI flow in MatrixView: workload tile detail panel → `+ Map asset` → picker (other 5 layers) → append id.
-- New interaction command `propagateCriticalityUpward(session, workloadId)` in `matrixCommands.js` — prompts confirm on each mapped asset that would be upgraded.
-- Tests: W1 workload creates, W2 mapping adds ids, W3 upward-only propagation confirmed, W4 downward never touches.
+- `workload` added to `LAYERS` as the **first** entry (topmost layer; renders as the top row in the matrix). Label: "Workloads & Business Apps". 14 catalog entries split across 3 Dell Validated Designs (DVD-SAP HANA, DVD-AI/RAG, DVD-VDI), 4 vendor-packaged business apps (ERP, CRM, HCM, Email/Collab), 3 industry-vertical systems (EHR, Core Banking, Billing), 3 data/analytics workloads (DW/Lakehouse, BI, AI/ML), and 4 application footprints (web app, LOB, DB service, DevOps).
+- `Instance` schema gains optional `mappedAssetIds: string[]`. `validateInstance` enforces that the field is **only** present on `workload`-layer instances; non-workload tiles carrying `mappedAssetIds` are rejected at validation time.
+- New `interactions/matrixCommands.js` exports:
+  - `mapAsset(session, workloadId, assetId)` — adds an asset id to a workload's mapping, deduped. Throws on self-map, workload→workload, cross-state (current↔desired) mapping, or unknown ids.
+  - `unmapAsset(session, workloadId, assetId)` — removes the id.
+  - `proposeCriticalityUpgrades(session, workloadId)` — pure (non-mutating). Returns `[{ assetId, label, layerId, currentCrit, newCrit }]` for every mapped asset whose criticality is *strictly lower* than the workload's. Empty when the workload has no criticality set, or when all mapped assets meet/exceed it. Caller applies upgrades via `updateInstance`.
+- `MatrixView.js`: workload tile detail panel renders a **Mapped infrastructure** section with the current mapped-asset rows (label · layer/env · criticality chip · unmap "x"), plus `+ Map asset` (opens picker scoped to other 5 layers in the same state) and `↑ Propagate criticality` (only when the workload has a criticality and ≥1 mapped asset). Propagation walks proposals one at a time with per-asset `confirm()` — no silent bulk upgrades.
+- `styles.css`: `.mapped-assets-section`, `.mapped-asset-row`, `.mapped-asset-crit.crit-{low,medium,high}`, `.propagate-btn` (Dell-blue accent).
+- N-to-N cardinality: an asset can be mapped from multiple workloads; gap-link Phase 18 multi-link patterns apply orthogonally.
+- Cascade: deleting a workload removes its `mappedAssetIds` array implicitly (no back-references). Deleting an asset leaves dangling ids in workloads' `mappedAssetIds` — `proposeCriticalityUpgrades` tolerates this gracefully (skips).
+- Tests: `appSpec.js` Suite 24 — W1 (layer present, accepts empty mapping), W1b (rejects mappedAssetIds on non-workload), W2 (map dedups, refuses self/workload-to-workload/cross-state, unmap removes), W3 (proposes upward upgrades, opt-in apply via updateInstance), W4 (never proposes downgrades), W5 (proposeCriticalityUpgrades is pure).
 
 ### Phase 17 · v2.3 · Taxonomy unification + "Action" rename (Item 4)
 
@@ -763,6 +769,15 @@ A separate `SPEC_v3.md` will capture this architecture when work starts.
    - All static assets (`/app.js`, `/styles.css`, `/Logo/...avif`, etc.) are gated identically.
 4. HEALTHCHECK reaches `(healthy)` within 30 s in both auth modes.
 5. Browser navigates to `http://localhost:8080`, sees the native browser login prompt when auth is on, enters credentials, sees the Dell Discovery Canvas with the green test banner (348 assertions) inside the container's app.
+
+**v2.3.1** is shippable when:
+1. Phase 16 complete (workload layer + catalog + Instance.mappedAssetIds + mapAsset/unmapAsset/proposeCriticalityUpgrades + MatrixView wiring + styles + Suite 24).
+2. `LAYERS[0].id === "workload"`; the matrix renders 6 rows × 4 environment columns.
+3. A current workload tile detail shows the **Mapped infrastructure** section with the empty-state copy when no assets are mapped.
+4. `+ Map asset` opens a picker listing other-5-layers tiles in the same state; click adds the asset id; the row appears in the workload's mapped list with the asset's layer/env/criticality.
+5. `↑ Propagate criticality` only renders when the workload has a criticality AND ≥ 1 mapped asset; clicking walks per-asset confirms; on accept, only lower-criticality assets get upgraded; equal/higher assets are skipped silently.
+6. Cross-state mapping (current workload ↔ desired asset) is rejected at the command layer.
+7. `appSpec.js` test banner reports green for **358 assertions** (352 prior + 6 new W*) inside the running container. No previously-passing assertion regresses.
 
 **v2.3.0** is shippable when:
 1. Phase 18 complete (GapsEditView always-visible + warning row + chip; SummaryRoadmapView dedup; icons cleanup; styles update; T8 suite).

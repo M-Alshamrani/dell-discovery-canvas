@@ -1,7 +1,10 @@
 // core/config.js — single source of truth for all static configuration
 
-// 5-layer architecture (simplified from 9 for presales workshop use)
+// 6-layer architecture. v2.3.1 adds `workload` as the topmost layer:
+// business workloads sit above the infrastructure that runs them, and a
+// workload instance can map (N-to-N) to instances on the lower five layers.
 export const LAYERS = [
+  { id: "workload",       label: "Workloads & Business Apps" },
   { id: "compute",        label: "Compute" },
   { id: "storage",        label: "Data Storage" },
   { id: "dataProtection", label: "Data Protection & Recovery" },
@@ -25,6 +28,31 @@ const ON_PREM = ["coreDc", "drDc", "edge"];
 const CLOUD_ONLY = ["publicCloud"];
 
 export const CATALOG = {
+  workload: [
+    // Dell Validated Designs (DVD) — real Dell offerings packaged for
+    // common workload patterns. Useful for Dell-led conversations.
+    { label: "Dell Validated Design — SAP HANA",   vendor: "Dell",      vendorGroup: "dell"    /* multi-env */ },
+    { label: "Dell Validated Design — AI / RAG",   vendor: "Dell",      vendorGroup: "dell"    /* multi-env */ },
+    { label: "Dell Validated Design — VDI / EUC",  vendor: "Dell",      vendorGroup: "dell"    /* multi-env */ },
+    // Business apps (vendor-packaged)
+    { label: "ERP (SAP / Oracle / Dynamics)",  vendor: "Multi",     vendorGroup: "nonDell" /* multi-env */ },
+    { label: "CRM (Salesforce / Dynamics)",    vendor: "Multi",     vendorGroup: "nonDell" /* multi-env */ },
+    { label: "HCM / HR (Workday / SAP HR)",    vendor: "Multi",     vendorGroup: "nonDell" /* multi-env */ },
+    { label: "Email & Collaboration (M365)",   vendor: "Microsoft", vendorGroup: "nonDell" /* multi-env */ },
+    // Industry-vertical systems
+    { label: "EHR / Clinical Systems",         vendor: "Multi",     vendorGroup: "nonDell" /* multi-env */ },
+    { label: "Core Banking / Payments",        vendor: "Multi",     vendorGroup: "nonDell" /* multi-env */ },
+    { label: "Billing & Revenue Management",   vendor: "Multi",     vendorGroup: "nonDell" /* multi-env */ },
+    // Data & analytics workloads
+    { label: "Data Warehouse / Lakehouse",     vendor: "Multi",     vendorGroup: "nonDell" /* multi-env */ },
+    { label: "Business Intelligence",          vendor: "Multi",     vendorGroup: "nonDell" /* multi-env */ },
+    { label: "AI / ML Inference & Training",   vendor: "Multi",     vendorGroup: "nonDell" /* multi-env */ },
+    // Application footprints (often custom)
+    { label: "Customer-facing Web Application",vendor: "Custom",    vendorGroup: "custom"  /* multi-env */ },
+    { label: "Internal LOB Application",       vendor: "Custom",    vendorGroup: "custom"  /* multi-env */ },
+    { label: "Database Service (RDBMS/NoSQL)", vendor: "Multi",     vendorGroup: "nonDell" /* multi-env */ },
+    { label: "DevOps / CI-CD Platform",        vendor: "Multi",     vendorGroup: "nonDell" /* multi-env */ }
+  ],
   compute: [
     // On-prem
     { label: "PowerEdge (current gen)",   vendor: "Dell",      vendorGroup: "dell",    environments: ON_PREM },

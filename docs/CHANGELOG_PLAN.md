@@ -841,6 +841,65 @@ Tagged `v2.1.2`. No code or test changes.
 
 ---
 
+## v2.3.1 · Phase 16 · Workload Mapping (6th layer + N-to-N + upward propagation) — IMPLEMENTED (2026-04-19)
+
+**Goal**: Give presales a way to capture *what the customer actually does* (workloads, business apps) on top of *what they run on* (compute / storage / network etc.), and let workload criticality flow down to the underlying infrastructure on explicit confirm. This is foundational for the "crown-jewel alignment" review later — once workloads exist as first-class citizens, the Gaps and Roadmap views can speak the customer's language.
+
+### Locked decisions (recap)
+
+- **Workload is a 6th layer** in `LAYERS`, placed **first** (top row in the matrix; highest abstraction).
+- **Cardinality**: N-to-N. A workload maps to many assets; an asset can be mapped from many workloads.
+- **Criticality propagation**: upward only, on explicit confirm. Per-asset confirmation, no silent bulk upgrades. Never auto-downgrades.
+- **Mapping is a property of the workload** (`workload.mappedAssetIds[]`). Assets carry no back-reference — same model as gap-link, same cascade safety.
+
+### What shipped
+
+- `core/config.js` — `LAYERS` extended with `{ id: "workload", label: "Workloads & Business Apps" }` as the first entry. `CATALOG.workload` populated with **14 entries** in 5 groups:
+  - **Dell Validated Designs** (3): DVD-SAP HANA, DVD-AI/RAG, DVD-VDI/EUC. Real Dell offerings; satisfies the existing test that every layer has a Dell tile.
+  - **Vendor-packaged business apps** (4): ERP (SAP/Oracle/Dynamics), CRM (Salesforce/Dynamics), HCM (Workday/SAP HR), M365.
+  - **Industry-vertical systems** (3): EHR/Clinical, Core Banking/Payments, Billing.
+  - **Data & analytics** (3): DW/Lakehouse, BI, AI/ML.
+  - **Application footprints** (4): Customer-facing web app (Custom), Internal LOB (Custom), DB service, DevOps platform.
+- `core/models.js` — `validateInstance` accepts optional `mappedAssetIds: string[]`, **strictly enforced** to be present only on `workload`-layer instances. Non-workload tiles carrying the field throw at validation time (a non-workload tile with mappedAssetIds is a bug, never a feature).
+- `interactions/matrixCommands.js` — three new exports:
+  - `mapAsset(session, workloadId, assetId)` — adds id to `workload.mappedAssetIds` (deduped). Throws on self-map, workload→workload, cross-state (current ↔ desired), unknown ids, or non-workload source.
+  - `unmapAsset(session, workloadId, assetId)` — removes id; idempotent.
+  - `proposeCriticalityUpgrades(session, workloadId)` — **pure / non-mutating**. Returns `[{ assetId, label, layerId, currentCrit, newCrit }]` for every mapped asset with criticality strictly below the workload's. Empty when workload has no criticality, or when all assets meet/exceed it. Caller applies upgrades via existing `updateInstance` — keeps the mutation surface narrow.
+- `ui/views/MatrixView.js` — workload tiles render an extra **Mapped infrastructure** section in the detail panel (only when `inst.layerId === "workload"`):
+  - List of mapped-asset rows: vendor dot, label, layer/env subtitle, criticality chip (color-coded), unmap "x" button.
+  - `+ Map asset` button opens a modal picker scoped to other 5 layers + same state as the workload.
+  - `↑ Propagate criticality` button (Dell-blue accent) appears only when workload has criticality + ≥ 1 mapped asset. Walks proposals one at a time with `confirm()`; on accept, calls `updateInstance(session, p.assetId, { criticality: p.newCrit })`. Toast on completion.
+- `styles.css` — `.mapped-assets-section` (panel), `.mapped-asset-row` (compact row, gap-link cousin), `.mapped-asset-crit.crit-{low,medium,high}` (criticality chip), `.propagate-btn` (Dell-blue outlined).
+- `diagnostics/appSpec.js` — Suite 24 with **6 W-tests**:
+  - W1 — workload is `LAYERS[0]`; addInstance accepts mappedAssetIds=[].
+  - W1b — validateInstance throws if mappedAssetIds appears on a non-workload instance.
+  - W2 — mapAsset dedups; refuses self-map, workload→workload, and cross-state mapping; unmapAsset removes.
+  - W3 — proposeCriticalityUpgrades returns lower-criticality assets when workload is High; updateInstance applies the upgrade.
+  - W4 — proposeCriticalityUpgrades returns nothing when all mapped assets meet or exceed the workload's criticality.
+  - W5 — proposeCriticalityUpgrades is pure; repeated calls don't mutate any instance.
+- `appSpec.js` — also updated existing test "LAYERS contains the 5 required architecture groups" → "5 required infrastructure groups (plus workload as the 6th)" with an explicit assertion that the workload layer exists. Logic unchanged for the original 5 ids.
+
+### Test (manual, local on Windows host)
+
+| Verification | Result |
+|---|---|
+| Container HEALTHCHECK after rebuild | `(healthy)` ✅ |
+| Served `appSpec.js` carries 6 `W*` markers + 4 DVD references | ✅ |
+| Browser banner inside running app: 358/358 green | (awaiting user confirm) |
+
+### Foundational link to the deferred crown-jewel review
+
+This phase deliberately introduces *workloads* as a first-class concept. The deferred design review (`project_deferred_design_review.md`) flagged that the Gaps tab and Roadmap currently use vendor-/layer-centric vocabulary that doesn't read as "what the customer's CxO cares about". Once workloads exist on the matrix, the next obvious move (queued for v2.5.0) is to surface workload-anchored views in Gaps and Roadmap — e.g., *"Initiatives that protect the EHR workload"* rather than *"Compute-layer replace projects in coreDc"*. Phase 16 doesn't do that surfacing yet — it only ships the layer + the data model + the criticality-propagation primitive — but it gets the foundation in place so the alignment pass becomes mostly UI work.
+
+### Out of scope, queued
+
+- **Workload appears in Gaps + Roadmap views** — still scoped to the v2.5.0 alignment pass.
+- **Cross-workload dependency mapping** (workload-to-workload "calls") — explicitly NOT shipped; workloads only map to infrastructure layers per locked decision.
+- **Workload-state migration helpers** — old sessions saved before v2.3.1 simply have no workload instances; no migration needed.
+- **Workload roadmap aggregation pattern** — the existing buildProjects bucket key `envKey::layerId::gapTypeKey` will naturally include workload-layer gaps as their own projects. Whether that's the right roadmap shape for workload-anchored thinking is part of the v2.5.0 review.
+
+---
+
 ## v2.3.0 · Phase 18 · Gap-link surfacing + double-link safety + roadmap dedup — IMPLEMENTED (2026-04-19)
 
 **Goal**: make cross-gap links visible and safe. With Phase 12's "Manage links" collapse, presales had to click before they could see what was linked. The locked Item 9 decision (warn-but-allow on double-linking) means the same instance can intentionally appear in multiple gaps — so the UI needed both *visibility at rest* and *visibility at the point of decision*, plus a roadmap-side dedup so multi-linked assets don't inflate project counts.
@@ -1088,7 +1147,7 @@ Resuming numbering from where we stopped. Tagged releases: `v2.1.1`, `v2.1.2` on
 | **15.1** | LAN gating: env-driven HTTP Basic auth via apache2-utils + nginx snippet | `v2.2.1` ✅ SHIPPED | — (env-driven; no host-side setup needed) |
 | **15.2** | Dell-styling token adoption (palette, Inter, card vocabulary from GPLC sample) | `v2.2.2` | None |
 | **18** | Linked assets always visible (Item 8) + warn-but-allow double-link (Item 9) + cascade-delete regression test (Item 10) + roadmap dedup | `v2.3.0` ✅ SHIPPED | — (Item 8 ship-confirmed 2026-04-19 evening) |
-| **16** | Workload Mapping 6th layer (Item 3) | `v2.3.x` | None |
+| **16** | Workload Mapping 6th layer (Item 3) — N-to-N, upward propagation on explicit confirm | `v2.3.1` ✅ SHIPPED | — |
 | **17** | Taxonomy unification + "Action" rename + mandatory-link enforcement for Replace/Consolidate (Item 4) | `v2.3.x` | User sign-off on Item 4 table |
 | **19** | AI slice — Tab 1 strategic-driver question assistant (Item 7 first wave). LLM target: GB10 Code LLM on `:8000` (`model=code-llm`), VLM on `:8001` (`model=vision-vlm`), OpenAI-compatible | `v2.4.0` | None — LLM endpoint shape now known |
 | **20+** | Multi-user platform (Item 2) — separate v3 work | `v3.0.0-alpha` (new branch `v3-multiuser`) | Architecture design doc, backend stack decision, auth strategy |

@@ -1364,6 +1364,70 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .risk-level-pill.risk-elevated { background: #ea580c; }
 .risk-level-pill.risk-high     { background: var(--crit-high); }
 
+/* Phase 16 · Workload mapping — mapped-infrastructure section in the
+   workload tile detail panel. Visually adjacent to but distinct from
+   the gap-link panel (which lives in Tab 4). */
+.mapped-assets-section {
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.mapped-assets-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+  margin-bottom: 6px;
+}
+.mapped-asset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.mapped-asset-empty {
+  font-size: 11px;
+  color: var(--text-3);
+  font-style: italic;
+  padding: 4px 0;
+  line-height: 1.4;
+}
+.mapped-asset-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: 11px;
+}
+.mapped-asset-label { flex: 1; font-weight: 500; color: var(--text-1); }
+.mapped-asset-sub   { font-size: 10px; color: var(--text-3); }
+.mapped-asset-crit {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 10px;
+  color: #fff;
+  white-space: nowrap;
+}
+.mapped-asset-crit.crit-high   { background: var(--crit-high); }
+.mapped-asset-crit.crit-medium { background: var(--crit-medium); }
+.mapped-asset-crit.crit-low    { background: var(--crit-low); }
+
+.mapped-asset-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.propagate-btn {
+  border-color: var(--brand) !important;
+  color: var(--brand) !important;
+}
+.propagate-btn:hover {
+  background: var(--brand-faint) !important;
+}
+
 /* Phase 18 · Linked-technologies inline panel + double-link cues
    (replaces the v2.1 collapsed Manage-links summary). */
 .linked-inline-wrap {

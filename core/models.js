@@ -26,6 +26,16 @@ export function validateInstance(inst) {
   if (inst.vendorGroup !== undefined) {
     assert(VALID_VG.includes(inst.vendorGroup),                            "Instance.vendorGroup must be dell, nonDell, or custom");
   }
+  // v2.3.1 / Phase 16 — `mappedAssetIds` is a workload-only array of
+  // instance ids that the workload runs on. Strict on layer to keep bad
+  // shapes out (a non-workload tile carrying mappedAssetIds is a bug).
+  if (inst.mappedAssetIds !== undefined) {
+    assert(Array.isArray(inst.mappedAssetIds),                             "Instance.mappedAssetIds must be an array of instance ids");
+    assert(inst.layerId === "workload",                                    "Instance.mappedAssetIds is only valid on workload-layer instances");
+    inst.mappedAssetIds.forEach(function(id) {
+      assert(typeof id === "string" && id.trim().length > 0,               "Instance.mappedAssetIds entries must be non-empty strings");
+    });
+  }
   // originId and disposition are optional free-form fields -- no validation needed
 }
 
