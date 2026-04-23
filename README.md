@@ -1,7 +1,7 @@
 # Dell Discovery Canvas
 
 **IT / Enterprise Architecture Discovery Tool for Dell Presales**
-Version 2.4.1 · Vanilla JavaScript ES Modules · No build step required
+Version 2.4.2 · Vanilla JavaScript ES Modules · No build step required
 
 ---
 
@@ -129,6 +129,7 @@ Session state persists to `localStorage` under key `dell_discovery_v1`. Data sta
 
 ## Version history
 
+- **v2.4.2** (2026-04-19) — Phase 19c: Field-pointer mechanic + LLM-friendly coercion + test-skill. Per-tab manifest of bindable fields; clicking a chip inserts `Label: {{path}}` at the cursor (Alt-click for bare), so presales don't have to type or memorise dot-paths. Live template preview renders against current session. "Test skill now" button dry-runs the draft for iteration. Array/object bindings now serialise as pretty-printed JSON (soft-capped at 1200 chars) so the LLM gets readable content, not `[object Object]`. Suite 27 adds 9 FP* assertions; banner now 386/386 green.
 - **v2.4.1** (2026-04-19) — Phase 19b: Skill Builder. The v2.4.0 hardcoded button becomes a platform. Gear icon → Skills section lists saved skills; `+ Add skill` form lets presales define name, target tab, AI role / instructions, data template (`{{session.*}}` + `{{context.*}}` bindings), output mode. Every tab hosts a `"✨ Use AI ▾"` dropdown of its deployed skills. On first run, a seed skill (Tab 1 driver-question assistant, deployed) keeps v2.4.0 Tab 1 behaviour working unchanged. Suite 26 adds 8 SB* assertions; banner now 377/377 green.
 - **v2.4.0** (2026-04-19) — Phase 19a: AI foundations. Three-provider client (local vLLM / Anthropic Claude / Google Gemini) reached via nginx reverse-proxy (avoids CORS). Gear icon in header → settings modal with per-provider endpoint/model/API-key + connection-test probe. One demo skill on Tab 1 ("Suggest discovery questions" button on each driver) that calls the active provider and renders the response. Real Anthropic + Gemini calls verified end-to-end. Deprecated Gemini model auto-migrates (`gemini-2.0-flash` → `gemini-2.5-flash`) on load. API keys live in browser localStorage for now; v3 will move them server-side. Suite 25 adds 10 AI* assertions; banner now 369/369 green.
 - **v2.2.3** (2026-04-19) — Phase 15.3: Visual depth. Radii 6/10/14 → 4/6/10 (sharper corners). Global heading hardening (font-weight: 700 + letter-spacing: -0.01em). JetBrains Mono with tabular-nums on Roadmap project-card metric badges. Body antialiasing so Inter renders crisp.
@@ -157,4 +158,4 @@ This is a private internal Dell presales tool. All non-trivial changes go throug
 
 ---
 
-*Dell Technologies Presales · Internal tool · v2.4.1*
+*Dell Technologies Presales · Internal tool · v2.4.2*

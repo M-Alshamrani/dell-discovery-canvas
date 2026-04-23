@@ -1501,6 +1501,51 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   padding: 4px 0;
   font-family: var(--font-mono);
 }
+
+/* Phase 19c · field-pointer chip grid + live preview */
+.field-chip-list {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  padding: 8px; margin-bottom: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  max-height: 140px; overflow-y: auto;
+}
+.field-chip {
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 500;
+  padding: 3px 8px; border-radius: 999px;
+  background: var(--brand-faint);
+  border: 1px solid var(--brand-light);
+  color: var(--brand-dark);
+  cursor: pointer;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+.field-chip:hover  { background: var(--brand-light); border-color: var(--brand); }
+.field-chip.is-array {
+  background: #FBF3E0; border-color: #FCD34D; color: #92400E;
+}
+.field-chip.is-array:hover { background: #FDE68A; border-color: #F59E0B; }
+
+.skill-form-test-row {
+  display: flex; gap: 8px; align-items: center;
+  margin-top: 4px;
+}
+.skill-form-test-out { margin-top: 6px; }
+
+.template-preview {
+  font-family: var(--font-mono);
+  font-size: 11px; line-height: 1.5;
+  padding: 8px 10px; margin-bottom: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 220px; overflow-y: auto;
+  min-height: 50px;
+}
 .skill-form-deploy-label {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 12px; font-weight: 500; color: var(--text-2);

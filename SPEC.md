@@ -1,7 +1,7 @@
 # Dell Discovery Canvas v2 — Implementation Spec
 
-**Status**: Phases 0–15.2 + 15.3 + 18 + 16 + 19a + 19b SHIPPED. Phases 17 / 19c-d / 20+ queued.
-**Current tagged releases**: `v2.1.1`, `v2.1.2`, `v2.2.0` (Docker), `v2.2.1` (LAN auth), `v2.2.2` (Dell tokens), `v2.2.3` (visual depth), `v2.3.0` (Phase 18 gap-links), `v2.3.1` (Phase 16 Workload), `v2.4.0` (Phase 19a AI foundations), `v2.4.1` (Phase 19b Skill Builder — admin panel + per-tab dropdown + templated prompts)
+**Status**: Phases 0–15.3 + 16 + 18 + 19a + 19b + 19c SHIPPED. Phases 17 / 19d / 20+ queued.
+**Current tagged releases**: `v2.1.1`, `v2.1.2`, `v2.2.0` (Docker), `v2.2.1` (LAN auth), `v2.2.2` (Dell tokens), `v2.2.3` (visual depth), `v2.3.0` (Phase 18 gap-links), `v2.3.1` (Phase 16 Workload), `v2.4.0` (Phase 19a AI foundations), `v2.4.1` (Phase 19b Skill Builder), `v2.4.2` (Phase 19c Field-pointer + LLM-friendly coercion + test-skill button)
 **Predecessor**: v1.3 (legacy)
 **Repo**: https://github.com/M-Alshamrani/dell-discovery-canvas (private)
 **Discussion record**: [docs/CHANGELOG_PLAN.md](docs/CHANGELOG_PLAN.md) — see "Post-v2.1.2 · v2.2+ design review" section for items 2-10 decisions.
@@ -708,16 +708,30 @@ Turn v2.4.0 from "one hardcoded button" into a platform. Users define, deploy, a
 
 #### Phase 19c · v2.4.2 · Field-pointer mechanic — QUEUED
 
-#### Phase 19c · v2.4.2 · Field-pointer mechanic — QUEUED
+#### Phase 19c · v2.4.2 · Field-pointer mechanic + LLM-friendly coercion + test-skill — IMPLEMENTED
 
-The novel part. When the skill builder is open for a specific tab, every bindable field on that tab becomes clickable. Clicking a field inserts a `{{field.path}}` reference at the cursor of the "Data for the AI" textarea. A live preview panel shows the rendered template against the current session data. Escape/click-outside exits design mode. Removes the typed-path memorization requirement that v2.4.1 still has.
+- `core/fieldManifest.js` — per-tab list of bindable fields (`path` + `label` + `kind:"scalar"|"array"`). Context / Current / Desired / Gaps / Reporting all declared. All tabs share `session.customer.name`, `session.customer.vertical`, `session.customer.region`, `session.customer.drivers`, `session.instances`, `session.gaps`. `buildPreviewScope()` synthesises plausible context for the builder preview on empty sessions.
+- `ui/views/SkillAdmin.js` — below the "Data for the AI" textarea:
+  - **Field-chip grid** (blue scalars, amber arrays). Click inserts `Label: {{path}}` at cursor; Alt-click inserts bare `{{path}}` for templates that describe the field inline.
+  - **Live preview** panel renders the template against current session + first-item fallback context; updates on every keystroke and on tab change.
+  - **"Test skill now"** button dry-runs the draft (unsaved) skill against the active AI provider and shows output inline — iterate on prompts without save-and-switch.
+- `services/skillEngine.js` — `coerceForLLM()` now handles non-scalar bindings: arrays/objects serialise as pretty-printed JSON (2-space indent, 1200-char soft cap). Previously `{{session.gaps}}` rendered as `"[object Object],[object Object]"`; now it's valid JSON the LLM can actually read.
+- Suite 27 FP1-FP9: manifest completeness, tab-scope isolation, preview scope, chip render count, labeled insertion (default), coercion behaviour, Alt-click bare insertion, test-button render.
 
-#### Phase 19d · v2.4.3 · Output handling — QUEUED
+#### Phase 19c.1 · v2.4.2.1 · Pill-based editor — QUEUED (next)
 
-- Parse AI response into structured proposals (free-text → typed field updates).
-- Apply-on-confirm per proposal (default) or auto-apply (opt-in per skill).
-- Optional streaming for long responses.
-- Tests: mocked proposal parsing + apply flow.
+User-proposed 2026-04-19 evening. Replace the template `<textarea>` with a `<div contenteditable="true">` editor hosting inline uneditable `<span>` pills for bindings. Clicking a field chip inserts a pill (color-coded, delete-as-unit, no accidental path corruption). Free-text between pills remains editable. On send: serialize pills back to `"Label: {{path}}"` form so the engine contract stays unchanged. Full spec + locked decisions in `project_deferred_design_review.md`.
+
+#### Phase 19d · v2.4.3 · Output handling + undo + per-skill provider — QUEUED
+
+Three user-requested items bundled (2026-04-19 evening):
+
+- **Output handling** — parse AI response into structured proposals (free-text → typed field updates). Apply-on-confirm per proposal (default) or auto-apply (opt-in per skill). Optional streaming for long responses.
+- **Undo stack** — every skill run that mutates session pushes a snapshot; a top-level "↶ Undo last AI change" button rolls back. Scoped to AI mutations; never touches manual edits.
+- **Per-skill provider assignment** — each skill gets an optional `providerKey` that overrides the active provider for this skill. Lets different skills target different models (e.g., code questions on local Code LLM, synthesis on Claude). Schema migration: null = use active, otherwise specified key.
+
+Also queued for this slice or follow-up:
+- **VLM second local provider** on `:8001` — deferred until there's a skill that sends images (no current use case). When needed: extend `fieldManifest.js` for image bindings, add `/api/llm/local-vlm/` proxy, add second "Local LLM (Vision)" provider in settings.
 
 ### Phase 20+ · v3 · Multi-user platform (Item 2)
 
@@ -803,6 +817,14 @@ A separate `SPEC_v3.md` will capture this architecture when work starts.
    - All static assets (`/app.js`, `/styles.css`, `/Logo/...avif`, etc.) are gated identically.
 4. HEALTHCHECK reaches `(healthy)` within 30 s in both auth modes.
 5. Browser navigates to `http://localhost:8080`, sees the native browser login prompt when auth is on, enters credentials, sees the Dell Discovery Canvas with the green test banner (348 assertions) inside the container's app.
+
+**v2.4.2** is shippable when:
+1. Phase 19c complete (fieldManifest + SkillAdmin chip row + live preview + test button + coerceForLLM + Suite 27).
+2. Every bindable field in the manifest renders as a clickable chip when the skill edit form is open on that target tab.
+3. Chip click inserts `Label: {{path}}` at cursor by default; Alt-click inserts bare `{{path}}`.
+4. `{{session.gaps}}` / `{{session.instances}}` / any array/object binding renders as pretty-printed JSON in the preview (never `[object Object]`).
+5. "Test skill now" button dry-runs the unsaved draft skill against the active AI provider and shows the response inline.
+6. `appSpec.js` test banner reports green for **386 assertions** (377 prior + 9 new FP*).
 
 **v2.4.1** is shippable when:
 1. Phase 19b complete (skillStore + skillEngine + skillCommands refactor + SkillAdmin + SettingsModal section routing + UseAiButton + ContextView generic integration + Suite 26).

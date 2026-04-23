@@ -8,7 +8,10 @@ import {
   loadSkills, addSkill, updateSkill, deleteSkill,
   SKILL_TABS, OUTPUT_MODES
 } from "../../core/skillStore.js";
-import { extractBindings } from "../../services/skillEngine.js";
+import { extractBindings, renderTemplate, runSkill } from "../../services/skillEngine.js";
+import { fieldsForTab, buildPreviewScope } from "../../core/fieldManifest.js";
+import { session as liveSession } from "../../state/sessionStore.js";
+import { loadAiConfig } from "../../core/aiConfig.js";
 
 var TAB_LABELS = {
   context:   "Context",
@@ -134,20 +137,127 @@ function renderEditForm(adminRoot, list, existing, onChange) {
 
   var tplArea = mkTextarea(form, "Data for the AI *", 7,
     existing ? existing.promptTemplate : "",
-    "Sent to the AI on every run. Use {{session.customer.name}}, {{context.selectedDriver.label}} etc. to pull live values. Missing paths render as empty strings.");
+    "Sent to the AI on every run. Click any field chip below to insert a {{binding}} at the cursor. Missing paths render as empty strings.");
 
+  // Phase 19c · field-pointer chips — click to insert {{path}} at the
+  // textarea cursor. Chips refresh whenever the target tab changes.
+  var chipsLabel = mkt("div", "skill-form-label", "Bindable fields — click to insert");
+  form.appendChild(chipsLabel);
+  var chipsWrap = mk("div", "field-chip-list");
+  form.appendChild(chipsWrap);
+
+  function insertAtCursor(text) {
+    tplArea.focus();
+    var start = tplArea.selectionStart || 0;
+    var end   = tplArea.selectionEnd   || 0;
+    var before = tplArea.value.substring(0, start);
+    var after  = tplArea.value.substring(end);
+    tplArea.value = before + text + after;
+    var caret = start + text.length;
+    tplArea.selectionStart = tplArea.selectionEnd = caret;
+    // Fire input so the detected-bindings + preview refresh.
+    tplArea.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function refreshChips() {
+    chipsWrap.innerHTML = "";
+    var fields = fieldsForTab(tabSel.value);
+    if (fields.length === 0) {
+      chipsWrap.appendChild(mkt("div", "settings-help-inline",
+        "No bindable fields declared for this tab yet."));
+      return;
+    }
+    fields.forEach(function(f) {
+      var chip = mkt("button", "field-chip" + (f.kind === "array" ? " is-array" : ""), f.label);
+      chip.type = "button";
+      chip.title = "Click: insert '" + f.label + ": {{" + f.path + "}}'. Alt-click: insert bare {{" + f.path + "}}.";
+      chip.addEventListener("click", function(e) {
+        e.preventDefault();
+        // Labeled insertion = LLM sees "Customer name: Acme Corp" instead
+        // of just "Acme Corp" — the label tells the model what the value
+        // represents. Alt-click opts out for cases where the template
+        // already describes the field nearby.
+        var bare = e.altKey;
+        var snippet = bare ? "{{" + f.path + "}}"
+                           : f.label + ": {{" + f.path + "}}";
+        insertAtCursor(snippet);
+      });
+      // Data attribute used by tests to assert mapping.
+      chip.setAttribute("data-path", f.path);
+      chipsWrap.appendChild(chip);
+    });
+  }
+  refreshChips();
+  tabSel.addEventListener("change", refreshChips);
+
+  // Detected-bindings readout (kept from v2.4.1).
   var bindingsEl = mkt("div", "skill-form-bindings", "");
   form.appendChild(bindingsEl);
-  function refreshBindings() {
+
+  // Live preview of the rendered template against current session +
+  // first-item fallback context. Read-only; updates on every keystroke.
+  var previewLabel = mkt("div", "skill-form-label", "Preview with current session data");
+  form.appendChild(previewLabel);
+  var previewBox = mk("pre", "template-preview");
+  form.appendChild(previewBox);
+
+  function refreshBindingsAndPreview() {
     var found = extractBindings(tplArea.value);
     if (found.length === 0) {
       bindingsEl.textContent = "No {{template.bindings}} detected.";
     } else {
       bindingsEl.textContent = "Detected bindings: " + found.map(function(b) { return "{{" + b + "}}"; }).join(", ");
     }
+    var scope = buildPreviewScope(liveSession, tabSel.value);
+    var rendered = renderTemplate(tplArea.value || "", scope);
+    previewBox.textContent = rendered || "(empty — write a template above, or click a field chip to insert)";
   }
-  tplArea.addEventListener("input", refreshBindings);
-  refreshBindings();
+  tplArea.addEventListener("input", refreshBindingsAndPreview);
+  tabSel.addEventListener("change", refreshBindingsAndPreview);
+  refreshBindingsAndPreview();
+
+  // Phase 19c v2 · "Test skill now" — dry-runs the current unsaved draft
+  // against real AI + live preview scope so the user can iterate on
+  // prompts without save-and-switch-tab round-trips.
+  var testRow = mk("div", "skill-form-test-row");
+  var testBtn = mkt("button", "btn-secondary", "Test skill now");
+  var testOut = mk("div", "ai-skill-result skill-form-test-out");
+  testOut.style.display = "none";
+  testRow.appendChild(testBtn);
+  form.appendChild(testRow);
+  form.appendChild(testOut);
+  testBtn.addEventListener("click", async function() {
+    var draftSkill = {
+      name:           (nameInput.value || "Untitled").trim(),
+      tabId:          tabSel.value,
+      systemPrompt:   sysArea.value,
+      promptTemplate: tplArea.value,
+      outputMode:     modeSel.value
+    };
+    testBtn.disabled = true;
+    var originalLabel = testBtn.textContent;
+    testBtn.textContent = "Testing…";
+    testOut.style.display = "block";
+    testOut.className = "ai-skill-result skill-form-test-out running";
+    testOut.textContent = "Running with current session + " + (loadAiConfig().activeProvider || "AI") + "…";
+    var scope = buildPreviewScope(liveSession, tabSel.value);
+    var res = await runSkill(draftSkill, scope.session, scope.context);
+    testBtn.disabled = false;
+    testBtn.textContent = originalLabel;
+    testOut.innerHTML = "";
+    if (res.ok) {
+      testOut.className = "ai-skill-result skill-form-test-out ok";
+      testOut.appendChild(mkt("div", "ai-skill-result-head",
+        "Test output · " + res.providerKey + " (draft — not saved)"));
+      var body = mk("pre", "ai-skill-result-body");
+      body.textContent = res.text || "(no text returned)";
+      testOut.appendChild(body);
+    } else {
+      testOut.className = "ai-skill-result skill-form-test-out err";
+      testOut.textContent = "Test failed: " + (res.error || "Unknown error") +
+        ". Check AI Providers settings.";
+    }
+  });
 
   var modeSel = mkSelect(form, "Output mode", OUTPUT_MODES.map(function(m) {
     var label = m === "suggest"          ? "Suggest (show response)"

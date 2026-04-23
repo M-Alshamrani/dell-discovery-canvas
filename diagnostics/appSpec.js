@@ -4030,6 +4030,155 @@ describe("26 · Phase 19b · Skill Builder — store, engine, admin UI", () => {
 
 });
 
+// ── Phase 19c / v2.4.2 · Field-pointer mechanic (FP1-FP9) ──────────────
+import { FIELD_MANIFEST, fieldsForTab, buildPreviewScope } from "../core/fieldManifest.js";
+import { coerceForLLM } from "../services/skillEngine.js";
+
+describe("27 · Phase 19c · Field manifest + click-to-insert in skill builder", () => {
+
+  function clearSkills() { window.localStorage.removeItem("ai_skills_v1"); }
+
+  it("FP1 · FIELD_MANIFEST has non-empty bindable-field lists for all 5 tabs", () => {
+    ["context", "current", "desired", "gaps", "reporting"].forEach(t => {
+      assert(Array.isArray(FIELD_MANIFEST[t]) && FIELD_MANIFEST[t].length > 0,
+        "tab '" + t + "' must declare at least one bindable field");
+      // Every entry has path + label.
+      FIELD_MANIFEST[t].forEach(f => {
+        assert(typeof f.path === "string" && f.path.indexOf(".") > 0,
+          "bindable field must carry a dotted path (got: " + f.path + ")");
+        assert(typeof f.label === "string" && f.label.length > 0,
+          "bindable field must carry a label");
+      });
+    });
+  });
+
+  it("FP2 · every tab includes the shared session.* fields (tab-independent)", () => {
+    ["context", "current", "desired", "gaps", "reporting"].forEach(t => {
+      var paths = FIELD_MANIFEST[t].map(f => f.path);
+      assert(paths.indexOf("session.customer.name") >= 0,
+        "tab '" + t + "' must include session.customer.name");
+    });
+  });
+
+  it("FP3 · context-specific bindings appear only on their tab", () => {
+    var gapsPaths = FIELD_MANIFEST.gaps.map(f => f.path);
+    var ctxPaths  = FIELD_MANIFEST.context.map(f => f.path);
+    assert(gapsPaths.indexOf("context.selectedGap.description") >= 0,
+      "Gaps tab must expose the selected-gap description binding");
+    assert(ctxPaths.indexOf("context.selectedGap.description") < 0,
+      "Context tab must NOT leak a Gaps-only binding");
+    assert(ctxPaths.indexOf("context.selectedDriver.label") >= 0,
+      "Context tab must expose selected-driver label");
+  });
+
+  it("FP4 · buildPreviewScope returns a usable scope for each tab (even on empty session)", () => {
+    var s = createEmptySession();
+    var ctx = buildPreviewScope(s, "context");
+    assert(ctx.context && ctx.context.selectedDriver,
+      "context tab preview scope must carry a selectedDriver fallback");
+    var gaps = buildPreviewScope(s, "gaps");
+    assert(gaps.context && gaps.context.selectedGap,
+      "gaps tab preview scope must carry a selectedGap fallback");
+    var rep = buildPreviewScope(s, "reporting");
+    assert(rep.context && rep.context.selectedProject,
+      "reporting tab preview scope must carry a selectedProject fallback");
+  });
+
+  it("FP5 · Skill admin edit form renders a field-chip per bindable field of the selected tab", () => {
+    clearSkills();
+    loadSkills(); // ensures seed in list
+    var container = document.createElement("div");
+    document.body.appendChild(container); // form relies on DOM focus; attach for realism
+    renderSkillAdmin(container);
+    var editBtns = [...container.querySelectorAll("button")].filter(b => b.textContent === "Edit");
+    assert(editBtns[0], "Edit button on the seeded row must be present");
+    editBtns[0].click();
+    var chips = container.querySelectorAll(".field-chip");
+    // Seed targets 'context'; field manifest has ≥ 8 entries for that tab.
+    assert(chips.length >= 8, "expected at least 8 chips for the Context tab (got " + chips.length + ")");
+    var chipPaths = [...chips].map(c => c.getAttribute("data-path"));
+    assert(chipPaths.indexOf("context.selectedDriver.label") >= 0,
+      "context.selectedDriver.label chip must render");
+    container.remove();
+    clearSkills();
+  });
+
+  it("FP6 · chip click inserts LABELED binding (label + ': {{path}}') at cursor — helps the LLM understand the value", () => {
+    clearSkills();
+    loadSkills();
+    var container = document.createElement("div");
+    document.body.appendChild(container);
+    renderSkillAdmin(container);
+    var editBtns = [...container.querySelectorAll("button")].filter(b => b.textContent === "Edit");
+    editBtns[0].click();
+    var textareas = container.querySelectorAll("textarea.skill-form-textarea");
+    var tplArea   = textareas[textareas.length - 1];
+    var before = tplArea.value;
+    tplArea.focus();
+    tplArea.selectionStart = tplArea.selectionEnd = tplArea.value.length;
+    var chip = container.querySelector('.field-chip[data-path="session.customer.name"]');
+    assert(chip, "expected a chip with data-path=session.customer.name");
+    chip.click();
+    assertEqual(tplArea.value, before + "Customer name: {{session.customer.name}}",
+      "default chip click inserts 'Label: {{path}}' form so the LLM knows what the value represents");
+    container.remove();
+    clearSkills();
+  });
+
+  it("FP7 · coerceForLLM stringifies scalars directly and non-scalars as pretty JSON", () => {
+    assertEqual(coerceForLLM(undefined), "", "undefined → empty string");
+    assertEqual(coerceForLLM(null),      "", "null → empty string");
+    assertEqual(coerceForLLM("hello"),   "hello", "string passes through");
+    assertEqual(coerceForLLM(42),        "42",    "number coerces via String()");
+    assertEqual(coerceForLLM(true),      "true",  "boolean coerces via String()");
+    var arr = coerceForLLM([{ a: 1 }, { b: 2 }]);
+    assert(arr.indexOf('"a": 1') >= 0, "array of objects → JSON with key-value pairs (got: " + arr + ")");
+    assert(arr.indexOf("[object Object]") < 0, "must NOT fall back to [object Object]");
+    var longArr = coerceForLLM(new Array(500).fill({ description: "x".repeat(50) }));
+    assert(longArr.length <= 1250, "oversized payloads soft-capped so prompts don't blow the token budget");
+    assert(longArr.indexOf("truncated") >= 0, "cap is visible to the LLM");
+  });
+
+  it("FP8 · Alt-click on a chip inserts the BARE {{path}} (no label) — for templates that describe fields inline", () => {
+    clearSkills();
+    loadSkills();
+    var container = document.createElement("div");
+    document.body.appendChild(container);
+    renderSkillAdmin(container);
+    [...container.querySelectorAll("button")].filter(b => b.textContent === "Edit")[0].click();
+    var textareas = container.querySelectorAll("textarea.skill-form-textarea");
+    var tplArea   = textareas[textareas.length - 1];
+    tplArea.value = ""; // clear template so the insertion is easy to assert
+    tplArea.focus();
+    tplArea.selectionStart = tplArea.selectionEnd = 0;
+    var chip = container.querySelector('.field-chip[data-path="session.customer.vertical"]');
+    assert(chip, "expected a chip with data-path=session.customer.vertical");
+    // Simulate an Alt-click by dispatching a MouseEvent with altKey: true.
+    var evt = new MouseEvent("click", { bubbles: true, cancelable: true, altKey: true });
+    chip.dispatchEvent(evt);
+    assertEqual(tplArea.value, "{{session.customer.vertical}}",
+      "Alt-click inserts the bare binding without the label");
+    container.remove();
+    clearSkills();
+  });
+
+  it("FP9 · Skill admin edit form renders a 'Test skill now' button that wires to a test-output target", () => {
+    clearSkills();
+    loadSkills();
+    var container = document.createElement("div");
+    document.body.appendChild(container);
+    renderSkillAdmin(container);
+    [...container.querySelectorAll("button")].filter(b => b.textContent === "Edit")[0].click();
+    var testBtn = [...container.querySelectorAll("button")].find(b => b.textContent.indexOf("Test skill now") >= 0);
+    assert(testBtn, "'Test skill now' button must render in the edit form");
+    var testOut = container.querySelector(".skill-form-test-out");
+    assert(testOut, "test-output target .skill-form-test-out must exist (starts hidden)");
+    container.remove();
+    clearSkills();
+  });
+
+});
+
 export function runAllTests() {
   return run();
 }

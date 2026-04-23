@@ -841,6 +841,49 @@ Tagged `v2.1.2`. No code or test changes.
 
 ---
 
+## v2.4.2 · Phase 19c · Field-pointer mechanic + LLM-friendly coercion + test-skill — IMPLEMENTED (2026-04-19)
+
+**Goal**: Make the skill builder point-and-click instead of type-from-memory. Plus two correctness fixes that became visible when we started exercising the pipeline with non-scalar bindings.
+
+### Locked decisions
+
+- **Labeled insertion by default.** Chip click inserts `Label: {{path}}` so the LLM sees e.g. *"Customer name: Acme Corp"* on the rendered side — self-documenting for the model. Alt-click to override with bare `{{path}}` when the template describes the field inline.
+- **JSON coercion for non-scalars.** Arrays and objects pretty-print via `JSON.stringify(v, null, 2)` with a 1200-char soft cap. Previous `String(v)` produced `"[object Object]"` which was useless.
+- **Live preview uses first-item fallback context.** Empty session still shows a usable preview (placeholder selected-driver/gap/instance) so users can build skills before data exists.
+- **"Test skill now" dry-runs the unsaved draft.** Doesn't persist anything; doesn't apply anywhere. Pure prompt-iteration loop. Uses the active AI provider.
+- **Pill-based editor deferred** to v2.4.2.1. User-proposed mid-build; the rework is meaningful (contenteditable with inline uneditable spans + cursor handling + serialize/deserialize) and deserves its own focused slice.
+
+### What shipped
+
+- `core/fieldManifest.js` — per-tab bindable-field list. Each entry `{path, label, kind}`. 6 shared `session.*` fields appear on every tab; `context.*` fields are tab-specific. `fieldsForTab(tabId)` + `buildPreviewScope(session, tabId)` exported.
+- `ui/views/SkillAdmin.js` — below the template textarea:
+  - **Field chips** (blue scalars, amber arrays). Tooltip shows click vs Alt-click behaviour.
+  - **Live preview** panel. Updates on textarea input + tab change.
+  - **Test skill now** button + `.skill-form-test-out` target.
+- `services/skillEngine.js` — `coerceForLLM(v)` exported. `renderTemplate()` now calls it per binding.
+- `styles.css` — `.field-chip-list` / `.field-chip` / `.field-chip.is-array` / `.template-preview` / `.skill-form-test-row` / `.skill-form-test-out`.
+- `diagnostics/appSpec.js` — Suite 27 FP1-FP9.
+
+### Test (manual)
+
+| Verification | Result |
+|---|---|
+| Container HEALTHCHECK | `(healthy)` ✅ |
+| Served appSpec carries 10 `FP*` markers | ✅ |
+| Browser banner: 386/386 green | ✅ user-confirmed |
+| Click-to-insert with Customer name chip | ✅ inserts `Customer name: {{session.customer.name}}` |
+| Alt-click inserts bare binding | ✅ |
+| `{{session.gaps}}` in preview renders JSON | ✅ |
+| "Test skill now" runs against Gemini 2.5-flash | ✅ |
+
+### Out of scope, queued
+
+- **v2.4.2.1 pill-based editor** — user-proposed UX refinement; locked spec saved to `project_deferred_design_review.md`.
+- **v2.4.3** — output parsing, apply-on-confirm, undo stack, per-skill provider assignment.
+- **VLM (:8001)** — no current skill needs images; re-open when a use case appears.
+
+---
+
 ## v2.4.1 · Phase 19b · Skill Builder (admin panel + per-tab dropdown + templated prompts) — IMPLEMENTED (2026-04-19)
 
 **Goal**: Turn v2.4.0's hardcoded Tab-1 button into an AI *platform*. Presales define and deploy their own skills per tab; the runtime surfaces them via a `"✨ Use AI ▾"` dropdown. No code changes required to add a new skill — it's admin-panel-driven.
@@ -1309,8 +1352,9 @@ Resuming numbering from where we stopped. Tagged releases: `v2.1.1`, `v2.1.2` on
 | **17** | Taxonomy unification + "Action" rename + mandatory-link enforcement for Replace/Consolidate (Item 4) | `v2.3.x` | User sign-off on Item 4 table |
 | **19a** | AI foundations — 3-provider client (local vLLM / Anthropic / Gemini) + settings modal + demo skill on Tab 1 | `v2.4.0` ✅ SHIPPED | — |
 | **19b** | Skill builder UI — admin list + add/edit form + per-tab dropdown + seeded skill | `v2.4.1` ✅ SHIPPED | — |
-| **19c** | Field-pointer mechanic — click form field to insert `{{field.path}}` into prompt | `v2.4.2` | 19b |
-| **19d** | Output handling — parse / suggest / apply-on-confirm / optional streaming | `v2.4.3` | 19c |
+| **19c** | Field-pointer mechanic + LLM coercion + test button | `v2.4.2` ✅ SHIPPED | — |
+| **19c.1** | Pill-based editor (contenteditable with inline uneditable binding pills) | `v2.4.2.1` | — |
+| **19d** | Output handling + undo stack + per-skill provider assignment | `v2.4.3` | 19c.1 |
 | **20+** | Multi-user platform (Item 2) — separate v3 work | `v3.0.0-alpha` (new branch `v3-multiuser`) | Architecture design doc, backend stack decision, auth strategy |
 
 Items 5, 6 merged into later phases. Item 10 has no standalone phase (covered by Phase 18 test).
