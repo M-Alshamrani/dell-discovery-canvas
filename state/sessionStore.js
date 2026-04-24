@@ -110,10 +110,35 @@ export let session = (function() {
     var raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return migrateLegacySession(JSON.parse(raw));
   } catch(e) {}
-  // v2.1 · also pipe demo session through migration so it receives defaults
-  // (e.g. `reviewed` on auto-drafted gaps). Pure / idempotent.
-  return migrateLegacySession(createDemoSessionImpl());
+  // v2.4.7 · empty canvas is the honest default for a brand-new user.
+  // The old "fall back to demo" behaviour on first run mis-signalled
+  // "this is your session" with someone else's data; users had to hunt
+  // for the Load-demo or New-session button to understand what they
+  // were looking at. Demo is still one click away via ContextView's
+  // welcome card + the footer "↺ Load demo" button.
+  return migrateLegacySession(createEmptySession());
 })();
+
+// True iff the user hasn't started authoring anything yet. Pure
+// predicate — UI code uses this to decide whether to surface the
+// fresh-start welcome card. Kept here so every caller has one
+// definition of "is this a blank canvas?" and nobody reimplements it
+// slightly differently in each view.
+//
+// Argument semantics:
+//   isFreshSession()          — uses the module's live session
+//   isFreshSession(null)      — defensive: treated as fresh
+//   isFreshSession(someObj)   — evaluates the passed-in shape
+export function isFreshSession(s) {
+  var x = (arguments.length === 0) ? session : s;
+  if (!x || typeof x !== "object") return true;
+  var c = x.customer || {};
+  if (c.name && c.name.trim().length > 0) return false;
+  if (Array.isArray(c.drivers) && c.drivers.length > 0) return false;
+  if (Array.isArray(x.instances) && x.instances.length > 0) return false;
+  if (Array.isArray(x.gaps) && x.gaps.length > 0) return false;
+  return true;
+}
 
 export function resetSession() {
   var fresh = createEmptySession();

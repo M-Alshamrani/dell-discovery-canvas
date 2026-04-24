@@ -5004,6 +5004,93 @@ describe("37 · Phase 19g · v2.4.6 UX quick-wins — version chip + skill chip 
 
 });
 
+// ── Phase 19h / v2.4.7 · Fresh-start UX (FS1-FS5) ──────────────────────
+import { isFreshSession, session as liveSession7 } from "../state/sessionStore.js";
+
+describe("38 · Phase 19h · v2.4.7 fresh-start UX — empty default + welcome card", () => {
+
+  it("FS1 · isFreshSession returns true for an empty-shaped session", () => {
+    assertEqual(isFreshSession({
+      customer: { name: "", drivers: [] },
+      instances: [], gaps: []
+    }), true, "empty customer + no data → fresh");
+    assertEqual(isFreshSession({
+      customer: { name: "   ", drivers: [] },
+      instances: [], gaps: []
+    }), true, "whitespace-only customer name → fresh (trimmed)");
+    // Missing arrays should not crash.
+    assertEqual(isFreshSession({ customer: {} }), true, "missing arrays → fresh");
+    assertEqual(isFreshSession(null), true, "null session → fresh (defensive)");
+  });
+
+  it("FS2 · isFreshSession returns false once the user has authored anything", () => {
+    assertEqual(isFreshSession({
+      customer: { name: "Acme", drivers: [] }, instances: [], gaps: []
+    }), false, "customer name present → not fresh");
+    assertEqual(isFreshSession({
+      customer: { name: "", drivers: [{ id: "cyber_resilience" }] },
+      instances: [], gaps: []
+    }), false, "drivers present → not fresh");
+    assertEqual(isFreshSession({
+      customer: { name: "", drivers: [] },
+      instances: [{ id: "i-001" }], gaps: []
+    }), false, "instances present → not fresh");
+    assertEqual(isFreshSession({
+      customer: { name: "", drivers: [] },
+      instances: [], gaps: [{ id: "g-001" }]
+    }), false, "gaps present → not fresh");
+  });
+
+  it("FS3 · ContextView renders the fresh-start welcome card on an empty session", () => {
+    const emptySession = {
+      sessionId: "sess-fs3",
+      isDemo: false,
+      customer: { name: "", vertical: "", region: "", drivers: [] },
+      sessionMeta: { date: "2026-04-24", presalesOwner: "", status: "Draft", version: "2.0" },
+      instances: [],
+      gaps: []
+    };
+    const l = document.createElement("div");
+    const r = document.createElement("div");
+    renderContextView(l, r, emptySession);
+    const card = l.querySelector(".fresh-start-card");
+    assert(card, "fresh-start card must render for empty session");
+    // Card must expose BOTH CTAs: Load demo (primary) + Start fresh (secondary).
+    const btns = [...card.querySelectorAll("button")];
+    assert(btns.some(b => /load demo/i.test(b.textContent)),
+      "welcome card must include 'Load demo' primary CTA");
+    assert(btns.some(b => /start fresh/i.test(b.textContent)),
+      "welcome card must include 'Start fresh' dismiss CTA");
+  });
+
+  it("FS4 · ContextView does NOT render the fresh-start card once the user has data", () => {
+    const populatedSession = {
+      sessionId: "sess-fs4",
+      isDemo: false,
+      customer: { name: "Started Co", vertical: "Enterprise", region: "EMEA", drivers: [] },
+      sessionMeta: { date: "2026-04-24", presalesOwner: "", status: "Draft", version: "2.0" },
+      instances: [],
+      gaps: []
+    };
+    const l = document.createElement("div");
+    const r = document.createElement("div");
+    renderContextView(l, r, populatedSession);
+    assert(!l.querySelector(".fresh-start-card"),
+      "fresh-start card must hide as soon as any data exists (customer name alone is enough)");
+  });
+
+  it("FS5 · Footer Load-demo button still exists as a persistent affordance", () => {
+    // Regression guard: the fresh-start card is additive; the footer
+    // button stays. Users who dismiss the card should still be able to
+    // load the demo any time.
+    const btn = document.getElementById("demoBtn");
+    assert(btn, "#demoBtn must still exist in the footer for persistent access to Load demo");
+    assert(/demo/i.test(btn.textContent),
+      "footer Load-demo button retains its label");
+  });
+
+});
+
 // v2.4.5 · Foundations Refresh · register the human-surface demo suite
 // into the same runner so there's a single green banner for the whole
 // release. Import at bottom to avoid circular-dependency risk with the

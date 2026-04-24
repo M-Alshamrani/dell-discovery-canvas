@@ -14,14 +14,20 @@
 
 import { BUSINESS_DRIVERS, CUSTOMER_VERTICALS } from "../../core/config.js";
 import { useAiButton }             from "../components/UseAiButton.js";
-import { saveToLocalStorage } from "../../state/sessionStore.js";
+import { saveToLocalStorage, resetToDemo, isFreshSession } from "../../state/sessionStore.js";
 import { helpButton } from "./HelpModal.js";
 
 export function renderContextView(left, right, session) {
   left.innerHTML  = "";
   right.innerHTML = "";
 
-  if (session.isDemo) renderDemoBanner(left);
+  // v2.4.7 · U1 · fresh-start welcome card. Renders at the top of the
+  // left panel on a brand-new session so the user has a clear path
+  // between "type your customer name" and "explore with demo data".
+  // Demo mode shows the pre-existing demo banner instead (isDemo flag
+  // is mutually exclusive with a fresh/empty session).
+  if (isFreshSession(session))      renderFreshStartCard(left);
+  else if (session.isDemo)          renderDemoBanner(left);
 
   // ── Identity card ─────────────────────────────────────────
   var idCard = mk("div", "card");
@@ -376,6 +382,38 @@ function renderDemoBanner(container) {
   var b = mk("div", "demo-mode-banner");
   b.innerHTML = "<strong>Demo mode</strong> — Edit the fields below to start your own session, then click Save.";
   container.appendChild(b);
+}
+
+// v2.4.7 · U1 · brand-new-session welcome card. Two CTAs: Load demo
+// (flips to the Acme FSI persona + re-renders via the session-changed
+// bus) or dismiss (just hides the card — fresh-start state remains).
+function renderFreshStartCard(container) {
+  var card = mk("div", "card fresh-start-card");
+  card.setAttribute("data-fresh-start", "");
+  card.appendChild(mkt("div", "fresh-start-eyebrow", "NEW SESSION"));
+  card.appendChild(mkt("div", "fresh-start-title", "Start a workshop from scratch, or explore with demo data"));
+  card.appendChild(mkt("div", "fresh-start-body",
+    "Fill in the customer identity below and add the strategic drivers the customer cares about. " +
+    "Or load the Acme Financial Services demo to see every tab populated with realistic data."));
+  var actions = mk("div", "fresh-start-actions");
+  var loadBtn = mkt("button", "btn-primary", "↺ Load demo session");
+  loadBtn.type = "button";
+  loadBtn.addEventListener("click", function() {
+    // resetToDemo emits session-changed → app.js re-renders everything.
+    // Card disappears on the re-render because isFreshSession is now false.
+    resetToDemo();
+  });
+  var dismissBtn = mkt("button", "btn-secondary", "Start fresh");
+  dismissBtn.type = "button";
+  dismissBtn.addEventListener("click", function() {
+    // Local dismiss only — no session mutation. User can still load demo
+    // later via the footer "↺ Load demo" button.
+    card.remove();
+  });
+  actions.appendChild(loadBtn);
+  actions.appendChild(dismissBtn);
+  card.appendChild(actions);
+  container.appendChild(card);
 }
 
 function mk(tag, cls)       { var e = document.createElement(tag); if (cls) e.className = cls; return e; }

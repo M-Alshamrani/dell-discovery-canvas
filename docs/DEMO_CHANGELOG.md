@@ -18,6 +18,49 @@ gaps, drivers, or session metadata) must, in the **same commit**:
 
 ---
 
+## v2.4.7 · 2026-04-24 · Fresh-start UX (onboarding split)
+
+**Status**: shipped (Phase 19h).
+
+### What changed for the demo surface
+
+- **Empty canvas is now the first-run default.** `state/sessionStore.js` IIFE
+  falls back to `createEmptySession()` instead of `createDemoSession()` when
+  localStorage is blank. Demo mode is entirely opt-in from here on.
+- **New `isFreshSession(s)` predicate** exported from `sessionStore`. UI code
+  uses this to decide whether to surface the fresh-start welcome card. True
+  iff no customer name, no drivers, no instances, no gaps.
+- **Fresh-start welcome card** on Context tab when `isFreshSession(session)`.
+  Two CTAs: "↺ Load demo session" (fires `resetToDemo()` → demo persona
+  loads) and "Start fresh" (local dismiss).
+- **Footer "↺ Load demo" button stays** as a persistent affordance so users
+  who dismiss the card can still load the demo later.
+- **No data-model changes** — `createDemoSession()` and `DEMO_PERSONAS`
+  unchanged. The onboarding surface changed; the demo itself didn't.
+
+### Tests added — Suite 38, FS1-FS5
+
+- FS1 · `isFreshSession` returns true for empty-shaped / null / undefined /
+  missing-arrays sessions.
+- FS2 · `isFreshSession` returns false once any of customer.name /
+  drivers[] / instances[] / gaps[] is non-empty.
+- FS3 · `renderContextView` on an empty session renders `.fresh-start-card`
+  with both CTAs ("Load demo" + "Start fresh").
+- FS4 · `renderContextView` on any populated session does NOT render the
+  fresh-start card.
+- FS5 · regression guard: footer `#demoBtn` still exists as the persistent
+  Load-demo path.
+
+### Why this matters for the demo surface
+
+Before v2.4.7, a brand-new user opened the app and was immediately looking
+at Acme Financial Services data with 6 gaps and a populated roadmap — this
+was legitimately confusing (users asked "why is there a gap in my fresh
+session?"). The fresh-start split preserves the demo-as-reference value
+(still one click away) without pretending somebody else's session is yours.
+
+---
+
 ## v2.4.5 · 2026-04-24 · Foundations Refresh — initial split
 
 **Status**: shipped (Phase 19e).
