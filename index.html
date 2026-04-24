@@ -9,7 +9,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
-  <link rel="icon" href="data:," />
+  <link rel="icon" type="image/svg+xml" href="/Logo/canvas-icon.svg" />
+  <!-- v2.4.10 · PWA manifest · registers Canvas as a handler for the
+       .canvas file type so saved files show our icon in the OS and can
+       be opened via double-click after the user installs the app.
+       Optional for the webapp experience; required for OS file
+       association. -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#0078D4" />
 </head>
 <body>
 
@@ -53,7 +60,9 @@
 
   <footer id="app-footer">
     <div class="footer-actions">
-      <button id="exportBtn" class="btn-outline">↓ Export JSON</button>
+      <button id="exportBtn" class="btn-outline" title="Save your work as a .canvas file you can re-open later, back up, or share with a colleague.">↓ Save to file</button>
+      <button id="openFileBtn" class="btn-outline" title="Load a previously saved .canvas file. Your work replaces whatever's currently on screen.">↑ Open file</button>
+      <input id="openFileInput" type="file" accept=".canvas,application/vnd.delltech.canvas+json,application/json" style="display:none" />
       <button id="demoBtn"   class="btn-ghost">↺ Load demo</button>
       <button id="newSessionBtn" class="btn-ghost">+ New session</button>
       <button id="clearAllBtn" class="btn-ghost footer-btn-destructive" title="Wipe every dell_discovery_* and ai_* localStorage key and reload as a brand-new user.">Clear all data</button>

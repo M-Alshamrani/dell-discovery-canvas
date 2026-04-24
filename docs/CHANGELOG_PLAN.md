@@ -932,6 +932,65 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
+## v2.4.10 · User-owned save/open file (.canvas workbook) · IMPLEMENTED 2026-04-24
+
+**Goal**: give volunteer test users a real data-durability lifeline. Before this tag, a user's work existed only in browser localStorage — a reinstall, a Clear-all, or a version upgrade that broke migrations would lose everything. After this tag, the user owns their work as a `.canvas` file they can save, open, back up, or hand to a colleague.
+
+### What shipped
+
+1. **`↓ Save to file`** (renamed from `Export JSON`) — opens a small dialog with an **opt-in checkbox "Also include my AI provider API keys in the file"**. Default OFF. File is downloaded as `{customer-slug}-{date}.canvas` with MIME `application/vnd.delltech.canvas+json`.
+2. **`↑ Open file`** (new) — opens native file picker, parses the envelope, runs the session through the existing `migrateLegacySession` chain (so cross-version migrations apply to imported files — Phase 17 rationalize coercions, v2.4.9 primary-layer backfills, all of it). Replaces live session + skills + provider config (keys only if user opts in per confirm prompt).
+3. **File envelope v1**: `{ fileFormatVersion, appVersion, schemaVersion, savedAt, session, skills, providerConfig, providerKeys? }`. API keys are stripped unless `includeApiKeys: true`. Tolerates unknown future top-level keys (forward-compat). Rejects files from newer versions with a clear message.
+4. **PWA manifest + file_handlers** — registered for `.canvas` MIME. When user installs the webapp as a PWA (Chrome/Edge three-dot menu → Install app), `.canvas` files associate with the Canvas icon in the OS, and double-clicking a `.canvas` file opens it directly in the app via `launchQueue`.
+5. **SVG icon** (`Logo/canvas-icon.svg`) — a brand-blue plate with three ascending rows and an upward-trending path, evoking current → desired → roadmap progression. Used both as favicon and as the OS file-type icon (when PWA is installed).
+6. **Clear-all reliability fixes**:
+   - Fixed CL2 test pollution: previous test did `window.localStorage.clear = fn` which, for the Storage interface, calls `setItem("clear", fnString)` — polluting storage with a `"clear"` key that got re-written on every page load. Now uses a canary-key approach with no `.clear` assignment.
+   - Hardened the Clear-all click handler: uses `location.href = path + "?cleared=ts"` for guaranteed fresh navigation across all browsers (some block `location.reload()` mocking which masked test issues).
+7. **Confirm dialog text updated**: "Use 'Save to file' first if you want a backup" (was "Export JSON").
+
+### What you'll see
+
+- **Footer** now reads: `↓ Save to file` · `↑ Open file` · `↺ Load demo` · `+ New session` · `Clear all data`.
+- **Click Save to file** → dialog opens with the opt-in API-keys checkbox + help text. Click "↓ Save to file" button inside the dialog → `.canvas` file downloads with your customer name in the filename.
+- **Click Open file** → native file picker. Pick a `.canvas` file → imports it. If the file included API keys, a confirm prompt asks whether to apply them. Post-load alert shows "Opened filename.canvas" + which Canvas version saved it + any warnings.
+- **If you install Canvas as a PWA** (Chrome/Edge: address-bar → Install app icon), `.canvas` files get the Canvas icon in Finder/Explorer and double-clicking opens them in the app.
+- **Title bar favicon** now shows the Canvas icon instead of the blank data-uri fallback.
+- **Clear all data** now produces a visibly fresh state after reload (previously polluted with a stale `"clear"` test key).
+
+### Why this feature and why now
+
+User raised this point: "test users might lose their work when we upgrade, and export-JSON alone doesn't tell them they can re-open it." The answer is the Word-document pattern: save a file, open a file, file carries its version inside, migrator knows every version shift. This becomes the durable layer that outlasts localStorage, outlasts browser reinstalls, and stays valid when v3 multi-user moves data server-side — users never lose control of their workbook.
+
+### Tests — Suite 41 · SF1-SF10
+
+- SF1 · API keys stripped by default
+- SF2 · API keys included only on opt-in; Local's empty-string key correctly not included
+- SF3 · envelope carries fileFormatVersion + appVersion + schemaVersion + savedAt
+- SF4 · suggestFilename produces safe OS-portable filenames ending in `.canvas`
+- SF5 · garbage JSON / non-object / missing-session files rejected with readable errors
+- SF6 · files from newer Canvas versions rejected with upgrade hint
+- SF7 · unknown top-level keys tolerated (forward-compat)
+- SF8 · applyEnvelope runs migrateLegacySession — a pre-v2.4.8 rationalize gap in an imported file gets coerced to ops
+- SF9 · applyEnvelope warns about bundled API keys but keeps user's own by default
+- SF10 · full round-trip (save → parse → apply) yields byte-identical session JSON
+
+Tests: 488 total (up from 478 + 10 SF).
+
+### Files
+
+- NEW · `services/sessionFile.js` (envelope builder + parser + applyEnvelope + suggestFilename)
+- NEW · `manifest.json` (PWA manifest + file_handlers)
+- NEW · `Logo/canvas-icon.svg` (SVG icon for favicon + PWA + file-type)
+- MOD · `index.html` (Save/Open buttons; manifest link; SVG favicon)
+- MOD · `app.js` (openSaveDialog + handleOpenedFile + launchQueue consumer + hardened Clear-all)
+- MOD · `styles.css` (save-dialog + note styling)
+- MOD · `nginx.conf` (MIME for webmanifest + canvas)
+- MOD · `Dockerfile` (copies manifest.json)
+- MOD · `core/version.js` (APP_VERSION 2.4.9 → 2.4.10)
+- MOD · `diagnostics/appSpec.js` (Suite 41 SF1-SF10; CL2 rewritten to avoid storage pollution)
+
+---
+
 ## v2.4.9 · Primary-layer + Gap→Project data model · IMPLEMENTED 2026-04-24 (rollback anchor)
 
 **"AI platform complete + relationships fixed + old look"** — the `git checkout v2.4.9` target if v2.5.x crown-jewel regresses.

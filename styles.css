@@ -220,6 +220,33 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   border-color: #991B1B;
 }
 
+/* v2.4.10 · Save-to-file dialog. */
+.save-dialog-check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  margin: 10px 0;
+  background: var(--surface-2, #F8FAFC);
+  border: 1px solid var(--border, #E2E8F0);
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-1, #0F172A);
+}
+.save-dialog-check input[type="checkbox"] {
+  margin-top: 2px;
+  cursor: pointer;
+}
+.save-dialog-note {
+  display: block;
+  font-size: 11px;
+  color: var(--text-3, #64748B);
+  margin-top: 4px;
+  font-style: italic;
+}
+
 /* ── Cards ──────────────────────────────────────────────────── */
 .card {
   background: var(--surface);

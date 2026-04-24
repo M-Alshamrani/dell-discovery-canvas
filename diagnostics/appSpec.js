@@ -5454,25 +5454,28 @@ describe("40 · Phase 19i · v2.4.9 primary-layer invariant + explicit gap.proje
       "button must carry the .footer-btn-destructive class so it reads as destructive");
   });
 
-  it("CL2 · clicking Clear-all-data prompts confirm AND (on yes) calls localStorage.clear", () => {
+  it("CL2 · clicking Clear-all-data prompts confirm, and Cancel-path performs no wipe", () => {
+    // v2.4.10 · NEVER assign to window.localStorage.clear — for the
+    // Storage interface that triggers setItem('clear', fn.toString())
+    // which pollutes storage with a literal 'clear' KEY that survives
+    // page reloads. Previous CL2 left that key on every page load.
+    // Instead: stub confirm → FALSE, click, verify zero wipe occurred
+    // by counting keys before/after.
     const btn = document.getElementById("clearAllBtn");
     assert(btn, "#clearAllBtn must render");
+    // Seed one canary key so "did it wipe" is observable.
+    window.localStorage.setItem("__cl2_canary__", "alive");
     const origConfirm = window.confirm;
-    const origReload  = window.location.reload;
     let confirmCalled = 0;
-    let clearCalled   = 0;
-    // Intercept the three mutating calls so the test doesn't actually
-    // wipe storage or reload the page.
     window.confirm = function() { confirmCalled++; return false; };
-    const origClear = window.localStorage.clear.bind(window.localStorage);
-    window.localStorage.clear = function() { clearCalled++; };
     try {
       btn.click();
       assertEqual(confirmCalled, 1, "confirm dialog must fire once per click");
-      assertEqual(clearCalled, 0, "cancel → no wipe");
+      assertEqual(window.localStorage.getItem("__cl2_canary__"), "alive",
+        "Cancel-path must NOT wipe storage (canary survives)");
     } finally {
       window.confirm = origConfirm;
-      window.localStorage.clear = origClear;
+      window.localStorage.removeItem("__cl2_canary__");
     }
   });
 
@@ -5483,6 +5486,155 @@ describe("40 · Phase 19i · v2.4.9 primary-layer invariant + explicit gap.proje
   // confirm. The downstream "clear + reload" call chain is a 3-line
   // inline handler whose failure mode would be caught by a manual
   // smoke test on any UX change.
+
+});
+
+// ── Phase 19j / v2.4.10 · Save/Open file (SF1-SF10) ────────────────────
+import {
+  buildSaveEnvelope, parseFileEnvelope, applyEnvelope,
+  suggestFilename, FILE_FORMAT_VERSION, FILE_EXTENSION, FILE_MIME
+} from "../services/sessionFile.js";
+import { createDemoSession as createDemoSessionForSF } from "../state/demoSession.js";
+
+describe("41 · Phase 19j · v2.4.10 save/open file (.canvas round-trip)", () => {
+
+  function demoBundle() {
+    return {
+      session: createDemoSessionForSF(),
+      skills: [
+        { id: "skill-x", name: "X", tabId: "context", promptTemplate: "hi",
+          responseFormat: "text-brief", applyPolicy: "show-only",
+          outputSchema: [], providerKey: null,
+          deployed: true, seed: false,
+          createdAt: "2026-04-24T00:00:00Z", updatedAt: "2026-04-24T00:00:00Z" }
+      ],
+      providerConfig: {
+        activeProvider: "gemini",
+        providers: {
+          local:     { label: "Local",     baseUrl: "/api/llm/local/v1", model: "code-llm",          apiKey: "",        fallbackModels: [] },
+          anthropic: { label: "Anthropic", baseUrl: "/api/llm/anthropic", model: "claude-haiku-4-5",  apiKey: "SECRET1", fallbackModels: [] },
+          gemini:    { label: "Gemini",    baseUrl: "/api/llm/gemini",    model: "gemini-2.5-flash",  apiKey: "SECRET2", fallbackModels: ["gemini-2.0-flash"] }
+        }
+      }
+    };
+  }
+
+  it("SF1 · buildSaveEnvelope STRIPS API keys by default (security default)", () => {
+    const env = buildSaveEnvelope(demoBundle());
+    const providers = env.providerConfig.providers;
+    ["local", "anthropic", "gemini"].forEach(k => {
+      assert(!("apiKey" in providers[k]),
+        "provider '" + k + "' must have NO apiKey field when includeApiKeys is false");
+    });
+    assert(!("providerKeys" in env),
+      "envelope must NOT carry a providerKeys bag by default");
+  });
+
+  it("SF2 · buildSaveEnvelope includes API keys only when opt-in flag is true", () => {
+    const env = buildSaveEnvelope({ ...demoBundle(), includeApiKeys: true });
+    // Non-empty keys are tucked into env.providerKeys — separate bag.
+    assert(env.providerKeys, "opt-in must add a providerKeys bag");
+    assertEqual(env.providerKeys.anthropic.apiKey, "SECRET1", "Anthropic key included");
+    assertEqual(env.providerKeys.gemini.apiKey,    "SECRET2", "Gemini key included");
+    assert(!env.providerKeys.local, "empty-string Local key must NOT be included");
+    // providers map STILL has no apiKey on the record itself.
+    assert(!("apiKey" in env.providerConfig.providers.anthropic),
+      "keys are only in providerKeys bag, not in the main providers map");
+  });
+
+  it("SF3 · envelope carries fileFormatVersion + appVersion + schemaVersion + savedAt", () => {
+    const env = buildSaveEnvelope(demoBundle());
+    assertEqual(env.fileFormatVersion, FILE_FORMAT_VERSION, "file format version pinned");
+    assert(typeof env.appVersion === "string" && env.appVersion.length > 0, "appVersion recorded");
+    assertEqual(env.schemaVersion, "2.0", "schemaVersion derived from session.sessionMeta.version");
+    assert(/^\d{4}-\d{2}-\d{2}T/.test(env.savedAt || ""), "savedAt is ISO-8601 UTC");
+  });
+
+  it("SF4 · suggestFilename produces a safe .canvas filename from customer name + date", () => {
+    const s = createDemoSessionForSF();
+    const name = suggestFilename(s);
+    assert(name.endsWith(FILE_EXTENSION), "filename must end with .canvas");
+    assert(!/[^a-z0-9\-.]/.test(name), "filename must be lower-case + hyphens only (safe on every OS)");
+    assert(name.indexOf("acme") >= 0 || name.indexOf("session") >= 0,
+      "filename reflects customer name slug (or falls back to 'session')");
+  });
+
+  it("SF5 · parseFileEnvelope rejects garbage JSON with a readable error", () => {
+    throws(() => parseFileEnvelope(""),            "empty rejected");
+    throws(() => parseFileEnvelope("not json"),    "non-json rejected");
+    throws(() => parseFileEnvelope("[1,2,3]"),     "array rejected (root must be object)");
+    throws(() => parseFileEnvelope("{}"),          "missing .session rejected");
+  });
+
+  it("SF6 · parseFileEnvelope rejects files from a newer Canvas version", () => {
+    const envelope = buildSaveEnvelope(demoBundle());
+    envelope.fileFormatVersion = 999;
+    throws(() => parseFileEnvelope(JSON.stringify(envelope)),
+      "newer fileFormatVersion must be rejected with a clear message");
+  });
+
+  it("SF7 · parseFileEnvelope tolerates unknown top-level keys (forward-compat)", () => {
+    const envelope = buildSaveEnvelope(demoBundle());
+    envelope.futureFieldFromV3 = { anything: true };
+    doesNotThrow(() => parseFileEnvelope(JSON.stringify(envelope)),
+      "unknown fields must be preserved, not rejected");
+  });
+
+  it("SF8 · applyEnvelope runs migrateLegacySession (cross-version migration applied on import)", () => {
+    // Construct an envelope whose session has a pre-v2.4.8 rationalize
+    // gap. applyEnvelope must coerce it — proves imported files benefit
+    // from every migration we've shipped.
+    const env = buildSaveEnvelope(demoBundle());
+    env.session.gaps.push({
+      id: "g-sf8-rat",
+      description: "Legacy rationalize gap from a pre-v2.4.8 file",
+      layerId: "compute",
+      affectedLayers: ["compute"],
+      affectedEnvironments: [],
+      gapType: "rationalize",   // Phase 17 removed; migrator coerces to "ops"
+      urgency: "Low", phase: "later",
+      relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
+      status: "open", reviewed: true
+    });
+    const res = applyEnvelope(env);
+    const ratGap = res.session.gaps.find(g => g.id === "g-sf8-rat");
+    assert(ratGap, "imported gap must survive applyEnvelope");
+    assertEqual(ratGap.gapType, "ops",
+      "migrator must coerce 'rationalize' → 'ops' on imported file (v2.4.8 rule applies to imports too)");
+  });
+
+  it("SF9 · applyEnvelope WARNS about bundled API keys but keeps user's own by default", () => {
+    const env = buildSaveEnvelope({ ...demoBundle(), includeApiKeys: true });
+    const res = applyEnvelope(env /* no applyApiKeys flag — default false */);
+    assert(res.warnings.some(w => /API keys/i.test(w)),
+      "user must be warned that the file carried keys but we ignored them");
+    // providerConfig is present but carries no apiKey (we stripped on save + didn't apply on open).
+    assert(!("apiKey" in res.providerConfig.providers.anthropic),
+      "keys must NOT leak into the returned providerConfig unless user opted in");
+  });
+
+  it("SF10 · full round-trip: save → parse → apply yields JSON-identical session after a parallel migrator pass", () => {
+    // Import the session-store migrator inline so we can run the
+    // ORIGINAL session through the same migrator the import path does.
+    // Migration is forward-only (adds missing projectId, enforces
+    // primary-layer invariant, etc.), so round-trip equality only
+    // holds AFTER both sides have been migrated. In real usage, the
+    // "original" in localStorage is already migrated on every load;
+    // this test mirrors that invariant.
+    const bundle = demoBundle();
+    const env = buildSaveEnvelope(bundle);
+    const json = JSON.stringify(env);
+    const parsed = parseFileEnvelope(json);
+    const res = applyEnvelope(parsed);
+    const originalMigrated = migrateLegacySession(JSON.parse(JSON.stringify(bundle.session)));
+    const originalSig = JSON.stringify(originalMigrated);
+    const restoredSig = JSON.stringify(res.session);
+    assertEqual(restoredSig, originalSig,
+      "save → parse → apply must match a parallel migrator pass on the original (stable round-trip)");
+    // Skills come back too.
+    assertEqual(res.skills.length, bundle.skills.length, "skills round-trip count matches");
+    assertEqual(res.skills[0].id, bundle.skills[0].id, "skills round-trip by identity");
+  });
 
 });
 

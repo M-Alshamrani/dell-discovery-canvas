@@ -18,6 +18,22 @@ gaps, drivers, or session metadata) must, in the **same commit**:
 
 ---
 
+## v2.4.10 · 2026-04-24 · User-owned save/open file (.canvas workbook)
+
+**Status**: shipped (Phase 19j). No data-model changes.
+
+### What changed for the demo surface
+
+- **Demo data unchanged.** `createDemoSession()` output is byte-identical.
+- **New round-trip guarantee**: Suite 41 SF10 asserts that a demo session exported to a `.canvas` envelope and re-imported produces a byte-identical session. If a future slice changes the demo shape, this test fires.
+- **Migrator coverage extended**: SF8 asserts that imported files run through the existing `migrateLegacySession` chain — so every Phase-17 coercion, v2.4.9 primary-layer backfill, and future migration automatically applies to imported `.canvas` files. Users who save a workbook today and open it six months from now keep their work.
+
+### Why this matters for the demo surface
+
+Before v2.4.10, the demo was localStorage-scoped — refreshing or clearing wiped it. Now a user can click **Load demo** → make changes → **Save to file** → keep the file as a reference workbook. Opening the demo `.canvas` file on any other machine loads the same Acme FSI scenario. The demo becomes shareable, not just ephemeral.
+
+---
+
 ## v2.4.9 · 2026-04-24 · Primary-layer invariant + explicit gap.projectId (pre-crown-jewel rollback anchor)
 
 **Status**: shipped. No UI changes — this slice is data-model plumbing for v2.5.0.

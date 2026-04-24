@@ -1,11 +1,14 @@
 // app.js -- main router
 
-import { session, resetSession, resetToDemo, saveToLocalStorage } from "./state/sessionStore.js";
+import { session, resetSession, resetToDemo, saveToLocalStorage, replaceSession, migrateLegacySession } from "./state/sessionStore.js";
 import { runAllTests }               from "./diagnostics/appSpec.js";
 import { openSettingsModal }         from "./ui/views/SettingsModal.js";
 import * as aiUndoStack              from "./state/aiUndoStack.js";
-import { onSessionChanged }          from "./core/sessionEvents.js";
+import { onSessionChanged, emitSessionChanged } from "./core/sessionEvents.js";
 import { APP_VERSION }               from "./core/version.js";
+import { loadAiConfig, saveAiConfig } from "./core/aiConfig.js";
+import { loadSkills, saveSkills }    from "./core/skillStore.js";
+import { buildSaveEnvelope, parseFileEnvelope, applyEnvelope, suggestFilename, FILE_MIME } from "./services/sessionFile.js";
 import { renderContextView }         from "./ui/views/ContextView.js";
 import { renderMatrixView }          from "./ui/views/MatrixView.js";
 import { renderGapsEditView }        from "./ui/views/GapsEditView.js";
@@ -51,6 +54,33 @@ document.addEventListener("DOMContentLoaded", function() {
     renderHeaderMeta();
     renderStage();
   });
+  // v2.4.10 · If the user installed Canvas as a PWA and double-clicked
+  // a .canvas file, Chromium's launchQueue delivers the file handle
+  // here. We reuse the same openFileInput-change pipeline by routing
+  // through a synthetic File → handleOpenedFile (set up in wireFooter).
+  if ("launchQueue" in window && "files" in window.LaunchParams.prototype) {
+    window.launchQueue.setConsumer(async function(launchParams) {
+      if (!launchParams.files || !launchParams.files.length) return;
+      for (var i = 0; i < launchParams.files.length; i++) {
+        try {
+          var handle = launchParams.files[i];
+          var file = await handle.getFile();
+          // Reuse footer's handler via a dispatched change event on
+          // the hidden input. Keeps one code path for file loading.
+          var input = document.getElementById("openFileInput");
+          if (!input) return;
+          // File input .files is read-only in HTML; use DataTransfer
+          // to construct a FileList.
+          var dt = new DataTransfer();
+          dt.items.add(file);
+          input.files = dt.files;
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+        } catch (e) {
+          console.error("[launchQueue] failed to open file:", e);
+        }
+      }
+    });
+  }
   setTimeout(runAllTests, 150);
 });
 
@@ -198,20 +228,30 @@ function renderReportingTab(left, right) {
 
 function wireFooter() {
   var exportBtn    = document.getElementById("exportBtn");
+  var openFileBtn  = document.getElementById("openFileBtn");
+  var openFileIn   = document.getElementById("openFileInput");
   var demoBtn      = document.getElementById("demoBtn");
   var newSessionBtn= document.getElementById("newSessionBtn");
   var clearAllBtn  = document.getElementById("clearAllBtn");
 
+  // v2.4.10 · "Save to file" (was "Export JSON"). Bundles session + skills
+  // + provider config (keys opt-in) into a single .canvas file the user
+  // can re-open later, back up, or hand to a colleague.
   if (exportBtn) {
     exportBtn.addEventListener("click", function() {
-      var blob = new Blob([JSON.stringify(session, null, 2)], { type:"application/json" });
-      var url  = URL.createObjectURL(blob);
-      var a    = document.createElement("a");
-      a.href = url;
-      a.download = (session.customer.name || "session").replace(/\s+/g, "-").toLowerCase()
-        + "-" + session.sessionId + ".json";
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
+      openSaveDialog();
+    });
+  }
+
+  // v2.4.10 · "Open file" — user selects a .canvas file, parser +
+  // migrator apply the envelope, session-changed bus re-renders the app.
+  if (openFileBtn && openFileIn) {
+    openFileBtn.addEventListener("click", function() { openFileIn.click(); });
+    openFileIn.addEventListener("change", function(ev) {
+      var file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      openFileIn.value = ""; // allow re-selecting the same file later
+      handleOpenedFile(file);
     });
   }
 
@@ -240,6 +280,95 @@ function wireFooter() {
   // the deliberate "treat me like a brand-new user" escape hatch after
   // an upgrade, so users can see first-run UX changes (e.g. the v2.4.7
   // fresh-start welcome card) without reaching for DevTools.
+  // v2.4.10 · Save dialog — opt-in checkbox for API keys.
+  function openSaveDialog() {
+    document.getElementById("save-dialog")?.remove();
+    var overlay = document.createElement("div");
+    overlay.id = "save-dialog";
+    overlay.className = "dialog-overlay";
+    var box = document.createElement("div");
+    box.className = "dialog-box";
+    box.innerHTML =
+      '<div class="dialog-title">Save to file</div>' +
+      '<p class="dialog-body">Saves your session, AI skills library, and provider settings to a <code>.canvas</code> file. Re-open it later, back it up, or share with a colleague.</p>' +
+      '<label class="save-dialog-check"><input id="saveInclKeysChk" type="checkbox" /> ' +
+      'Also include my AI provider API keys in the file' +
+      '<span class="save-dialog-note">Default: off (keys stay on your machine). Tick only if you want the recipient to use your exact AI setup — anyone with the file can use your keys.</span>' +
+      '</label>' +
+      '<div class="form-actions">' +
+      '<button id="saveDialogCancel" class="btn-secondary">Cancel</button>' +
+      '<button id="saveDialogOk" class="btn-primary">↓ Save to file</button>' +
+      '</div>';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click", function(e) { if (e.target === overlay) overlay.remove(); });
+    document.getElementById("saveDialogCancel").addEventListener("click", function() { overlay.remove(); });
+    document.getElementById("saveDialogOk").addEventListener("click", function() {
+      var includeApiKeys = document.getElementById("saveInclKeysChk").checked;
+      var envelope = buildSaveEnvelope({
+        session:        session,
+        skills:         loadSkills(),
+        providerConfig: loadAiConfig(),
+        includeApiKeys: includeApiKeys
+      });
+      var blob = new Blob([JSON.stringify(envelope, null, 2)], { type: FILE_MIME });
+      var url  = URL.createObjectURL(blob);
+      var a    = document.createElement("a");
+      a.href = url;
+      a.download = suggestFilename(session);
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      overlay.remove();
+    });
+  }
+
+  // v2.4.10 · Open-file flow. Reads the blob, parses, optionally
+  // prompts the user to apply included API keys (only if file carried
+  // them), migrates the session via the existing migrator chain, and
+  // writes back to localStorage. Emits session-changed to refresh UI.
+  function handleOpenedFile(file) {
+    var reader = new FileReader();
+    reader.onerror = function() { alert("Couldn't read the file. Is it readable?"); };
+    reader.onload = function() {
+      var env;
+      try { env = parseFileEnvelope(String(reader.result || "")); }
+      catch (e) { alert("Can't open this file:\n\n" + (e.message || String(e))); return; }
+
+      var hasKeys = env.providerKeys && Object.keys(env.providerKeys).length > 0;
+      var applyKeys = false;
+      if (hasKeys) {
+        applyKeys = confirm(
+          "This file includes AI provider API keys. Apply them to your setup?\n\n" +
+          "Click OK to replace your current API keys with the file's.\n" +
+          "Click Cancel to keep your own keys (the file's are ignored)."
+        );
+      }
+
+      var res;
+      try { res = applyEnvelope(env, { applyApiKeys: applyKeys }); }
+      catch (e) { alert("Can't apply this file:\n\n" + (e.message || String(e))); return; }
+
+      // Replace the live session via sessionStore's replaceSession.
+      replaceSession(res.session);
+      saveToLocalStorage();
+      // Replace skills.
+      saveSkills(res.skills);
+      // Provider config (possibly with keys merged in).
+      if (res.providerConfig) saveAiConfig(res.providerConfig);
+
+      emitSessionChanged("session-replace", "Opened " + (file.name || "file"));
+
+      var msg = "Opened " + file.name + "\n\nSaved by: Canvas v" + res.savedAppVersion +
+        (res.savedAt ? " at " + res.savedAt : "");
+      if (res.warnings.length) msg += "\n\nNotes:\n  • " + res.warnings.join("\n  • ");
+      // Non-blocking success — console + a brief toast would be nicer,
+      // but alert is honest feedback for v2.4.10. v2.5.x can replace with
+      // a toast.
+      setTimeout(function() { alert(msg); }, 0);
+    };
+    reader.readAsText(file);
+  }
+
   if (clearAllBtn) {
     clearAllBtn.addEventListener("click", function() {
       if (!confirm(
@@ -249,10 +378,14 @@ function wireFooter() {
         "  • AI skills library\n" +
         "  • AI provider config + API keys\n" +
         "  • Undo history\n\n" +
-        "Cannot be undone. Use 'Export JSON' first if you want a backup."
+        "Cannot be undone. Use 'Save to file' first if you want a backup."
       )) return;
       try { localStorage.clear(); } catch (e) { /* private mode — ignore */ }
-      location.reload();
+      // v2.4.10 · force a FRESH navigation (not just a cache-revalidating
+      // reload) by appending a one-time query string. Some browsers skip
+      // the module cache on location.reload() only in certain contexts;
+      // a new href is unambiguous.
+      window.location.href = window.location.pathname + "?cleared=" + Date.now();
     });
   }
 }

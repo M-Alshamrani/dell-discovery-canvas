@@ -22,7 +22,7 @@ RUN chmod +x /docker-entrypoint.d/40-setup-auth.sh /docker-entrypoint.d/45-setup
 
 # Static app payload. Copy whitelist of folders, not '. .', so junk like the
 # brace-expansion folder and host-only scripts (start.sh/start.bat) stay out.
-COPY index.html robots.txt styles.css app.js /usr/share/nginx/html/
+COPY index.html robots.txt styles.css app.js manifest.json /usr/share/nginx/html/
 COPY core/         /usr/share/nginx/html/core/
 COPY state/        /usr/share/nginx/html/state/
 COPY services/     /usr/share/nginx/html/services/
