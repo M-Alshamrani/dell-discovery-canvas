@@ -881,45 +881,86 @@ Per `feedback_foundational_testing.md` (saved this session): every future data-m
 
 ---
 
-## v2.4.7 · UX polish · QUEUED (after v2.4.6 action-commands)
+## Release re-sequence · 2026-04-24 afternoon
 
-**Goal**: Tidy the everyday friction points the user noticed in live use. Not a design rework (that's v2.5.0 crown-jewel) — a curated list of small, focused fixes each sized for a single PR.
+The original v2.4.7 polish bundle + v2.4.6 action-commands are re-ordered. Capability slices (action-commands) move *after* UX, because action-commands is a capability without a user-scenario today; polish fixes friction on every app open. The original v2.4.7 7-item bundle is split across v2.4.6 / v2.4.7 / v2.5.0. Updated running order:
 
-### Locked items (each independently mergeable)
+| Tag | Slice | Source items | Gating |
+|---|---|---|---|
+| **v2.4.6** | UX quick-wins | L4 version · L5 empty chip · L6 save button · U3 auto-dismiss banner | none |
+| **v2.4.7** | Fresh-start UX | U1 empty-canvas default + Load-demo CTA | none |
+| **v2.4.8** | Phase 17 taxonomy | L1 drop `rationalize` + rename Disposition→Action + 7-term link table | Phase 17 table **APPROVED 2026-04-24** |
+| **v2.4.9** | Primary-layer + Gap→Project data model | L2 + L3 — `affectedLayers[0] === layerId` invariant + explicit `projectId`; no UI changes | v2.4.8 done |
+| **v2.5.0** | Crown-jewel (renames + AI routing) | U5 vocab · U4 AI on Tabs 2-5 · U2 AI conversation starter | v2.4.9 done |
+| **v2.5.1** | Crown-jewel (structural) | U6 drawer IA · SVG icons · tag-vocab primitives · color discipline | v2.5.0 done |
+| **v2.6.0** | Action-commands runtime | C1 (json-commands) | v2.5.1 done |
+| **v2.7.0** | GB10 arm64 verification | D1 | hardware access |
+| **v3.0.0** | Multi-user platform | Bucket E | stakeholder sign-off, separate SPEC_v3 |
 
-1. **Skill save button wiring** — `ui/views/SkillAdmin.js`. Today Save is disabled until `lastTestedSignature === currentSignature` for BOTH create and edit flows. Change: Test-skill is **mandatory for CREATE**, **optional for EDIT**. Rules:
-   - New skill (`!existing`): Save disabled until a successful test run.
-   - Existing skill: Save always active. If user edited since last test, show an inline warning "Untested changes will be saved — run Test to verify first" but don't block.
-   - Clicking Save on an existing untested skill fires save and then scrolls the Test button into view with a subtle pulse — cue, not gate.
+**v2.4.9 is the pre-crown-jewel rollback anchor** — commit message must name it "AI platform complete + relationships fixed + old look" so the `git checkout` target is explicit if v2.5.x sideways.
 
-2. **Empty chip on skill rows** — `ui/views/SkillAdmin.js:79`. `skill.outputMode` was deprecated in v2.4.4; seed skills don't set it, so the row renders an empty `<span class="skill-row-mode">`. Replace with two chips: `responseFormat` + `applyPolicy`. Update Suite 26 SB6 assertion to pin the new chip set.
+---
 
-3. **Fresh-start UX** — `state/sessionStore.js` currently initialises with `createDemoSession()` on first load, so a brand-new user sees Acme FSI data + a populated roadmap. Decision needed:
-   - **Option A**: First-run wizard offers "Load demo / Start fresh" modal before any rendering.
-   - **Option B**: Default to `createEmptySession()`, add a clear "↺ Load demo" button in the empty state placeholder.
-   - **Option C**: Keep current behaviour but add a prominent dismissible "Demo mode — click to start your own" banner (it already exists but it's easy to miss).
-   - Recommendation: **B**. Empty canvas is the honest default; demo is one click away.
+## v2.4.6 · UX quick-wins · IMPLEMENTED (2026-04-24)
 
-4. **Conversation starter → AI-powered** — `ui/views/ContextView.js renderDriverDetail`. Today the coaching card renders a static `BUSINESS_DRIVERS[n].conversationStarter`. Proposal: add a "✨ Tailor to this customer" button that runs a new seed skill (json-scalars, writable field: `context.selectedDriver.conversationStarter`) to regenerate the starter grounded in `customer.vertical + region + other drivers`. Keep the static fallback for the unconfigured-AI case so the card never blanks.
-   - Requires: new seed skill in `core/seedSkills.js`; new writable field `context.selectedDriver.conversationStarter` in `FIELD_MANIFEST.context` + `WRITE_RESOLVERS`; demo refresh + demoSpec + DEMO_CHANGELOG entry per `feedback_foundational_testing.md`.
+Four small independently-mergeable fixes. Each item in its own commit; one tag at the end.
 
-5. **Auto-dismiss green test banner** — `diagnostics/testRunner.js renderBanner`. When `results.failed === 0`, fade out after 5s (`setTimeout` + CSS `opacity` transition); keep the ✕ as an early-dismiss. Failure banner stays (sticky) until manually dismissed — user needs to act on it.
+1. **L4 · App version surface** — NEW `core/version.js` exporting `APP_VERSION`. `app.js renderHeaderMeta` splits into two chips: session identity (`customer.name | date | status`) and `Canvas v{{APP_VERSION}}`. Today's "v2.0" next to customer name was the session schema, not the app — confusing. `DEMO_CHANGELOG` process rule extends to bump `APP_VERSION` alongside any tag.
+2. **L5 · Empty chip on skill rows** — `ui/views/SkillAdmin.js:79` renders deprecated `skill.outputMode`; seed skills don't set it → empty span. Replace with `responseFormat` + `applyPolicy` chips. Update Suite 26 SB6 assertion to pin the new chip set.
+3. **L6 · Save button active on edit, test-gated on create** — today the Save button is disabled until `lastTestedSignature === currentSignature` for both flows. Change: disabled for CREATE until tested; active on EDIT even without re-test (show a non-blocking warning when signatures differ).
+4. **U3 · Auto-dismiss green test banner** — `diagnostics/testRunner.js renderBanner` fades out after 5s when `results.failed === 0`. Failure banner stays sticky — user needs to act on it.
 
-6. **App version surface** — introduce single source of truth:
-   - NEW `core/version.js` exporting `APP_VERSION = "2.4.7"` (updated on each release).
-   - Header `renderHeaderMeta` splits into two pieces: session identity (`customer.name | date | session v{{schemaVersion}} | status`) and an app version chip (`Canvas v{{APP_VERSION}}`). Today the "v2.0" next to customer name is confusing — it's the session schema version, not the app.
-   - `docs/DEMO_CHANGELOG.md` process rule extends to bump `APP_VERSION` in the same commit as a new tag.
-   - Future (unrelated): optional GitHub-releases poll for "update available" hint. Defer.
+---
 
-7. **Ship proper SVG icon set** — current gear + undo chips use emoji + inline SVG mix. For v2.5.0 crown-jewel we need a consistent icon system (Lucide or Radix) covering gear, undo, undo-all, AI sparkle, save, test, delete, etc. Defer to v2.5.0 (already in Bucket B5).
+## v2.4.7 · Fresh-start UX · QUEUED
 
-### Deferred to v2.5.0 Crown-jewel (already tracked there)
+U1 · empty-canvas default + visible "↺ Load demo" button in the empty-state placeholder. Today's auto-load-demo on first run confuses real users. Estimated ~30 min.
 
-- "✨ Use AI" button on Tabs 2-5 (Bucket B4).
-- Density / whitespace / side-panel-as-drawer IA (Bucket B5).
-- Reference: **`C:/Users/Mahmo/Downloads/GPLC Digital Unified Platform v1.0.html`** — visual target for layout, spacing, and component density.
+---
 
-### Est scope: ~2 hr for items 1-6. Single commit per item (6 tags: v2.4.7 … v2.4.7.5), or batch them into v2.4.7 if the user prefers.
+## v2.4.8 · Phase 17 taxonomy · QUEUED (sign-off in hand 2026-04-24)
+
+User signed off the 7-term Action table on 2026-04-24 afternoon. See Item 4 below — status flipped from PROPOSED to APPROVED. Scope:
+
+- Rename UI label "Disposition" → "Action" everywhere.
+- Drop `rationalize` gap type (migrator coerces existing `rationalize` gaps to closest remaining term per the rules; `validateGap` rejects `rationalize` after migration).
+- Enforce mandatory linking at create-time for Replace and Consolidate per the table.
+- `ACTION_TO_GAP_TYPE` consolidates to 7 entries.
+- Demo + seed + demoSpec + DEMO_CHANGELOG refreshed per `feedback_foundational_testing.md`.
+
+Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
+
+---
+
+## v2.4.9 · Primary-layer + Gap→Project data model · QUEUED
+
+**No UI changes** — data model + migrator + validators + tests + a helper function only. The visible rework ships in v2.5.0.
+
+- **L2 · Primary-layer invariant**: `affectedLayers[0] === layerId` enforced by `validateGap`. Migrator prepends `layerId` if absent; dedupes if `layerId` appears later in the array. New helper `setPrimaryLayer(gap, layerId)` in `interactions/gapsCommands.js` that maintains the invariant; `createGap` / `updateGap` validate on write.
+- **L3 · Gap→Project**: add explicit `projectId` field on gaps. `buildProjects` becomes `group-by(projectId)` instead of the silent `env::layer::gapType` bucketing. Migrator derives initial `projectId` from the old bucketing key so existing sessions are unchanged visually.
+
+**Tag message must explicitly label this "AI platform complete + relationships fixed + old look"** — the pre-crown-jewel rollback anchor.
+
+Est ~2 hr.
+
+---
+
+## v2.5.0 / v2.5.1 · Crown-jewel · QUEUED (split confirmed 2026-04-24)
+
+Split per `project_crown_jewel_design.md`:
+
+- **v2.5.0**: U5 Gaps↔Roadmap vocabulary unification + U4 "✨ Use AI" on Tabs 2-5 + U2 AI-powered conversation starter. Low-medium risk: mechanical renames + routing + one two-surface change (new writable field + resolver + seed skill + demo + demoSpec + DEMO_CHANGELOG).
+- **v2.5.1**: U6 structural rework — side-panel-as-drawer IA + SVG icon system + tag-vocabulary primitives (6+ variants → 2-3) + color discipline (brand blue 30% → 5%). High risk: drawer IA touches every view render. Isolated so v2.5.0 stays bisectable.
+
+Reference: `C:/Users/Mahmo/Downloads/GPLC Digital Unified Platform v1.0.html` (see `reference_gplc_sample.md` + `project_crown_jewel_design.md` in memory).
+
+**Vocabulary audit gate** (v2.5.0 before tag): grep for every pre-unification term across codebase + CSS + tests; verify each call site updated.
+
+---
+
+## v2.6.0 · Action-commands runtime · QUEUED
+
+Formerly v2.4.6. Runtime for the `json-commands` response format declared in SPEC §12.6 but stub-rejected today. Scope unchanged from earlier filing: `core/actionCommands.js` whitelist (`updateField`, `updateGap`, `createGap`, `deleteGap`, `linkInstance`, `setGapDriver`), Suite 37 AC1-AC10, plus a new json-commands seed skill (two-surface rule). Est ~3 hr.
 
 ---
 
@@ -1486,7 +1527,7 @@ Ten items raised in morning review. Triaged into near-term phases vs v3. Decisio
 - UI: workload tile detail panel gets a `+ Map asset` button that opens a picker (scoped to the other 5 layers) to add mapped-asset references.
 - Data model: workload instances carry `mappedAssetIds: string[]` — each entry is an instance id from any other layer.
 
-### Item 4 · Taxonomy unification — PROPOSED, pending explicit user sign-off
+### Item 4 · Taxonomy unification — APPROVED 2026-04-24 (user sign-off in hand)
 
 **Proposed unified Action table** (Phase 17):
 
@@ -1506,7 +1547,7 @@ Ten items raised in morning review. Triaged into near-term phases vs v3. Decisio
 - Enforce mandatory linking at create-time for Replace and Consolidate (symmetric with existing unlink throw rule).
 - `ACTION_TO_GAP_TYPE` map consolidates to 7 entries matching the table.
 
-**Pending user confirmation** before refactor starts.
+**APPROVED 2026-04-24** — table locked as-is. Refactor lands in v2.4.8 (see release re-sequence at top of file).
 
 ### Item 5 · merged into Item 4
 
