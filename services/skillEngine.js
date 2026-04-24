@@ -106,16 +106,19 @@ export async function runSkill(skill, session, context) {
 
   try {
     var res = await chatCompletion({
-      providerKey: useProviderKey,
-      baseUrl:     active.baseUrl,
-      model:       active.model,
-      apiKey:      active.apiKey,
-      messages:    messages
+      providerKey:    useProviderKey,
+      baseUrl:        active.baseUrl,
+      model:          active.model,
+      fallbackModels: Array.isArray(active.fallbackModels) ? active.fallbackModels : [],
+      apiKey:         active.apiKey,
+      messages:       messages
     });
     var result = {
       ok: true,
       text: res.text,
       providerKey: useProviderKey,
+      modelUsed: res.modelUsed,        // v2.4.5.1 — may differ from active.model if fallback kicked in
+      attempts:  res.attempts,
       prompt: userPrompt,
       responseFormat: responseFormat,
       applyPolicy: skill.applyPolicy || (responseFormat === "json-scalars" ? "confirm-per-field" : "show-only")

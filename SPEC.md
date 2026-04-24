@@ -776,7 +776,7 @@ A separate `SPEC_v3.md` will capture this architecture when work starts.
 
 **Purpose**: every AI feature — existing or future — composes against these shapes. New provider, new tab binding, new action command, new output mode all follow the same pattern. Adding a scenario should never require rewriting earlier ones.
 
-Shipped through **v2.4.5** · Phase 19a-e · enterprise-grade, vendor-neutral.
+Shipped through **v2.4.5.1** · Phase 19a-f · enterprise-grade, vendor-neutral.
 
 ### §12.1 · Storage contracts (localStorage, `ai_*_v<n>` namespace)
 
@@ -789,22 +789,25 @@ Two keys today; each may bump `vN` when shape evolves. Migrators run on load, pr
   activeProvider: "local" | "anthropic" | "gemini",    // default provider for skills without explicit override
   providers: {
     local: {
-      label:   "Local LLM",
-      baseUrl: "/api/llm/local/v1",     // relative = nginx-proxied; absolute = direct browser call
-      model:   "code-llm",              // e.g. OpenAI-compatible model id exposed by the local inference server
-      apiKey:  ""                       // empty when upstream is unauth'd
+      label:          "Local LLM",
+      baseUrl:        "/api/llm/local/v1",  // relative = nginx-proxied; absolute = direct browser call
+      model:          "code-llm",           // e.g. OpenAI-compatible model id exposed by the local inference server
+      apiKey:         "",                   // empty when upstream is unauth'd
+      fallbackModels: []                    // v2.4.5.1+ — tried after primary exhausts retries
     },
     anthropic: {
-      label:   "Anthropic Claude",
-      baseUrl: "/api/llm/anthropic",    // proxy path; not user-editable (CORS)
-      model:   "claude-haiku-4-5",
-      apiKey:  ""
+      label:          "Anthropic Claude",
+      baseUrl:        "/api/llm/anthropic", // proxy path; not user-editable (CORS)
+      model:          "claude-haiku-4-5",
+      apiKey:         "",
+      fallbackModels: ["claude-sonnet-4-5"]
     },
     gemini: {
-      label:   "Google Gemini",
-      baseUrl: "/api/llm/gemini",
-      model:   "gemini-2.5-flash",
-      apiKey:  ""
+      label:          "Google Gemini",
+      baseUrl:        "/api/llm/gemini",
+      model:          "gemini-2.5-flash",
+      apiKey:         "",
+      fallbackModels: ["gemini-2.0-flash", "gemini-1.5-flash"]
     }
   }
 }
@@ -936,6 +939,24 @@ onUndoChange(fn)         // UI subscription
 ```
 
 **v2.4.5 (Foundations Refresh)** — persisted to `localStorage` under `ai_undo_v1`; survives page reload; cleared on `resetSession` / `resetToDemo`. Users still have Export JSON as the durable-across-installs rollback path.
+
+### §12.4a · Reliability: retry + fallback + browser-access opt-in (v2.4.5.1)
+
+`chatCompletion` performs a **bounded retry with exponential-backoff + full jitter** on transient upstream errors, and walks an optional per-provider **fallback-model chain** before giving up.
+
+| Behaviour | Value |
+|---|---|
+| Retriable HTTP statuses | `429, 500, 502, 503, 504` (+ network-level errors) |
+| Non-retriable HTTP statuses | `401, 403`, any other `4xx`, schema errors |
+| Retries per model | `RETRY_MAX_ATTEMPTS = 3` (primary + 2 retries) |
+| Base backoff | `RETRY_BASE_DELAY_MS = 500ms`; doubles per attempt; capped at `RETRY_CAP_DELAY_MS = 4000ms` |
+| Jitter | full-jitter: `random(0, capped)` — prevents thundering-herd |
+| Fallback chain | `config.providers[p].fallbackModels: string[]`; tried in order after primary exhausts retries; each gets its own full retry budget |
+| Return shape | `{ text, raw, modelUsed, attempts }` — `modelUsed` records which candidate succeeded |
+
+**Anthropic browser-direct opt-in**: Anthropic requires the header `anthropic-dangerous-direct-browser-access: true` whenever a request carries an `Origin` (our transparent nginx proxy preserves it). `buildRequest("anthropic", ...)` sets this unconditionally; without it Anthropic responds 401 with a message naming the header.
+
+**UI surface**: Settings modal exposes a "Fallback models (comma-separated)" input per provider. `testConnection` reports which model actually succeeded via the `modelUsed` field — the user sees e.g. `"✓ OK (fell back to gemini-2.0-flash)"`.
 
 ### §12.5a · Session-changed event bus (`core/sessionEvents.js`)
 

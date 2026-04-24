@@ -4656,6 +4656,189 @@ describe("30 · Phase 19d · Output handling + undo stack + per-skill provider",
 
 });
 
+// ── Phase 19f / v2.4.5.1 · AI reliability (RB1-RB7) ────────────────────
+import { chatCompletion, RETRY_MAX_ATTEMPTS, RETRIABLE_STATUSES, backoffMs } from "../services/aiService.js";
+import { DEFAULT_AI_CONFIG as AI_DEFAULTS, loadAiConfig as loadAiConfigReliab } from "../core/aiConfig.js";
+import { parseFallbackModels } from "../ui/views/SettingsModal.js";
+
+describe("36 · Phase 19f · AI reliability — Anthropic header + retry + fallback chain", () => {
+
+  // Minimal fake fetch that replays a scripted queue of statuses.
+  // Each queue entry is a HTTP status. Body is a trivial provider-
+  // shaped JSON so extractText returns a predictable marker.
+  function scriptedFetch(queue) {
+    let idx = 0;
+    const calls = [];
+    const impl = async function(url, opts) {
+      calls.push({ url: url, headers: opts.headers, body: opts.body });
+      const status = queue[Math.min(idx, queue.length - 1)];
+      idx++;
+      if (status >= 200 && status < 300) {
+        return {
+          ok: true,
+          status: status,
+          // Anthropic-shaped OK body; extractText tolerates others returning ""
+          json: async function() { return { content: [{ type: "text", text: "ok" }] }; },
+          text: async function() { return ""; }
+        };
+      }
+      return {
+        ok: false,
+        status: status,
+        json: async function() { return {}; },
+        text: async function() { return "simulated " + status; }
+      };
+    };
+    return { impl: impl, calls: calls };
+  }
+
+  // Synchronous "wait" stub so tests don't actually sleep for retry
+  // backoff. chatCompletion calls waitImpl(ms); we just resolve.
+  const noWait = function() { return Promise.resolve(); };
+
+  it("RB1 · Anthropic buildRequest includes the required browser-access opt-in header (Anthropic 401 fix)", () => {
+    const req = buildRequest("anthropic", {
+      baseUrl: "/api/llm/anthropic",
+      model:   "claude-haiku-4-5",
+      apiKey:  "sk-ant-test",
+      messages: [{ role: "user", content: "hi" }]
+    });
+    assertEqual(req.headers["anthropic-dangerous-direct-browser-access"], "true",
+      "Anthropic proxy requests MUST carry the browser-direct opt-in header " +
+      "(otherwise Anthropic responds 401 'CORS requests must set ...')");
+    assertEqual(req.headers["x-api-key"], "sk-ant-test", "x-api-key still present");
+    assertEqual(req.headers["anthropic-version"], "2023-06-01", "version header still present");
+  });
+
+  it("RB2 · chatCompletion retries on 503 and succeeds when upstream recovers", async () => {
+    const { impl, calls } = scriptedFetch([503, 503, 200]);
+    const res = await chatCompletion({
+      providerKey: "anthropic",
+      baseUrl:     "/api/llm/anthropic",
+      model:       "claude-haiku-4-5",
+      apiKey:      "sk-ant-test",
+      messages:    [{ role: "user", content: "hi" }],
+      fetchImpl:   impl,
+      waitImpl:    noWait
+    });
+    assertEqual(calls.length, 3, "must retry twice (3 calls total) before success");
+    assertEqual(res.attempts, 3, "result carries attempt count");
+    assertEqual(res.modelUsed, "claude-haiku-4-5", "primary model was the one that succeeded");
+    assertEqual(res.text, "ok", "response text extracted from the successful attempt");
+  });
+
+  it("RB3 · chatCompletion does NOT retry 401 (terminal error, user must fix key)", async () => {
+    const { impl, calls } = scriptedFetch([401, 200]);
+    let threw = false;
+    try {
+      await chatCompletion({
+        providerKey: "anthropic",
+        baseUrl:     "/api/llm/anthropic",
+        model:       "claude-haiku-4-5",
+        apiKey:      "bad-key",
+        messages:    [{ role: "user", content: "hi" }],
+        fetchImpl:   impl,
+        waitImpl:    noWait
+      });
+    } catch (e) {
+      threw = true;
+      assert(/auth failed/.test(e.message), "error message preserves the auth-failed prefix");
+    }
+    assert(threw, "401 must throw immediately");
+    assertEqual(calls.length, 1, "401 must NOT be retried (only 1 call)");
+  });
+
+  it("RB4 · fallback-model chain engages when primary exhausts retries on 503", async () => {
+    // Primary model drops every retry; first fallback succeeds.
+    const attemptsPerModel = RETRY_MAX_ATTEMPTS;
+    const queue = Array(attemptsPerModel).fill(503).concat([200]);
+    const { impl, calls } = scriptedFetch(queue);
+    const res = await chatCompletion({
+      providerKey:    "gemini",
+      baseUrl:        "/api/llm/gemini",
+      model:          "gemini-2.5-flash",
+      fallbackModels: ["gemini-2.0-flash", "gemini-1.5-flash"],
+      apiKey:         "AIza-test",
+      messages:       [{ role: "user", content: "hi" }],
+      fetchImpl:      impl,
+      waitImpl:       noWait
+    });
+    assertEqual(calls.length, attemptsPerModel + 1,
+      "primary exhausts " + attemptsPerModel + " retries, then first fallback succeeds on the next call");
+    assertEqual(res.modelUsed, "gemini-2.0-flash", "fallback model recorded on the result");
+    // Check the last call actually used the fallback model in the URL.
+    assert(calls[calls.length - 1].url.indexOf("gemini-2.0-flash") >= 0,
+      "final call must target the fallback model");
+  });
+
+  it("RB5 · chain exhaustion: every candidate fails → throws the last transient error", async () => {
+    // Primary + one fallback, both drop every retry.
+    const total = RETRY_MAX_ATTEMPTS * 2;
+    const queue = Array(total).fill(503);
+    const { impl, calls } = scriptedFetch(queue);
+    let threw = false;
+    try {
+      await chatCompletion({
+        providerKey:    "gemini",
+        baseUrl:        "/api/llm/gemini",
+        model:          "gemini-2.5-flash",
+        fallbackModels: ["gemini-2.0-flash"],
+        apiKey:         "AIza-test",
+        messages:       [{ role: "user", content: "hi" }],
+        fetchImpl:      impl,
+        waitImpl:       noWait
+      });
+    } catch (e) {
+      threw = true;
+      assert(/upstream temporary error/.test(e.message), "final error keeps the 5xx prefix for the UI hint");
+    }
+    assert(threw, "exhausted chain must throw");
+    assertEqual(calls.length, total, "used full retry budget across every candidate");
+  });
+
+  it("RB6 · backoffMs stays within [0, cap]; doubles per attempt", () => {
+    // Jitter makes the exact value non-deterministic; assert the range.
+    // Attempt 1 ∈ [0, 500]; attempt 2 ∈ [0, 1000]; attempt 3 ∈ [0, 2000]; capped at 4000.
+    for (let a = 1; a <= 5; a++) {
+      const d = backoffMs(a);
+      assert(d >= 0, "attempt " + a + " backoff non-negative");
+      assert(d <= 4000, "attempt " + a + " backoff ≤ cap (4s)");
+    }
+    assert(RETRIABLE_STATUSES.indexOf(429) >= 0, "429 must be retriable");
+    assert(RETRIABLE_STATUSES.indexOf(503) >= 0, "503 must be retriable");
+    assert(RETRIABLE_STATUSES.indexOf(401) < 0,  "401 must NOT be retriable");
+    assert(RETRIABLE_STATUSES.indexOf(400) < 0,  "400 must NOT be retriable");
+  });
+
+  it("RB7 · aiConfig defaults include fallback chains + parseFallbackModels round-trip", () => {
+    // Defaults — Gemini ships a sensible fallback chain so the user
+    // doesn't hit 503 out of the box.
+    assert(Array.isArray(AI_DEFAULTS.providers.gemini.fallbackModels),
+      "gemini default carries fallbackModels[]");
+    assert(AI_DEFAULTS.providers.gemini.fallbackModels.length >= 1,
+      "gemini default fallback chain is non-empty");
+    assert(Array.isArray(AI_DEFAULTS.providers.anthropic.fallbackModels),
+      "anthropic default carries fallbackModels[]");
+    assert(Array.isArray(AI_DEFAULTS.providers.local.fallbackModels),
+      "local default carries fallbackModels[]");
+    // Parser — trims whitespace, drops empties, dedupes.
+    assertEqual(parseFallbackModels("a, b ,a,, c").join(","), "a,b,c",
+      "comma-split + trim + dedupe");
+    assertEqual(parseFallbackModels("").length, 0, "empty string → empty chain");
+    assertEqual(parseFallbackModels(null).length, 0, "non-string → empty chain");
+    // Config loader honours user-supplied chain.
+    window.localStorage.setItem("ai_config_v1", JSON.stringify({
+      activeProvider: "gemini",
+      providers: { gemini: { fallbackModels: ["custom-fallback"] } }
+    }));
+    const loaded = loadAiConfigReliab();
+    assertEqual(loaded.providers.gemini.fallbackModels[0], "custom-fallback",
+      "user-supplied fallbackModels survive mergeWithDefaults");
+    window.localStorage.removeItem("ai_config_v1");
+  });
+
+});
+
 // v2.4.5 · Foundations Refresh · register the human-surface demo suite
 // into the same runner so there's a single green banner for the whole
 // release. Import at bottom to avoid circular-dependency risk with the

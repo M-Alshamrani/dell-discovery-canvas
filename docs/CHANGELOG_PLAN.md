@@ -881,6 +881,53 @@ Per `feedback_foundational_testing.md` (saved this session): every future data-m
 
 ---
 
+## v2.4.5.1 · Phase 19f · AI reliability (Anthropic header + retry + fallback chain) — IMPLEMENTED (2026-04-24)
+
+**Goal**: Close two concrete user-reported failure modes surfacing in live Gemini + Anthropic use:
+
+1. **Anthropic 401** · "CORS requests must set 'anthropic-dangerous-direct-browser-access' header". Anthropic flags any request that carries an `Origin` (our transparent nginx proxy preserves it) and demands an explicit opt-in header. Without it every Claude call fails at auth.
+2. **Gemini 503** · "This model is currently experiencing high demand." The Gemini 2.5-flash endpoint serves a lot of traffic; a single-shot client turns every transient blip into a hard stop for the user.
+
+Neither is an architecture problem — both are client-side implementation gaps.
+
+### What shipped
+
+1. **Anthropic browser-direct opt-in header** — `services/aiService.js buildRequest("anthropic", ...)` now always sets `anthropic-dangerous-direct-browser-access: true` alongside `x-api-key` and `anthropic-version`. Matches Anthropic's literal error-message requirement.
+2. **Retry with exponential backoff + full jitter** — `chatCompletion` retries `429, 500, 502, 503, 504` (and raw network errors) up to `RETRY_MAX_ATTEMPTS = 3` times per model. Backoff doubles from 500ms, capped at 4s, jittered to avoid thundering-herd. Non-retriable statuses (`401`, `403`, other `4xx`) throw immediately.
+3. **Per-provider fallback-model chain** — new `config.providers[p].fallbackModels: string[]` field. When the primary model exhausts its retry budget on a transient error, `chatCompletion` re-issues on the next model in the chain with its own fresh retry budget. Defaults shipped:
+   - Gemini: `["gemini-2.0-flash", "gemini-1.5-flash"]`
+   - Anthropic: `["claude-sonnet-4-5"]`
+   - Local: `[]` (self-hosted; if it fails, it fails)
+4. **Settings UI** — new "Fallback models (comma-separated)" input in the gear-icon modal. `parseFallbackModels()` trims + dedupes + filters empties. `Test connection` reports `"✓ OK (fell back to gemini-2.0-flash)"` when the fallback kicked in, so the user can see the chain working.
+5. **Result shape upgrade** — `chatCompletion` now returns `{ text, raw, modelUsed, attempts }`. `skillEngine` forwards these so the UI (future) can surface "ran on model X after N attempts".
+
+### Tests — Suite 36, RB1–RB7
+
+- **RB1** · Anthropic request carries the required `anthropic-dangerous-direct-browser-access: true` header.
+- **RB2** · chatCompletion retries on 503 and succeeds when upstream recovers (scripted fetch queue: `[503, 503, 200]` → 3 calls, `modelUsed = primary`).
+- **RB3** · chatCompletion does NOT retry on 401 (exactly 1 call, error thrown, message preserves the "auth failed" hint).
+- **RB4** · Fallback-model chain engages when the primary exhausts retries (queue: `[503×MAX, 200]` → last call targets the first fallback, `modelUsed = fallback`).
+- **RB5** · Chain exhaustion throws the last transient error with the 5xx prefix intact.
+- **RB6** · `backoffMs` stays in `[0, cap]` for all attempts; `RETRIABLE_STATUSES` includes 429/503 and excludes 401/400.
+- **RB7** · `DEFAULT_AI_CONFIG` ships non-empty fallback chains for the public providers; `parseFallbackModels()` round-trips through save/load correctly.
+
+### Files
+
+- MOD · `services/aiService.js` (retry loop + fallback chain + Anthropic header + exported `backoffMs`, `RETRY_MAX_ATTEMPTS`, `RETRIABLE_STATUSES`)
+- MOD · `core/aiConfig.js` (added `fallbackModels: []` to every provider default; `mergeWithDefaults` honours user-supplied chain)
+- MOD · `ui/views/SettingsModal.js` (fallback-models input + `parseFallbackModels` export)
+- MOD · `services/skillEngine.js` (threads `fallbackModels` through to `chatCompletion`; forwards `modelUsed` + `attempts`)
+- MOD · `diagnostics/appSpec.js` (Suite 36 · RB1–RB7)
+- MOD · `SPEC.md §12.1` + new §12.4a
+- MOD · `docs/CHANGELOG_PLAN.md` (this entry)
+
+### Why not MCP / server-side API gateway (asked)
+
+- **MCP** is a protocol for letting an LLM call external tools (filesystem, databases, etc.). It does nothing for provider reliability.
+- **Server-side API gateway** is v3-platform territory (see Bucket E). It hides keys from end users and centralises rate-limiting — useful when multiple presales share one backend. For a single-user workshop tool where the presales owns the keys, it's pure deployment overhead and wouldn't fix either of today's errors.
+
+---
+
 ## v2.4.5 · Phase 19e · Foundations Refresh — IMPLEMENTED (2026-04-24)
 
 **Goal**: Fix the four known UX bugs in v2.4.4 (driver tile vanishes on AI apply, tab blanks after undo, undo chip is vague, undo doesn't persist) AND establish the two-surface testing discipline (`feedback_foundational_testing.md`) so demo + seed skills + demoSpec never drift from the live data model again.

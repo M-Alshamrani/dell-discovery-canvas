@@ -113,6 +113,22 @@ export function openSettingsModal(opts) {
   modelGroup.appendChild(modelInput);
   form.appendChild(modelGroup);
 
+  // v2.4.5.1 · Fallback-models chain. Comma-separated; empty = no
+  // fallback. Tried in order after the primary model exhausts its
+  // retry budget on a transient upstream error (429 / 5xx).
+  var fbGroup = mk("div", "settings-field");
+  fbGroup.appendChild(mkt("label", "settings-label", "Fallback models (comma-separated)"));
+  var fbInput = mk("input", "settings-input");
+  fbInput.type = "text";
+  fbInput.value = (active.fallbackModels || []).join(", ");
+  fbInput.placeholder = activeKey === "gemini"    ? "gemini-2.0-flash, gemini-1.5-flash"
+                      : activeKey === "anthropic" ? "claude-sonnet-4-5"
+                      :                              "(optional)";
+  fbGroup.appendChild(fbInput);
+  fbGroup.appendChild(mkt("div", "settings-help-inline",
+    "Tried in order if the primary 429/503s after retries. Leave empty to disable."));
+  form.appendChild(fbGroup);
+
   var keyGroup = mk("div", "settings-field");
   keyGroup.appendChild(mkt("label", "settings-label",
     "API key" + (activeKey === "local" ? " (optional — vLLM is unauth'd)" : "")));
@@ -136,14 +152,17 @@ export function openSettingsModal(opts) {
     probeOut.textContent = "Probing…";
     probeOut.className = "settings-probe-out probing";
     var result = await testConnection({
-      providerKey: activeKey,
-      baseUrl:     urlInput.value.trim(),
-      model:       modelInput.value.trim(),
-      apiKey:      keyInput.value
+      providerKey:    activeKey,
+      baseUrl:        urlInput.value.trim(),
+      model:          modelInput.value.trim(),
+      fallbackModels: parseFallbackModels(fbInput.value),
+      apiKey:         keyInput.value
     });
     if (result.ok) {
       probeOut.className = "settings-probe-out ok";
-      probeOut.textContent = "✓ OK — sample reply: " + (result.sample || "(empty)");
+      var usedNote = result.modelUsed && result.modelUsed !== modelInput.value.trim()
+        ? " (fell back to " + result.modelUsed + ")" : "";
+      probeOut.textContent = "✓ OK" + usedNote + " — sample reply: " + (result.sample || "(empty)");
     } else {
       probeOut.className = "settings-probe-out err";
       probeOut.textContent = "✗ " + (result.error || "Unknown error");
@@ -159,9 +178,10 @@ export function openSettingsModal(opts) {
   cancelBtn.addEventListener("click", function() { overlay.remove(); });
   var saveBtn = mkt("button", "btn-primary", "Save");
   saveBtn.addEventListener("click", function() {
-    config.providers[activeKey].baseUrl = urlInput.value.trim();
-    config.providers[activeKey].model   = modelInput.value.trim();
-    config.providers[activeKey].apiKey  = keyInput.value;
+    config.providers[activeKey].baseUrl        = urlInput.value.trim();
+    config.providers[activeKey].model          = modelInput.value.trim();
+    config.providers[activeKey].apiKey         = keyInput.value;
+    config.providers[activeKey].fallbackModels = parseFallbackModels(fbInput.value);
     saveAiConfig(config);
     saveBtn.textContent = "Saved";
     setTimeout(function() { saveBtn.textContent = "Save"; }, 800);
@@ -173,6 +193,20 @@ export function openSettingsModal(opts) {
   overlay.appendChild(box);
   document.body.appendChild(overlay);
   overlay.addEventListener("click", function(e) { if (e.target === overlay) overlay.remove(); });
+}
+
+// v2.4.5.1 — parse a comma-separated fallback-model string into a
+// trimmed, deduped array. Exported for tests.
+export function parseFallbackModels(s) {
+  if (typeof s !== "string") return [];
+  var seen = {};
+  return s.split(",")
+    .map(function(m) { return m.trim(); })
+    .filter(function(m) {
+      if (!m || seen[m]) return false;
+      seen[m] = true;
+      return true;
+    });
 }
 
 // Helpers — DOM tag shorthands. We don't import the project's `mk` from

@@ -1,14 +1,14 @@
 # Dell Discovery Canvas — Session Handoff
 
-**Last session end**: 2026-04-24 morning, after shipping `v2.4.4`.
+**Last session end**: 2026-04-24 afternoon, after shipping `v2.4.5` (Foundations Refresh) + `v2.4.5.1` (AI reliability).
 **File purpose**: anyone (human or a fresh Claude Code session) opening this folder should read this file first to know exactly where work stopped, what's shipped, what's queued, and how to pick up.
 
 ---
 
 ## 1 · Where you are
 
-- `git log --oneline main` → HEAD = `v2.4.4` (commit `79ec253`).
-- `git tag --list 'v2.*' | sort -V` → 14 tags: `v2.1.1` through `v2.4.4`.
+- `git log --oneline main` → HEAD = `v2.4.5.1`.
+- `git tag --list 'v2.*' | sort -V` → 16 tags: `v2.1.1` through `v2.4.5.1`.
 - Working tree: clean. Everything that was built is tagged and pushed to `origin/main`.
 - GitHub: https://github.com/M-Alshamrani/dell-discovery-canvas (private).
 
@@ -30,54 +30,49 @@ Full chronology and commit refs live in `.claude/projects/.../memory/project_cur
 | v2.4.2 | 19c Field-pointer | bindable-field chips + JSON coercion + test-skill |
 | v2.4.2.1 | 19c.1 Pill editor | contenteditable editor with binding pills |
 | v2.4.3 | 19d.1 Prompt guards | text-brief footer + Refine-to-CARE + save gate |
-| **v2.4.4** | **19d Unified AI platform** | **SPEC §12 + responseFormat/applyPolicy + writable resolvers + undo + per-skill provider** |
+| v2.4.4 | 19d Unified AI platform | SPEC §12 + responseFormat/applyPolicy + writable resolvers + undo + per-skill provider |
+| v2.4.5 | 19e Foundations Refresh | session-changed bus + persistent undo + demoSession module + 6 seed skills + demoSpec (DS1-DS17) + DEMO_CHANGELOG |
+| **v2.4.5.1** | **19f AI reliability** | **Anthropic browser-direct header + retry-with-backoff on 429/5xx + per-provider fallback-model chain (Suite 36 RB1-RB7)** |
 
-**Test count**: 416+ machine assertions across 30 suites in `diagnostics/appSpec.js`, all green.
+**Test count**: 440 assertions across 36 suites in `diagnostics/appSpec.js` + `diagnostics/demoSpec.js`, all green.
 
-## 3 · Known UX issues in v2.4.4 (explicit — queued for v2.4.5)
+## 3 · What closed in v2.4.5 + v2.4.5.1
 
-Tests pass, but these are real UX gaps the user identified at ship time. Each is a symptom of the **same root cause**: views don't react to session changes from AI apply/undo, and the demo + seed surfaces are stale. v2.4.5 Foundations Refresh is the fix.
+All six UX issues from v2.4.4 are resolved, and the two reliability failure modes the user hit in live Gemini / Anthropic use are fixed:
 
-1. **Post-undo tab blanking** — after clicking the ↶ Undo chip, the current tab can appear blank. Cause: no session-changed event; views cache stale "selected" refs.
-2. **Driver tile vanishes on AI apply** — changing a driver's priority via AI makes the tile appear to disappear. Same root cause as (1).
-3. **Undo chip vague** — no tooltip, no indication of what will revert or how deep the stack is.
-4. **Undo not persistent** — in-memory only; clears on page reload.
-5. **Demo session stale** — `createDemoSession()` predates Phase 16 (no workload instances) and Phase 18 (no multi-linked patterns).
-6. **Seed skill library minimal** — only one text-brief skill; doesn't demo writable-field flows.
+- v2.4.5 · session-changed bus → driver tile no longer vanishes on AI apply; tab no longer blanks after undo.
+- v2.4.5 · undo chip tooltip + depth badge + "↶↶ Undo all" chip.
+- v2.4.5 · undo persisted to `localStorage` (`ai_undo_v1`, cap 10, cleared on reset).
+- v2.4.5 · demo session refreshed (Phase 16 workload + Phase 18 multi-link + driverId on every gap); extracted to `state/demoSession.js` with 3 personas.
+- v2.4.5 · seed skill library of 6 (json-scalars exercising writable fields on 4 tabs); deployed by default.
+- v2.4.5 · `diagnostics/demoSpec.js` Suites 31-35 (DS1-DS17) + `docs/DEMO_CHANGELOG.md` audit trail.
+- v2.4.5.1 · Anthropic `anthropic-dangerous-direct-browser-access: true` header fixes the 401 loop.
+- v2.4.5.1 · retry-with-backoff on 429/5xx (3 attempts, 500ms→4s with full jitter).
+- v2.4.5.1 · per-provider `fallbackModels[]` chain (Gemini defaults to `gemini-2.0-flash, gemini-1.5-flash`).
+- v2.4.5.1 · Settings UI exposes the fallback chain; `Test connection` reports which model answered.
 
-## 4 · NEXT UP — v2.4.5 Foundations Refresh (fresh session)
+## 4 · NEXT UP — Bucket A2 · v2.4.6 Action-command skills
 
-**Spec is locked**. Read `feedback_foundational_testing.md` for the foundational rule, then execute the 6 items below in one disciplined pass.
+Scope locked in `SPEC.md §12.6`. Runtime for the `json-commands` response format already declared in the skill schema but stub-rejected today. One disciplined slice:
 
-Scope (est ~3 hr):
-1. **Session-changed event** — emit from `applyProposal` + `undoLast`. Views subscribe in `app.js → renderStage()` so after any AI mutation, the current view re-resolves "selected" state against the live session before re-rendering. Fixes issues 1 + 2 above.
-2. **Undo chip UX** — tooltip listing the last N stack entries; optional "Undo all" button; stack depth shown inline. Fixes issue 3.
-3. **Persist undo to localStorage** — new key `ai_undo_v1`. Bounded to 10 entries. Clears on `resetSession` / `resetToDemo`. Fixes issue 4.
-4. **Extract `state/demoSession.js`** — move the current `createDemoSession()` out of sessionStore into its own module. Refresh data to include:
-   - At least one workload-layer instance with `mappedAssetIds[]` (Phase 16).
-   - At least one multi-linked pattern (Phase 18 warn-but-allow with a yellow chip).
-   - Gap schema aligned with current `validateGap` contract.
-   - Add 2-3 demo personas (e.g., Financial Services, Healthcare, Public Sector) the user can switch between.
-5. **NEW `core/seedSkills.js`** — pre-built skill library of 4-5 skills:
-   - Text-brief / show-only skills (like today's seed, one per tab).
-   - At least one `json-scalars` skill per tab that uses the new writable fields (Gaps: rewrite description + reclassify urgency; Context: propose driver priority + outcomes; Current/Desired: propose criticality + notes).
-   - All skills deployed by default so `Use AI ▾` dropdown is populated on first run.
-6. **NEW `diagnostics/demoSpec.js`** — integration-test suite that asserts:
-   - Demo session passes `validateInstance` + `validateGap` against the CURRENT data model.
-   - Every seed skill's `outputSchema` references paths that exist in the current `FIELD_MANIFEST` AND are `writable:true`.
-   - Applying a seed skill's proposals + calling `undoLast()` returns the session to the byte-identical prior state (data-integrity regression gate).
-   - Demo exercises at least one instance of: Dell solution, non-Dell solution, linked gap, multi-linked instance, workload mapping, driver with outcomes.
-7. **NEW `docs/DEMO_CHANGELOG.md`** — audit trail for the demo module, separate from the main CHANGELOG.
+1. NEW `core/actionCommands.js` — whitelist of ops: `updateField`, `updateGap`, `createGap`, `deleteGap`, `linkInstance`, `setGapDriver`. Each op routes to an existing function in `interactions/*Commands.js` (no business-logic duplication).
+2. Extend `interactions/aiCommands.js parseCommands(responseText)` — parse `{ commands: [...] }` shape, validate each op against the whitelist, reject unknown ops at parse time (not at apply time).
+3. `applyCommands(commands, ctx)` — batches under one undo snapshot, emits `session-changed` once per batch (reason `"ai-apply"` as usual).
+4. Wire `skillEngine.js` · when `responseFormat === "json-commands"`, call parser instead of `parseProposals`. `UseAiButton.js` renders a distinct "N actions proposed" panel (reuse the `applyPolicy` dispatch).
+5. Remove the v2.4.4 stub that rejects json-commands outright.
+6. Test vectors — Suite 37 · AC1-AC10 covering: parser rejects unknown op; each op mutates correctly; invalid args throw with a readable message; batch + undo is byte-identical; skillEngine integration returns `result.commands[]`.
+7. Per `feedback_foundational_testing.md`: add at least one seed skill in `core/seedSkills.js` that uses `json-commands` (e.g., "Link these two gaps to their desired tiles" on the Gaps tab); refresh demo session if any new field is needed; update `docs/DEMO_CHANGELOG.md`.
 
-**Output**: v2.4.5 ships all six items. If you can't do all six, the change isn't done — per `feedback_foundational_testing.md`.
+Estimated scope: ~3 hr. Fresh session can execute directly.
 
-## 5 · Full backlog (after v2.4.5)
+## 5 · Full backlog (after v2.4.6)
 
 Ordered for logical progression. Each bucket has locked scope in memory or SPEC.
 
 ### Bucket A — finish AI platform
-- **A1.** v2.4.5 **Foundations Refresh** — the six items above. NEXT UP.
-- **A2.** v2.4.6+ **Action-command skills** — implement the action-commands runtime. Schema is already declared in SPEC §12.6; stub footer is in `core/promptGuards.js`. v2.4.6 wires `core/actionCommands.js` with a whitelist of ops (`updateField`, `updateGap`, `createGap`, `linkInstance`, `setGapDriver`, `deleteGap`). Each op routes to an existing `interactions/*Commands.js` function. Test vectors cover parser + each op + undo.
+- ✅ A1. v2.4.5 Foundations Refresh (shipped).
+- ✅ A1.1. v2.4.5.1 AI reliability (shipped).
+- **A2.** v2.4.6 **Action-command skills** — NEXT UP (scope above).
 
 ### Bucket B — Crown-jewel UX rework (v2.5.0)
 Locked spec in `project_deferred_design_review.md` §§ 1-5. Single big release, best done in a fresh session with full context.
@@ -103,10 +98,11 @@ Read these files **in this order**:
 1. **This file** (`HANDOFF.md`) — you're here.
 2. `.claude/projects/C--Users-Mahmo-OneDrive-Documents-Claud-AI-PreSales-App/memory/MEMORY.md` — the full memory index.
 3. `.claude/projects/.../memory/project_current_state.md` — exhaustive shipped-state + commit refs.
-4. `.claude/projects/.../memory/feedback_foundational_testing.md` — **the rule that governs v2.4.5 and everything after**.
-5. `.claude/projects/.../memory/project_deferred_design_review.md` — crown-jewel scope + v2.4.4 implementation notes that carried over.
-6. `SPEC.md § 12` (lines ~775–900) — the AI Platform Specification.
-7. `docs/CHANGELOG_PLAN.md` — latest entry at the top is `v2.4.4`; `v2.4.5` is declared as "QUEUED (fresh session)" with the six-item spec.
+4. `.claude/projects/.../memory/feedback_foundational_testing.md` — **the rule that governs every data-model change**.
+5. `.claude/projects/.../memory/project_deferred_design_review.md` — crown-jewel scope.
+6. `SPEC.md § 12` — the AI Platform Specification (including §12.4a reliability contract + §12.5a sessionEvents bus + §12.8 invariants).
+7. `docs/CHANGELOG_PLAN.md` — latest entries at top are `v2.4.5.1` (AI reliability) and `v2.4.5` (Foundations Refresh).
+8. `docs/DEMO_CHANGELOG.md` — demo + seed surface audit trail (read before touching `state/demoSession.js` or `core/seedSkills.js`).
 
 Then verify the build works locally:
 

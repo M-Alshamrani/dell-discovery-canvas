@@ -13,26 +13,36 @@ export const PROVIDERS = ["local", "anthropic", "gemini"];
 // Local URL is relative (uses our container's nginx proxy by default; the
 // user can paste an absolute URL like "http://<gb10-ip>:8000/v1" to bypass
 // the proxy and call vLLM directly when CORS allows it).
+// v2.4.5.1 — each provider may declare `fallbackModels: string[]`.
+// aiService walks the list if the primary model exhausts retries on a
+// transient upstream error (429/5xx). Empty array = single-model mode
+// (v2.4.0-v2.4.5 behaviour).
 export const DEFAULT_AI_CONFIG = {
   activeProvider: "local",
   providers: {
     local: {
-      label:    "Local LLM",
-      baseUrl:  "/api/llm/local/v1",
-      model:    "code-llm",
-      apiKey:   ""   // typical self-hosted vLLM is unauth'd behind the proxy
+      label:          "Local LLM",
+      baseUrl:        "/api/llm/local/v1",
+      model:          "code-llm",
+      apiKey:         "",                     // typical self-hosted vLLM is unauth'd behind the proxy
+      fallbackModels: []
     },
     anthropic: {
-      label:    "Anthropic Claude",
-      baseUrl:  "/api/llm/anthropic",       // proxy path; not user-editable
-      model:    "claude-haiku-4-5",
-      apiKey:   ""
+      label:          "Anthropic Claude",
+      baseUrl:        "/api/llm/anthropic",   // proxy path; not user-editable
+      model:          "claude-haiku-4-5",
+      apiKey:         "",
+      fallbackModels: ["claude-sonnet-4-5"]
     },
     gemini: {
-      label:    "Google Gemini",
-      baseUrl:  "/api/llm/gemini",          // proxy path; not user-editable
-      model:    "gemini-2.5-flash",         // gemini-2.0-flash deprecated to new users (2026-Q1)
-      apiKey:   ""
+      label:          "Google Gemini",
+      baseUrl:        "/api/llm/gemini",      // proxy path; not user-editable
+      model:          "gemini-2.5-flash",     // gemini-2.0-flash deprecated to new users (2026-Q1)
+      apiKey:         "",
+      // gemini-2.5-flash is the most-used (= most-overloaded) model.
+      // Default fallback chain prefers still-fast models before dropping
+      // to the stable 1.5 family.
+      fallbackModels: ["gemini-2.0-flash", "gemini-1.5-flash"]
     }
   }
 };
@@ -84,6 +94,14 @@ function mergeWithDefaults(stored) {
         d.model = deprMap[s.model] || s.model;
       }
       if (typeof s.apiKey  === "string")                          d.apiKey  = s.apiKey;
+      // v2.4.5.1 — honour user-supplied fallback chain if present; keep
+      // the default otherwise. Stored entries are filtered to strings
+      // so a garbled save can't crash chatCompletion.
+      if (Array.isArray(s.fallbackModels)) {
+        d.fallbackModels = s.fallbackModels.filter(function(m) {
+          return typeof m === "string" && m.trim().length > 0;
+        });
+      }
     });
   }
   return merged;
