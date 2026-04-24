@@ -28,6 +28,7 @@ import { WRITE_RESOLVERS, isWritablePath } from "../core/bindingResolvers.js";
 import { applyProposal, applyAllProposals } from "../interactions/aiCommands.js";
 import * as aiUndoStack from "../state/aiUndoStack.js";
 import { onSessionChanged } from "../core/sessionEvents.js";
+import { ACTION_IDS, GAP_TYPES as DEMO_GAP_TYPES } from "../core/taxonomy.js";
 
 // Count how many gaps reference an instanceId in EITHER link list.
 // A "multi-linked" instance is one referenced by ≥2 gaps — the Phase 18
@@ -307,6 +308,62 @@ export function registerDemoSuite(api) {
           }
         });
       });
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────
+  // Suite 35b · Phase 17 · taxonomy coverage of the demo
+  // (DS18-DS21 — ride along with the existing demoSpec describes)
+  // ──────────────────────────────────────────────────────────────
+  describe("35b · Phase 17 · demo session · taxonomy coverage", function() {
+
+    it("DS18 · every demo instance.disposition is a valid taxonomy id (no legacy 'rationalize')", function() {
+      var s = createDemoSession();
+      var seen = {};
+      s.instances.forEach(function(i) {
+        if (i.disposition) {
+          assert(ACTION_IDS.indexOf(i.disposition) >= 0,
+            "instance " + i.id + " disposition '" + i.disposition +
+            "' must be in ACTION_IDS (v2.4.8)");
+          seen[i.disposition] = true;
+        }
+      });
+      // Demo should exercise multiple actions — not just the single most
+      // common one. Guards against an accidental "demo uses only replace
+      // forever" regression.
+      assert(Object.keys(seen).length >= 3,
+        "demo instances must exercise at least 3 distinct Action values");
+    });
+
+    it("DS19 · every demo gap.gapType is a valid GAP_TYPES value (no 'rationalize')", function() {
+      var s = createDemoSession();
+      s.gaps.forEach(function(g) {
+        if (g.gapType) {
+          assert(DEMO_GAP_TYPES.indexOf(g.gapType) >= 0,
+            "gap " + g.id + " gapType '" + g.gapType + "' must be in GAP_TYPES");
+        }
+      });
+    });
+
+    it("DS20 · demo exercises 'introduce' (no-current / 1-desired) pattern", function() {
+      var s = createDemoSession();
+      var introduceGaps = s.gaps.filter(function(g) { return g.gapType === "introduce"; });
+      assert(introduceGaps.length >= 1,
+        "demo must include at least one introduce gap (exercises linksCurrent: 0 rule)");
+      introduceGaps.forEach(function(g) {
+        assertEqual((g.relatedCurrentInstanceIds || []).length, 0,
+          "introduce gap " + g.id + " must have 0 current links");
+        assert((g.relatedDesiredInstanceIds || []).length >= 1,
+          "introduce gap " + g.id + " must have ≥1 desired link");
+      });
+    });
+
+    it("DS21 · demo exercises 'keep' and 'retire' dispositions (taxonomy coverage)", function() {
+      var s = createDemoSession();
+      var keeps   = s.instances.filter(function(i) { return i.disposition === "keep";   });
+      var retires = s.instances.filter(function(i) { return i.disposition === "retire"; });
+      assert(keeps.length   >= 1, "demo must include at least one 'keep' instance");
+      assert(retires.length >= 1, "demo must include at least one 'retire' instance");
     });
   });
 

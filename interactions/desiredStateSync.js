@@ -1,29 +1,19 @@
 // interactions/desiredStateSync.js
 // Bridges current state -> desired state via disposition workflow
+//
+// v2.4.8 · Phase 17 · DISPOSITION_ACTIONS + ACTION_TO_GAP_TYPE now come
+// from core/taxonomy.js, the single source of truth for the 7-term
+// Action table. Keeps the export names stable for back-compat callers
+// (MatrixView, tests).
 
 import { LAYERS } from "../core/config.js";
+import {
+  DISPOSITION_ACTIONS as TAXONOMY_ACTIONS,
+  ACTION_TO_GAP_TYPE  as TAXONOMY_ACTION_MAP
+} from "../core/taxonomy.js";
 
-// 6 disposition actions (simplified from original 7 -- no "introduce" or "rationalize" 
-// as dispositions; those are gap types, not what you do to a current technology)
-export var DISPOSITION_ACTIONS = [
-  { id: "keep",        label: "Keep as-is",     icon: "=",  hint: "No change planned. Document for completeness." },
-  { id: "enhance",     label: "Enhance",         icon: "+",  hint: "Upgrade, expand capacity, or improve." },
-  { id: "replace",     label: "Replace",         icon: "->", hint: "Swap out for a different platform." },
-  { id: "consolidate", label: "Consolidate",     icon: "<<", hint: "Merge with other systems into one." },
-  { id: "retire",      label: "Retire",          icon: "x",  hint: "Decommission. No replacement planned." },
-  { id: "ops",         label: "Operational",     icon: "~",  hint: "Process or operational change only." }
-];
-
-// Map disposition -> gap type (null = no gap created)
-export var ACTION_TO_GAP_TYPE = {
-  keep:        null,
-  enhance:     "enhance",
-  replace:     "replace",
-  consolidate: "consolidate",
-  retire:      "replace",
-  ops:         "ops",
-  introduce:   "introduce"
-};
+export var DISPOSITION_ACTIONS = TAXONOMY_ACTIONS;
+export var ACTION_TO_GAP_TYPE  = TAXONOMY_ACTION_MAP;
 
 export function getDesiredCounterpart(session, currentInstanceId) {
   return (session.instances || []).find(function(i) {

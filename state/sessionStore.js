@@ -89,6 +89,23 @@ export function migrateLegacySession(raw) {
     }
   });
 
+  // v2.4.8 · Phase 17 · coerce the retired "rationalize" value on any
+  // gap / instance that predates the taxonomy change. Idempotent — a
+  // session that has no rationalize values is a no-op. Logs once per
+  // coercion so the migration is visible in the console at least once.
+  s.gaps.forEach(function(g) {
+    if (g && g.gapType === "rationalize") {
+      console.warn("[migrate · Phase 17] coercing gap.gapType 'rationalize' → 'ops' on gap " + g.id);
+      g.gapType = "ops";
+    }
+  });
+  s.instances.forEach(function(i) {
+    if (i && i.disposition === "rationalize") {
+      console.warn("[migrate · Phase 17] coercing instance.disposition 'rationalize' → 'retire' on " + i.id);
+      i.disposition = "retire";
+    }
+  });
+
   if (!s.sessionMeta || typeof s.sessionMeta !== "object") {
     s.sessionMeta = {
       date:          new Date().toISOString().slice(0, 10),

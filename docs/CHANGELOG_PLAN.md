@@ -918,7 +918,7 @@ U1 · empty-canvas default + visible "↺ Load demo" button in the empty-state p
 
 ---
 
-## v2.4.8 · Phase 17 taxonomy · QUEUED (sign-off in hand 2026-04-24)
+## v2.4.8 · Phase 17 taxonomy · IMPLEMENTED 2026-04-24 (sign-off in hand)
 
 User signed off the 7-term Action table on 2026-04-24 afternoon. See Item 4 below — status flipped from PROPOSED to APPROVED. Scope:
 

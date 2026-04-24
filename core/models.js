@@ -1,6 +1,7 @@
 // core/models.js -- validation (simplified: warn don't block on relationships)
 
 import { LAYERS, ENVIRONMENTS } from "./config.js";
+import { GAP_TYPES } from "./taxonomy.js";
 
 export const LayerIds       = LAYERS.map(function(l) { return l.id; });
 export const EnvironmentIds = ENVIRONMENTS.map(function(e) { return e.id; });
@@ -8,7 +9,10 @@ export const EnvironmentIds = ENVIRONMENTS.map(function(e) { return e.id; });
 var VALID_STATES    = ["current", "desired"];
 var VALID_PHASES    = ["now", "next", "later"];
 var VALID_URGENCY   = ["High", "Medium", "Low"];
-var VALID_GAP_TYPES = ["rationalize","enhance","replace","introduce","consolidate","ops"];
+// v2.4.8 · Phase 17 · GAP_TYPES is derived from core/taxonomy.js. The
+// legacy "rationalize" value is gone; migrator (sessionStore) coerces
+// any existing session's rationalize gaps to "ops" on load.
+var VALID_GAP_TYPES = GAP_TYPES;
 var VALID_VG        = ["dell", "nonDell", "custom"];
 var VALID_STATUS    = ["open", "in_progress", "closed", "deferred"];
 

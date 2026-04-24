@@ -98,7 +98,7 @@ var DESIRED_TILE_TUNER_SKILL = {
   name:         "Shape desired disposition (action + phase + note)",
   description:  "Propose a disposition, a phase (Now/Next/Later), and a short note for the selected desired-state tile.",
   tabId:        "desired",
-  systemPrompt: "You are a senior Dell Technologies presales engineer. For the selected desired-state tile, propose a disposition (one of: replace, enhance, consolidate, introduce, rationalize, ops), a phase (Now/Next/Later), and a short single-line note (<=140 characters) that justifies the disposition. Align with the customer's top drivers.",
+  systemPrompt: "You are a senior Dell Technologies presales engineer. For the selected desired-state tile, propose an Action (one of: keep, enhance, replace, consolidate, retire, introduce, ops), a phase (Now/Next/Later), and a short single-line note (<=140 characters) that justifies the Action. Align with the customer's top drivers.",
   promptTemplate: [
     "Customer: {{session.customer.name}} ({{session.customer.vertical}}).",
     "Drivers: {{session.customer.drivers}}.",

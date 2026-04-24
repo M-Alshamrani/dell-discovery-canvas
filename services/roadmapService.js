@@ -17,14 +17,16 @@ import { effectiveDriverId, effectiveDellSolutions } from "./programsService.js"
 import { computeBucketMetrics } from "./healthMetrics.js";
 
 // Action-verb map for project naming (SPEC §7.5.5).
+// v2.4.8 · Phase 17 · rationalize dropped from the taxonomy. Any session
+// that still carries rationalize gaps gets them coerced to "ops" via the
+// migrator, so these maps never need a rationalize entry at runtime.
 var ACTION_VERBS = {
   replace:     "Modernization",
   enhance:     "Enhancement",
   consolidate: "Consolidation",
   retire:      "Retirement",
   ops:         "Operational Improvement",
-  introduce:   "Introduction",
-  rationalize: "Rationalization"
+  introduce:   "Introduction"
 };
 
 // Keep old theme colours for backward compatibility with Suite 20's `project.color`.
@@ -32,7 +34,6 @@ var TYPE_THEME = {
   "replace":     { label: "Platform Replacement",    color: "proj-red"    },
   "introduce":   { label: "New Capabilities",        color: "proj-purple" },
   "enhance":     { label: "Enhancement & Upgrade",   color: "proj-blue"   },
-  "rationalize": { label: "Rationalisation",         color: "proj-amber"  },
   "consolidate": { label: "Consolidation",           color: "proj-amber"  },
   "ops":         { label: "Operational Improvements",color: "proj-gray"   },
   "null":        { label: "General Initiatives",     color: "proj-gray"   }

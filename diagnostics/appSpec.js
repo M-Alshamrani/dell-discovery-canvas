@@ -513,15 +513,19 @@ describe("04 · core/models — validateGap", () => {
     throws(() => validateGap({ ...validGap(), gapType: "Replace" }), "capitalized gapType");
   });
 
-  it("accepts all six valid gapType values (with required linked ids)", () => {
+  it("accepts all valid gapType values (with required linked ids; 'rationalize' removed in v2.4.8)", () => {
     const withCurrent = { relatedCurrentInstanceIds: ["i1"] };
     const withDesired = { relatedDesiredInstanceIds: ["i1"] };
+    // v2.4.8 · Phase 17 · the gap-type list is now GAP_TYPES derived
+    // from core/taxonomy.js. "rationalize" is no longer valid; the
+    // migrator coerces any pre-Phase-17 rationalize gaps to "ops".
     doesNotThrow(() => validateGap({ ...validGap(), gapType: "introduce",    ...withDesired }), "introduce");
     doesNotThrow(() => validateGap({ ...validGap(), gapType: "replace",      ...withCurrent }), "replace");
     doesNotThrow(() => validateGap({ ...validGap(), gapType: "enhance",      ...withCurrent }), "enhance");
-    doesNotThrow(() => validateGap({ ...validGap(), gapType: "rationalize",  ...withCurrent }), "rationalize");
     doesNotThrow(() => validateGap({ ...validGap(), gapType: "consolidate",  ...withCurrent }), "consolidate");
     doesNotThrow(() => validateGap({ ...validGap(), gapType: "ops",          notes: "process issue" }), "ops");
+    throws(() => validateGap({ ...validGap(), gapType: "rationalize", ...withCurrent }),
+      "rationalize must throw — removed from the Phase 17 taxonomy");
   });
 
   it("introduce: passes regardless of relatedDesiredInstanceIds (soft rule)", () => {
@@ -531,10 +535,13 @@ describe("04 · core/models — validateGap", () => {
       "introduce with desired id");
   });
 
-  it("replace / enhance / rationalize / consolidate: pass without linked instances (soft rule)", () => {
-    ["replace", "enhance", "rationalize", "consolidate"].forEach(t =>
+  it("replace / enhance / consolidate: pass without linked instances at validateGap layer (soft rule; stricter rules live in validateActionLinks)", () => {
+    // validateGap is a SHAPE validator only. Link-count rules live in
+    // core/taxonomy.js validateActionLinks (v2.4.8 · Phase 17), and
+    // those fire through createGap/updateGap for REVIEWED gaps only.
+    ["replace", "enhance", "consolidate"].forEach(t =>
       doesNotThrow(() => validateGap({ ...validGap(), gapType: t, relatedCurrentInstanceIds: [] }),
-        t + " without current ids -- soft rule, must not throw")
+        t + " without current ids -- validateGap is shape-only, must not throw")
     );
   });
 
@@ -882,11 +889,15 @@ describe("07 · interactions/gapsCommands", () => {
   });
 
   it("createGap deduplicates relatedCurrentInstanceIds", () => {
+    // v2.4.8 · Phase 17 · Replace rule requires exactly 1 current. This
+    // test checks dedup behaviour only; use consolidate (2+ current) so
+    // the fixture matches the rule AND still exercises dedup.
     const s   = freshSession();
     const gap = createGap(s, {
       description:"D", layerId:LayerIds[0],
-      gapType:"replace",
-      relatedCurrentInstanceIds: ["i1", "i1", "i2"]
+      gapType:"consolidate",
+      relatedCurrentInstanceIds: ["i1", "i1", "i2"],
+      relatedDesiredInstanceIds: ["d1"]
     });
     assertEqual(gap.relatedCurrentInstanceIds.length, 2, "must deduplicate current ids");
   });
@@ -913,13 +924,25 @@ describe("07 · interactions/gapsCommands", () => {
       "invalid layerId");
   });
 
-  it("createGap accepts introduce without linked instances (soft rule)", () => {
+  it("createGap accepts introduce without linked instances on unreviewed auto-drafts (Phase 17 rule bypass)", () => {
+    // v2.4.8 · Phase 17 · Introduce rule now requires exactly 1 desired
+    // on REVIEWED gaps. Unreviewed auto-drafts still bypass so
+    // mid-workflow creation doesn't block the user.
     doesNotThrow(() => createGap(freshSession(), {
       description: "Introduce something new",
       layerId: LayerIds[0],
       gapType: "introduce",
-      relatedDesiredInstanceIds: []
-    }), "introduce gap must not hard-fail on empty desired ids");
+      relatedDesiredInstanceIds: [],
+      reviewed: false
+    }), "introduce gap auto-draft must not hard-fail on empty desired ids");
+    // But REVIEWED introduce with 0 desired throws — that's the rule.
+    throws(() => createGap(freshSession(), {
+      description: "Bad reviewed introduce",
+      layerId: LayerIds[0],
+      gapType: "introduce",
+      relatedDesiredInstanceIds: [],
+      reviewed: true
+    }), "reviewed introduce with 0 desired must throw (Phase 17 rule)");
   });
 
   it("createGap accepts ops without notes (soft rule)", () => {
@@ -966,8 +989,12 @@ describe("07 · interactions/gapsCommands", () => {
   });
 
   it("linkCurrentInstance adds id without duplication", () => {
+    // v2.4.8 · Phase 17 · use reviewed:false to bypass action-link
+    // rule validation — the test is about link-command dedup behaviour,
+    // not taxonomy rule compliance.
     const s   = freshSession();
-    const gap = createGap(s, { description:"D", layerId:LayerIds[0], gapType:"replace", relatedCurrentInstanceIds:["i1"] });
+    const gap = createGap(s, { description:"D", layerId:LayerIds[0], gapType:"replace",
+      relatedCurrentInstanceIds:["i1"], reviewed:false });
     linkCurrentInstance(s, gap.id, "i2");
     assert(gap.relatedCurrentInstanceIds.includes("i2"), "i2 must be added");
     const before = gap.relatedCurrentInstanceIds.length;
@@ -987,7 +1014,8 @@ describe("07 · interactions/gapsCommands", () => {
 
   it("unlinkCurrentInstance removes the specified id", () => {
     const s   = freshSession();
-    const gap = createGap(s, { description:"D", layerId:LayerIds[0], gapType:"replace", relatedCurrentInstanceIds:["i1","i2"] });
+    const gap = createGap(s, { description:"D", layerId:LayerIds[0], gapType:"replace",
+      relatedCurrentInstanceIds:["i1","i2"], reviewed:false });
     unlinkCurrentInstance(s, gap.id, "i1");
     assert(!gap.relatedCurrentInstanceIds.includes("i1"), "i1 must be removed");
     assert( gap.relatedCurrentInstanceIds.includes("i2"), "i2 must remain");
@@ -995,14 +1023,16 @@ describe("07 · interactions/gapsCommands", () => {
 
   it("unlinkCurrentInstance throws when removing would violate type rule", () => {
     const s   = freshSession();
-    const gap = createGap(s, { description:"D", layerId:LayerIds[0], gapType:"replace", relatedCurrentInstanceIds:["i1"] });
+    const gap = createGap(s, { description:"D", layerId:LayerIds[0], gapType:"replace",
+      relatedCurrentInstanceIds:["i1"], reviewed:false });
     throws(() => unlinkCurrentInstance(s, gap.id, "i1"),
       "remove last current id from replace gap");
   });
 
   it("unlinkDesiredInstance throws when removing would violate type rule", () => {
     const s   = freshSession();
-    const gap = createGap(s, { description:"D", layerId:LayerIds[0], gapType:"introduce", relatedDesiredInstanceIds:["d1"] });
+    const gap = createGap(s, { description:"D", layerId:LayerIds[0], gapType:"introduce",
+      relatedDesiredInstanceIds:["d1"], reviewed:false });
     throws(() => unlinkDesiredInstance(s, gap.id, "d1"),
       "remove last desired id from introduce gap");
   });
@@ -2513,7 +2543,7 @@ describe("22 · services/programsService", () => {
     const s = freshSession();
     s.customer.drivers = [{ id:"cyber_resilience", priority:"High", outcomes:"" }];
     createGap(s, { description:"DP gap", layerId:"dataProtection", phase:"now",
-      gapType:"replace", urgency:"High", affectedEnvironments:["coreDc"] });
+      gapType:"replace", urgency:"High", affectedEnvironments:["coreDc"], reviewed:false });
     const l = document.createElement("div"); const r = document.createElement("div");
     document.body.appendChild(l); document.body.appendChild(r);
     renderSummaryRoadmapView(l, r, s);
@@ -2532,7 +2562,7 @@ describe("22 · services/programsService", () => {
     const s = freshSession();
     s.customer.drivers = [{ id:"cyber_resilience", priority:"High", outcomes:"Ransomware recovery" }];
     createGap(s, { description:"DP gap", layerId:"dataProtection", phase:"now",
-      gapType:"replace", affectedEnvironments:["coreDc"] });
+      gapType:"replace", affectedEnvironments:["coreDc"], reviewed:false });
     const l = document.createElement("div"); const r = document.createElement("div");
     document.body.appendChild(l); document.body.appendChild(r);
     renderSummaryRoadmapView(l, r, s);
@@ -2661,7 +2691,7 @@ describe("15 · ui/views/Summary views — DOM contracts", () => {
     ];
     // Add a gap that won't match any auto-suggest rule (null driver) → lands in unassigned
     createGap(s, { description:"Unassigned gap", layerId:"virtualization", phase:"next",
-      gapType:"enhance", affectedEnvironments:["coreDc"] });
+      gapType:"enhance", affectedEnvironments:["coreDc"], reviewed:false });
     const l = document.createElement("div");
     const r = document.createElement("div");
     document.body.appendChild(l); document.body.appendChild(r);
@@ -2680,9 +2710,9 @@ describe("15 · ui/views/Summary views — DOM contracts", () => {
     const s = freshSession();
     s.customer.drivers = [{ id:"cyber_resilience", priority:"High", outcomes:"" }];
     createGap(s, { description:"DP gap", layerId:"dataProtection", phase:"now",
-      gapType:"replace", affectedEnvironments:["coreDc"] });
+      gapType:"replace", affectedEnvironments:["coreDc"], reviewed:false });
     createGap(s, { description:"DP gap 2", layerId:"dataProtection", phase:"later",
-      gapType:"replace", affectedEnvironments:["coreDc"] });
+      gapType:"replace", affectedEnvironments:["coreDc"], reviewed:false });
     const l = document.createElement("div");
     const r = document.createElement("div");
     document.body.appendChild(l); document.body.appendChild(r);
@@ -2698,7 +2728,7 @@ describe("15 · ui/views/Summary views — DOM contracts", () => {
     const s = freshSession();
     s.customer.drivers = [{ id:"cyber_resilience", priority:"High", outcomes:"" }];
     createGap(s, { description:"DP", layerId:"dataProtection", phase:"now",
-      gapType:"replace", urgency:"High", affectedEnvironments:["coreDc"] });
+      gapType:"replace", urgency:"High", affectedEnvironments:["coreDc"], reviewed:false });
     const l = document.createElement("div");
     const r = document.createElement("div");
     document.body.appendChild(l); document.body.appendChild(r);
@@ -3014,11 +3044,12 @@ describe("18 * interactions/desiredStateSync", () => {
     var des = addInstance(s, { state:"desired", layerId:LayerIds[0], environmentId:EnvironmentIds[0],
       label:"Tgt", vendorGroup:"dell", disposition:"enhance", priority:"Now", originId: cur.id });
     createGap(s, buildGapFromDisposition(s, des));
-    // Change disposition → retire → gapType must become "replace"
+    // v2.4.8 · Phase 17 · retire now maps to "ops" gapType
+    // (semantically correct — retire is operational, not a replacement).
     des.disposition = "retire";
     syncGapFromDesired(s, des.id);
     var gap = s.gaps[s.gaps.length - 1];
-    assertEqual(gap.gapType, "replace", "gap.gapType must re-sync to ACTION_TO_GAP_TYPE[retire]");
+    assertEqual(gap.gapType, "ops", "gap.gapType must re-sync to ACTION_TO_GAP_TYPE[retire] = 'ops'");
   });
 
   it("syncGapFromDesired · changing disposition to 'keep' deletes the linked gap (T3.5)", () => {
@@ -3248,7 +3279,9 @@ describe("20 * services/roadmapService -- project grouping", () => {
 
   it("each project has required fields", () => {
     var s = freshSession();
-    createGap(s, { description:"Test gap", layerId:LayerIds[0], urgency:"High", phase:"now", gapType:"replace", relatedCurrentInstanceIds:["x"] });
+    // v2.4.8 · Phase 17 · reviewed:false bypasses the action-link rule
+    // so downstream service tests can focus on service behaviour.
+    createGap(s, { description:"Test gap", layerId:LayerIds[0], urgency:"High", phase:"now", gapType:"replace", relatedCurrentInstanceIds:["x"], reviewed:false });
     var result = buildProjects(s, {});
     if (!result.projects.length) return; // no projects if no gaps group
     var proj = result.projects[0];
@@ -3264,9 +3297,9 @@ describe("20 * services/roadmapService -- project grouping", () => {
   it("gaps with matching (env, layer, gapType) group into one project (T5.9)", () => {
     var s = freshSession();
     createGap(s, { description:"Replace A", layerId:LayerIds[0], urgency:"High", phase:"now",
-      gapType:"replace", affectedEnvironments:["coreDc"], relatedCurrentInstanceIds:["x"] });
+      gapType:"replace", affectedEnvironments:["coreDc"], relatedCurrentInstanceIds:["x"], reviewed:false });
     createGap(s, { description:"Replace B", layerId:LayerIds[0], urgency:"Medium", phase:"now",
-      gapType:"replace", affectedEnvironments:["coreDc"], relatedCurrentInstanceIds:["y"] });
+      gapType:"replace", affectedEnvironments:["coreDc"], relatedCurrentInstanceIds:["y"], reviewed:false });
     var result = buildProjects(s, {});
     assertEqual(result.projects.length, 1, "same (env, layer, gapType) → exactly one project");
     assertEqual(result.projects[0].initiatives.length, 2, "project must contain both gaps");
@@ -3275,9 +3308,9 @@ describe("20 * services/roadmapService -- project grouping", () => {
   it("gaps with different environments produce separate projects (T5.10)", () => {
     var s = freshSession();
     createGap(s, { description:"A", layerId:LayerIds[0], phase:"now", gapType:"replace",
-      affectedEnvironments:["coreDc"] });
+      affectedEnvironments:["coreDc"], reviewed:false });
     createGap(s, { description:"B", layerId:LayerIds[0], phase:"now", gapType:"replace",
-      affectedEnvironments:["publicCloud"] });
+      affectedEnvironments:["publicCloud"], reviewed:false });
     var result = buildProjects(s, {});
     assertEqual(result.projects.length, 2, "different envs → 2 projects");
   });
@@ -3285,9 +3318,9 @@ describe("20 * services/roadmapService -- project grouping", () => {
   it("gaps of different types produce separate projects within same env+layer", () => {
     var s = freshSession();
     createGap(s, { description:"Replace X", layerId:LayerIds[0], urgency:"High", phase:"now",
-      gapType:"replace", affectedEnvironments:["coreDc"] });
+      gapType:"replace", affectedEnvironments:["coreDc"], reviewed:false });
     createGap(s, { description:"Introduce Y", layerId:LayerIds[0], urgency:"Low", phase:"now",
-      gapType:"introduce", affectedEnvironments:["coreDc"] });
+      gapType:"introduce", affectedEnvironments:["coreDc"], reviewed:false });
     var result = buildProjects(s, {});
     assert(result.projects.length >= 2, "different gap types must produce separate projects");
   });
@@ -3295,7 +3328,7 @@ describe("20 * services/roadmapService -- project grouping", () => {
   it("Project name contains environment label, layer label, and action verb (T5.11)", () => {
     var s = freshSession();
     createGap(s, { description:"X", layerId:"storage", phase:"now", gapType:"replace",
-      affectedEnvironments:["coreDc"] });
+      affectedEnvironments:["coreDc"], reviewed:false });
     var proj = buildProjects(s, {}).projects[0];
     assert(proj.name.indexOf("Core DC") >= 0, "name must include env label 'Core DC'");
     assert(proj.name.indexOf("Data Storage") >= 0, "name must include layer label 'Data Storage'");
@@ -3305,9 +3338,9 @@ describe("20 * services/roadmapService -- project grouping", () => {
   it("Project urgency equals max urgency among constituent gaps (T5.12)", () => {
     var s = freshSession();
     createGap(s, { description:"A", layerId:LayerIds[0], phase:"now", gapType:"replace",
-      urgency:"Low", affectedEnvironments:["coreDc"] });
+      urgency:"Low", affectedEnvironments:["coreDc"], reviewed:false });
     createGap(s, { description:"B", layerId:LayerIds[0], phase:"now", gapType:"replace",
-      urgency:"High", affectedEnvironments:["coreDc"] });
+      urgency:"High", affectedEnvironments:["coreDc"], reviewed:false });
     var proj = buildProjects(s, {}).projects[0];
     assertEqual(proj.urgency, "High", "project urgency = max of gaps");
   });
@@ -3327,9 +3360,9 @@ describe("20 * services/roadmapService -- project grouping", () => {
       { id:"ops_simplicity",   priority:"Medium", outcomes:"" }
     ];
     createGap(s, { description:"DP gap 1", layerId:"dataProtection", phase:"now", gapType:"replace",
-      affectedEnvironments:["coreDc"] });
+      affectedEnvironments:["coreDc"], reviewed:false });
     createGap(s, { description:"DP gap 2", layerId:"dataProtection", phase:"now", gapType:"replace",
-      affectedEnvironments:["coreDc"] });
+      affectedEnvironments:["coreDc"], reviewed:false });
     var proj = buildProjects(s, {}).projects[0];
     assertEqual(proj.driverId, "cyber_resilience", "both gaps map to cyber_resilience (layer rule)");
   });
@@ -3521,9 +3554,9 @@ describe("23 · Phase 18 · gap links — always-visible + warn-but-allow + casc
     const sharedId = addCurrent(s, "Shared-server-A");
     // Gap A already links the instance.
     createGap(s, { description:"Gap A", layerId: LayerIds[0],
-                   gapType:"replace", relatedCurrentInstanceIds:[sharedId] });
+                   gapType:"replace", relatedCurrentInstanceIds:[sharedId], reviewed:false });
     // Gap B does NOT link it yet — opening its picker should warn.
-    createGap(s, { description:"Gap B", layerId: LayerIds[0], gapType:"enhance" });
+    createGap(s, { description:"Gap B", layerId: LayerIds[0], gapType:"enhance", reviewed:false });
 
     const { l } = gapsViewFor(s);
     // Click the "Gap B" card (second one rendered).
@@ -3557,9 +3590,9 @@ describe("23 · Phase 18 · gap links — always-visible + warn-but-allow + casc
     const s = freshSession();
     const sharedId = addCurrent(s, "Shared-server-B");
     createGap(s, { description:"Gap 1", layerId: LayerIds[0],
-                   gapType:"replace", relatedCurrentInstanceIds:[sharedId] });
+                   gapType:"replace", relatedCurrentInstanceIds:[sharedId], reviewed:false });
     createGap(s, { description:"Gap 2", layerId: LayerIds[0],
-                   gapType:"enhance", relatedCurrentInstanceIds:[sharedId] });
+                   gapType:"enhance", relatedCurrentInstanceIds:[sharedId], reviewed:false });
     const { l, r } = gapsViewFor(s);
     [...l.querySelectorAll(".gap-card")].find(c => c.textContent.includes("Gap 1"))?.click();
     const re = gapsViewFor(s);
@@ -3582,7 +3615,7 @@ describe("23 · Phase 18 · gap links — always-visible + warn-but-allow + casc
     const stillThere = (s.instances || []).filter(i => i.id === curId || i.id === desId);
     assertEqual(stillThere.length, 2, "both linked instances must survive gap deletion (no cascade)");
     // And must be re-linkable into a fresh gap.
-    const fresh = createGap(s, { description:"Re-link target", layerId: LayerIds[0], gapType:"enhance" });
+    const fresh = createGap(s, { description:"Re-link target", layerId: LayerIds[0], gapType:"enhance", reviewed:false });
     doesNotThrow(() => linkCurrentInstance(s, fresh.id, curId), "current instance must be re-linkable after parent gap deletion");
     doesNotThrow(() => linkDesiredInstance(s, fresh.id, desId), "desired instance must be re-linkable after parent gap deletion");
   });
@@ -3594,9 +3627,9 @@ describe("23 · Phase 18 · gap links — always-visible + warn-but-allow + casc
     // EnvironmentIds[0] is "coreDc" — using the canonical id rather than a hand-typed string
     // so the test stays correct even if the env labels evolve.
     createGap(s, { description:"Project-gap A", layerId: LayerIds[0], gapType:"replace",
-                   relatedCurrentInstanceIds:[sharedId], affectedEnvironments:[EnvironmentIds[0]] });
+                   relatedCurrentInstanceIds:[sharedId], affectedEnvironments:[EnvironmentIds[0]], reviewed:false });
     createGap(s, { description:"Project-gap B", layerId: LayerIds[0], gapType:"replace",
-                   relatedCurrentInstanceIds:[sharedId], affectedEnvironments:[EnvironmentIds[0]] });
+                   relatedCurrentInstanceIds:[sharedId], affectedEnvironments:[EnvironmentIds[0]], reviewed:false });
     const { projects } = buildProjects(s);
     // Find the project that holds both gaps.
     const proj = projects.find(p => p.gaps.length === 2 && p.layerId === LayerIds[0] && p.gapType === "replace");
@@ -5087,6 +5120,146 @@ describe("38 · Phase 19h · v2.4.7 fresh-start UX — empty default + welcome c
     assert(btn, "#demoBtn must still exist in the footer for persistent access to Load demo");
     assert(/demo/i.test(btn.textContent),
       "footer Load-demo button retains its label");
+  });
+
+});
+
+// ── Phase 17 / v2.4.8 · Taxonomy unification (TX1-TX10) ────────────────
+import {
+  ACTIONS, ACTION_IDS, GAP_TYPES as TAX_GAP_TYPES, ACTION_TO_GAP_TYPE as TAX_ACTION_MAP,
+  DISPOSITION_ACTIONS as TAX_DISPOSITIONS, actionById, evaluateLinkRule, validateActionLinks
+} from "../core/taxonomy.js";
+import { session as sessionForTx, replaceSession as replaceSessionForTx, migrateLegacySession as migrateForTx } from "../state/sessionStore.js";
+
+describe("39 · Phase 17 · v2.4.8 taxonomy unification — 7-term Action table", () => {
+
+  it("TX1 · ACTIONS is a 7-entry array with the approved ids", () => {
+    assertEqual(ACTIONS.length, 7, "taxonomy ships exactly 7 Actions (user-signed-off 2026-04-24)");
+    const expected = ["keep", "enhance", "replace", "consolidate", "retire", "introduce", "ops"];
+    expected.forEach(id => assert(ACTION_IDS.indexOf(id) >= 0, "missing Action id: " + id));
+    // 'rationalize' must NOT appear — dropped in Phase 17.
+    assertEqual(ACTION_IDS.indexOf("rationalize"), -1, "rationalize must be absent from ACTION_IDS");
+  });
+
+  it("TX2 · every Action carries id + label + gapType + linksCurrent + linksDesired", () => {
+    ACTIONS.forEach(a => {
+      assert(typeof a.id === "string" && a.id.length > 0, "Action id must be non-empty string");
+      assert(typeof a.label === "string" && a.label.length > 0, "Action.label required");
+      // gapType may be null (keep) or a string mapping to a GAP_TYPES entry.
+      if (a.gapType !== null) {
+        assert(typeof a.gapType === "string", "gapType must be null or a string");
+        assert(TAX_GAP_TYPES.indexOf(a.gapType) >= 0,
+          "Action '" + a.id + "' gapType '" + a.gapType + "' must be in GAP_TYPES");
+      }
+      assert(["optional", "number", "string"].indexOf(typeof a.linksCurrent) >= 0 ||
+             a.linksCurrent === "optional", "linksCurrent shape");
+      assert(["optional", "number", "string"].indexOf(typeof a.linksDesired) >= 0 ||
+             a.linksDesired === "optional", "linksDesired shape");
+    });
+  });
+
+  it("TX3 · GAP_TYPES derived from taxonomy excludes 'rationalize' and is a subset of VALID_GAP_TYPES", () => {
+    assertEqual(TAX_GAP_TYPES.indexOf("rationalize"), -1, "rationalize must be gone");
+    // Every gapType declared on an action must be valid.
+    TAX_GAP_TYPES.forEach(t => {
+      doesNotThrow(() => validateGap({ ...validGap(), gapType: t, relatedCurrentInstanceIds: ["i1"] }),
+        "gapType '" + t + "' from taxonomy must pass validateGap shape");
+    });
+  });
+
+  it("TX4 · ACTION_TO_GAP_TYPE maps every action id → its declared gapType", () => {
+    ACTIONS.forEach(a => {
+      assertEqual(TAX_ACTION_MAP[a.id], a.gapType,
+        "ACTION_TO_GAP_TYPE['" + a.id + "'] must match its declared gapType");
+    });
+  });
+
+  it("TX5 · actionById returns the full entry; unknown id returns null", () => {
+    const r = actionById("replace");
+    assert(r && r.id === "replace", "actionById should resolve 'replace'");
+    assertEqual(actionById("bogus"), null, "unknown id returns null");
+  });
+
+  it("TX6 · evaluateLinkRule enforces exact / min-plus / optional semantics", () => {
+    assertEqual(evaluateLinkRule("optional", 0, "current").ok, true, "optional permits 0");
+    assertEqual(evaluateLinkRule("optional", 99, "current").ok, true, "optional permits many");
+    assertEqual(evaluateLinkRule(1, 1, "current").ok, true, "exact 1 with 1");
+    assertEqual(evaluateLinkRule(1, 0, "current").ok, false, "exact 1 with 0 fails");
+    assertEqual(evaluateLinkRule(1, 2, "current").ok, false, "exact 1 with 2 fails");
+    assertEqual(evaluateLinkRule("2+", 2, "current").ok, true, "2+ with 2 passes");
+    assertEqual(evaluateLinkRule("2+", 1, "current").ok, false, "2+ with 1 fails");
+    assertEqual(evaluateLinkRule("2+", 5, "current").ok, true, "2+ with 5 passes");
+  });
+
+  it("TX7 · validateActionLinks enforces rules on reviewed gaps; bypasses unreviewed auto-drafts", () => {
+    // Replace requires exactly 1 current + 1 desired.
+    const goodReplace = { gapType: "replace", reviewed: true,
+      relatedCurrentInstanceIds: ["c1"], relatedDesiredInstanceIds: ["d1"] };
+    doesNotThrow(() => validateActionLinks(goodReplace), "good replace gap passes");
+    const badReplace = { gapType: "replace", reviewed: true,
+      relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: ["d1"] };
+    throws(() => validateActionLinks(badReplace), "replace with 0 current must throw");
+    // Same bad gap as reviewed:false auto-draft passes (mid-workflow bypass).
+    doesNotThrow(() => validateActionLinks({ ...badReplace, reviewed: false }),
+      "unreviewed auto-drafts bypass link rules (user is still authoring)");
+    // Consolidate requires 2+ current.
+    const badCons = { gapType: "consolidate", reviewed: true,
+      relatedCurrentInstanceIds: ["c1"], relatedDesiredInstanceIds: ["d1"] };
+    throws(() => validateActionLinks(badCons), "consolidate with 1 current must throw");
+  });
+
+  it("TX8 · createGap enforces action-link rules for reviewed gaps (integration)", () => {
+    const s = createEmptySession();
+    // Reviewed replace gap missing the required desired link throws.
+    throws(() => createGap(s, {
+      description: "Bad replace", layerId: "compute",
+      gapType: "replace",
+      relatedCurrentInstanceIds: ["i-a"], relatedDesiredInstanceIds: [],
+      reviewed: true
+    }), "reviewed replace with 0 desired must throw");
+    // Same gap as unreviewed auto-draft is allowed.
+    doesNotThrow(() => createGap(s, {
+      description: "Auto-drafted replace", layerId: "compute",
+      gapType: "replace",
+      relatedCurrentInstanceIds: ["i-a"], relatedDesiredInstanceIds: [],
+      reviewed: false
+    }), "unreviewed auto-drafted replace gap allowed");
+  });
+
+  it("TX9 · migrateLegacySession coerces rationalize on gap.gapType → ops (idempotent)", () => {
+    const legacy = {
+      sessionId: "sess-tx9",
+      customer: { name: "Legacy Co", vertical: "", segment: "", industry: "", region: "", primaryDriver: "" },
+      sessionMeta: { date: "2025-01-01", presalesOwner: "", status: "Draft", version: "1.0" },
+      instances: [{ id: "i-x", state: "current", layerId: "compute", environmentId: "coreDc",
+        label: "X", vendor: "X", vendorGroup: "custom",
+        disposition: "rationalize" }],
+      gaps: [{ id: "g-x", description: "rat", layerId: "compute",
+        affectedLayers: [], affectedEnvironments: [],
+        gapType: "rationalize", urgency: "Medium", phase: "now",
+        relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
+        status: "open", reviewed: true }]
+    };
+    const migrated1 = migrateForTx(JSON.parse(JSON.stringify(legacy)));
+    assertEqual(migrated1.gaps[0].gapType, "ops",
+      "gap.gapType 'rationalize' must coerce to 'ops'");
+    assertEqual(migrated1.instances[0].disposition, "retire",
+      "instance.disposition 'rationalize' must coerce to 'retire'");
+    // Second pass — idempotent.
+    const migrated2 = migrateForTx(migrated1);
+    assertEqual(migrated2.gaps[0].gapType, "ops", "idempotent: gap stays ops");
+    assertEqual(migrated2.instances[0].disposition, "retire", "idempotent: instance stays retire");
+  });
+
+  it("TX10 · DISPOSITION_ACTIONS from desiredStateSync is a live re-export (taxonomy is source of truth)", () => {
+    // If the source-of-truth file changes, the downstream import must
+    // reflect it — regression gate for accidental re-divergence.
+    assertEqual(TAX_DISPOSITIONS.length, ACTIONS.length,
+      "DISPOSITION_ACTIONS must carry same length as ACTIONS");
+    ACTIONS.forEach((a, i) => {
+      assertEqual(TAX_DISPOSITIONS[i].id, a.id,
+        "DISPOSITION_ACTIONS[" + i + "].id must mirror ACTIONS[" + i + "].id");
+    });
   });
 
 });

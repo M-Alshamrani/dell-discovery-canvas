@@ -325,7 +325,7 @@ export function renderGapsEditView(left, right, session) {
         "Gap type is derived from the source disposition. Change disposition in Desired State to change gap type.")));
     } else {
       form.appendChild(fg("Gap type",
-        selEl("gapType", ["","rationalize","enhance","replace","introduce","consolidate","ops"], gap.gapType || "")));
+        selEl("gapType", ["","enhance","replace","introduce","consolidate","ops"], gap.gapType || "")));
     }
     // Urgency: always read-only (strict-derived per SPEC §2.3 / T4.1 / T3.16).
     form.appendChild(fg("Urgency", readOnlyField(gap.urgency || "—",
@@ -622,7 +622,7 @@ export function renderGapsEditView(left, right, session) {
     LAYERS.forEach(function(l) { layerMap[l.id] = l.label; });
     form.appendChild(fg("Description *",      ta("description", "", "One-line description of what needs to change")));
     form.appendChild(fg("Primary layer *",    selEl("layerId", LayerIds, LayerIds[0], layerMap)));
-    form.appendChild(fg("Gap type",           selEl("gapType", ["","rationalize","enhance","replace","introduce","consolidate","ops"], "")));
+    form.appendChild(fg("Gap type",           selEl("gapType", ["","enhance","replace","introduce","consolidate","ops"], "")));
     // Manual-gap defaults (T4.13): urgency Medium (no linked current), phase Next, status open.
     form.appendChild(fg("Urgency",            selEl("urgency", ["High","Medium","Low"], "Medium")));
     form.appendChild(fg("Phase",              selEl("phase",   ["now","next","later"],  "next")));

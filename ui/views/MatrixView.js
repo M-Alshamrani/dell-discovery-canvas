@@ -503,7 +503,7 @@ export function renderMatrixView(left, right, session, opts) {
       var dispOpts = [""].concat(DISPOSITION_ACTIONS.map(function(a) { return a.id; }));
       var dispLabels = {};
       DISPOSITION_ACTIONS.forEach(function(a) { dispLabels[a.id] = a.label; });
-      form.appendChild(fg("Disposition", selEl("disposition", dispOpts, inst.disposition || "", dispLabels)));
+      form.appendChild(fg("Action", selEl("disposition", dispOpts, inst.disposition || "", dispLabels)));
 
       // Phase — hidden entirely when disposition is "keep" (no change = no schedule).
       // Label uses compound "Now (0-12 months)" etc. per SPEC §7.3; the JSON key stays `priority`.

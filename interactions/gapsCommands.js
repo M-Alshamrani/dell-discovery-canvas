@@ -1,6 +1,11 @@
 // interactions/gapsCommands.js — ONLY place that mutates session.gaps
+//
+// v2.4.8 · Phase 17 · enforce the 7-term Action taxonomy's mandatory-link
+// rules on reviewed gaps (bypassed for reviewed: false auto-drafts, which
+// are mid-workflow). See core/taxonomy.js for the rule table.
 
 import { validateGap } from "../core/models.js";
+import { validateActionLinks } from "../core/taxonomy.js";
 
 function uid() { return "gap-" + Math.random().toString(36).slice(2, 9); }
 
@@ -29,6 +34,7 @@ export function createGap(session, props) {
   };
   if (props.driverId) gap.driverId = props.driverId;
   validateGap(gap);
+  validateActionLinks(gap);   // v2.4.8 · Phase 17 (no-op on reviewed:false)
   (session.gaps = session.gaps || []).push(gap);
   return gap;
 }
@@ -52,6 +58,7 @@ export function updateGap(session, gapId, patch) {
   // in patch is respected — that's how approveGap-adjacent workflows could undo if needed.)
   if (patch.reviewed === undefined) updated.reviewed = true;
   validateGap(updated);
+  validateActionLinks(updated);   // v2.4.8 · Phase 17
   list[idx] = updated;
   return updated;
 }
@@ -86,7 +93,10 @@ export function linkDesiredInstance(session, gapId, instanceId) {
 export function unlinkCurrentInstance(session, gapId, instanceId) {
   const gap = (session.gaps || []).find(g => g.id === gapId);
   if (!gap) throw new Error(`unlinkCurrentInstance: gap '${gapId}' not found`);
-  const currentTypes = ["rationalize","enhance","replace","consolidate"];
+  // v2.4.8 · Phase 17 · rationalize dropped from the taxonomy. Kept
+  // the same narrow "can't unlink if this gap type requires a current"
+  // safety net here; the broader rules live in validateActionLinks.
+  const currentTypes = ["enhance","replace","consolidate"];
   const afterRemoval = (gap.relatedCurrentInstanceIds || []).filter(id => id !== instanceId);
   if (currentTypes.includes(gap.gapType) && afterRemoval.length === 0) {
     throw new Error(`Cannot unlink: a '${gap.gapType}' gap requires at least one current technology linked`);

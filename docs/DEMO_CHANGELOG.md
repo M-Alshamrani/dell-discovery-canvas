@@ -18,6 +18,50 @@ gaps, drivers, or session metadata) must, in the **same commit**:
 
 ---
 
+## v2.4.8 · 2026-04-24 · Phase 17 taxonomy (Action rename + 7-term link rules)
+
+**Status**: shipped.
+
+### What changed for the demo surface
+
+- **Demo now exercises every Action.** Added two desired tiles to the
+  Acme FSI persona — `d-007` (Cisco Nexus, `disposition: "keep"`) and
+  `d-008` (AWS Backup, `disposition: "retire"`). Plus a new desired
+  tile `d-009` (Dell Validated Design — AI / RAG,
+  `disposition: "introduce"`) as the anchor for an introduce-gap.
+- **New introduce-gap `g-007`** — "Introduce Dell Validated Design for
+  AI/RAG workloads". Exercises the `linksCurrent: 0, linksDesired: 1`
+  rule. `driverId: "ai_data"`.
+- **No rationalize values anywhere** — DS18/DS19 assert this.
+
+### Tests added — Suite 35b (DS18-DS21) + Suite 39 (TX1-TX10)
+
+Suite 35b ride-alongs the demoSpec:
+- DS18 · every demo `instance.disposition` is a taxonomy id; demo
+  exercises ≥3 distinct Actions.
+- DS19 · every demo `gap.gapType` is a taxonomy GAP_TYPES value.
+- DS20 · demo includes ≥1 introduce-gap with 0 current / ≥1 desired.
+- DS21 · demo includes ≥1 `keep` instance and ≥1 `retire` instance.
+
+Suite 39 (appSpec) covers the taxonomy module directly:
+- TX1-TX4 · ACTIONS shape + derived GAP_TYPES / ACTION_TO_GAP_TYPE.
+- TX5 · `actionById` lookup.
+- TX6 · `evaluateLinkRule` semantics (exact / n+ / optional).
+- TX7 · `validateActionLinks` enforces on reviewed, bypasses on auto-drafts.
+- TX8 · `createGap` integration enforces link rules.
+- TX9 · migrator coerces rationalize idempotently (gap → ops, instance → retire).
+- TX10 · `DISPOSITION_ACTIONS` export is a live re-export of the taxonomy.
+
+### Why this matters for the demo surface
+
+Before v2.4.8, no demo gap used `introduce` and no demo instance used
+`keep` or `retire` — three of the seven Actions were pure theory. The
+refresh means every rule in `core/taxonomy.js` gets exercised whenever
+the user loads demo. A future "consolidate" rule tweak, for example,
+will trip DS assertions if the demo becomes inconsistent.
+
+---
+
 ## v2.4.7 · 2026-04-24 · Fresh-start UX (onboarding split)
 
 **Status**: shipped (Phase 19h).

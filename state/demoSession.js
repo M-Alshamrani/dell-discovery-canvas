@@ -125,7 +125,25 @@ function buildAcmeFinancialServices() {
       { id:"d-006", state:"desired", layerId:"virtualization", environmentId:"coreDc",
         label:"VxRail (VMware-based)", vendor:"Dell", vendorGroup:"dell",
         priority:"Next", timeline:"12-24 months", disposition:"replace",
-        originId:"i-007", notes:"Reduce VMware licensing exposure." }
+        originId:"i-007", notes:"Reduce VMware licensing exposure." },
+      // v2.4.8 · Phase 17 · exercise the remaining taxonomy values so
+      // demoSpec DS18-DS22 can assert every Action is represented in
+      // the default demo. "keep" (i-008 Cisco Nexus) + "retire"
+      // (i-006 AWS Backup legacy).
+      { id:"d-007", state:"desired", layerId:"infrastructure", environmentId:"coreDc",
+        label:"Cisco Nexus (DC)", vendor:"Cisco", vendorGroup:"nonDell",
+        priority:"Later", timeline:"24+ months", disposition:"keep",
+        originId:"i-008", notes:"Keep in place through 2027 refresh window." },
+      { id:"d-008", state:"desired", layerId:"dataProtection", environmentId:"publicCloud",
+        label:"AWS Backup", vendor:"AWS", vendorGroup:"nonDell",
+        priority:"Later", timeline:"24+ months", disposition:"retire",
+        originId:"i-006", notes:"Retire in favour of PowerProtect once cutover is complete." },
+      // v2.4.8 · Phase 17 · anchor for the introduce-gap g-007.
+      // No originId — net-new workload with no current counterpart.
+      { id:"d-009", state:"desired", layerId:"workload", environmentId:"coreDc",
+        label:"Dell Validated Design — AI / RAG", vendor:"Dell", vendorGroup:"dell",
+        priority:"Next", timeline:"12-24 months", disposition:"introduce",
+        notes:"Board-mandated AI/RAG pilot." }
     ],
     // Gaps now carry explicit driverId (Phase 14) and the Phase 18
     // multi-linked pattern: i-005 (Veeam) is referenced by BOTH g-001
@@ -196,6 +214,22 @@ function buildAcmeFinancialServices() {
         mappedDellSolutions:"PowerProtect Data Manager",
         notes:"Strategic shift: consolidate DP under Dell for single-vendor SLA.",
         relatedCurrentInstanceIds:["i-005"], relatedDesiredInstanceIds:["d-004"],
+        status:"open", reviewed:true
+      },
+      // v2.4.8 · Phase 17 · "introduce" action gap — no current link, one
+      // desired link. Exercises the Introduce rule (linksCurrent: 0,
+      // linksDesired: 1). Realistic scenario: board mandate to add an
+      // AI/RAG workload that didn't exist in the current estate.
+      {
+        id:"g-007", description:"Introduce Dell Validated Design for AI/RAG workloads",
+        layerId:"workload", affectedLayers:["workload","compute"],
+        affectedEnvironments:["coreDc"],
+        gapType:"introduce", urgency:"Medium", phase:"next",
+        driverId:"ai_data",
+        mappedDellSolutions:"Dell Validated Design — AI / RAG, PowerEdge XE (GPU/AI)",
+        notes:"Board-mandated GenAI pilot; no current AI workload in scope.",
+        relatedCurrentInstanceIds:[],
+        relatedDesiredInstanceIds:["d-009"],   // the AI/RAG desired tile
         status:"open", reviewed:true
       }
     ]
