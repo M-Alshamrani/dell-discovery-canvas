@@ -200,6 +200,7 @@ function wireFooter() {
   var exportBtn    = document.getElementById("exportBtn");
   var demoBtn      = document.getElementById("demoBtn");
   var newSessionBtn= document.getElementById("newSessionBtn");
+  var clearAllBtn  = document.getElementById("clearAllBtn");
 
   if (exportBtn) {
     exportBtn.addEventListener("click", function() {
@@ -229,6 +230,29 @@ function wireFooter() {
       resetSession();
       currentStep = "context"; currentReportingTab = "overview";
       renderHeaderMeta(); renderStepper(); renderStage();
+    });
+  }
+
+  // v2.4.9 · "Clear all data" · wipes every dell_discovery_* and ai_*
+  // localStorage key and reloads the page. Distinct from "+ New session",
+  // which only empties the current session object — AI skills, provider
+  // config, and undo history all survive resetSession. This button is
+  // the deliberate "treat me like a brand-new user" escape hatch after
+  // an upgrade, so users can see first-run UX changes (e.g. the v2.4.7
+  // fresh-start welcome card) without reaching for DevTools.
+  if (clearAllBtn) {
+    clearAllBtn.addEventListener("click", function() {
+      if (!confirm(
+        "Clear ALL app data and reload?\n\n" +
+        "This wipes:\n" +
+        "  • session (customer, drivers, instances, gaps)\n" +
+        "  • AI skills library\n" +
+        "  • AI provider config + API keys\n" +
+        "  • Undo history\n\n" +
+        "Cannot be undone. Use 'Export JSON' first if you want a backup."
+      )) return;
+      try { localStorage.clear(); } catch (e) { /* private mode — ignore */ }
+      location.reload();
     });
   }
 }

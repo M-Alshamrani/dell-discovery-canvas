@@ -18,6 +18,22 @@ gaps, drivers, or session metadata) must, in the **same commit**:
 
 ---
 
+## v2.4.9 · 2026-04-24 · Primary-layer invariant + explicit gap.projectId (pre-crown-jewel rollback anchor)
+
+**Status**: shipped. No UI changes — this slice is data-model plumbing for v2.5.0.
+
+### What changed for the demo surface
+
+- **No demo-data refresh required.** The default Acme FSI persona's existing gaps already conform to the new primary-layer invariant (`affectedLayers[0] === layerId` was the convention even when not enforced). Migrator will no-op on next load.
+- **Every demo gap receives a `projectId` at load time** via the migrator (`${env}::${layer}::${gapType}`). Deterministic, idempotent, invisible to the user but queryable by downstream services.
+- **demoSpec unchanged** — the new rules are tested directly in Suite 40 (PL1-PL5, PR1-PR5) rather than via demo fixtures. Demo coverage stays the same.
+
+### The "Clear all data" footer button
+
+v2.4.9 ships a new red-tinted "Clear all data" button in the footer (separate from "+ New session" which only resets the session object). Click → confirm → wipes every `dell_discovery_*` + `ai_*` localStorage key → page reload. Lets an existing user finally see the v2.4.7 fresh-start welcome card without DevTools — the fix for the "I upgraded but nothing looks different" complaint.
+
+---
+
 ## v2.4.8 · 2026-04-24 · Phase 17 taxonomy (Action rename + 7-term link rules)
 
 **Status**: shipped.

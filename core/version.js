@@ -12,4 +12,4 @@
 //   - git tags — runtime code doesn't read git; this string is the
 //     runtime-visible version.
 
-export const APP_VERSION = "2.4.8";
+export const APP_VERSION = "2.4.9";

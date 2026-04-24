@@ -122,10 +122,16 @@ export function buildProjects(session, opts) {
 
   gaps.forEach(function(gap) {
     var primaryEnv   = resolvePrimaryEnv(session, gap);
-    var crossCutting = !primaryEnv;
     var envKey       = primaryEnv || "crossCutting";
     var gapTypeKey   = gap.gapType || "null";
-    var key          = envKey + "::" + gap.layerId + "::" + gapTypeKey;
+    // v2.4.9 · group by the explicit gap.projectId when present; fall
+    // back to the historical env::layer::gapType computation so legacy
+    // sessions that haven't migrated yet still work. Migrator backfills
+    // projectId on load, so the fallback is effectively a belt-and-
+    // braces safety net.
+    var key = (typeof gap.projectId === "string" && gap.projectId.length > 0)
+      ? gap.projectId
+      : envKey + "::" + gap.layerId + "::" + gapTypeKey;
 
     if (!buckets[key]) {
       var verb  = ACTION_VERBS[gap.gapType] || "Initiative";
@@ -133,6 +139,7 @@ export function buildProjects(session, opts) {
       var theme = TYPE_THEME[gapTypeKey] || TYPE_THEME["null"];
       buckets[key] = {
         id:            "proj-" + key,
+        projectId:     key,               // v2.4.9 · explicit echo for callers
         envId:         envKey,
         layerId:       gap.layerId,
         gapType:       gap.gapType || null,

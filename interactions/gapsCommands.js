@@ -3,9 +3,45 @@
 // v2.4.8 · Phase 17 · enforce the 7-term Action taxonomy's mandatory-link
 // rules on reviewed gaps (bypassed for reviewed: false auto-drafts, which
 // are mid-workflow). See core/taxonomy.js for the rule table.
+//
+// v2.4.9 · primary-layer invariant · affectedLayers[0] === layerId is now
+// enforced by validateGap. setPrimaryLayer() below is the ONLY safe way to
+// change a gap's primary layer — it updates layerId AND reorders/dedupes
+// affectedLayers in lockstep. createGap + updateGap call it internally so
+// UI callers don't have to remember the rule.
+//
+// v2.4.9 · explicit projectId · gap.projectId replaces the silent
+// env::layer::gapType bucketing that buildProjects used to compute on the
+// fly. Every gap is auto-assigned a projectId on create; the migrator
+// backfills existing sessions. This makes the Gap→Project relationship
+// visible + queryable for the crown-jewel rework (v2.5.0).
 
 import { validateGap } from "../core/models.js";
 import { validateActionLinks } from "../core/taxonomy.js";
+
+// v2.4.9 · maintain the primary-layer invariant in one place.
+// layerId becomes the first entry of affectedLayers; any subsequent
+// duplicate of layerId elsewhere in the array is removed.
+export function setPrimaryLayer(gap, layerId) {
+  if (!gap || typeof layerId !== "string" || layerId.length === 0) return;
+  gap.layerId = layerId;
+  var existing = Array.isArray(gap.affectedLayers) ? gap.affectedLayers : [];
+  var rest = existing.filter(function(l) { return l !== layerId; });
+  gap.affectedLayers = [layerId].concat(rest);
+}
+
+// v2.4.9 · derive a deterministic projectId from a gap. Replaces the
+// silent bucketing inside services/roadmapService.js buildProjects.
+// Two gaps with matching (primary environment, primary layer, gapType)
+// land in the same project — same rule as the pre-v2.4.9 key.
+export function deriveProjectId(gap) {
+  if (!gap) return "unknown::unknown::unknown";
+  var env = (Array.isArray(gap.affectedEnvironments) && gap.affectedEnvironments[0])
+    || "crossCutting";
+  var layer = gap.layerId || "unknown";
+  var type = gap.gapType || "null";
+  return env + "::" + layer + "::" + type;
+}
 
 function uid() { return "gap-" + Math.random().toString(36).slice(2, 9); }
 
@@ -33,6 +69,11 @@ export function createGap(session, props) {
     reviewed:                  props.reviewed === false ? false : true
   };
   if (props.driverId) gap.driverId = props.driverId;
+  // v2.4.9 · ensure primary-layer invariant holds from creation onward.
+  if (gap.layerId) setPrimaryLayer(gap, gap.layerId);
+  // v2.4.9 · auto-assign projectId if caller didn't supply one.
+  if (!props.projectId && gap.layerId) gap.projectId = deriveProjectId(gap);
+  else if (props.projectId)            gap.projectId = props.projectId;
   validateGap(gap);
   validateActionLinks(gap);   // v2.4.8 · Phase 17 (no-op on reviewed:false)
   (session.gaps = session.gaps || []).push(gap);
@@ -57,6 +98,18 @@ export function updateGap(session, gapId, patch) {
   // v2.1 · substantive edits flip the gap to reviewed. (Passing an explicit reviewed: false
   // in patch is respected — that's how approveGap-adjacent workflows could undo if needed.)
   if (patch.reviewed === undefined) updated.reviewed = true;
+  // v2.4.9 · if caller changed layerId, re-normalise affectedLayers
+  // through setPrimaryLayer so the invariant still holds.
+  if (patch.layerId !== undefined) setPrimaryLayer(updated, patch.layerId);
+  // v2.4.9 · if layerId / affectedEnvironments / gapType changed, the
+  // gap may have moved into a different project. Re-derive unless the
+  // caller explicitly set projectId.
+  if (patch.projectId === undefined &&
+      (patch.layerId !== undefined ||
+       patch.affectedEnvironments !== undefined ||
+       patch.gapType !== undefined)) {
+    updated.projectId = deriveProjectId(updated);
+  }
   validateGap(updated);
   validateActionLinks(updated);   // v2.4.8 · Phase 17
   list[idx] = updated;

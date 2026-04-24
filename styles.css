@@ -208,6 +208,18 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .btn-ghost    { background: transparent; color: var(--text-3); border: 1px solid transparent; padding: 4px 12px; }
 .btn-ghost:hover { color: var(--text-1); background: var(--surface-2); border-color: var(--border); }
 
+/* v2.4.9 · Clear-all-data footer button. Distinct from other ghost
+   buttons so a destructive reset can't be clicked absent-mindedly. */
+.footer-btn-destructive {
+  color: #991B1B;
+  border-color: rgba(153, 27, 27, 0.20);
+}
+.footer-btn-destructive:hover {
+  color: #FFFFFF;
+  background: #991B1B;
+  border-color: #991B1B;
+}
+
 /* ── Cards ──────────────────────────────────────────────────── */
 .card {
   background: var(--surface);

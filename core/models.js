@@ -53,6 +53,17 @@ export function validateGap(gap) {
     gap.affectedLayers.forEach(function(l) {
       assert(LayerIds.includes(l), "Gap.affectedLayers contains invalid layer: '" + l + "'");
     });
+    // v2.4.9 · Primary-layer invariant — if affectedLayers is non-empty,
+    // index 0 MUST equal gap.layerId. The primary layer is conceptually
+    // distinct from the "also affected" layers, and the position-0
+    // convention makes that explicit without adding a new field. Empty
+    // arrays remain tolerated for defensive back-compat; the migrator
+    // backfills every pre-v2.4.9 gap to start with layerId.
+    if (gap.affectedLayers.length > 0) {
+      assert(gap.affectedLayers[0] === gap.layerId,
+        "Gap.affectedLayers[0] must equal Gap.layerId (primary-layer invariant, v2.4.9+) — " +
+        "got layerId='" + gap.layerId + "' but affectedLayers[0]='" + gap.affectedLayers[0] + "'");
+    }
   }
   if (Array.isArray(gap.affectedEnvironments)) {
     gap.affectedEnvironments.forEach(function(e) {

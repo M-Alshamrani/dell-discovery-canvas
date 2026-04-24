@@ -8,6 +8,7 @@ import { LEGACY_DRIVER_LABEL_TO_ID } from "../core/config.js";
 import { createDemoSession as createDemoSessionImpl } from "./demoSession.js";
 import { emitSessionChanged } from "../core/sessionEvents.js";
 import { clear as clearAiUndoStack } from "./aiUndoStack.js";
+import { setPrimaryLayer, deriveProjectId } from "../interactions/gapsCommands.js";
 
 export { createDemoSession } from "./demoSession.js";
 
@@ -104,6 +105,20 @@ export function migrateLegacySession(raw) {
       console.warn("[migrate · Phase 17] coercing instance.disposition 'rationalize' → 'retire' on " + i.id);
       i.disposition = "retire";
     }
+  });
+
+  // v2.4.9 · backfill primary-layer invariant (affectedLayers[0] === layerId)
+  // and explicit gap.projectId for every gap. Both are idempotent — a
+  // gap already conforming gets a no-op; re-running the migrator is safe.
+  s.gaps.forEach(function(g) {
+    if (!g || !g.layerId) return;
+    // Primary-layer invariant — setPrimaryLayer prepends+dedupes.
+    var alreadyOk = Array.isArray(g.affectedLayers) &&
+                    g.affectedLayers.length > 0 &&
+                    g.affectedLayers[0] === g.layerId;
+    if (!alreadyOk) setPrimaryLayer(g, g.layerId);
+    // Project relationship — derive if missing.
+    if (!g.projectId) g.projectId = deriveProjectId(g);
   });
 
   if (!s.sessionMeta || typeof s.sessionMeta !== "object") {

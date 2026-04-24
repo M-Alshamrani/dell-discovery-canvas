@@ -932,16 +932,24 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
-## v2.4.9 · Primary-layer + Gap→Project data model · QUEUED
+## v2.4.9 · Primary-layer + Gap→Project data model · IMPLEMENTED 2026-04-24 (rollback anchor)
 
-**No UI changes** — data model + migrator + validators + tests + a helper function only. The visible rework ships in v2.5.0.
+**"AI platform complete + relationships fixed + old look"** — the `git checkout v2.4.9` target if v2.5.x crown-jewel regresses.
 
-- **L2 · Primary-layer invariant**: `affectedLayers[0] === layerId` enforced by `validateGap`. Migrator prepends `layerId` if absent; dedupes if `layerId` appears later in the array. New helper `setPrimaryLayer(gap, layerId)` in `interactions/gapsCommands.js` that maintains the invariant; `createGap` / `updateGap` validate on write.
-- **L3 · Gap→Project**: add explicit `projectId` field on gaps. `buildProjects` becomes `group-by(projectId)` instead of the silent `env::layer::gapType` bucketing. Migrator derives initial `projectId` from the old bucketing key so existing sessions are unchanged visually.
+### What shipped
 
-**Tag message must explicitly label this "AI platform complete + relationships fixed + old look"** — the pre-crown-jewel rollback anchor.
+- **Primary-layer invariant** · `affectedLayers[0] === gap.layerId` enforced by `validateGap`. `setPrimaryLayer(gap, layerId)` helper in `interactions/gapsCommands.js` prepends + dedupes. `createGap` + `updateGap` call it internally so UI callers don't need to remember the rule. Migrator backfills every pre-v2.4.9 gap idempotently.
+- **Explicit gap.projectId** · new string field, populated by `deriveProjectId(gap)` from `env::layer::gapType` — same rule as the historical silent bucketing. `buildProjects` groups by the field; legacy fallback to the computed key preserved as a safety net. `updateGap` re-derives on layer/env/gapType change unless the caller explicitly sets `projectId`.
+- **"Clear all data" footer button** · wipes every `dell_discovery_*` + `ai_*` key and reloads. Separate from "+ New session" (which only resets the session object — AI skills + provider config + undo history survive). Lets existing users see first-run UX (v2.4.7 welcome card) without DevTools.
+- **Tests** · Suite 40 PL1-PL5 (primary-layer) + PR1-PR5 (project relationship) + CL1-CL3 (clear-data button).
 
-Est ~2 hr.
+### What you'll see
+
+- Header still shows `Canvas v2.4.9`.
+- Footer has a new red-tinted **"Clear all data"** button on the right. Click → confirm dialog listing what gets wiped → `localStorage.clear()` + page reload.
+- After the reload (or after clicking "+ New session"), the fresh-start welcome card from v2.4.7 finally becomes visible.
+- **No other visible changes** — primary-layer + projectId are data-model plumbing. Existing gaps work identically. The payoff is v2.5.0 crown-jewel (vocabulary unification + Gap→Project visibility) which relies on these fields being explicit.
+- Console on first load after upgrade may show `[migrate · Phase 17]` warnings if you had pre-v2.4.8 data — one-time, idempotent.
 
 ---
 
