@@ -11,65 +11,78 @@
 // Adding a new tab = add a new top-level key AND wire the tab view to
 // pass the matching context object into useAiButton's getContext().
 
+// v2.4.4 — every entry MAY declare `writable: true` to be eligible as a
+// skill outputSchema target. Paths without `writable: true` are read-only
+// bindings (template reads) and never appear in the output-schema chip
+// palette. See SPEC §12.2 for the contract. Writable `context.*` paths
+// MUST have a matching resolver in `core/bindingResolvers.js`.
 var SESSION_FIELDS = [
-  { path: "session.customer.name",     label: "Customer name",                 kind: "scalar" },
-  { path: "session.customer.vertical", label: "Customer vertical",             kind: "scalar" },
-  { path: "session.customer.region",   label: "Customer region",               kind: "scalar" },
-  { path: "session.customer.drivers",  label: "All drivers (array)",           kind: "array"  },
-  { path: "session.instances",         label: "All instances (array)",         kind: "array"  },
-  { path: "session.gaps",              label: "All gaps (array)",              kind: "array"  }
+  { path: "session.customer.name",     label: "Customer name",          kind: "scalar", writable: true  },
+  { path: "session.customer.vertical", label: "Customer vertical",      kind: "scalar", writable: true  },
+  { path: "session.customer.region",   label: "Customer region",        kind: "scalar", writable: true  },
+  { path: "session.customer.drivers",  label: "All drivers (array)",    kind: "array",  writable: false },
+  { path: "session.instances",         label: "All instances (array)",  kind: "array",  writable: false },
+  { path: "session.gaps",              label: "All gaps (array)",       kind: "array",  writable: false }
 ];
 
 export const FIELD_MANIFEST = {
   context: SESSION_FIELDS.concat([
-    { path: "context.selectedDriver.id",        label: "Selected driver id",       kind: "scalar" },
-    { path: "context.selectedDriver.label",     label: "Selected driver label",    kind: "scalar" },
-    { path: "context.selectedDriver.shortHint", label: "Selected driver hint",     kind: "scalar" },
-    { path: "context.selectedDriver.priority",  label: "Selected driver priority", kind: "scalar" },
-    { path: "context.selectedDriver.outcomes",  label: "Selected driver outcomes", kind: "scalar" }
+    { path: "context.selectedDriver.id",        label: "Selected driver id",       kind: "scalar", writable: false },
+    { path: "context.selectedDriver.label",     label: "Selected driver label",    kind: "scalar", writable: false },
+    { path: "context.selectedDriver.shortHint", label: "Selected driver hint",     kind: "scalar", writable: false },
+    { path: "context.selectedDriver.priority",  label: "Selected driver priority", kind: "scalar", writable: true  },
+    { path: "context.selectedDriver.outcomes",  label: "Selected driver outcomes", kind: "scalar", writable: true  }
   ]),
   current: SESSION_FIELDS.concat([
-    { path: "context.selectedInstance.label",         label: "Selected tile label",        kind: "scalar" },
-    { path: "context.selectedInstance.vendor",        label: "Selected tile vendor",       kind: "scalar" },
-    { path: "context.selectedInstance.vendorGroup",   label: "Selected tile vendor group", kind: "scalar" },
-    { path: "context.selectedInstance.criticality",   label: "Selected tile criticality",  kind: "scalar" },
-    { path: "context.selectedInstance.notes",         label: "Selected tile notes",        kind: "scalar" },
-    { path: "context.selectedInstance.layerId",       label: "Selected tile layer",        kind: "scalar" },
-    { path: "context.selectedInstance.environmentId", label: "Selected tile environment",  kind: "scalar" }
+    { path: "context.selectedInstance.label",         label: "Selected tile label",        kind: "scalar", writable: false },
+    { path: "context.selectedInstance.vendor",        label: "Selected tile vendor",       kind: "scalar", writable: false },
+    { path: "context.selectedInstance.vendorGroup",   label: "Selected tile vendor group", kind: "scalar", writable: false },
+    { path: "context.selectedInstance.criticality",   label: "Selected tile criticality",  kind: "scalar", writable: true  },
+    { path: "context.selectedInstance.notes",         label: "Selected tile notes",        kind: "scalar", writable: true  },
+    { path: "context.selectedInstance.layerId",       label: "Selected tile layer",        kind: "scalar", writable: false },
+    { path: "context.selectedInstance.environmentId", label: "Selected tile environment",  kind: "scalar", writable: false }
   ]),
   desired: SESSION_FIELDS.concat([
-    { path: "context.selectedInstance.label",         label: "Selected tile label",           kind: "scalar" },
-    { path: "context.selectedInstance.vendor",        label: "Selected tile vendor",          kind: "scalar" },
-    { path: "context.selectedInstance.disposition",   label: "Selected tile disposition",     kind: "scalar" },
-    { path: "context.selectedInstance.priority",      label: "Selected tile phase (priority)",kind: "scalar" },
-    { path: "context.selectedInstance.notes",         label: "Selected tile notes",           kind: "scalar" },
-    { path: "context.selectedInstance.layerId",       label: "Selected tile layer",           kind: "scalar" },
-    { path: "context.selectedInstance.environmentId", label: "Selected tile environment",     kind: "scalar" },
-    { path: "context.selectedInstance.originId",      label: "Selected tile current origin",  kind: "scalar" }
+    { path: "context.selectedInstance.label",         label: "Selected tile label",            kind: "scalar", writable: false },
+    { path: "context.selectedInstance.vendor",        label: "Selected tile vendor",           kind: "scalar", writable: false },
+    { path: "context.selectedInstance.disposition",   label: "Selected tile disposition",      kind: "scalar", writable: true  },
+    { path: "context.selectedInstance.priority",      label: "Selected tile phase (priority)", kind: "scalar", writable: true  },
+    { path: "context.selectedInstance.notes",         label: "Selected tile notes",            kind: "scalar", writable: true  },
+    { path: "context.selectedInstance.layerId",       label: "Selected tile layer",            kind: "scalar", writable: false },
+    { path: "context.selectedInstance.environmentId", label: "Selected tile environment",      kind: "scalar", writable: false },
+    { path: "context.selectedInstance.originId",      label: "Selected tile current origin",   kind: "scalar", writable: false }
   ]),
   gaps: SESSION_FIELDS.concat([
-    { path: "context.selectedGap.description",                  label: "Selected gap description",              kind: "scalar" },
-    { path: "context.selectedGap.gapType",                      label: "Selected gap type",                     kind: "scalar" },
-    { path: "context.selectedGap.urgency",                      label: "Selected gap urgency",                  kind: "scalar" },
-    { path: "context.selectedGap.phase",                        label: "Selected gap phase",                    kind: "scalar" },
-    { path: "context.selectedGap.status",                       label: "Selected gap status",                   kind: "scalar" },
-    { path: "context.selectedGap.notes",                        label: "Selected gap notes",                    kind: "scalar" },
-    { path: "context.selectedGap.driverId",                     label: "Selected gap driver id",                kind: "scalar" },
-    { path: "context.selectedGap.layerId",                      label: "Selected gap primary layer",            kind: "scalar" },
-    { path: "context.selectedGap.affectedLayers",               label: "Selected gap affected layers (array)",  kind: "array"  },
-    { path: "context.selectedGap.affectedEnvironments",         label: "Selected gap affected envs (array)",    kind: "array"  },
-    { path: "context.selectedGap.relatedCurrentInstanceIds",    label: "Selected gap linked current (array)",   kind: "array"  },
-    { path: "context.selectedGap.relatedDesiredInstanceIds",    label: "Selected gap linked desired (array)",   kind: "array"  }
+    { path: "context.selectedGap.description",                  label: "Selected gap description",              kind: "scalar", writable: true  },
+    { path: "context.selectedGap.gapType",                      label: "Selected gap type",                     kind: "scalar", writable: true  },
+    { path: "context.selectedGap.urgency",                      label: "Selected gap urgency",                  kind: "scalar", writable: true  },
+    { path: "context.selectedGap.phase",                        label: "Selected gap phase",                    kind: "scalar", writable: true  },
+    { path: "context.selectedGap.status",                       label: "Selected gap status",                   kind: "scalar", writable: true  },
+    { path: "context.selectedGap.notes",                        label: "Selected gap notes",                    kind: "scalar", writable: true  },
+    { path: "context.selectedGap.driverId",                     label: "Selected gap driver id",                kind: "scalar", writable: true  },
+    { path: "context.selectedGap.layerId",                      label: "Selected gap primary layer",            kind: "scalar", writable: false },
+    { path: "context.selectedGap.affectedLayers",               label: "Selected gap affected layers (array)",  kind: "array",  writable: false },
+    { path: "context.selectedGap.affectedEnvironments",         label: "Selected gap affected envs (array)",    kind: "array",  writable: false },
+    { path: "context.selectedGap.relatedCurrentInstanceIds",    label: "Selected gap linked current (array)",   kind: "array",  writable: false },
+    { path: "context.selectedGap.relatedDesiredInstanceIds",    label: "Selected gap linked desired (array)",   kind: "array",  writable: false }
   ]),
   reporting: SESSION_FIELDS.concat([
-    { path: "context.selectedProject.name",        label: "Selected project name",          kind: "scalar" },
-    { path: "context.selectedProject.gapCount",    label: "Selected project gap count",     kind: "scalar" },
-    { path: "context.selectedProject.urgency",     label: "Selected project urgency",       kind: "scalar" },
-    { path: "context.selectedProject.phase",       label: "Selected project phase",         kind: "scalar" },
-    { path: "context.selectedProject.driverId",    label: "Selected project driver id",     kind: "scalar" },
-    { path: "context.selectedProject.dellSolutions", label: "Selected project Dell solutions (array)", kind: "array" }
+    { path: "context.selectedProject.name",          label: "Selected project name",                 kind: "scalar", writable: false },
+    { path: "context.selectedProject.gapCount",      label: "Selected project gap count",            kind: "scalar", writable: false },
+    { path: "context.selectedProject.urgency",       label: "Selected project urgency",              kind: "scalar", writable: false },
+    { path: "context.selectedProject.phase",         label: "Selected project phase",                kind: "scalar", writable: false },
+    { path: "context.selectedProject.driverId",      label: "Selected project driver id",            kind: "scalar", writable: false },
+    { path: "context.selectedProject.dellSolutions", label: "Selected project Dell solutions (array)", kind: "array", writable: false }
   ])
 };
+
+// v2.4.4 — helper: return only the writable scalar fields for a tab.
+// Used by SkillAdmin to populate the outputSchema chip palette.
+export function writableFieldsForTab(tabId) {
+  return (FIELD_MANIFEST[tabId] || []).filter(function(f) {
+    return f.writable === true && f.kind !== "array";
+  });
+}
 
 export function fieldsForTab(tabId) {
   return FIELD_MANIFEST[tabId] || [];

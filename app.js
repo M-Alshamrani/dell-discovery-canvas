@@ -3,6 +3,7 @@
 import { session, resetSession, resetToDemo, saveToLocalStorage } from "./state/sessionStore.js";
 import { runAllTests }               from "./diagnostics/appSpec.js";
 import { openSettingsModal }         from "./ui/views/SettingsModal.js";
+import * as aiUndoStack              from "./state/aiUndoStack.js";
 import { renderContextView }         from "./ui/views/ContextView.js";
 import { renderMatrixView }          from "./ui/views/MatrixView.js";
 import { renderGapsEditView }        from "./ui/views/GapsEditView.js";
@@ -39,12 +40,35 @@ document.addEventListener("DOMContentLoaded", function() {
   renderStage();
   wireFooter();
   wireSettingsBtn();
+  wireUndoBtn();
   setTimeout(runAllTests, 150);
 });
 
 function wireSettingsBtn() {
   var btn = document.getElementById("settingsBtn");
   if (btn) btn.addEventListener("click", openSettingsModal);
+}
+
+function wireUndoBtn() {
+  var btn = document.getElementById("undoBtn");
+  if (!btn) return;
+  function refresh() {
+    if (aiUndoStack.canUndo()) {
+      btn.style.display = "";
+      btn.title = "Undo: " + (aiUndoStack.peekLabel() || "last AI change");
+    } else {
+      btn.style.display = "none";
+    }
+  }
+  btn.addEventListener("click", function() {
+    var entry = aiUndoStack.undoLast();
+    if (!entry) return;
+    // Re-render the current stage so any mutated view picks up the restored state.
+    renderHeaderMeta();
+    renderStage();
+  });
+  aiUndoStack.onUndoChange(refresh);
+  refresh();
 }
 
 function renderHeaderMeta() {

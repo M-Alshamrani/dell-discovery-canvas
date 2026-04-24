@@ -1589,6 +1589,86 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   filter: brightness(0.97);
 }
 
+/* Phase 19d · v2.4.4 · apply-on-confirm proposals panel + undo chip +
+   output-schema toggle chips + per-skill provider dropdown. */
+.undo-chip {
+  font-family: var(--font);
+  font-size: 11px; font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.35);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.undo-chip:hover { background: rgba(255,255,255,0.28); border-color: #fff; }
+
+.ai-skill-result.has-proposals { background: var(--brand-faint); }
+
+.proposals-panel {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.proposals-head {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--brand-dark);
+  margin-bottom: 2px;
+}
+.proposals-list  { display: flex; flex-direction: column; gap: 6px; }
+.proposals-empty {
+  font-size: 11px; font-style: italic; color: var(--text-3);
+  padding: 8px; text-align: center;
+  background: var(--surface); border-radius: var(--radius-sm);
+}
+.proposal-row {
+  display: grid; grid-template-columns: 1fr auto; gap: 6px 12px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--brand-light);
+  border-radius: var(--radius-sm);
+}
+.proposal-path {
+  font-size: 11px; font-weight: 600; color: var(--text-1);
+  grid-column: 1 / -1;
+  line-height: 1.3;
+}
+.proposal-diff {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  min-width: 0;
+  grid-column: 1;
+}
+.proposal-before { color: var(--text-3); text-decoration: line-through; text-decoration-thickness: 1px; }
+.proposal-arrow  { color: var(--brand); font-weight: 700; }
+.proposal-after  { color: var(--brand-dark); font-weight: 500; background: var(--brand-faint); padding: 1px 6px; border-radius: 3px; }
+.proposal-actions {
+  display: flex; gap: 6px;
+  grid-column: 2;
+}
+.proposal-actions .btn-primary,
+.proposal-actions .btn-outline { font-size: 11px; padding: 4px 10px; }
+.proposals-foot {
+  display: flex; justify-content: flex-end; padding-top: 4px;
+}
+.proposals-error {
+  font-size: 11px; color: #B91C1C;
+  background: #FEF2F2; border: 1px solid #FECACA;
+  padding: 6px 8px; border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+}
+
+.output-schema-chips { max-height: 100px; }
+.field-chip.output-schema-chip.selected {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+.field-chip.output-schema-chip.selected:hover { background: var(--brand-dark); }
+
 /* Phase 19d.1 · Refine-to-CARE UI + test-before-save gate */
 .skill-form-footer-hint {
   font-size: 10px; color: var(--brand-dark);

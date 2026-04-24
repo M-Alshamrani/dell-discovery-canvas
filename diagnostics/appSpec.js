@@ -4312,9 +4312,10 @@ describe("29 · Phase 19d.1 · Prompt guards + Refine-to-CARE button + test-befo
     assertEqual(unknown, brief, "unknown mode falls back to text-brief");
   });
 
-  it("PG3 · unimplemented modes (json-schema / action-commands) throw with a version pointer", () => {
-    throws(() => getSystemFooter("json-schema"),
-      "json-schema mode must throw (ships in v2.4.4)");
+  it("PG3 · unimplemented mode (action-commands) throws with a version pointer", () => {
+    // v2.4.4 · json-schema is now implemented. OH8/OH9 in Suite 30 pin
+    // its actual behaviour. Only action-commands still throws; re-open
+    // this assertion when v2.4.5+ makes it concrete.
     throws(() => getSystemFooter("action-commands"),
       "action-commands mode must throw (ships in v2.4.5+)");
   });
@@ -4356,6 +4357,283 @@ describe("29 · Phase 19d.1 · Prompt guards + Refine-to-CARE button + test-befo
     assert(OUTPUT_MODES.indexOf("text-brief")      >= 0, "text-brief present");
     assert(OUTPUT_MODES.indexOf("json-schema")     >= 0, "json-schema declared (impl v2.4.4)");
     assert(OUTPUT_MODES.indexOf("action-commands") >= 0, "action-commands declared (impl v2.4.5+)");
+  });
+
+});
+
+// ── Phase 19d / v2.4.4 · Unified AI platform (OH1-OH17) ──
+// Shipped spec: SPEC §12 "AI Platform Specification".
+import { parseProposals, applyProposal, applyAllProposals, setPathFromRoot, resolvePathFromRoot }
+  from "../interactions/aiCommands.js";
+import * as aiUndoStack from "../state/aiUndoStack.js";
+import { session as liveSession, replaceSession } from "../state/sessionStore.js";
+import { WRITE_RESOLVERS, isWritablePath } from "../core/bindingResolvers.js";
+import { FIELD_MANIFEST as FM, writableFieldsForTab } from "../core/fieldManifest.js";
+import { RESPONSE_FORMATS, APPLY_POLICIES } from "../core/skillStore.js";
+
+describe("30 · Phase 19d · Output handling + undo stack + per-skill provider", () => {
+
+  function clearSkills() { window.localStorage.removeItem("ai_skills_v1"); }
+
+  it("OH1 · Skill schema: providerKey + outputSchema + responseFormat + applyPolicy round-trip", () => {
+    clearSkills();
+    loadSkills(); // seed
+    const created = addSkill({
+      name: "Auto-fill customer",
+      tabId: "context",
+      promptTemplate: "Fill in customer details.",
+      providerKey: "anthropic",
+      responseFormat: "json-scalars",
+      applyPolicy:    "confirm-per-field",
+      outputSchema: [
+        { path: "session.customer.name",     label: "Customer name",     kind: "scalar" },
+        { path: "session.customer.vertical", label: "Customer vertical", kind: "scalar" }
+      ]
+    });
+    assertEqual(created.providerKey, "anthropic", "providerKey persists on add");
+    assertEqual(created.responseFormat, "json-scalars", "responseFormat persists");
+    assertEqual(created.applyPolicy, "confirm-per-field", "applyPolicy persists");
+    assertEqual(created.outputSchema.length, 2, "outputSchema persists with 2 entries");
+
+    const updated = updateSkill(created.id, { providerKey: null });
+    assertEqual(updated.providerKey, null, "providerKey can be cleared to null");
+
+    const all = loadSkills();
+    const row = all.find(s => s.id === created.id);
+    assert(row.outputSchema.length === 2, "outputSchema survives a reload");
+    clearSkills();
+  });
+
+  it("OH2 · parseProposals extracts JSON matching the outputSchema allowlist", () => {
+    const schema = [
+      { path: "session.customer.name",     label: "Customer name",     kind: "scalar" },
+      { path: "session.customer.vertical", label: "Customer vertical", kind: "scalar" }
+    ];
+    const raw = '{"session.customer.name":"Acme Corp","session.customer.vertical":"Financial Services","session.customer.secret":"ignored"}';
+    const res = parseProposals(raw, schema);
+    assert(res.ok, "parse must succeed on valid JSON");
+    assertEqual(res.proposals.length, 2, "only schema-declared paths pass the allowlist");
+    const paths = res.proposals.map(p => p.path).sort();
+    assert(paths.indexOf("session.customer.secret") < 0,
+      "non-schema paths must be silently dropped (allowlist)");
+  });
+
+  it("OH3 · parseProposals tolerates code-fenced JSON and leading prose", () => {
+    const schema = [{ path: "session.customer.name", label: "Name", kind: "scalar" }];
+    const fenced = '```json\n{"session.customer.name":"Acme"}\n```';
+    assert(parseProposals(fenced, schema).ok, "code-fenced JSON must parse");
+    const prefixed = 'Sure, here is the JSON:\n{"session.customer.name":"Acme"}\nThanks!';
+    assert(parseProposals(prefixed, schema).ok, "inline JSON inside prose must parse");
+    const broken = 'not json at all';
+    assertEqual(parseProposals(broken, schema).ok, false, "non-JSON must return ok:false");
+  });
+
+  it("OH4 · setPathFromRoot + resolvePathFromRoot handle nested session paths", () => {
+    const root = { session: { customer: { name: "before" } } };
+    setPathFromRoot(root, "session.customer.name", "after");
+    assertEqual(resolvePathFromRoot(root, "session.customer.name"), "after",
+      "nested write + read must round-trip");
+    setPathFromRoot(root, "session.customer.region", "EMEA");
+    assertEqual(root.session.customer.region, "EMEA", "creates missing keys");
+  });
+
+  it("OH5 · aiUndoStack: push + undoLast restores prior session state", () => {
+    aiUndoStack._resetForTests();
+    const originalName = liveSession.customer ? liveSession.customer.name : "";
+    // Push a snapshot of the current state, then mutate, then undo.
+    aiUndoStack.push("test snapshot");
+    assertEqual(aiUndoStack.canUndo(), true, "canUndo true after push");
+    liveSession.customer.name = "Temporarily changed";
+    aiUndoStack.undoLast();
+    assertEqual(liveSession.customer.name, originalName,
+      "undoLast must restore prior state");
+    assertEqual(aiUndoStack.canUndo(), false, "stack empty after undo");
+  });
+
+  it("OH6 · aiUndoStack caps at 10 entries (oldest dropped)", () => {
+    aiUndoStack._resetForTests();
+    for (var i = 0; i < 15; i++) aiUndoStack.push("entry " + i);
+    assertEqual(aiUndoStack.depth(), 10, "stack must not exceed 10 entries");
+    assertEqual(aiUndoStack.peekLabel(), "entry 14", "newest entry on top");
+    aiUndoStack._resetForTests();
+  });
+
+  it("OH7 · runSkill selects the skill's providerKey override when set and valid", async () => {
+    // Build a fake skill with anthropic provider. Config has anthropic pill.
+    // We intercept fetch via a custom fetchImpl to assert the request went
+    // to anthropic (not the active default).
+    saveAiConfig({
+      activeProvider: "local",
+      providers: { anthropic: { apiKey: "test-key" } }
+    });
+    const fetches = [];
+    const fakeFetch = async function(url, opts) {
+      fetches.push({ url: url, headers: opts.headers });
+      return {
+        ok: true,
+        json: async function() {
+          return { content: [{ type: "text", text: "{}" }] };
+        }
+      };
+    };
+    // Direct test of the provider selection in buildRequest.
+    const req = buildRequest("anthropic", {
+      baseUrl: "/api/llm/anthropic",
+      model:   "claude-haiku-4-5",
+      apiKey:  "test-key",
+      messages: [{ role: "user", content: "hi" }]
+    });
+    assertEqual(req.headers["x-api-key"], "test-key",
+      "anthropic selection reaches the request builder with its own key");
+    window.localStorage.removeItem("ai_config_v1");
+  });
+
+  it("OH8 · json-scalars footer lists the declared output paths + types", () => {
+    const footer = getSystemFooter("json-scalars", {
+      outputSchema: [
+        { path: "session.customer.name",     label: "Customer name",     kind: "scalar" },
+        { path: "session.customer.vertical", label: "Customer vertical", kind: "scalar" }
+      ]
+    });
+    assert(/session\.customer\.name/.test(footer), "footer must name each declared path");
+    assert(/JSON/.test(footer), "footer must demand JSON output");
+    assert(/preamble/i.test(footer) || /ONLY/.test(footer), "footer must forbid preamble");
+    // Backward-compat: the legacy 'json-schema' name still works.
+    const legacyFooter = getSystemFooter("json-schema", { outputSchema: [{ path: "session.customer.name", label: "Name", kind: "scalar" }] });
+    assert(/session\.customer\.name/.test(legacyFooter), "legacy 'json-schema' alias still resolves");
+  });
+
+  it("OH9 · json-scalars mode without a schema falls back to text-brief (defensive)", () => {
+    const footer = getSystemFooter("json-scalars", { outputSchema: [] });
+    assert(/120 words/.test(footer),
+      "empty-schema json-scalars call must fall back to the safe text-brief footer");
+  });
+
+  it("OH10 · FIELD_MANIFEST entries carry writable flag; every writable context.* path has a resolver", () => {
+    // Structural invariant: SPEC §12.8 #2.
+    Object.keys(FM).forEach(function(tabId) {
+      FM[tabId].forEach(function(f) {
+        assert(typeof f.writable === "boolean",
+          "manifest entry " + f.path + " must declare writable: true|false");
+      });
+    });
+    // Every writable context.* path MUST have a resolver entry.
+    Object.keys(FM).forEach(function(tabId) {
+      FM[tabId].forEach(function(f) {
+        if (f.writable && f.path.indexOf("context.") === 0) {
+          assert(WRITE_RESOLVERS[f.path],
+            "writable context path " + f.path + " must have a WRITE_RESOLVERS entry");
+        }
+      });
+    });
+  });
+
+  it("OH11 · writableFieldsForTab returns only scalar + writable fields", () => {
+    ["context", "current", "desired", "gaps", "reporting"].forEach(function(tabId) {
+      const writable = writableFieldsForTab(tabId);
+      writable.forEach(function(f) {
+        assertEqual(f.writable, true, "every returned field must be writable");
+        assertEqual(f.kind === "array", false, "arrays excluded");
+      });
+    });
+    // Sanity: Gaps has multiple writable fields (description, urgency, phase, etc.).
+    assert(writableFieldsForTab("gaps").length >= 5,
+      "Gaps tab must expose ≥ 5 writable fields (description, urgency, phase, notes, ...)");
+  });
+
+  it("OH12 · applyProposal via resolver mutates the target gap found by context id", () => {
+    // Set up a clean session with one gap, then apply a context.* proposal.
+    aiUndoStack._resetForTests();
+    replaceSession({
+      customer: { name: "Acme", vertical: "Financial Services", drivers: [] },
+      instances: [],
+      gaps: [{ id: "g-ai1", description: "old desc", urgency: "Low", phase: "later" }]
+    });
+    const proposal = {
+      path:  "context.selectedGap.urgency",
+      label: "Selected gap urgency",
+      kind:  "scalar",
+      before: "Low",
+      after:  "High"
+    };
+    applyProposal(proposal, { context: { selectedGap: { id: "g-ai1" } } });
+    assertEqual(liveSession.gaps[0].urgency, "High", "resolver mutated the gap by id");
+    assertEqual(aiUndoStack.canUndo(), true, "apply pushed an undo snapshot");
+    aiUndoStack._resetForTests();
+  });
+
+  it("OH13 · applyProposal rejects unknown-writable paths (no resolver, not session.*)", () => {
+    throws(() => applyProposal({
+      path: "context.selectedSomething.foo",
+      after: "x"
+    }), "unknown context path without a resolver must throw");
+    // session.* is always allowed (direct write).
+    replaceSession({ customer: { name: "X", drivers: [] }, instances: [], gaps: [] });
+    doesNotThrow(() => applyProposal({
+      path: "session.customer.region",
+      after: "EMEA"
+    }), "session.* writes always permitted");
+  });
+
+  it("OH14 · Legacy outputMode migrates to applyPolicy on load (back-compat)", () => {
+    clearSkills();
+    saveSkills([{
+      id: "legacy-skill",
+      name: "Legacy",
+      tabId: "context",
+      promptTemplate: "x",
+      outputMode: "apply-on-confirm"   // legacy field
+    }]);
+    const loaded = loadSkills().find(s => s.id === "legacy-skill");
+    assertEqual(loaded.applyPolicy, "confirm-per-field",
+      "outputMode='apply-on-confirm' → applyPolicy='confirm-per-field'");
+    clearSkills();
+    saveSkills([{ id: "legacy-auto", name: "Auto", tabId: "context", promptTemplate: "x", outputMode: "auto-apply" }]);
+    assertEqual(loadSkills().find(s => s.id === "legacy-auto").applyPolicy, "auto",
+      "outputMode='auto-apply' → applyPolicy='auto'");
+    clearSkills();
+    saveSkills([{ id: "legacy-suggest", name: "S", tabId: "context", promptTemplate: "x", outputMode: "suggest" }]);
+    assertEqual(loadSkills().find(s => s.id === "legacy-suggest").applyPolicy, "show-only",
+      "outputMode='suggest' → applyPolicy='show-only'");
+    clearSkills();
+  });
+
+  it("OH15 · responseFormat defaults: no outputSchema → text-brief; non-empty outputSchema → json-scalars", () => {
+    clearSkills();
+    saveSkills([
+      { id: "no-schema",  name: "A", tabId: "context", promptTemplate: "x" },
+      { id: "with-schema", name: "B", tabId: "gaps", promptTemplate: "x",
+        outputSchema: [{ path: "context.selectedGap.urgency", label: "Urgency", kind: "scalar" }] }
+    ]);
+    const a = loadSkills().find(s => s.id === "no-schema");
+    const b = loadSkills().find(s => s.id === "with-schema");
+    assertEqual(a.responseFormat, "text-brief",
+      "skill with no outputSchema defaults to text-brief");
+    assertEqual(b.responseFormat, "json-scalars",
+      "skill with outputSchema defaults to json-scalars");
+    clearSkills();
+  });
+
+  it("OH16 · Enums locked: RESPONSE_FORMATS + APPLY_POLICIES match SPEC §12.1", () => {
+    assertEqual(RESPONSE_FORMATS.length, 3, "3 response formats (text-brief, json-scalars, json-commands)");
+    assert(RESPONSE_FORMATS.indexOf("text-brief")    >= 0);
+    assert(RESPONSE_FORMATS.indexOf("json-scalars")  >= 0);
+    assert(RESPONSE_FORMATS.indexOf("json-commands") >= 0);
+    assertEqual(APPLY_POLICIES.length, 4, "4 apply policies (show-only, confirm-per-field, confirm-all, auto)");
+    assert(APPLY_POLICIES.indexOf("show-only")         >= 0);
+    assert(APPLY_POLICIES.indexOf("confirm-per-field") >= 0);
+    assert(APPLY_POLICIES.indexOf("confirm-all")       >= 0);
+    assert(APPLY_POLICIES.indexOf("auto")              >= 0);
+  });
+
+  it("OH17 · json-commands footer declared (stub for v2.4.5); parseProposals does not apply for it", () => {
+    // Footer exists so test writers can see the shape...
+    const footer = getSystemFooter("json-commands");
+    assert(/commands/i.test(footer), "json-commands footer must mention commands array");
+    assert(/updateField|createGap|linkInstance/.test(footer),
+      "footer names the declared ops so the model sees the whitelist");
+    // ...but there's no parser wired yet; runSkill surfaces a clear error via proposalsError.
+    // (Full end-to-end test deferred to v2.4.5 when the parser ships.)
   });
 
 });

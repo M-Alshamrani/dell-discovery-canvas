@@ -219,6 +219,15 @@ export function resetToDemo() {
   Object.assign(session, demo);
 }
 
+// v2.4.4 — Replace live session state with a supplied snapshot (e.g. an
+// undo-stack restore). Keeps the module-scoped `session` identity so
+// every importer continues to see live data without re-importing.
+export function replaceSession(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") return;
+  Object.keys(session).forEach(function(k) { delete session[k]; });
+  Object.assign(session, snapshot);
+}
+
 export function saveToLocalStorage() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(session));

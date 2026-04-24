@@ -17,10 +17,10 @@ export const DEFAULT_AI_CONFIG = {
   activeProvider: "local",
   providers: {
     local: {
-      label:    "Local LLM (GB10)",
+      label:    "Local LLM",
       baseUrl:  "/api/llm/local/v1",
       model:    "code-llm",
-      apiKey:   ""   // vLLM is unauth'd by default
+      apiKey:   ""   // typical self-hosted vLLM is unauth'd behind the proxy
     },
     anthropic: {
       label:    "Anthropic Claude",

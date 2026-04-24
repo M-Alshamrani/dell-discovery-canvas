@@ -10,9 +10,21 @@
 const STORAGE_KEY = "ai_skills_v1";
 
 export const SKILL_TABS = ["context", "current", "desired", "gaps", "reporting"];
+
+// v2.4.4 · Unified output-behavior model. Replaces the overlapping
+// `outputMode` + `outputSchema.length > 0` dispatch from v2.4.1-v2.4.3.
+// See SPEC §12.1 for the full contract.
+export const RESPONSE_FORMATS = ["text-brief", "json-scalars", "json-commands"];
+export const APPLY_POLICIES   = ["show-only", "confirm-per-field", "confirm-all", "auto"];
+
+// DEPRECATED — retained for the legacy-skill migration in normalizeSkill.
+// Removed from new admin-UI in v2.4.4 in favour of applyPolicy.
 export const OUTPUT_MODES = ["suggest", "apply-on-confirm", "auto-apply"];
-// Only "suggest" is functional end-to-end in v2.4.1; the other two values
-// are persisted so skills declared today forward-compat to v2.4.3.
+var LEGACY_OUTPUT_MODE_TO_APPLY_POLICY = {
+  "suggest":          "show-only",
+  "apply-on-confirm": "confirm-per-field",
+  "auto-apply":       "auto"
+};
 
 function uid() { return "skill-" + Math.random().toString(36).slice(2, 10); }
 function now() { return new Date().toISOString(); }
@@ -27,7 +39,7 @@ export function seedSkills() {
       name:         "Suggest discovery questions",
       description: "Generate 3 tailored customer-discovery questions for the selected strategic driver.",
       tabId:        "context",
-      systemPrompt: "You are a senior Dell Technologies presales engineer. Suggest 3 short, open-ended discovery questions a presales would ask in a 30-45 minute workshop. Each question should be 1-2 sentences. Output ONLY the 3 questions, numbered 1. 2. 3. — no preamble, no explanation.",
+      systemPrompt: "You are a senior Dell Technologies presales engineer. Suggest 3 short, open-ended discovery questions a presales would ask in a 30-45 minute workshop. Each question should be 1-2 sentences.",
       promptTemplate: [
         "Customer name: {{session.customer.name}}.",
         "Customer vertical: {{session.customer.vertical}}.",
@@ -35,7 +47,10 @@ export function seedSkills() {
         "Driver hint: {{context.selectedDriver.shortHint}}.",
         "Driver priority for this customer: {{context.selectedDriver.priority}}."
       ].join("\n"),
-      outputMode:   "suggest",
+      responseFormat: "text-brief",
+      applyPolicy:    "show-only",
+      outputSchema:   [],
+      providerKey:    null,
       deployed:     true,
       seed:         true,
       createdAt:    now(),
@@ -76,11 +91,40 @@ function normalizeSkill(s) {
   if (typeof s.name !== "string" || !s.name.trim()) return null;
   if (typeof s.promptTemplate !== "string") return null;
   var tabId = SKILL_TABS.indexOf(s.tabId) >= 0 ? s.tabId : "context";
-  var outputMode = OUTPUT_MODES.indexOf(s.outputMode) >= 0 ? s.outputMode : "suggest";
+
+  // v2.4.4 — output schema (allowlist the AI may propose updates to).
+  var outputSchema = Array.isArray(s.outputSchema) ? s.outputSchema.filter(function(e) {
+    return e && typeof e.path === "string" && e.path.length > 0;
+  }) : [];
+
+  // v2.4.4 — Unified output-behavior model. Migrate legacy outputMode
+  // if present; otherwise default sensibly from outputSchema.
+  var responseFormat = RESPONSE_FORMATS.indexOf(s.responseFormat) >= 0
+    ? s.responseFormat
+    : (outputSchema.length > 0 ? "json-scalars" : "text-brief");
+
+  var applyPolicy;
+  if (APPLY_POLICIES.indexOf(s.applyPolicy) >= 0) {
+    applyPolicy = s.applyPolicy;
+  } else if (typeof s.outputMode === "string" && LEGACY_OUTPUT_MODE_TO_APPLY_POLICY[s.outputMode]) {
+    applyPolicy = LEGACY_OUTPUT_MODE_TO_APPLY_POLICY[s.outputMode];
+  } else {
+    applyPolicy = (responseFormat === "json-scalars") ? "confirm-per-field" : "show-only";
+  }
+
+  var providerKey = (typeof s.providerKey === "string" && s.providerKey.length > 0)
+    ? s.providerKey : null;
+
+  // Pass everything through Object.assign FIRST so unknown fields
+  // (forward-compat metadata) survive; then override the known ones
+  // with our normalised values.
   return Object.assign({}, s, {
     id:             s.id || uid(),
     tabId:          tabId,
-    outputMode:     outputMode,
+    responseFormat: responseFormat,
+    applyPolicy:    applyPolicy,
+    outputSchema:   outputSchema,
+    providerKey:    providerKey,
     deployed:       s.deployed !== false,
     systemPrompt:   typeof s.systemPrompt === "string" ? s.systemPrompt : "",
     description:    typeof s.description  === "string" ? s.description  : "",

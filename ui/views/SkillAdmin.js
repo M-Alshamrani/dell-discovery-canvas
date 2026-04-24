@@ -6,12 +6,12 @@
 
 import {
   loadSkills, addSkill, updateSkill, deleteSkill,
-  SKILL_TABS, OUTPUT_MODES
+  SKILL_TABS, RESPONSE_FORMATS, APPLY_POLICIES
 } from "../../core/skillStore.js";
 import { extractBindings, renderTemplate, runSkill } from "../../services/skillEngine.js";
-import { fieldsForTab, buildPreviewScope } from "../../core/fieldManifest.js";
+import { fieldsForTab, writableFieldsForTab, buildPreviewScope } from "../../core/fieldManifest.js";
 import { session as liveSession } from "../../state/sessionStore.js";
-import { loadAiConfig } from "../../core/aiConfig.js";
+import { loadAiConfig, PROVIDERS } from "../../core/aiConfig.js";
 import { chatCompletion } from "../../services/aiService.js";
 import { summaryForMode, REFINE_META_SYSTEM, REFINE_META_RULES } from "../../core/promptGuards.js";
 import { createPillEditor } from "../components/PillEditor.js";
@@ -137,11 +137,17 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   var sysArea = mkTextarea(form, "AI role / instructions (optional)", 3,
     existing ? existing.systemPrompt : "",
     "What the AI is and what it should do. Constant per skill — no live-data bindings needed.");
-  // v2.4.3 — advertise the non-removable output-format footer so users
-  // aren't surprised by what the AI actually receives.
-  var footerHint = mkt("div", "skill-form-footer-hint",
-    summaryForMode(existing ? existing.outputMode : "suggest"));
+  // v2.4.3 / v2.4.4 — advertise the non-removable output-format footer
+  // so users aren't surprised by what the AI actually receives. The
+  // summary auto-reflects the declared responseFormat + schema state.
+  var footerHint = mkt("div", "skill-form-footer-hint", "");
   form.appendChild(footerHint);
+  function refreshFooterHint() {
+    var hasSchema = Array.isArray(existing && existing.outputSchema) && existing.outputSchema.length > 0;
+    var fmt = (existing && existing.responseFormat) || (hasSchema ? "json-scalars" : "text-brief");
+    footerHint.textContent = summaryForMode(fmt, hasSchema);
+  }
+  refreshFooterHint();
 
   // v2.4.2.1 · pill-based contenteditable editor replaces the textarea.
   // Exposes serialize() / setValue() / insertPillAtCursor() so the
@@ -286,7 +292,15 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   // invoke it at the bottom of the function.
   var lastTestedSignature = null;
   function currentSignature() {
-    return JSON.stringify([tplArea.serialize(), sysArea.value, modeSel.value, tabSel.value]);
+    return JSON.stringify([
+      tplArea.serialize(),
+      sysArea.value,
+      responseFormatSel.value,
+      applyPolicySel.value,
+      tabSel.value,
+      providerSel.value || "",
+      selectedSchema.map(function(e) { return e.path; }).sort().join(",")
+    ]);
   }
   function invalidateTest() {
     lastTestedSignature = null;
@@ -300,7 +314,10 @@ function renderEditForm(adminRoot, list, existing, onChange) {
       tabId:          tabSel.value,
       systemPrompt:   sysArea.value,
       promptTemplate: tplArea.serialize(),
-      outputMode:     modeSel.value
+      responseFormat: responseFormatSel.value,
+      applyPolicy:    applyPolicySel.value,
+      providerKey:    providerSel.value || null,
+      outputSchema:   selectedSchema.slice()
     };
     testBtn.disabled = true;
     var originalLabel = testBtn.textContent;
@@ -333,18 +350,102 @@ function renderEditForm(adminRoot, list, existing, onChange) {
     }
   });
 
-  var modeSel = mkSelect(form, "Output mode", OUTPUT_MODES.map(function(m) {
-    var label = m === "suggest"          ? "Suggest (show response)"
-             :  m === "apply-on-confirm" ? "Apply on confirm (v2.4.3)"
-             :                             "Auto-apply (v2.4.3)";
+  // v2.4.4 · Unified output-behavior model (SPEC §12.1).
+  //   responseFormat = what the AI must return
+  //   applyPolicy    = what the UI does with the response
+  var responseFormatSel = mkSelect(form, "Response format", RESPONSE_FORMATS.map(function(m) {
+    var label = m === "text-brief"     ? "Text (≤120 words, terse bullets)"
+             :  m === "json-scalars"   ? "JSON scalars (matches output schema below)"
+             :                           "JSON commands (v2.4.5+)";
     return { value: m, label: label };
-  }), existing ? existing.outputMode : "suggest");
+  }), existing && existing.responseFormat ? existing.responseFormat : "text-brief");
+
+  var applyPolicySel = mkSelect(form, "Apply policy", APPLY_POLICIES.map(function(m) {
+    var label = m === "show-only"         ? "Show only (no writes)"
+             :  m === "confirm-per-field" ? "Confirm per field (default for JSON)"
+             :  m === "confirm-all"       ? "Confirm all at once"
+             :                              "Auto-apply (no confirmation — risky)";
+    return { value: m, label: label };
+  }), existing && existing.applyPolicy ? existing.applyPolicy : "show-only");
+  form.appendChild(mkt("div", "settings-help-inline",
+    "Response format controls what the AI returns. Apply policy controls what the UI does with it. Text + show-only = read-only skill. JSON scalars + confirm-per-field = review each proposed change before it touches the session."));
+
+  // v2.4.4 · per-skill provider override. "" = use active.
+  var providerOptions = [{ value: "", label: "Default (use active provider)" }].concat(
+    PROVIDERS.map(function(p) { return { value: p, label: p }; })
+  );
+  var providerSel = mkSelect(form, "AI provider for this skill",
+    providerOptions,
+    (existing && existing.providerKey) || "");
+  form.appendChild(mkt("div", "settings-help-inline",
+    "Leave on Default to use whichever provider is active in AI Providers settings. Override to pin this skill to a specific LLM (e.g. cheap + fast for one skill, deep-reasoning for another)."));
+
+  // v2.4.4 · output schema chips. User ticks which writable scalar
+  // paths the skill may PROPOSE to update. Having any selection
+  // auto-promotes the footer to json-schema mode at run time.
+  var schemaGroup = mk("div", "skill-form-field");
+  schemaGroup.appendChild(mkt("label", "skill-form-label", "AI may propose updates to:"));
+  schemaGroup.appendChild(mkt("div", "settings-help-inline",
+    "Tick any fields the AI should return as structured proposals (JSON). Each toggled field generates an apply-on-confirm row at run time; untouched fields stay in suggest (text) mode. Only writable scalars are eligible."));
+  var schemaChips = mk("div", "field-chip-list output-schema-chips");
+  schemaGroup.appendChild(schemaChips);
+  form.appendChild(schemaGroup);
+
+  var selectedSchema = Array.isArray(existing && existing.outputSchema) ? existing.outputSchema.slice() : [];
+  function selectedHas(path) { return selectedSchema.some(function(e) { return e.path === path; }); }
+  function selectedAdd(entry) { if (!selectedHas(entry.path)) selectedSchema.push(entry); }
+  function selectedRemove(path) { selectedSchema = selectedSchema.filter(function(e) { return e.path !== path; }); }
+
+  function refreshSchemaChips() {
+    schemaChips.innerHTML = "";
+    // v2.4.4 · every writable scalar (session.* OR context.* with a
+    // resolver) is eligible. writableFieldsForTab filters the manifest
+    // for us; per-tab the chips reflect what the AI can actually
+    // propose changes to given the current selection context.
+    var eligible = writableFieldsForTab(tabSel.value);
+    if (eligible.length === 0) {
+      schemaChips.appendChild(mkt("div", "settings-help-inline", "No writable scalar fields declared for this tab yet."));
+      return;
+    }
+    eligible.forEach(function(f) {
+      var on = selectedHas(f.path);
+      var chip = mkt("button", "field-chip output-schema-chip" + (on ? " selected" : ""), f.label);
+      chip.type = "button";
+      chip.title = f.path + (f.path.indexOf("context.") === 0
+        ? " — writes via resolver against the currently-selected entity on this tab"
+        : " — writes directly to session state");
+      chip.addEventListener("click", function(e) {
+        e.preventDefault();
+        if (selectedHas(f.path)) selectedRemove(f.path);
+        else selectedAdd({ path: f.path, label: f.label, kind: f.kind || "scalar" });
+        refreshSchemaChips();
+        var responseFormat = selectedSchema.length > 0 ? "json-scalars" : (responseFormatSel.value || "text-brief");
+        footerHint.textContent = summaryForMode(responseFormat, selectedSchema.length > 0);
+        invalidateTest();
+      });
+      chip.setAttribute("data-path", f.path);
+      schemaChips.appendChild(chip);
+    });
+  }
+  refreshSchemaChips();
+  tabSel.addEventListener("change", function() {
+    // When the target tab changes, drop schema entries that aren't
+    // writable on the new tab (keeps the skill coherent).
+    var stillWritable = {};
+    writableFieldsForTab(tabSel.value).forEach(function(f) { stillWritable[f.path] = true; });
+    selectedSchema = selectedSchema.filter(function(e) { return stillWritable[e.path]; });
+    refreshSchemaChips();
+    var responseFormat = selectedSchema.length > 0 ? "json-scalars" : (responseFormatSel.value || "text-brief");
+    footerHint.textContent = summaryForMode(responseFormat, selectedSchema.length > 0);
+  });
 
   // Wire the test-gate invalidators now that every referenced field
   // (sysArea / tabSel / modeSel) is actually defined.
-  sysArea.addEventListener("input",  invalidateTest);
-  tabSel.addEventListener("change",  invalidateTest);
-  modeSel.addEventListener("change", invalidateTest);
+  sysArea.addEventListener("input",                invalidateTest);
+  tabSel.addEventListener("change",                invalidateTest);
+  responseFormatSel.addEventListener("change",     invalidateTest);
+  applyPolicySel.addEventListener("change",        invalidateTest);
+  providerSel.addEventListener("change",           invalidateTest);
 
   var depLabel = mkt("label", "skill-form-deploy-label", "Deployed");
   var depCb = document.createElement("input");
@@ -384,7 +485,10 @@ function renderEditForm(adminRoot, list, existing, onChange) {
       tabId:          tabSel.value,
       systemPrompt:   sysArea.value,
       promptTemplate: tpl,
-      outputMode:     modeSel.value,
+      responseFormat: responseFormatSel.value,
+      applyPolicy:    applyPolicySel.value,
+      providerKey:    providerSel.value || null,
+      outputSchema:   selectedSchema.slice(),
       deployed:       depCb.checked
     };
     try {

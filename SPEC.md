@@ -1,7 +1,7 @@
 # Dell Discovery Canvas v2 — Implementation Spec
 
-**Status**: Phases 0–15.3 + 16 + 18 + 19a/b/c/c.1/d.1 SHIPPED. Phases 17 / 19d-19d.5 / 20+ queued.
-**Current tagged releases**: `v2.1.1`, `v2.1.2`, `v2.2.0` (Docker), `v2.2.1` (LAN auth), `v2.2.2` (Dell tokens), `v2.2.3` (visual depth), `v2.3.0` (Phase 18 gap-links), `v2.3.1` (Phase 16 Workload), `v2.4.0` (Phase 19a AI foundations), `v2.4.1` (Phase 19b Skill Builder), `v2.4.2` (Phase 19c Field-pointer + coercion + test-skill), `v2.4.2.1` (Phase 19c.1 Pill editor + error-message categorisation), `v2.4.3` (Phase 19d.1 Prompt guards + Refine-to-CARE + test-before-save gate)
+**Status**: Phases 0–15.3 + 16 + 18 + 19a/b/c/c.1/d.1/d SHIPPED. Phases 17 / 19e (v2.4.5 Foundations Refresh) / v2.5.0 / 20+ queued.
+**Current tagged releases**: `v2.1.1`, `v2.1.2`, `v2.2.0` (Docker), `v2.2.1` (LAN auth), `v2.2.2` (Dell tokens), `v2.2.3` (visual depth), `v2.3.0` (Phase 18 gap-links), `v2.3.1` (Phase 16 Workload), `v2.4.0` (Phase 19a AI foundations), `v2.4.1` (Phase 19b Skill Builder), `v2.4.2` (Phase 19c Field-pointer + coercion + test-skill), `v2.4.2.1` (Phase 19c.1 Pill editor + error-message categorisation), `v2.4.3` (Phase 19d.1 Prompt guards + Refine-to-CARE + test-before-save gate), `v2.4.4` (Phase 19d Unified AI platform — responseFormat + applyPolicy + writable resolvers + undo)
 **Predecessor**: v1.3 (legacy)
 **Repo**: https://github.com/M-Alshamrani/dell-discovery-canvas (private)
 **Discussion record**: [docs/CHANGELOG_PLAN.md](docs/CHANGELOG_PLAN.md) — see "Post-v2.1.2 · v2.2+ design review" section for items 2-10 decisions.
@@ -769,6 +769,208 @@ A separate `SPEC_v3.md` will capture this architecture when work starts.
 - `SummaryRoadmapView.js`: inline `.project-expand-btn` + `.project-gap-list` removed. Project cards become keyboard-focusable buttons → right-panel project detail on click (urgency shape, Dell solutions, constituent gaps, linked-tech count). Unified click-to-detail pattern with swimlane headers, vendor rows, heatmap cells, gap cards.
 - Styles: `.session-brief`, `.brief-row`, `.brief-label`, `.brief-text`; `.project-card:hover`.
 - Satisfies: **T7.5 · T7.6**.
+
+---
+
+## 12 · AI Platform Specification (authoritative data model + extension points)
+
+**Purpose**: every AI feature — existing or future — composes against these shapes. New provider, new tab binding, new action command, new output mode all follow the same pattern. Adding a scenario should never require rewriting earlier ones.
+
+Shipped through **v2.4.4** · Phase 19a-d · enterprise-grade, vendor-neutral.
+
+### §12.1 · Storage contracts (localStorage, `ai_*_v<n>` namespace)
+
+Two keys today; each may bump `vN` when shape evolves. Migrators run on load, preserving user data.
+
+#### `ai_config_v1` — provider settings
+
+```jsonc
+{
+  activeProvider: "local" | "anthropic" | "gemini",    // default provider for skills without explicit override
+  providers: {
+    local: {
+      label:   "Local LLM",
+      baseUrl: "/api/llm/local/v1",     // relative = nginx-proxied; absolute = direct browser call
+      model:   "code-llm",              // e.g. OpenAI-compatible model id exposed by the local inference server
+      apiKey:  ""                       // empty when upstream is unauth'd
+    },
+    anthropic: {
+      label:   "Anthropic Claude",
+      baseUrl: "/api/llm/anthropic",    // proxy path; not user-editable (CORS)
+      model:   "claude-haiku-4-5",
+      apiKey:  ""
+    },
+    gemini: {
+      label:   "Google Gemini",
+      baseUrl: "/api/llm/gemini",
+      model:   "gemini-2.5-flash",
+      apiKey:  ""
+    }
+  }
+}
+```
+
+**Extension point** — adding a new provider = (a) add to `PROVIDERS` array in `core/aiConfig.js`, (b) add request/response shape to `services/aiService.js`, (c) add nginx proxy path to `docker-entrypoint.d/45-setup-llm-proxy.sh`. No schema version bump needed.
+
+#### `ai_skills_v1` — user-defined skills
+
+```jsonc
+[{
+  id:             "skill-<8-char-uid>",
+  name:           "Suggest discovery questions",
+  description:    "Generate 3 tailored customer-discovery questions for the selected driver.",
+  tabId:          "context" | "current" | "desired" | "gaps" | "reporting",
+
+  // What the AI may read from (template bindings {{path}} in prompts)
+  systemPrompt:   "...template with {{bindings}} allowed...",
+  promptTemplate: "...template with {{bindings}} allowed...",
+
+  // What the AI MUST return — drives the non-removable system-prompt footer
+  responseFormat: "text-brief"          // plain text, ≤120 words, no preamble
+                | "json-scalars"        // JSON object matching outputSchema paths
+                | "json-commands",      // JSON array of action commands (v2.4.5+)
+
+  // What the UI does with the response
+  applyPolicy:    "show-only"           // render only, no writes
+                | "confirm-per-field"   // show proposals with per-row Apply/Skip (default for json-scalars)
+                | "confirm-all"         // single "Apply all" button, no per-field choice
+                | "auto",               // write immediately (requires opt-in confirmation at creation)
+
+  // What the AI may WRITE TO — allowlist, enforced at apply time
+  outputSchema: [
+    { path: "session.customer.name",        label: "Customer name",       kind: "scalar" },
+    { path: "context.selectedGap.urgency",  label: "Selected gap urgency", kind: "scalar" }
+  ],
+
+  // Optional provider pin — null = use active provider from aiConfig
+  providerKey:    null | "local" | "anthropic" | "gemini",
+
+  deployed:   true | false,              // appears in the tab's "✨ Use AI ▾" dropdown
+  seed:       true | false,              // true = built-in; false = user-created
+  createdAt:  "ISO-8601",
+  updatedAt:  "ISO-8601"
+}]
+```
+
+**Migration rules on load** (in `normalizeSkill`):
+- Legacy `outputMode: "suggest"` → `applyPolicy: "show-only"`.
+- Legacy `outputMode: "apply-on-confirm"` → `applyPolicy: "confirm-per-field"`.
+- Legacy `outputMode: "auto-apply"` → `applyPolicy: "auto"`.
+- `responseFormat` defaults to `"json-scalars"` if `outputSchema.length > 0`, else `"text-brief"`.
+- Unknown `responseFormat` / `applyPolicy` values fall back to safe defaults.
+- `providerKey` stays `null` if not set.
+
+### §12.2 · Binding path contract
+
+Two root namespaces. Template bindings use dot-notation.
+
+| Root | Meaning | Read at bind-time | Writable at apply-time |
+|---|---|---|---|
+| `session.*` | Persisted session state (`sessionStore.js`). | Every skill run. | Only the subset declared writable in `FIELD_MANIFEST`. |
+| `context.*` | Runtime-scoped tab selection (e.g. `context.selectedGap`). Built by the tab view at `useAiButton` time. | Every skill run. | Only paths with a registered resolver in `core/bindingResolvers.js`. |
+
+**`FIELD_MANIFEST` entry shape** (`core/fieldManifest.js`):
+
+```jsonc
+{
+  path:     "context.selectedGap.description",
+  label:    "Selected gap description",
+  kind:     "scalar" | "array",
+  writable: true | false                  // v2.4.4 — must be true for outputSchema eligibility
+}
+```
+
+**`WRITE_RESOLVERS` entry shape** (`core/bindingResolvers.js`):
+
+```js
+// Map<string, function(session, context, value) => void>
+"context.selectedGap.description": function(session, context, value) {
+  var gap = session.gaps.find(g => g.id === context.selectedGap.id);
+  if (!gap) throw new Error("Target gap not found");
+  gap.description = value;
+}
+```
+
+**Extension point** — exposing a new writable field = (a) add `writable: true` to the `FIELD_MANIFEST` entry, (b) add a resolver in `WRITE_RESOLVERS`. `applyProposal` rejects unknown writable paths; the resolver is the only way to mutate via AI.
+
+### §12.3 · System-prompt footer (`core/promptGuards.js`)
+
+Non-removable footer appended to every skill's system message at run time. Selected by `responseFormat`:
+
+- **`text-brief`** — hard constraint: ≤120 words, numbered bullets, no preamble, no disclaimer.
+- **`json-scalars`** — response MUST be a single JSON object with only the keys declared in `outputSchema`.
+- **`json-commands`** (v2.4.5+) — response MUST be a JSON object `{ commands: [...] }` where each command is an op from the action-commands whitelist.
+
+Footer always wins over user-authored prompt (positional priority in the system role).
+
+### §12.4 · Proposals model (`interactions/aiCommands.js`)
+
+`parseProposals(responseText, outputSchema)` returns:
+
+```jsonc
+{ ok: true,  proposals: [{ path, label, kind, before, after }] }    // or:
+{ ok: false, error: "...human-readable..." }
+```
+
+**Parser tolerance**: strips code-fences (```` ```json ... ``` ````), extracts the first top-level `{...}` from wordy responses. Any response whose top-level JSON has keys outside the skill's `outputSchema` has those keys silently dropped (allowlist).
+
+`applyProposal(proposal, {session, context})`:
+- If `path.startsWith("session.")` → direct `setPathFromRoot` write.
+- Else if `WRITE_RESOLVERS[path]` exists → call with `(session, context, proposal.after)`.
+- Else → throw (path is not declared writable).
+
+`applyAllProposals(proposals, {session, context})` batches under one undo entry.
+
+### §12.5 · Undo stack (`state/aiUndoStack.js`)
+
+In-memory, per-tab, max 10 entries. Every apply path pushes a snapshot BEFORE mutation.
+
+```js
+push(label, snapshot?)   // snapshot defaults to current session clone
+undoLast()               // pops + restores + fires notify()
+canUndo() / peekLabel() / depth()
+onUndoChange(fn)         // UI subscription
+```
+
+Not persisted across page reloads — session reload clears the stack. Users have Export JSON as the durable rollback path.
+
+### §12.6 · Action-commands schema (locked for v2.4.5+, stubbed today)
+
+```jsonc
+{
+  commands: [
+    { op: "updateField",  path: "session.customer.region",  value: "EMEA" },
+    { op: "createGap",    props: { description, layerId, gapType, ... } },
+    { op: "updateGap",    gapId: "g-005", patch: { urgency: "High", phase: "now" } },
+    { op: "deleteGap",    gapId: "g-005" },
+    { op: "linkInstance", gapId: "g-005", instanceId: "i-003", side: "current" | "desired" },
+    { op: "setGapDriver", gapId: "g-005", driverId: "cyber_resilience" }
+  ]
+}
+```
+
+**Whitelist**: `core/actionCommands.js` (to be created in v2.4.5) maps each `op` to an existing `interactions/*Commands.js` function. Unknown ops rejected at parse time. Each batch produces a single undo entry.
+
+Today (v2.4.4): parser declared but `getSystemFooter("json-commands")` returns a stubbed-but-functional footer; `applyProposal` for a json-commands skill refuses to execute with a clear error.
+
+### §12.7 · Extension points summary
+
+| To add… | Edit | No version bump needed |
+|---|---|---|
+| A new AI provider | `PROVIDERS` in `aiConfig.js`, shape in `aiService.js`, proxy path in entrypoint script | ✅ |
+| A new bindable read-only field | One entry in `FIELD_MANIFEST` for the relevant tab | ✅ |
+| A new writable field | `FIELD_MANIFEST` entry with `writable:true` + `WRITE_RESOLVERS` entry | ✅ |
+| A new action-command op | `ACTION_COMMANDS` entry in `actionCommands.js` (v2.4.5+) | ✅ |
+| A new response format | `promptGuards.js` footer + `skillEngine.js` dispatch + one test | Bump `ai_skills_v1` → `v2` if it changes persisted shape |
+| A new apply policy | `UseAiButton.js` branch + one test | ✅ |
+
+### §12.8 · Invariants (regression gates)
+
+1. Every skill stored in localStorage round-trips through `normalizeSkill` exactly; unknown legacy fields are preserved or migrated, never dropped silently.
+2. Every path in a skill's `outputSchema` is either a `session.*` path OR has a `WRITE_RESOLVERS` entry. Enforced by load-time validation in v2.4.4+.
+3. No direct session mutation from any AI-adjacent code path outside `interactions/aiCommands.js`. Every mutation goes through `applyProposal` / `applyAllProposals` / (v2.4.5+) `applyCommand`.
+4. Every apply pushes an undo snapshot. Fail-safe: if `aiUndoStack.push` throws, apply aborts.
+5. API keys never leave the user's browser localStorage except to flow through the nginx proxy to the declared upstream. No telemetry, no logging (`access_log off` on `/api/llm/*`).
 
 ---
 

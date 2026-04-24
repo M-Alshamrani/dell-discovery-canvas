@@ -841,6 +841,60 @@ Tagged `v2.1.2`. No code or test changes.
 
 ---
 
+## v2.4.4 · Phase 19d · Unified AI platform — IMPLEMENTED (2026-04-24)
+
+**Goal**: Stop organic accretion of AI shapes. Lock a coherent data model (SPEC §12) that every future scenario composes against without rework. Three big deliverables bundled:
+
+1. Unified output-behavior model — `responseFormat` × `applyPolicy`.
+2. Writable-path resolvers — `context.*` paths declared `writable:true` in `FIELD_MANIFEST` must have a matching function in `core/bindingResolvers.js`. applyProposal dispatches session.* vs context.* automatically.
+3. Apply-on-confirm UI + in-memory undo stack + per-skill provider override.
+
+### What shipped
+
+- `SPEC.md §12` — full AI platform specification (authoritative data model, extension points, invariants).
+- `core/skillStore.js` — unified schema with `responseFormat`, `applyPolicy`, `outputSchema`, `providerKey`; legacy `outputMode` migrates on load.
+- `core/fieldManifest.js` — `writable: true|false` on every entry; `writableFieldsForTab()` helper for the admin chip palette.
+- `core/bindingResolvers.js` — NEW. 13 resolvers: drivers (priority/outcomes), instances (criticality/notes/disposition/priority), gaps (description/gapType/urgency/phase/status/notes/driverId).
+- `core/promptGuards.js` — `getSystemFooter(responseFormat, opts)`; json-commands stub footer declared.
+- `services/skillEngine.js` — derives effective responseFormat; returns proposals + applyPolicy so UseAiButton can branch.
+- `interactions/aiCommands.js` — applyProposal dispatches session.* vs context.* + uses WRITE_RESOLVERS; rolls back undo snapshot on apply-failure.
+- `state/aiUndoStack.js` — NEW. In-memory stack (max 10) with onUndoChange listeners.
+- `state/sessionStore.js` — `replaceSession(snapshot)` helper preserves module-scoped identity.
+- `ui/views/SkillAdmin.js` — Response Format + Apply Policy dropdowns replace single Output Mode.
+- `ui/components/UseAiButton.js` — branches on applyPolicy; feeds context into applyProposal for resolvers.
+- `index.html + app.js` — header Undo chip wired to aiUndoStack.
+- `styles.css` — proposals panel, undo chip, output-schema toggle chips.
+- `diagnostics/appSpec.js Suite 30` — OH1-OH17 covering schema round-trip, parser tolerance, undo contracts, writable-path invariant, resolver-based apply, legacy migration, enum locks, json-commands stub.
+
+### KNOWN UX ISSUES — queued for v2.4.5 Foundations Refresh
+
+Tests (416 machine assertions) all pass, but the following UX polish is incomplete. Explicit list so nothing gets lost:
+
+1. **Post-undo tab blanking** — after clicking the ↶ Undo chip, the current tab can appear blank until the user navigates away and back. Root cause: views don't subscribe to a "session-changed" signal; the cached "selected" reference stays stale. Fix: emit session-changed event from applyProposal + undoLast; views re-resolve selection on receipt.
+2. **Driver disappears on AI apply** — same root cause as (1). Changing driver priority via AI makes the tile appear gone until navigation.
+3. **Undo chip vague** — generic "Undo last AI change" label; no tooltip showing what will revert. v2.4.5 surfaces stack depth + last-change label.
+4. **Undo not persistent** — stack is in-memory, clears on page reload. v2.4.5 persists to localStorage.
+5. **Demo session stale** — `createDemoSession()` predates Phase 16 (no workload-layer instances) and Phase 18 (no multi-linked patterns). Demo is supposed to be the human-test surface for every feature; it's drifted. v2.4.5 extracts to `state/demoSession.js` + refreshes data + adds `diagnostics/demoSpec.js` integration tests + `DEMO_CHANGELOG.md`.
+6. **Seed skill library minimal** — only one text-brief skill. v2.4.5 adds 4-5 seeds covering text + json-scalars + each tab.
+
+Per `feedback_foundational_testing.md` (saved this session): every future data-model change ships with demo refresh + seed update + demoSpec assertion in the SAME turn. v2.4.5 is the first release under this rule.
+
+---
+
+## v2.4.5 · Phase 19e · Foundations Refresh — QUEUED (fresh session)
+
+**Scope**:
+1. Fix the 4 known UX issues from v2.4.4 (session-changed event, driver-tile refresh, undo chip tooltip + stack panel, localStorage undo persistence).
+2. Extract demo session data to `state/demoSession.js` as its own module; refresh to exercise Phase 16 workloads + Phase 18 multi-linked patterns + current gap schema.
+3. NEW `core/seedSkills.js` library with 4-5 skills across tabs + response formats.
+4. NEW `diagnostics/demoSpec.js` test suite — asserts demo + seeds stay in sync with the live data model (catches "demo still uses v2.0 gap shape" drift).
+5. NEW `docs/DEMO_CHANGELOG.md` — demo-module audit trail separate from app CHANGELOG.
+6. NEW `diagnostics/integrationSpec.js` — end-to-end flows (apply + undo integrity, view re-render after AI apply).
+
+**Est scope**: ~3 hr. Deserves its own session with fresh context. Spec locked in `feedback_foundational_testing.md` — fresh session can implement directly.
+
+---
+
 ## v2.4.3 · Phase 19d.1 · Prompt guards + Refine-to-CARE + test-before-save gate — IMPLEMENTED (2026-04-19)
 
 **Goal**: Enforce output quality across every skill. User was getting long-article AI responses unsuitable for live workshop use. Also: give users an AI-powered "rewrite my messy prompt into CARE format" button, and force a test-before-save discipline so broken skills never ship.
@@ -1412,8 +1466,9 @@ Resuming numbering from where we stopped. Tagged releases: `v2.1.1`, `v2.1.2` on
 | **19c** | Field-pointer mechanic + LLM coercion + test button | `v2.4.2` ✅ SHIPPED | — |
 | **19c.1** | Pill-based editor + error-message polish | `v2.4.2.1` ✅ SHIPPED | — |
 | **19d.1** | Prompt guards (text-brief footer) + Refine-to-CARE + test-before-save gate | `v2.4.3` ✅ SHIPPED | — |
-| **19d** | Output handling (json-schema mode) + undo stack + per-skill provider | `v2.4.4` | 19d.1 |
-| **19e** | Action-command skills (structured session manipulations) | `v2.4.5+` | 19d |
+| **19d** | Unified AI platform (SPEC §12) — responseFormat + applyPolicy + writable resolvers + undo + per-skill provider | `v2.4.4` ✅ SHIPPED with known issues | — |
+| **19e** | Foundations Refresh — bug-fixes + demo module + seed skill library + integration tests + persistent undo | `v2.4.5` | 19d |
+| **19f** | Action-command skills (structured session manipulations) | `v2.4.6+` | 19e |
 | **20+** | Multi-user platform (Item 2) — separate v3 work | `v3.0.0-alpha` (new branch `v3-multiuser`) | Architecture design doc, backend stack decision, auth strategy |
 
 Items 5, 6 merged into later phases. Item 10 has no standalone phase (covered by Phase 18 test).

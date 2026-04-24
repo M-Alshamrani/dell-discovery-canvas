@@ -80,17 +80,25 @@ export async function runSkill(skill, session, context) {
   var userPrompt = renderTemplate(skill.promptTemplate, scope);
   var userSystem = renderTemplate(skill.systemPrompt || "", scope);
 
-  // v2.4.3 · non-removable output-format footer, chosen by the skill's
-  // output mode. Appended after the user's system prompt so it's the
-  // last thing the model reads for the system role (positional priority
-  // helps adherence).
-  var footer = getSystemFooter(skill.outputMode || "text-brief");
+  // v2.4.4 · unified output-behavior model. The skill's responseFormat
+  // drives the footer directly (see SPEC §12.3). Defaults: if no
+  // responseFormat but an outputSchema is present → json-scalars; else
+  // text-brief. This migration path keeps v2.4.3 skills rendering
+  // correctly without an explicit rewrite.
+  var hasSchema = Array.isArray(skill.outputSchema) && skill.outputSchema.length > 0;
+  var responseFormat = skill.responseFormat
+    || (hasSchema ? "json-scalars" : "text-brief");
+  var footer = getSystemFooter(responseFormat, { outputSchema: skill.outputSchema });
   var systemPrompt = userSystem
     ? userSystem + "\n\n" + footer
     : footer;
 
+  // v2.4.4 · per-skill provider override. null/empty = use active.
   var config = loadAiConfig();
-  var active = config.providers[config.activeProvider];
+  var useProviderKey = (skill.providerKey && config.providers[skill.providerKey])
+    ? skill.providerKey
+    : config.activeProvider;
+  var active = config.providers[useProviderKey];
 
   var messages = [];
   messages.push({ role: "system", content: systemPrompt });
@@ -98,14 +106,37 @@ export async function runSkill(skill, session, context) {
 
   try {
     var res = await chatCompletion({
-      providerKey: config.activeProvider,
+      providerKey: useProviderKey,
       baseUrl:     active.baseUrl,
       model:       active.model,
       apiKey:      active.apiKey,
       messages:    messages
     });
-    return { ok: true, text: res.text, providerKey: config.activeProvider, prompt: userPrompt };
+    var result = {
+      ok: true,
+      text: res.text,
+      providerKey: useProviderKey,
+      prompt: userPrompt,
+      responseFormat: responseFormat,
+      applyPolicy: skill.applyPolicy || (responseFormat === "json-scalars" ? "confirm-per-field" : "show-only")
+    };
+    // v2.4.4 · if json-scalars, also parse the response into structured
+    // proposals. Caller decides whether to render text (legacy) or the
+    // apply-on-confirm proposal list based on applyPolicy.
+    if (responseFormat === "json-scalars" && hasSchema) {
+      var aiCommands = await import("../interactions/aiCommands.js");
+      var parsed = aiCommands.parseProposals(res.text || "", skill.outputSchema, context || {});
+      if (parsed.ok) result.proposals = parsed.proposals;
+      else           result.proposalsError = parsed.error;
+    }
+    // v2.4.5+ · json-commands parsing is declared in the schema but
+    // the parser hasn't shipped yet. Surface a clear message so skills
+    // saved with that responseFormat fail loudly rather than silently.
+    if (responseFormat === "json-commands") {
+      result.proposalsError = "json-commands response format ships in v2.4.5+. Save this skill with responseFormat='text-brief' or 'json-scalars' until then.";
+    }
+    return result;
   } catch (e) {
-    return { ok: false, error: e.message || String(e), providerKey: config.activeProvider, prompt: userPrompt };
+    return { ok: false, error: e.message || String(e), providerKey: useProviderKey, prompt: userPrompt };
   }
 }

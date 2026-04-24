@@ -1,10 +1,10 @@
 // ui/views/SettingsModal.js — Phase 19 / v2.4.0
 //
 // Gear-icon-opened modal for AI provider configuration. Three tabs:
-// Local LLM (GB10), Anthropic Claude, Google Gemini. Each tab exposes
-// endpoint URL + model + API key (where applicable) + a "Test connection"
-// probe that fires a tiny "Reply OK" prompt to verify wiring before any
-// real skill runs.
+// Local LLM (self-hosted on the deployment host), Anthropic Claude,
+// Google Gemini. Each tab exposes endpoint URL + model + API key
+// (where applicable) + a "Test connection" probe that fires a tiny
+// "Reply OK" prompt to verify wiring before any real skill runs.
 
 import { loadAiConfig, saveAiConfig, PROVIDERS } from "../../core/aiConfig.js";
 import { testConnection } from "../../services/aiService.js";
@@ -100,7 +100,7 @@ export function openSettingsModal(opts) {
   } else {
     urlGroup.appendChild(mkt("div", "settings-help-inline",
       "Default '/api/llm/local/v1' uses the container proxy (LLM_HOST env var). " +
-      "Paste an absolute URL like 'http://<gb10-ip>:8000/v1' to call the GB10 directly (vLLM CORS must permit it)."));
+      "Paste an absolute URL like 'http://<host-ip>:8000/v1' to call the inference host directly (upstream CORS must permit it)."));
   }
   urlGroup.appendChild(urlInput);
   form.appendChild(urlGroup);

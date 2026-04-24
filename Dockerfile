@@ -1,5 +1,5 @@
 # Dell Discovery Canvas — static-file image
-# Base: nginx:alpine (multi-arch, includes linux/arm64 for Dell GB10 / Grace).
+# Base: nginx:alpine (multi-arch; includes linux/arm64 for any ARM host).
 FROM nginx:1.27-alpine
 
 # apache2-utils provides the `htpasswd` binary used by the optional Basic

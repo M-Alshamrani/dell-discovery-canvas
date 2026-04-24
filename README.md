@@ -1,7 +1,7 @@
 # Dell Discovery Canvas
 
 **IT / Enterprise Architecture Discovery Tool for Dell Presales**
-Version 2.4.3 · Vanilla JavaScript ES Modules · No build step required
+Version 2.4.4 · Vanilla JavaScript ES Modules · No build step required
 
 ---
 
@@ -23,7 +23,7 @@ Open http://localhost:8000 — that's it. No npm, no bundler, no dependencies.
 
 > **Why a server?** ES module imports don't work on `file://` URLs. Any static server will do — Python's built-in is simplest. `npx serve .` also works if you have Node installed.
 
-### Docker (shared hosts, Dell GB10)
+### Docker (shared Linux hosts)
 
 ```bash
 docker compose up -d --build
@@ -129,6 +129,7 @@ Session state persists to `localStorage` under key `dell_discovery_v1`. Data sta
 
 ## Version history
 
+- **v2.4.4** (2026-04-24) — Phase 19d: Unified AI platform. SPEC §12 formalises the data model: `responseFormat` (text-brief / json-scalars / json-commands) + `applyPolicy` (show-only / confirm-per-field / confirm-all / auto) replace the overlapping `outputMode` + `outputSchema` dispatch. Every writable path declared via `FIELD_MANIFEST.writable` + `core/bindingResolvers.js` (13 resolvers for drivers/instances/gaps). Apply-on-confirm proposals panel with Apply/Skip/Apply-all per `applyPolicy`. In-memory undo stack (max 10). Per-skill provider override. Action-commands schema locked for v2.4.5+. Suite 30 adds 17 OH* assertions; 416+ tests green. Known UX gaps (post-undo tab rendering, driver tile refresh, undo-chip vagueness, in-memory-only undo, stale demo data) explicitly queued for v2.4.5 Foundations Refresh.
 - **v2.4.3** (2026-04-19) — Phase 19d.1: Prompt quality guardrails. Mandatory output-format footer (≤120 words, terse bullets, no preamble) appended to every skill's system prompt at run time — kills the "long article" response pattern. "✨ Refine to CARE format" button (Context / Ask / Rules / Examples) AI-rewrites user drafts with side-by-side diff (Accept / Keep / Edit). Save button disabled until a successful test matches the current draft — forces the iteration loop. Mode-aware architecture: text-brief today; json-schema (v2.4.4) and action-commands (v2.4.5+) declared ready. Suite 29 adds 6 PG* assertions; banner now 399/399 green.
 - **v2.4.2.1** (2026-04-19) — Phase 19c.1: Pill-based binding editor. Template textarea in the skill builder replaced with a contenteditable editor hosting inline uneditable pill elements for each binding. Click a field chip → pill appears; Backspace → pill removed as a unit (no partial `{{path}}` corruption). Blue scalars, amber arrays, italic bare (Alt-inserted). Error messages now categorise HTTP status — 401/403 points to the API-key field, 5xx calls out upstream-transient. Suite 28 adds 7 PE* tests; banner 393/393 green.
 - **v2.4.2** (2026-04-19) — Phase 19c: Field-pointer mechanic + LLM-friendly coercion + test-skill. Per-tab manifest of bindable fields; clicking a chip inserts `Label: {{path}}` at the cursor (Alt-click for bare), so presales don't have to type or memorise dot-paths. Live template preview renders against current session. "Test skill now" button dry-runs the draft for iteration. Array/object bindings now serialise as pretty-printed JSON (soft-capped at 1200 chars) so the LLM gets readable content, not `[object Object]`. Suite 27 adds 9 FP* assertions; banner now 386/386 green.
@@ -160,4 +161,4 @@ This is a private internal Dell presales tool. All non-trivial changes go throug
 
 ---
 
-*Dell Technologies Presales · Internal tool · v2.4.3*
+*Dell Technologies Presales · Internal tool · v2.4.4*

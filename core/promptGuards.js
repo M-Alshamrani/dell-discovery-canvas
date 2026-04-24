@@ -25,41 +25,100 @@ var TEXT_BRIEF_FOOTER = [
   "- Output must be directly pastable into live workshop notes. The Dell presales user will read this during a customer call — brevity and signal density are the whole point."
 ].join("\n");
 
-// Declared now so the skill schema's outputMode is already mode-aware,
-// but these implementations ship in their respective slices.
+// v2.4.4 — json-schema mode. Caller passes the declared outputSchema so
+// the footer can name the allowed paths and types inline. AI MUST return
+// strict JSON with only those keys; the response parser rejects anything
+// else.
+function jsonSchemaFooter(outputSchema) {
+  var schemaLines = (outputSchema || []).map(function(entry) {
+    var sample = entry.kind === "array" ? "[ ... ]"
+               : entry.kind === "number" ? "0"
+               : entry.kind === "boolean" ? "true"
+               : "\"...\"";
+    return "  \"" + entry.path + "\": " + sample + "   // " + (entry.label || entry.path);
+  }).join("\n");
+  return [
+    "OUTPUT REQUIREMENTS (applied automatically — not negotiable):",
+    "- Return ONLY a single JSON object. No preamble. No explanation. No code fences.",
+    "- The JSON object MUST contain only these keys (omit any you can't confidently fill):",
+    "{",
+    schemaLines,
+    "}",
+    "- String values: be pragmatic and brief (ideally under 40 words each). No prose paragraphs.",
+    "- If you cannot confidently propose a value for a key, omit the key entirely rather than guess.",
+    "- Your entire response must parse as valid JSON on the first attempt."
+  ].join("\n");
+}
+
+// v2.4.4 stub footer for json-commands so the schema is visible to the
+// model (and to anyone inspecting the wire). The response parser
+// (skillEngine) refuses to execute commands until v2.4.5 wires
+// core/actionCommands.js.
+var JSON_COMMANDS_FOOTER_STUB = [
+  "OUTPUT REQUIREMENTS (applied automatically — not negotiable):",
+  "- Return ONLY a single JSON object with one key: \"commands\".",
+  "- Each command is an object: { \"op\": \"<opName>\", ...args }.",
+  "- Supported ops (v2.4.5+): updateField, createGap, updateGap,",
+  "  deleteGap, linkInstance, setGapDriver.",
+  "- Your entire response must parse as valid JSON on the first attempt.",
+  "- No preamble, no explanation, no code fences."
+].join("\n");
+
+// Declared now so the skill schema's outputMode is already mode-aware.
+// Remaining stubs throw with a version pointer so callers fail fast.
 function notImplemented(mode, slice) {
   return function() {
     throw new Error("promptGuards: output mode '" + mode + "' ships in " + slice);
   };
 }
 
-var FOOTERS = {
-  "text-brief":       function() { return TEXT_BRIEF_FOOTER; },
-  "json-schema":      notImplemented("json-schema",      "v2.4.4 (apply-on-confirm)"),
-  "action-commands":  notImplemented("action-commands",  "v2.4.5+ (structured action skills)")
-};
-
 // Returns the footer string for a given output mode. Unknown modes fall
 // back to text-brief so a legacy skill written before output modes
 // existed still gets the safe default.
-export function getSystemFooter(outputMode) {
-  var fn = FOOTERS[outputMode];
-  if (!fn) return TEXT_BRIEF_FOOTER;
-  return fn();
+//
+// opts may carry { outputSchema } for modes that depend on skill-level
+// data (json-schema). The caller from runSkill threads the active skill
+// through.
+export function getSystemFooter(responseFormat, opts) {
+  if (responseFormat === "text-brief" || !responseFormat) return TEXT_BRIEF_FOOTER;
+  // v2.4.4 · accept both the unified name 'json-scalars' and the legacy
+  // 'json-schema' name for backward-compat with mid-development skills.
+  if (responseFormat === "json-scalars" || responseFormat === "json-schema") {
+    var schema = (opts && opts.outputSchema) || [];
+    if (!Array.isArray(schema) || schema.length === 0) {
+      // Caller promised structured output but didn't hand a schema —
+      // fall back to text-brief rather than send a skeleton with no keys.
+      return TEXT_BRIEF_FOOTER;
+    }
+    return jsonSchemaFooter(schema);
+  }
+  if (responseFormat === "json-commands") {
+    // v2.4.5+ · footer declared but parser stub lives in skillEngine.
+    // Return a real footer so manual tests can see the shape; the
+    // parser refuses to execute until v2.4.5 wires the action whitelist.
+    return JSON_COMMANDS_FOOTER_STUB;
+  }
+  if (responseFormat === "action-commands") {
+    return notImplemented("action-commands", "v2.4.5+ (structured action skills)")();
+  }
+  return TEXT_BRIEF_FOOTER;
 }
 
 // For the skill-admin UI: a one-line summary of what the footer
 // guarantees, shown under the system-prompt textarea. Keeps the user
 // aware without dumping the full footer at them.
-export function summaryForMode(outputMode) {
-  if (outputMode === "text-brief") {
-    return "Plus automatic output-format guards applied at run time: ≤120 words, terse bullets, no preamble, no prose. Non-removable.";
+export function summaryForMode(responseFormat, hasSchema) {
+  if ((responseFormat === "json-scalars" || responseFormat === "json-schema") && hasSchema) {
+    return "json-scalars mode: AI returns a JSON object with the declared paths; applied per the skill's applyPolicy. Non-removable.";
   }
-  if (outputMode === "json-schema") {
-    return "JSON-schema mode ships in v2.4.4 alongside apply-on-confirm.";
+  if (responseFormat === "text-brief" || !responseFormat) {
+    return "text-brief mode: ≤120 words, terse bullets, no preamble, no prose. Non-removable.";
   }
-  if (outputMode === "action-commands") {
-    return "Action-commands mode ships in v2.4.5+.";
+  if (responseFormat === "json-scalars" || responseFormat === "json-schema") {
+    return "json-scalars mode (needs an output schema). Until you declare output fields below, text-brief rules apply.";
+  }
+  if (responseFormat === "json-commands") {
+    return "json-commands mode: footer declared, parser ships in v2.4.5+.";
   }
   return "Output-format guards applied at run time.";
 }

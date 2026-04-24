@@ -37,7 +37,7 @@ Then run `start.bat` (Windows) or `./start.sh` (macOS / Linux).
 
 To pull the latest changes later: `git pull`, then restart.
 
-### Option C — Docker (Linux hosts, e.g. Dell GB10)
+### Option C — Docker (Linux hosts, including ARM64 appliances)
 
 For shared internal deployments. Requires Docker + Docker Compose installed.
 
@@ -53,8 +53,8 @@ By default the container binds to `127.0.0.1` (localhost only — safe even on a
 
 To stop: `docker compose down`. To follow logs: `docker compose logs -f`.
 
-> **Note**: Port 8080 was chosen to avoid clashing with NVIDIA vLLM containers
-> on the GB10 (Code LLM uses :8000, VLM uses :8001). If you need a different
+> **Note**: Port 8080 was chosen to avoid clashing with typical self-hosted
+> vLLM containers (Code LLM on :8000, VLM on :8001). If you need a different
 > host port: `HOST_PORT=8888 docker compose up -d`.
 
 #### Exposing to the LAN with Basic auth (v2.2.1+)
