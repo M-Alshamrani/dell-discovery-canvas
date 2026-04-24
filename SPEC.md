@@ -776,7 +776,7 @@ A separate `SPEC_v3.md` will capture this architecture when work starts.
 
 **Purpose**: every AI feature — existing or future — composes against these shapes. New provider, new tab binding, new action command, new output mode all follow the same pattern. Adding a scenario should never require rewriting earlier ones.
 
-Shipped through **v2.4.4** · Phase 19a-d · enterprise-grade, vendor-neutral.
+Shipped through **v2.4.5** · Phase 19a-e · enterprise-grade, vendor-neutral.
 
 ### §12.1 · Storage contracts (localStorage, `ai_*_v<n>` namespace)
 
@@ -923,16 +923,35 @@ Footer always wins over user-authored prompt (positional priority in the system 
 
 ### §12.5 · Undo stack (`state/aiUndoStack.js`)
 
-In-memory, per-tab, max 10 entries. Every apply path pushes a snapshot BEFORE mutation.
+Max 10 entries, LIFO. Every apply path pushes a snapshot BEFORE mutation.
 
 ```js
 push(label, snapshot?)   // snapshot defaults to current session clone
-undoLast()               // pops + restores + fires notify()
+undoLast()               // pops + restores + emits "ai-undo"
+undoAll()                // restores oldest snapshot + clears + emits "ai-undo"
 canUndo() / peekLabel() / depth()
+recentLabels(max?)       // newest-first label list for the header tooltip
+clear()                  // drops every entry (called by resetSession / resetToDemo)
 onUndoChange(fn)         // UI subscription
 ```
 
-Not persisted across page reloads — session reload clears the stack. Users have Export JSON as the durable rollback path.
+**v2.4.5 (Foundations Refresh)** — persisted to `localStorage` under `ai_undo_v1`; survives page reload; cleared on `resetSession` / `resetToDemo`. Users still have Export JSON as the durable-across-installs rollback path.
+
+### §12.5a · Session-changed event bus (`core/sessionEvents.js`)
+
+Pub/sub fired after every session-root mutation so views can re-render with live data. Introduced in v2.4.5 to fix the v2.4.4 "driver tile vanishes on AI apply" + "tab blanks after undo" bugs.
+
+```js
+emitSessionChanged(reason, label?)    // reserved reasons:
+                                      //   "ai-apply", "ai-undo",
+                                      //   "session-reset", "session-demo",
+                                      //   "session-replace"
+onSessionChanged(fn) => unsubscribe   // fn receives { reason, label }
+```
+
+`applyProposal` / `applyAllProposals` / `undoLast` / `undoAll` / `resetSession` / `resetToDemo` all emit. Subscribers MUST re-resolve any "selected" entity (driver / instance / gap / project) by id against the live session before re-rendering — the entity may have been mutated, replaced, or removed.
+
+`app.js` is the single subscriber that calls `renderHeaderMeta() + renderStage()` on every event. Individual views don't subscribe; they get re-invoked by the shell.
 
 ### §12.6 · Action-commands schema (locked for v2.4.5+, stubbed today)
 
@@ -971,6 +990,9 @@ Today (v2.4.4): parser declared but `getSystemFooter("json-commands")` returns a
 3. No direct session mutation from any AI-adjacent code path outside `interactions/aiCommands.js`. Every mutation goes through `applyProposal` / `applyAllProposals` / (v2.4.5+) `applyCommand`.
 4. Every apply pushes an undo snapshot. Fail-safe: if `aiUndoStack.push` throws, apply aborts.
 5. API keys never leave the user's browser localStorage except to flow through the nginx proxy to the declared upstream. No telemetry, no logging (`access_log off` on `/api/llm/*`).
+6. **(v2.4.5)** Every session-root mutation emits a `session-changed` event. `applyProposal` → `"ai-apply"`; `undoLast` / `undoAll` → `"ai-undo"`; `resetSession` → `"session-reset"`; `resetToDemo` → `"session-demo"`. Enforced by `demoSpec DS16 / DS17`.
+7. **(v2.4.5)** Every seed skill's `outputSchema` path must exist in `FIELD_MANIFEST[tab]` AND be `writable: true`. Enforced by `demoSpec DS9 / DS10`.
+8. **(v2.4.5 · two-surface rule — feedback_foundational_testing.md)** Every data-model change (add / rename / remove a field on instances, gaps, drivers, session metadata) MUST ship in the same commit as: (a) a refreshed `state/demoSession.js` that exercises the field, (b) a seed skill in `core/seedSkills.js` that demonstrates it (if writable), (c) a new or updated assertion in `diagnostics/demoSpec.js`, (d) an entry in `docs/DEMO_CHANGELOG.md`. Reviewers reject PRs that miss any of the four surfaces.
 
 ---
 

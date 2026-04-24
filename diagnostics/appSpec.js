@@ -3907,6 +3907,7 @@ import {
   loadSkills, saveSkills, addSkill, updateSkill, deleteSkill,
   seedSkills, skillsForTab, getSkill
 } from "../core/skillStore.js";
+import { SEED_SKILL_IDS } from "../core/seedSkills.js";
 import { renderTemplate, extractBindings } from "../services/skillEngine.js";
 import { renderSkillAdmin } from "../ui/views/SkillAdmin.js";
 
@@ -3914,18 +3915,30 @@ describe("26 · Phase 19b · Skill Builder — store, engine, admin UI", () => {
 
   function clearSkills() { window.localStorage.removeItem("ai_skills_v1"); }
 
-  it("SB1 · loadSkills seeds the Tab 1 driver-question skill on first run", () => {
+  it("SB1 · loadSkills auto-seeds the skill library on first run", () => {
+    // v2.4.5 · seed library expanded from 1 to SEED_SKILL_IDS.length
+    // (one per tab + an extra json-scalars on Context). Every seeded
+    // skill must be deployed so every tab's Use-AI dropdown is populated
+    // on a fresh install.
     clearSkills();
     const skills = loadSkills();
-    assertEqual(skills.length, 1, "fresh install must auto-seed 1 skill");
-    assertEqual(skills[0].tabId, "context", "seeded skill targets the Context tab");
-    assert(skills[0].deployed, "seeded skill must be deployed by default");
-    assert(skills[0].seed, "seeded skill carries seed: true marker");
+    assertEqual(skills.length, SEED_SKILL_IDS.length,
+      "fresh install must auto-seed all " + SEED_SKILL_IDS.length + " seed skills");
+    // The canonical Tab 1 driver-questions seed must be present (back-compat id).
+    const ctxSeed = skills.find(s => s.id === "skill-driver-questions-seed");
+    assert(ctxSeed, "legacy Context-tab driver-questions seed must be present by id");
+    assertEqual(ctxSeed.tabId, "context", "legacy seed targets the Context tab");
+    // Every seeded skill must be deployed + seed-flagged.
+    skills.forEach(s => {
+      assert(s.deployed, "seeded skill '" + s.id + "' must be deployed by default");
+      assert(s.seed,     "seeded skill '" + s.id + "' carries seed: true marker");
+    });
   });
 
   it("SB2 · addSkill / updateSkill / deleteSkill round-trip via localStorage", () => {
     clearSkills();
-    loadSkills(); // trigger the seed so we start from a known baseline of 1
+    loadSkills(); // trigger the seed so we start from a known baseline
+    const seedCount = SEED_SKILL_IDS.length;
     const created = addSkill({
       name: "Gap description writer",
       tabId: "gaps",
@@ -3934,7 +3947,7 @@ describe("26 · Phase 19b · Skill Builder — store, engine, admin UI", () => {
     });
     assert(created.id, "addSkill must return a skill with an id");
     var all = loadSkills();
-    assertEqual(all.length, 2, "persistence must include seed + added skill");
+    assertEqual(all.length, seedCount + 1, "persistence must include seed library + added skill");
 
     const updated = updateSkill(created.id, { name: "Renamed skill", deployed: false });
     assertEqual(updated.name, "Renamed skill", "updateSkill applies patch");
@@ -3942,7 +3955,7 @@ describe("26 · Phase 19b · Skill Builder — store, engine, admin UI", () => {
 
     deleteSkill(created.id);
     all = loadSkills();
-    assertEqual(all.length, 1, "deleteSkill removes the row (seed remains)");
+    assertEqual(all.length, seedCount, "deleteSkill removes the row (seed library remains)");
     clearSkills();
   });
 
@@ -3970,26 +3983,31 @@ describe("26 · Phase 19b · Skill Builder — store, engine, admin UI", () => {
   });
 
   it("SB5 · skillsForTab filters by tabId and (by default) by deployed flag", () => {
+    // v2.4.5 · seed library now ships multiple Context seeds AND a seed
+    // per tab. Assert relative deltas instead of absolute counts so the
+    // test survives future seed additions.
     clearSkills();
-    loadSkills(); // seed
+    const baselineCtx   = skillsForTab("context").length;
+    const baselineGaps  = skillsForTab("gaps").length;
     addSkill({ name: "Deployed gaps skill",   tabId: "gaps", promptTemplate: "x", deployed: true });
     addSkill({ name: "Undeployed gaps skill", tabId: "gaps", promptTemplate: "x", deployed: false });
-    const ctx  = skillsForTab("context");
-    const gaps = skillsForTab("gaps");
-    assertEqual(ctx.length,  1, "context tab returns the seed only");
-    assertEqual(gaps.length, 1, "gaps tab returns the deployed skill only (undeployed hidden)");
-    const allGaps = skillsForTab("gaps", { onlyDeployed: false });
-    assertEqual(allGaps.length, 2, "onlyDeployed:false includes the undeployed row");
+    assertEqual(skillsForTab("context").length, baselineCtx,
+      "context tab unchanged when adding gaps skills");
+    assertEqual(skillsForTab("gaps").length, baselineGaps + 1,
+      "gaps tab gains one deployed skill (undeployed hidden by default)");
+    assertEqual(skillsForTab("gaps", { onlyDeployed: false }).length, baselineGaps + 2,
+      "onlyDeployed:false includes the undeployed row too");
     clearSkills();
   });
 
   it("SB6 · Skills admin renders a row per saved skill + the + Add button", () => {
     clearSkills();
-    loadSkills(); // seed = 1 row
+    loadSkills(); // seed library = SEED_SKILL_IDS.length rows
     const container = document.createElement("div");
     renderSkillAdmin(container);
     const rows = container.querySelectorAll(".skill-row");
-    assertEqual(rows.length, 1, "one row for the seeded skill");
+    assertEqual(rows.length, SEED_SKILL_IDS.length,
+      "one row per seeded skill (v2.4.5 seed library = " + SEED_SKILL_IDS.length + ")");
     const addBtn = [...container.querySelectorAll("button")].find(b => b.textContent.indexOf("Add") >= 0);
     assert(addBtn, "+ Add skill button must render");
     clearSkills();
@@ -4637,6 +4655,13 @@ describe("30 · Phase 19d · Output handling + undo stack + per-skill provider",
   });
 
 });
+
+// v2.4.5 · Foundations Refresh · register the human-surface demo suite
+// into the same runner so there's a single green banner for the whole
+// release. Import at bottom to avoid circular-dependency risk with the
+// many modules demoSpec touches.
+import { registerDemoSuite } from "./demoSpec.js";
+registerDemoSuite({ describe: describe, it: it, assert: assert, assertEqual: assertEqual });
 
 export function runAllTests() {
   return run();

@@ -1,4 +1,4 @@
-// core/skillStore.js — Phase 19b / v2.4.1
+// core/skillStore.js — Phase 19b / v2.4.1 (seed library extracted in v2.4.5)
 //
 // User-defined AI skills. Each skill is bound to one tab, runs against
 // the full session plus a tab-specific context object, and renders its
@@ -6,6 +6,12 @@
 // `ai_skills_v1`. Shape is intentionally MCP-compatible (name +
 // description + input-schema-ish fieldBindings) so we can later expose
 // skills as MCP tools to other agents without a rewrite.
+//
+// v2.4.5 — seed skill data moved to `core/seedSkills.js`. This module
+// still exposes `seedSkills()` via re-export so existing call sites
+// don't break.
+
+import { seedSkills as seedSkillsImpl } from "./seedSkills.js";
 
 const STORAGE_KEY = "ai_skills_v1";
 
@@ -29,35 +35,10 @@ var LEGACY_OUTPUT_MODE_TO_APPLY_POLICY = {
 function uid() { return "skill-" + Math.random().toString(36).slice(2, 10); }
 function now() { return new Date().toISOString(); }
 
-// Seed skill — replaces the hardcoded Tab 1 demo from v2.4.0. Pre-deployed
-// so a fresh install behaves identically: opening Tab 1 still shows a
-// working AI button.
-export function seedSkills() {
-  return [
-    {
-      id:           "skill-driver-questions-seed",
-      name:         "Suggest discovery questions",
-      description: "Generate 3 tailored customer-discovery questions for the selected strategic driver.",
-      tabId:        "context",
-      systemPrompt: "You are a senior Dell Technologies presales engineer. Suggest 3 short, open-ended discovery questions a presales would ask in a 30-45 minute workshop. Each question should be 1-2 sentences.",
-      promptTemplate: [
-        "Customer name: {{session.customer.name}}.",
-        "Customer vertical: {{session.customer.vertical}}.",
-        "Strategic driver: {{context.selectedDriver.label}}.",
-        "Driver hint: {{context.selectedDriver.shortHint}}.",
-        "Driver priority for this customer: {{context.selectedDriver.priority}}."
-      ].join("\n"),
-      responseFormat: "text-brief",
-      applyPolicy:    "show-only",
-      outputSchema:   [],
-      providerKey:    null,
-      deployed:     true,
-      seed:         true,
-      createdAt:    now(),
-      updatedAt:    now()
-    }
-  ];
-}
+// v2.4.5 — re-exported from `core/seedSkills.js`. The seed library now
+// covers all 5 tabs with text-brief + json-scalars examples and
+// exercises the writable fields declared in FIELD_MANIFEST.
+export function seedSkills() { return seedSkillsImpl(); }
 
 export function loadSkills() {
   try {

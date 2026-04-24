@@ -4,6 +4,7 @@ import { session, resetSession, resetToDemo, saveToLocalStorage } from "./state/
 import { runAllTests }               from "./diagnostics/appSpec.js";
 import { openSettingsModal }         from "./ui/views/SettingsModal.js";
 import * as aiUndoStack              from "./state/aiUndoStack.js";
+import { onSessionChanged }          from "./core/sessionEvents.js";
 import { renderContextView }         from "./ui/views/ContextView.js";
 import { renderMatrixView }          from "./ui/views/MatrixView.js";
 import { renderGapsEditView }        from "./ui/views/GapsEditView.js";
@@ -41,6 +42,14 @@ document.addEventListener("DOMContentLoaded", function() {
   wireFooter();
   wireSettingsBtn();
   wireUndoBtn();
+  // v2.4.5 · every AI apply/undo + session reset routes through the
+  // session-changed bus. The app shell re-renders header + current
+  // tab so views pick up the live data (fixes the v2.4.4
+  // "driver tile vanishes" + "tab blanks after undo" bugs).
+  onSessionChanged(function() {
+    renderHeaderMeta();
+    renderStage();
+  });
   setTimeout(runAllTests, 150);
 });
 
@@ -50,23 +59,51 @@ function wireSettingsBtn() {
 }
 
 function wireUndoBtn() {
-  var btn = document.getElementById("undoBtn");
+  var btn      = document.getElementById("undoBtn");
+  var allBtn   = document.getElementById("undoAllBtn");
+  var countEl  = document.getElementById("undoCountBadge");
   if (!btn) return;
+
   function refresh() {
-    if (aiUndoStack.canUndo()) {
-      btn.style.display = "";
-      btn.title = "Undo: " + (aiUndoStack.peekLabel() || "last AI change");
-    } else {
+    var depth = aiUndoStack.depth();
+    if (depth === 0) {
       btn.style.display = "none";
+      if (allBtn) allBtn.style.display = "none";
+      return;
+    }
+    btn.style.display = "";
+    // v2.4.5 — tooltip lists what will be reverted in order.
+    var labels = aiUndoStack.recentLabels(5);
+    var tooltipLines = ["Undo last (" + depth + " AI change" + (depth === 1 ? "" : "s") + " tracked):"];
+    labels.forEach(function(l, i) { tooltipLines.push((i + 1) + ". " + l); });
+    if (depth > labels.length) tooltipLines.push("… + " + (depth - labels.length) + " older");
+    btn.title = tooltipLines.join("\n");
+    if (countEl) countEl.textContent = String(depth);
+
+    if (allBtn) {
+      if (depth >= 2) {
+        allBtn.style.display = "";
+        allBtn.title = "Revert ALL " + depth + " tracked AI change" + (depth === 1 ? "" : "s");
+      } else {
+        allBtn.style.display = "none";
+      }
     }
   }
+
   btn.addEventListener("click", function() {
     var entry = aiUndoStack.undoLast();
     if (!entry) return;
-    // Re-render the current stage so any mutated view picks up the restored state.
-    renderHeaderMeta();
-    renderStage();
+    // onSessionChanged listener re-renders; no direct render call needed.
   });
+
+  if (allBtn) {
+    allBtn.addEventListener("click", function() {
+      if (aiUndoStack.depth() < 2) return;
+      if (!confirm("Revert ALL " + aiUndoStack.depth() + " tracked AI changes? This cannot itself be undone.")) return;
+      aiUndoStack.undoAll();
+    });
+  }
+
   aiUndoStack.onUndoChange(refresh);
   refresh();
 }

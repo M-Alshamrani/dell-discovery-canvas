@@ -1,6 +1,15 @@
 // state/sessionStore.js — single source of truth
+//
+// v2.4.5 — demo session data moved to `./demoSession.js`. This module
+// still re-exports `createDemoSession` so existing callers and tests
+// don't break; see SPEC §12 and docs/DEMO_CHANGELOG.md for the rationale.
 
 import { LEGACY_DRIVER_LABEL_TO_ID } from "../core/config.js";
+import { createDemoSession as createDemoSessionImpl } from "./demoSession.js";
+import { emitSessionChanged } from "../core/sessionEvents.js";
+import { clear as clearAiUndoStack } from "./aiUndoStack.js";
+
+export { createDemoSession } from "./demoSession.js";
 
 const STORAGE_KEY = "dell_discovery_v1";
 
@@ -24,107 +33,6 @@ export function createEmptySession() {
     },
     instances:  [],
     gaps:       []
-  };
-}
-
-export function createDemoSession() {
-  return {
-    sessionId:  "sess-demo-001",
-    isDemo:     true,
-    customer: {
-      name:          "Acme Financial Services",
-      vertical:      "Financial Services",
-      segment:       "Financial Services",
-      industry:      "Financial Services",
-      region:        "EMEA",
-      drivers: [
-        {
-          id:        "cyber_resilience",
-          priority:  "High",
-          outcomes:  "Achieve full cyber resilience and reduce infrastructure TCO by 20% over 24 months, meeting NIS2 compliance by Q3 2026."
-        },
-        {
-          id:        "cost_optimization",
-          priority:  "Medium",
-          outcomes:  "Contain infrastructure OpEx growth; reduce Broadcom / VMware licensing exposure."
-        }
-      ]
-    },
-    sessionMeta: {
-      date:          new Date().toISOString().slice(0, 10),
-      presalesOwner: "Example Presales",
-      status:        "In Progress",
-      version:       "2.0"
-    },
-    instances: [
-      // Current state
-      { id:"i-001", state:"current", layerId:"compute",        environmentId:"coreDc",     label:"PowerEdge (current gen)",   vendor:"Dell",      vendorGroup:"dell",    criticality:"Medium", notes:"~60% aged 4+ years." },
-      { id:"i-002", state:"current", layerId:"compute",        environmentId:"drDc",       label:"HPE ProLiant",              vendor:"HPE",       vendorGroup:"nonDell", criticality:"Low",    notes:"Aging DR compute." },
-      { id:"i-003", state:"current", layerId:"storage",        environmentId:"coreDc",     label:"Unity XT",                  vendor:"Dell",      vendorGroup:"dell",    criticality:"High",   notes:"90% capacity. DB performance issues." },
-      { id:"i-004", state:"current", layerId:"storage",        environmentId:"coreDc",     label:"NetApp AFF / FAS",          vendor:"NetApp",    vendorGroup:"nonDell", criticality:"Medium", notes:"NAS tier -- large unstructured data." },
-      { id:"i-005", state:"current", layerId:"dataProtection", environmentId:"coreDc",     label:"Veeam Backup & Replication",vendor:"Veeam",     vendorGroup:"nonDell", criticality:"High",   notes:"Jobs failing 2-3x/week. No air-gap." },
-      { id:"i-006", state:"current", layerId:"dataProtection", environmentId:"publicCloud",label:"AWS Backup",                vendor:"AWS",       vendorGroup:"nonDell", criticality:"Medium", notes:"Cloud workloads only." },
-      { id:"i-007", state:"current", layerId:"virtualization", environmentId:"coreDc",     label:"VMware vSphere / vCenter",  vendor:"VMware",    vendorGroup:"nonDell", criticality:"High",   notes:"Broadcom licensing 3x cost increase." },
-      { id:"i-008", state:"current", layerId:"infrastructure", environmentId:"coreDc",     label:"Cisco Nexus (DC)",          vendor:"Cisco",     vendorGroup:"nonDell", criticality:"Medium", notes:"Manual VLAN provisioning." },
-      { id:"i-009", state:"current", layerId:"infrastructure", environmentId:"coreDc",     label:"Microsoft Entra ID / AD",   vendor:"Microsoft", vendorGroup:"nonDell", criticality:"High",   notes:"No privileged access management." },
-      // Desired state (with dispositions)
-      { id:"d-001", state:"desired", layerId:"compute",        environmentId:"coreDc",     label:"PowerEdge (current gen)",   vendor:"Dell",      vendorGroup:"dell",    priority:"Now",  timeline:"0-12 months",  disposition:"replace",     originId:"i-001", notes:"Refresh aging estate." },
-      { id:"d-002", state:"desired", layerId:"storage",        environmentId:"coreDc",     label:"PowerStore",                vendor:"Dell",      vendorGroup:"dell",    priority:"Now",  timeline:"0-12 months",  disposition:"replace",     originId:"i-003", notes:"Replace Unity XT. Single platform." },
-      { id:"d-003", state:"desired", layerId:"storage",        environmentId:"coreDc",     label:"PowerScale (Isilon)",       vendor:"Dell",      vendorGroup:"dell",    priority:"Next", timeline:"12-24 months", disposition:"consolidate", originId:"i-004", notes:"Consolidate NAS." },
-      { id:"d-004", state:"desired", layerId:"dataProtection", environmentId:"coreDc",     label:"PowerProtect Data Manager", vendor:"Dell",      vendorGroup:"dell",    priority:"Now",  timeline:"0-12 months",  disposition:"replace",     originId:"i-005", notes:"Replace Veeam." },
-      { id:"d-005", state:"desired", layerId:"dataProtection", environmentId:"coreDc",     label:"Cyber Recovery Vault",      vendor:"Dell",      vendorGroup:"dell",    priority:"Now",  timeline:"0-12 months",  disposition:"enhance",     notes:"Air-gapped vault. Board priority." },
-      { id:"d-006", state:"desired", layerId:"virtualization", environmentId:"coreDc",     label:"VxRail (VMware-based)",     vendor:"Dell",      vendorGroup:"dell",    priority:"Next", timeline:"12-24 months", disposition:"replace",     originId:"i-007", notes:"Reduce VMware licensing exposure." }
-    ],
-    gaps: [
-      {
-        id:"g-001", description:"No immutable backup -- full ransomware exposure",
-        layerId:"dataProtection", affectedLayers:["dataProtection","storage"],
-        affectedEnvironments:["coreDc"],
-        gapType:"replace", urgency:"High", phase:"now",
-        mappedDellSolutions:"PowerProtect PPDM, DD9400, Cyber Recovery + CyberSense",
-        notes:"Near-miss ransomware Q4 2025. Board priority. NIS2 deadline Q3 2026.",
-        relatedCurrentInstanceIds:["i-005"], relatedDesiredInstanceIds:["d-004","d-005"],
-        status:"open"
-      },
-      {
-        id:"g-002", description:"Unity XT at 90% capacity -- performance degrading",
-        layerId:"storage", affectedLayers:["storage"], affectedEnvironments:["coreDc"],
-        gapType:"replace", urgency:"High", phase:"now",
-        mappedDellSolutions:"PowerStore mid-range",
-        notes:"Storage SLA breaches. Cannot expand without refresh.",
-        relatedCurrentInstanceIds:["i-003"], relatedDesiredInstanceIds:["d-002"],
-        status:"open"
-      },
-      {
-        id:"g-003", description:"VMware licensing tripled -- HCI modernisation needed",
-        layerId:"virtualization", affectedLayers:["virtualization","compute"],
-        affectedEnvironments:["coreDc"],
-        gapType:"replace", urgency:"Medium", phase:"next",
-        mappedDellSolutions:"VxRail (VMware-based HCI)",
-        notes:"Broadcom renewal due in 18 months.",
-        relatedCurrentInstanceIds:["i-007"], relatedDesiredInstanceIds:["d-006"],
-        status:"open"
-      },
-      {
-        id:"g-004", description:"Aging compute -- 60% servers approaching end of support",
-        layerId:"compute", affectedLayers:["compute"], affectedEnvironments:["coreDc","drDc"],
-        gapType:"replace", urgency:"Medium", phase:"now",
-        mappedDellSolutions:"PowerEdge (current gen)",
-        notes:"Hardware maintenance costs increasing.",
-        relatedCurrentInstanceIds:["i-001","i-002"], relatedDesiredInstanceIds:["d-001"],
-        status:"open"
-      },
-      {
-        id:"g-005", description:"No cloud governance -- uncontrolled AWS spend",
-        layerId:"infrastructure", affectedLayers:["infrastructure"],
-        affectedEnvironments:["publicCloud"],
-        gapType:"ops", urgency:"Low", phase:"later",
-        mappedDellSolutions:"APEX Cloud Platform",
-        notes:"AWS spend growing 30% YoY. Repatriation candidates identified.",
-        relatedCurrentInstanceIds:[], relatedDesiredInstanceIds:[],
-        status:"open"
-      }
-    ]
   };
 }
 
@@ -204,24 +112,34 @@ export let session = (function() {
   } catch(e) {}
   // v2.1 · also pipe demo session through migration so it receives defaults
   // (e.g. `reviewed` on auto-drafted gaps). Pure / idempotent.
-  return migrateLegacySession(createDemoSession());
+  return migrateLegacySession(createDemoSessionImpl());
 })();
 
 export function resetSession() {
   var fresh = createEmptySession();
   Object.keys(session).forEach(function(k) { delete session[k]; });
   Object.assign(session, fresh);
+  // v2.4.5 — a deliberate "start over" invalidates the AI undo history
+  // (nothing to roll back into now). Emit so views re-render from empty.
+  clearAiUndoStack();
+  emitSessionChanged("session-reset", "New session");
 }
 
 export function resetToDemo() {
-  var demo = migrateLegacySession(createDemoSession());
+  var demo = migrateLegacySession(createDemoSessionImpl());
   Object.keys(session).forEach(function(k) { delete session[k]; });
   Object.assign(session, demo);
+  clearAiUndoStack();
+  emitSessionChanged("session-demo", "Loaded demo session");
 }
 
 // v2.4.4 — Replace live session state with a supplied snapshot (e.g. an
 // undo-stack restore). Keeps the module-scoped `session` identity so
 // every importer continues to see live data without re-importing.
+// v2.4.5 — does NOT emit session-changed itself; the CALLER decides
+// whether to emit (undo emits with reason="ai-undo", an import flow
+// would emit with reason="session-replace", etc.). This keeps the helper
+// usable from the undo stack without causing double-notifications.
 export function replaceSession(snapshot) {
   if (!snapshot || typeof snapshot !== "object") return;
   Object.keys(session).forEach(function(k) { delete session[k]; });

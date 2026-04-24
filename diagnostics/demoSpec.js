@@ -1,0 +1,373 @@
+// ============================================================================
+// diagnostics/demoSpec.js — Phase 19e / v2.4.5 Foundations Refresh
+//
+// Integration suite that asserts the "human test surfaces" stay in sync
+// with the current data model (see feedback_foundational_testing.md).
+// Machine tests in appSpec.js verify contracts; demoSpec.js verifies
+// that the DEMO SESSION and SEED SKILLS — the things a user exercises
+// by hand — still drive real code paths.
+//
+// Covers:
+//   Suite 31  · demo session shape                        (DS1–DS7)
+//   Suite 32  · seed skills against FIELD_MANIFEST        (DS8–DS12)
+//   Suite 33  · apply + undo byte-identical round-trip    (DS13–DS14)
+//   Suite 34  · multi-persona coverage                    (DS15)
+//   Suite 35  · session-changed bus wiring                (DS16–DS17)
+//
+// Registered into the appSpec runner via registerDemoSuite so every
+// release ships a single green banner with machine + demo assertions.
+// ============================================================================
+
+import { validateInstance, validateGap } from "../core/models.js";
+import { createDemoSession, DEMO_PERSONAS } from "../state/demoSession.js";
+import { session as liveSession, replaceSession } from "../state/sessionStore.js";
+import { seedSkills, SEED_SKILL_IDS } from "../core/seedSkills.js";
+import { loadSkills, saveSkills, RESPONSE_FORMATS } from "../core/skillStore.js";
+import { FIELD_MANIFEST } from "../core/fieldManifest.js";
+import { WRITE_RESOLVERS, isWritablePath } from "../core/bindingResolvers.js";
+import { applyProposal, applyAllProposals } from "../interactions/aiCommands.js";
+import * as aiUndoStack from "../state/aiUndoStack.js";
+import { onSessionChanged } from "../core/sessionEvents.js";
+
+// Count how many gaps reference an instanceId in EITHER link list.
+// A "multi-linked" instance is one referenced by ≥2 gaps — the Phase 18
+// warn-but-allow signal that must appear in the demo.
+function countGapsLinkingInstance(gaps, instanceId) {
+  return (gaps || []).filter(function(g) {
+    return ((g.relatedCurrentInstanceIds || []).indexOf(instanceId) >= 0) ||
+           ((g.relatedDesiredInstanceIds || []).indexOf(instanceId) >= 0);
+  }).length;
+}
+
+export function registerDemoSuite(api) {
+  var describe    = api.describe;
+  var it          = api.it;
+  var assert      = api.assert;
+  var assertEqual = api.assertEqual;
+
+  // ──────────────────────────────────────────────────────────────
+  // Suite 31 · demo session shape
+  // ──────────────────────────────────────────────────────────────
+  describe("31 · Phase 19e · demo session · data-model conformance", function() {
+
+    it("DS1 · every demo instance passes validateInstance", function() {
+      var s = createDemoSession();
+      assert(Array.isArray(s.instances) && s.instances.length > 0,
+        "demo session must define instances");
+      s.instances.forEach(function(inst, idx) {
+        try { validateInstance(inst); }
+        catch (e) {
+          assert(false, "instances[" + idx + "] (" + inst.id + "): " + e.message);
+        }
+      });
+    });
+
+    it("DS2 · every demo gap passes validateGap", function() {
+      var s = createDemoSession();
+      assert(Array.isArray(s.gaps) && s.gaps.length > 0,
+        "demo session must define gaps");
+      s.gaps.forEach(function(g, idx) {
+        try { validateGap(g); }
+        catch (e) {
+          assert(false, "gaps[" + idx + "] (" + g.id + "): " + e.message);
+        }
+      });
+    });
+
+    it("DS3 · Phase 16 · at least one workload-layer instance with mappedAssetIds[]", function() {
+      var s = createDemoSession();
+      var workloads = s.instances.filter(function(i) { return i.layerId === "workload"; });
+      assert(workloads.length >= 1,
+        "demo must include at least one workload-layer instance (Phase 16)");
+      var withMappings = workloads.filter(function(w) {
+        return Array.isArray(w.mappedAssetIds) && w.mappedAssetIds.length >= 2;
+      });
+      assert(withMappings.length >= 1,
+        "at least one workload instance must declare ≥2 mappedAssetIds (Phase 16 N-to-N)");
+      // Every mappedAssetId must point at a real instance id in the demo.
+      var idSet = {}; s.instances.forEach(function(i) { idSet[i.id] = true; });
+      withMappings.forEach(function(w) {
+        w.mappedAssetIds.forEach(function(assetId) {
+          assert(idSet[assetId],
+            "workload " + w.id + ".mappedAssetIds references missing instance '" + assetId + "'");
+        });
+      });
+    });
+
+    it("DS4 · Phase 18 · at least one instance is multi-linked (≥2 gaps reference it)", function() {
+      var s = createDemoSession();
+      var multi = s.instances.filter(function(i) {
+        return countGapsLinkingInstance(s.gaps, i.id) >= 2;
+      });
+      assert(multi.length >= 1,
+        "demo must exercise the Phase 18 multi-linked pattern (≥1 instance referenced by ≥2 gaps)");
+    });
+
+    it("DS5 · demo exercises both Dell and non-Dell vendor groups", function() {
+      var s = createDemoSession();
+      var hasDell     = s.instances.some(function(i) { return i.vendorGroup === "dell";    });
+      var hasNonDell  = s.instances.some(function(i) { return i.vendorGroup === "nonDell"; });
+      assert(hasDell,    "demo must include at least one Dell-vendor instance");
+      assert(hasNonDell, "demo must include at least one non-Dell-vendor instance");
+    });
+
+    it("DS6 · at least one gap carries an explicit driverId (Phase 14)", function() {
+      var s = createDemoSession();
+      var withDriver = s.gaps.filter(function(g) { return typeof g.driverId === "string" && g.driverId.length > 0; });
+      assert(withDriver.length >= 1,
+        "demo must include ≥1 gap with driverId set (surfaces the gap→driver link)");
+    });
+
+    it("DS7 · at least one driver has non-empty outcomes", function() {
+      var s = createDemoSession();
+      var drivers = (s.customer && s.customer.drivers) || [];
+      assert(drivers.length >= 1, "demo must define ≥1 driver");
+      var withOutcomes = drivers.filter(function(d) {
+        return typeof d.outcomes === "string" && d.outcomes.trim().length > 0;
+      });
+      assert(withOutcomes.length >= 1,
+        "demo must include ≥1 driver with non-empty outcomes (exercises Phase 14 outcomes editor)");
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────
+  // Suite 32 · seed skills vs FIELD_MANIFEST
+  // ──────────────────────────────────────────────────────────────
+  describe("32 · Phase 19e · seed skills · FIELD_MANIFEST alignment", function() {
+
+    function originalSkillsBlob() {
+      try { return window.localStorage.getItem("ai_skills_v1"); }
+      catch (e) { return null; }
+    }
+    function restoreSkillsBlob(blob) {
+      try {
+        if (blob === null) window.localStorage.removeItem("ai_skills_v1");
+        else               window.localStorage.setItem("ai_skills_v1", blob);
+      } catch (e) {}
+    }
+
+    it("DS8 · seed skills survive normalizeSkill round-trip (skillStore.loadSkills)", function() {
+      var saved = originalSkillsBlob();
+      try {
+        window.localStorage.removeItem("ai_skills_v1");
+        saveSkills(seedSkills());
+        var reloaded = loadSkills();
+        assertEqual(reloaded.length, SEED_SKILL_IDS.length,
+          "all " + SEED_SKILL_IDS.length + " seed skills must round-trip through normalizeSkill");
+        SEED_SKILL_IDS.forEach(function(id) {
+          var row = reloaded.find(function(s) { return s.id === id; });
+          assert(row, "seed skill '" + id + "' must survive reload");
+          assert(typeof row.tabId === "string" && row.tabId.length > 0, "seed must have tabId");
+          assert(typeof row.promptTemplate === "string", "seed must have promptTemplate");
+          assert(Array.isArray(row.outputSchema), "seed must have outputSchema array");
+          assert(RESPONSE_FORMATS.indexOf(row.responseFormat) >= 0,
+            "seed responseFormat '" + row.responseFormat + "' must be in RESPONSE_FORMATS");
+        });
+      } finally { restoreSkillsBlob(saved); }
+    });
+
+    it("DS9 · every seed skill outputSchema path exists in FIELD_MANIFEST and is writable", function() {
+      var skills = seedSkills();
+      skills.forEach(function(skill) {
+        var tabManifest = FIELD_MANIFEST[skill.tabId] || [];
+        skill.outputSchema.forEach(function(entry) {
+          var manifestHit = tabManifest.find(function(f) { return f.path === entry.path; });
+          assert(manifestHit,
+            "seed '" + skill.id + "' → path '" + entry.path + "' missing from FIELD_MANIFEST[" + skill.tabId + "]");
+          assertEqual(manifestHit.writable, true,
+            "seed '" + skill.id + "' → path '" + entry.path + "' must be writable: true in FIELD_MANIFEST");
+        });
+      });
+    });
+
+    it("DS10 · every writable context.* path in any seed has a WRITE_RESOLVERS entry", function() {
+      var skills = seedSkills();
+      skills.forEach(function(skill) {
+        skill.outputSchema.forEach(function(entry) {
+          if (entry.path.indexOf("context.") === 0) {
+            assert(WRITE_RESOLVERS[entry.path],
+              "seed '" + skill.id + "' → context path '" + entry.path + "' has no WRITE_RESOLVERS entry");
+          }
+          assert(isWritablePath(entry.path),
+            "seed '" + skill.id + "' → path '" + entry.path + "' must be writable (session.* OR resolver-backed)");
+        });
+      });
+    });
+
+    it("DS11 · every tab has at least one deployed seed skill", function() {
+      var skills = seedSkills().filter(function(s) { return s.deployed; });
+      ["context", "current", "desired", "gaps", "reporting"].forEach(function(tabId) {
+        var hit = skills.filter(function(s) { return s.tabId === tabId; });
+        assert(hit.length >= 1,
+          "tab '" + tabId + "' must have ≥1 deployed seed skill so Use AI ▾ is populated on first run");
+      });
+    });
+
+    it("DS12 · at least one seed skill per supported responseFormat (text-brief + json-scalars)", function() {
+      var skills = seedSkills();
+      var hasTextBrief   = skills.some(function(s) { return s.responseFormat === "text-brief";   });
+      var hasJsonScalars = skills.some(function(s) { return s.responseFormat === "json-scalars"; });
+      assert(hasTextBrief,   "seed library must include ≥1 text-brief skill");
+      assert(hasJsonScalars, "seed library must include ≥1 json-scalars skill (exercises writable fields)");
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────
+  // Suite 33 · apply + undo round-trip byte-identical
+  // ──────────────────────────────────────────────────────────────
+  describe("33 · Phase 19e · apply + undo · byte-identical round-trip", function() {
+
+    it("DS13 · applyProposal → undoLast returns the session to JSON-identical state", function() {
+      aiUndoStack._resetForTests();
+      // Build a minimal session so the test doesn't depend on live UI state.
+      replaceSession({
+        sessionId: "sess-ds13",
+        isDemo: false,
+        customer: { name: "Round-trip Co", vertical: "Enterprise", region: "EMEA",
+                    drivers: [{ id: "cyber_resilience", priority: "Medium", outcomes: "prev" }] },
+        sessionMeta: { date: "2026-04-24", presalesOwner: "", status: "Draft", version: "2.0" },
+        instances: [],
+        gaps: [{ id: "g-ds13", description: "seed gap", layerId: "compute",
+                 affectedLayers: [], affectedEnvironments: [],
+                 urgency: "Low", phase: "later", gapType: "ops",
+                 relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
+                 status: "open", reviewed: true }]
+      });
+      var before = JSON.stringify(liveSession);
+      applyProposal(
+        { path: "context.selectedGap.urgency", label: "Gap urgency", kind: "scalar",
+          before: "Low", after: "High" },
+        { label: "apply for DS13", context: { selectedGap: { id: "g-ds13" } } }
+      );
+      assertEqual(liveSession.gaps[0].urgency, "High", "apply mutated the gap");
+      aiUndoStack.undoLast();
+      var after = JSON.stringify(liveSession);
+      assertEqual(after, before,
+        "apply + undoLast must return session to byte-identical JSON — data-integrity regression gate");
+      aiUndoStack._resetForTests();
+    });
+
+    it("DS14 · applyAllProposals → undoLast returns the session to JSON-identical state", function() {
+      aiUndoStack._resetForTests();
+      replaceSession({
+        sessionId: "sess-ds14",
+        isDemo: false,
+        customer: { name: "Bulk Apply Co", vertical: "Enterprise", region: "APJ",
+                    drivers: [{ id: "cost_optimization", priority: "High", outcomes: "prev" }] },
+        sessionMeta: { date: "2026-04-24", presalesOwner: "", status: "Draft", version: "2.0" },
+        instances: [],
+        gaps: [{ id: "g-ds14", description: "bulk seed", layerId: "storage",
+                 affectedLayers: [], affectedEnvironments: [],
+                 urgency: "Low", phase: "later", gapType: "enhance",
+                 notes: "before-notes",
+                 relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
+                 status: "open", reviewed: true }]
+      });
+      var before = JSON.stringify(liveSession);
+      applyAllProposals([
+        { path: "context.selectedGap.urgency", label: "Gap urgency", kind: "scalar",
+          before: "Low", after: "High" },
+        { path: "context.selectedGap.notes",   label: "Gap notes",   kind: "scalar",
+          before: "before-notes", after: "after-notes" }
+      ], { label: "bulk apply for DS14", context: { selectedGap: { id: "g-ds14" } } });
+      assertEqual(liveSession.gaps[0].urgency, "High", "bulk apply mutated urgency");
+      assertEqual(liveSession.gaps[0].notes, "after-notes", "bulk apply mutated notes");
+      aiUndoStack.undoLast();
+      var after = JSON.stringify(liveSession);
+      assertEqual(after, before,
+        "applyAll + undoLast must return session to byte-identical JSON");
+      aiUndoStack._resetForTests();
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────
+  // Suite 34 · multi-persona coverage
+  // ──────────────────────────────────────────────────────────────
+  describe("34 · Phase 19e · demo personas · registry + validation", function() {
+
+    it("DS15 · every DEMO_PERSONA builds a session that passes validateInstance + validateGap", function() {
+      assert(Array.isArray(DEMO_PERSONAS) && DEMO_PERSONAS.length >= 2,
+        "DEMO_PERSONAS must ship ≥2 personas (default + at least one alternate)");
+      DEMO_PERSONAS.forEach(function(p) {
+        assert(typeof p.id    === "string" && p.id.length > 0,    "persona.id required");
+        assert(typeof p.label === "string" && p.label.length > 0, "persona.label required");
+        assert(typeof p.build === "function",                     "persona.build() required");
+        var s = p.build();
+        assert(s && typeof s === "object", "persona '" + p.id + "' build must return an object");
+        (s.instances || []).forEach(function(inst, idx) {
+          try { validateInstance(inst); }
+          catch (e) {
+            assert(false, "persona '" + p.id + "' instances[" + idx + "]: " + e.message);
+          }
+        });
+        (s.gaps || []).forEach(function(g, idx) {
+          try { validateGap(g); }
+          catch (e) {
+            assert(false, "persona '" + p.id + "' gaps[" + idx + "]: " + e.message);
+          }
+        });
+      });
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────
+  // Suite 35 · session-changed bus wiring
+  // ──────────────────────────────────────────────────────────────
+  describe("35 · Phase 19e · session-changed bus · apply & undo emit", function() {
+
+    it("DS16 · applyProposal emits reason='ai-apply'", function() {
+      aiUndoStack._resetForTests();
+      replaceSession({
+        sessionId: "sess-ds16",
+        isDemo: false,
+        customer: { name: "Bus Co", vertical: "Enterprise", region: "EMEA", drivers: [] },
+        sessionMeta: { date: "2026-04-24", presalesOwner: "", status: "Draft", version: "2.0" },
+        instances: [],
+        gaps: [{ id: "g-ds16", description: "bus", layerId: "compute",
+                 affectedLayers: [], affectedEnvironments: [],
+                 urgency: "Low", phase: "later",
+                 relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
+                 status: "open", reviewed: true }]
+      });
+      var seen = [];
+      var off = onSessionChanged(function(evt) { seen.push(evt.reason); });
+      try {
+        applyProposal(
+          { path: "context.selectedGap.urgency", label: "u", kind: "scalar",
+            before: "Low", after: "High" },
+          { context: { selectedGap: { id: "g-ds16" } } }
+        );
+        assert(seen.indexOf("ai-apply") >= 0,
+          "applyProposal must emit a session-changed event with reason='ai-apply'");
+      } finally { off(); aiUndoStack._resetForTests(); }
+    });
+
+    it("DS17 · undoLast emits reason='ai-undo'", function() {
+      aiUndoStack._resetForTests();
+      replaceSession({
+        sessionId: "sess-ds17",
+        isDemo: false,
+        customer: { name: "Bus Co", vertical: "Enterprise", region: "EMEA", drivers: [] },
+        sessionMeta: { date: "2026-04-24", presalesOwner: "", status: "Draft", version: "2.0" },
+        instances: [],
+        gaps: [{ id: "g-ds17", description: "bus", layerId: "compute",
+                 affectedLayers: [], affectedEnvironments: [],
+                 urgency: "Low", phase: "later",
+                 relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
+                 status: "open", reviewed: true }]
+      });
+      applyProposal(
+        { path: "context.selectedGap.urgency", label: "u", kind: "scalar",
+          before: "Low", after: "High" },
+        { context: { selectedGap: { id: "g-ds17" } } }
+      );
+      var seen = [];
+      var off = onSessionChanged(function(evt) { seen.push(evt.reason); });
+      try {
+        aiUndoStack.undoLast();
+        assert(seen.indexOf("ai-undo") >= 0,
+          "undoLast must emit a session-changed event with reason='ai-undo'");
+      } finally { off(); aiUndoStack._resetForTests(); }
+    });
+  });
+}

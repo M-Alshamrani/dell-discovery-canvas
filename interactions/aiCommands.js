@@ -7,6 +7,7 @@
 import { session, saveToLocalStorage } from "../state/sessionStore.js";
 import * as undoStack from "../state/aiUndoStack.js";
 import { WRITE_RESOLVERS, isWritablePath } from "../core/bindingResolvers.js";
+import { emitSessionChanged } from "../core/sessionEvents.js";
 
 // Parse the AI response for a json-scalars skill. Tolerates code-fences
 // around the JSON (some models add them despite instructions) and
@@ -77,6 +78,7 @@ export function applyProposal(proposal, opts) {
       resolver(session, (opts && opts.context) || {}, proposal.after);
     }
     saveToLocalStorage();
+    emitSessionChanged("ai-apply", label);
   } catch (e) {
     // Roll back the snapshot we just pushed since nothing actually
     // changed. Leaving it would create a no-op undo entry.
@@ -102,6 +104,7 @@ export function applyAllProposals(proposals, opts) {
       }
     });
     saveToLocalStorage();
+    emitSessionChanged("ai-apply", label);
   } catch (e) {
     undoStack.undoLast();
     throw e;

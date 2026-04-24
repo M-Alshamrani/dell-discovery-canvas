@@ -1605,6 +1605,26 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 }
 .undo-chip:hover { background: rgba(255,255,255,0.28); border-color: #fff; }
 
+/* v2.4.5 · depth badge + undo-all chip. */
+.undo-count-badge {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 6px; padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.35);
+  color: #fff;
+  font-size: 10px; font-weight: 700;
+  text-align: center; vertical-align: baseline;
+}
+.undo-count-badge:empty { display: none; }
+.undo-chip-all {
+  margin-left: 6px;
+  background: rgba(255,255,255,0.10);
+  border-color: rgba(255,255,255,0.30);
+  opacity: 0.95;
+}
+.undo-chip-all:hover { background: rgba(255,255,255,0.22); }
+
 .ai-skill-result.has-proposals { background: var(--brand-faint); }
 
 .proposals-panel {

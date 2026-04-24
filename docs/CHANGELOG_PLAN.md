@@ -881,17 +881,37 @@ Per `feedback_foundational_testing.md` (saved this session): every future data-m
 
 ---
 
-## v2.4.5 · Phase 19e · Foundations Refresh — QUEUED (fresh session)
+## v2.4.5 · Phase 19e · Foundations Refresh — IMPLEMENTED (2026-04-24)
 
-**Scope**:
-1. Fix the 4 known UX issues from v2.4.4 (session-changed event, driver-tile refresh, undo chip tooltip + stack panel, localStorage undo persistence).
-2. Extract demo session data to `state/demoSession.js` as its own module; refresh to exercise Phase 16 workloads + Phase 18 multi-linked patterns + current gap schema.
-3. NEW `core/seedSkills.js` library with 4-5 skills across tabs + response formats.
-4. NEW `diagnostics/demoSpec.js` test suite — asserts demo + seeds stay in sync with the live data model (catches "demo still uses v2.0 gap shape" drift).
-5. NEW `docs/DEMO_CHANGELOG.md` — demo-module audit trail separate from app CHANGELOG.
-6. NEW `diagnostics/integrationSpec.js` — end-to-end flows (apply + undo integrity, view re-render after AI apply).
+**Goal**: Fix the four known UX bugs in v2.4.4 (driver tile vanishes on AI apply, tab blanks after undo, undo chip is vague, undo doesn't persist) AND establish the two-surface testing discipline (`feedback_foundational_testing.md`) so demo + seed skills + demoSpec never drift from the live data model again.
 
-**Est scope**: ~3 hr. Deserves its own session with fresh context. Spec locked in `feedback_foundational_testing.md` — fresh session can implement directly.
+### What shipped — six items, one release
+
+1. **Session-changed event bus** — new `core/sessionEvents.js` · `onSessionChanged / emitSessionChanged`. `applyProposal`, `applyAllProposals`, `undoLast`, `undoAll`, `resetSession`, `resetToDemo` all emit. `app.js` subscribes once and re-renders `renderHeaderMeta() + renderStage()` on every event. Fixes "driver tile vanishes" + "tab blanks after undo" without any per-view surgery.
+2. **Undo chip UX** — tooltip lists stack depth + top 5 labels newest-first; depth badge on the chip; new `↶↶ Undo all` chip appears when `depth >= 2` and reverts every tracked change in one confirmed click. Wiring in `app.js`, markup in `index.html`, styles in `styles.css`.
+3. **Persistent undo** — `state/aiUndoStack.js` serialises to localStorage under `ai_undo_v1`, bounded to 10 entries, cleared on `resetSession` / `resetToDemo`. Added `undoAll()`, `recentLabels()`, `clear()`, `depth()` helpers.
+4. **Extract `state/demoSession.js`** — demo data lifted out of `sessionStore.js`. Default persona `acme-fsi` refreshed to exercise Phase 16 workloads (workload-layer instance with `mappedAssetIds`) + Phase 18 multi-linked pattern (`i-005` referenced by both `g-001` and `g-006`) + explicit `driverId` on every gap (Phase 14) + `reviewed` fields. Two new stub personas (`meridian-hls`, `northwind-pub`) registered in `DEMO_PERSONAS` for future switch-persona UX.
+5. **NEW `core/seedSkills.js`** — 6 seed skills, one per tab plus an extra on the Context tab. Four are `json-scalars` + `confirm-per-field` and exercise writable fields added in v2.4.4 (driver priority/outcomes, instance criticality/notes, disposition/phase/notes, gap description/urgency/notes). All deployed on first run so every tab has a populated `✨ Use AI ▾` dropdown. `skillStore.seedSkills()` delegates here.
+6. **NEW `diagnostics/demoSpec.js`** — Suites 31-35 registered into the appSpec runner via `registerDemoSuite()`. Asserts: demo session passes `validateInstance` + `validateGap`; Phase 16 workload mapping present; Phase 18 multi-link present; Dell + non-Dell vendors; gap with driverId; driver with outcomes; every seed skill round-trips `normalizeSkill`; every seed `outputSchema` path exists in `FIELD_MANIFEST` AND is `writable: true`; every writable context path has a `WRITE_RESOLVERS` entry; every tab has ≥1 deployed seed; text-brief + json-scalars both represented; `applyProposal → undoLast` and `applyAll → undoLast` are byte-identical round-trips; all `DEMO_PERSONAS` build valid sessions; `applyProposal` emits `"ai-apply"` and `undoLast` emits `"ai-undo"`.
+7. **NEW `docs/DEMO_CHANGELOG.md`** — audit trail for the demo + seed surfaces, separate from this file. Process rule: every future data-model change touches demo + seed + demoSpec + this log in the same commit.
+
+### Files touched
+
+- NEW · `core/sessionEvents.js`, `core/seedSkills.js`, `state/demoSession.js`, `diagnostics/demoSpec.js`, `docs/DEMO_CHANGELOG.md`.
+- MOD · `state/sessionStore.js` (re-exports `createDemoSession`, emits on reset flows, clears undo stack), `state/aiUndoStack.js` (persistence + undoAll + clear + recentLabels), `interactions/aiCommands.js` (emit `ai-apply`), `core/skillStore.js` (delegates `seedSkills()` to new module), `app.js` (subscribes to session-changed bus, upgraded undo chip), `index.html` (undo-all chip + count badge), `styles.css` (chip styles), `diagnostics/appSpec.js` (registers demoSpec), `SPEC.md` (§12.5 persistent undo, §12.5a sessionEvents, §12.8 invariants 6-8).
+
+### Tests
+
+416 assertions in `appSpec.js` (unchanged) + 17 new assertions (DS1–DS17) in `demoSpec.js` = **433 total**, green banner required.
+
+### Known issues from v2.4.4 — now resolved
+
+1. ✅ Post-undo tab blanking — fixed by session-changed bus.
+2. ✅ Driver tile vanishes on AI apply — fixed by session-changed bus.
+3. ✅ Undo chip vague — fixed (tooltip + depth badge + Undo all).
+4. ✅ Undo not persistent — fixed (`ai_undo_v1`).
+5. ✅ Demo session stale — refreshed default persona + 2 new personas.
+6. ✅ Seed skill library minimal — 6 skills, json-scalars on 4 tabs.
 
 ---
 
