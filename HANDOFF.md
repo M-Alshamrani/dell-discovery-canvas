@@ -73,6 +73,7 @@ Ordered for logical progression. Each bucket has locked scope in memory or SPEC.
 - ✅ A1. v2.4.5 Foundations Refresh (shipped).
 - ✅ A1.1. v2.4.5.1 AI reliability (shipped).
 - **A2.** v2.4.6 **Action-command skills** — NEXT UP (scope above).
+- **A3.** v2.4.7 **UX polish** — 7-item curated list in `docs/CHANGELOG_PLAN.md § v2.4.7`. Small fixes the user flagged in live use: skill Save button wiring (test mandatory on create, optional on edit), empty chip on skill rows (deprecated `outputMode` field), fresh-start UX (empty vs demo default), AI-powered conversation starter, auto-dismiss green test banner, app-version source of truth (`core/version.js`). Reference HTML for the crown-jewel visual target: `C:/Users/Mahmo/Downloads/GPLC Digital Unified Platform v1.0.html`.
 
 ### Bucket B — Crown-jewel UX rework (v2.5.0)
 Locked spec in `project_deferred_design_review.md` §§ 1-5. Single big release, best done in a fresh session with full context.

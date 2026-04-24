@@ -881,6 +881,48 @@ Per `feedback_foundational_testing.md` (saved this session): every future data-m
 
 ---
 
+## v2.4.7 · UX polish · QUEUED (after v2.4.6 action-commands)
+
+**Goal**: Tidy the everyday friction points the user noticed in live use. Not a design rework (that's v2.5.0 crown-jewel) — a curated list of small, focused fixes each sized for a single PR.
+
+### Locked items (each independently mergeable)
+
+1. **Skill save button wiring** — `ui/views/SkillAdmin.js`. Today Save is disabled until `lastTestedSignature === currentSignature` for BOTH create and edit flows. Change: Test-skill is **mandatory for CREATE**, **optional for EDIT**. Rules:
+   - New skill (`!existing`): Save disabled until a successful test run.
+   - Existing skill: Save always active. If user edited since last test, show an inline warning "Untested changes will be saved — run Test to verify first" but don't block.
+   - Clicking Save on an existing untested skill fires save and then scrolls the Test button into view with a subtle pulse — cue, not gate.
+
+2. **Empty chip on skill rows** — `ui/views/SkillAdmin.js:79`. `skill.outputMode` was deprecated in v2.4.4; seed skills don't set it, so the row renders an empty `<span class="skill-row-mode">`. Replace with two chips: `responseFormat` + `applyPolicy`. Update Suite 26 SB6 assertion to pin the new chip set.
+
+3. **Fresh-start UX** — `state/sessionStore.js` currently initialises with `createDemoSession()` on first load, so a brand-new user sees Acme FSI data + a populated roadmap. Decision needed:
+   - **Option A**: First-run wizard offers "Load demo / Start fresh" modal before any rendering.
+   - **Option B**: Default to `createEmptySession()`, add a clear "↺ Load demo" button in the empty state placeholder.
+   - **Option C**: Keep current behaviour but add a prominent dismissible "Demo mode — click to start your own" banner (it already exists but it's easy to miss).
+   - Recommendation: **B**. Empty canvas is the honest default; demo is one click away.
+
+4. **Conversation starter → AI-powered** — `ui/views/ContextView.js renderDriverDetail`. Today the coaching card renders a static `BUSINESS_DRIVERS[n].conversationStarter`. Proposal: add a "✨ Tailor to this customer" button that runs a new seed skill (json-scalars, writable field: `context.selectedDriver.conversationStarter`) to regenerate the starter grounded in `customer.vertical + region + other drivers`. Keep the static fallback for the unconfigured-AI case so the card never blanks.
+   - Requires: new seed skill in `core/seedSkills.js`; new writable field `context.selectedDriver.conversationStarter` in `FIELD_MANIFEST.context` + `WRITE_RESOLVERS`; demo refresh + demoSpec + DEMO_CHANGELOG entry per `feedback_foundational_testing.md`.
+
+5. **Auto-dismiss green test banner** — `diagnostics/testRunner.js renderBanner`. When `results.failed === 0`, fade out after 5s (`setTimeout` + CSS `opacity` transition); keep the ✕ as an early-dismiss. Failure banner stays (sticky) until manually dismissed — user needs to act on it.
+
+6. **App version surface** — introduce single source of truth:
+   - NEW `core/version.js` exporting `APP_VERSION = "2.4.7"` (updated on each release).
+   - Header `renderHeaderMeta` splits into two pieces: session identity (`customer.name | date | session v{{schemaVersion}} | status`) and an app version chip (`Canvas v{{APP_VERSION}}`). Today the "v2.0" next to customer name is confusing — it's the session schema version, not the app.
+   - `docs/DEMO_CHANGELOG.md` process rule extends to bump `APP_VERSION` in the same commit as a new tag.
+   - Future (unrelated): optional GitHub-releases poll for "update available" hint. Defer.
+
+7. **Ship proper SVG icon set** — current gear + undo chips use emoji + inline SVG mix. For v2.5.0 crown-jewel we need a consistent icon system (Lucide or Radix) covering gear, undo, undo-all, AI sparkle, save, test, delete, etc. Defer to v2.5.0 (already in Bucket B5).
+
+### Deferred to v2.5.0 Crown-jewel (already tracked there)
+
+- "✨ Use AI" button on Tabs 2-5 (Bucket B4).
+- Density / whitespace / side-panel-as-drawer IA (Bucket B5).
+- Reference: **`C:/Users/Mahmo/Downloads/GPLC Digital Unified Platform v1.0.html`** — visual target for layout, spacing, and component density.
+
+### Est scope: ~2 hr for items 1-6. Single commit per item (6 tags: v2.4.7 … v2.4.7.5), or batch them into v2.4.7 if the user prefers.
+
+---
+
 ## v2.4.5.1 · Phase 19f · AI reliability (Anthropic header + retry + fallback chain) — IMPLEMENTED (2026-04-24)
 
 **Goal**: Close two concrete user-reported failure modes surfacing in live Gemini + Anthropic use:
