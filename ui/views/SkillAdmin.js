@@ -74,9 +74,15 @@ function renderRow(skill, list, onChange) {
   var nameCol = mk("div", "skill-row-name-col");
   nameCol.appendChild(mkt("div", "skill-row-name", skill.name));
   if (skill.description) nameCol.appendChild(mkt("div", "skill-row-desc", skill.description));
+  // v2.4.6 · L5 · the old `outputMode` field was deprecated in v2.4.4
+  // (split into responseFormat + applyPolicy) — seed skills never set it,
+  // so this row used to render an empty chip. Replace with the two
+  // current fields, both with non-empty fallbacks so nothing ever
+  // collapses to a blank span.
   var meta = mk("div", "skill-row-meta");
   meta.appendChild(mkt("span", "skill-row-tab", TAB_LABELS[skill.tabId] || skill.tabId));
-  meta.appendChild(mkt("span", "skill-row-mode", skill.outputMode));
+  meta.appendChild(mkt("span", "skill-row-format", skill.responseFormat || "text-brief"));
+  meta.appendChild(mkt("span", "skill-row-policy", skill.applyPolicy    || "show-only"));
   if (skill.seed) meta.appendChild(mkt("span", "skill-row-seed", "seed"));
   nameCol.appendChild(meta);
   row.appendChild(nameCol);
@@ -460,17 +466,33 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   var saveBtn = mkt("button", "btn-primary", existing ? "Save changes" : "Create skill");
   var saveHint = mkt("span", "save-gate-hint", "");
 
+  // v2.4.6 · L6 · Test-before-save is MANDATORY for new skills (protects
+  // the user from shipping a broken skill on first creation), but
+  // ADVISORY for edits (they already have a working baseline — blocking
+  // minor copy tweaks on re-test was pure friction). The hint spells out
+  // the rule so there's no mystery about why the button is enabled.
   function refreshSaveGate() {
-    var gated = lastTestedSignature !== currentSignature();
+    var needsTest = lastTestedSignature !== currentSignature();
+    var isNewSkill = !existing;
+    var gated = isNewSkill && needsTest;
     saveBtn.disabled = gated;
     if (gated) {
       saveBtn.classList.add("save-disabled");
       saveHint.textContent = lastTestedSignature === null
-        ? "← Click 'Test skill now' and verify the output before saving."
-        : "← Changes detected — re-run the test to enable Save.";
+        ? "← New skill — click 'Test skill now' and verify the output before creating."
+        : "← Changes detected — re-run the test to enable Create.";
+      saveHint.className = "save-gate-hint save-gate-hint-error";
+    } else if (needsTest) {
+      // Edit mode + untested changes: allow save, warn non-blocking.
+      saveBtn.classList.remove("save-disabled");
+      saveHint.textContent = "⚠ Untested changes — saving without re-test is OK for tweaks; click 'Test skill now' first for behaviour changes.";
+      saveHint.className = "save-gate-hint save-gate-hint-warn";
     } else {
       saveBtn.classList.remove("save-disabled");
-      saveHint.textContent = "✓ Tested — safe to save.";
+      saveHint.textContent = lastTestedSignature === null
+        ? "✓ Safe to save — run 'Test skill now' any time to verify."
+        : "✓ Tested — safe to save.";
+      saveHint.className = "save-gate-hint save-gate-hint-ok";
     }
   }
   refreshSaveGate();

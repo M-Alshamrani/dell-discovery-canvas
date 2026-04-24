@@ -4349,7 +4349,13 @@ describe("29 · Phase 19d.1 · Prompt guards + Refine-to-CARE button + test-befo
     assert(/CARE/.test(REFINE_META_SYSTEM), "meta-prompt must reference the CARE framework");
   });
 
-  it("PG5 · SkillAdmin edit form renders the Refine button, the footer-summary hint, and a disabled save button pre-test", () => {
+  it("PG5 · SkillAdmin edit form renders Refine + footer-summary hint + save-gate hint (v2.4.6 rule: EDIT is not test-blocked)", () => {
+    // v2.4.6 · L6 rule change: test-before-save is MANDATORY for
+    // CREATE, ADVISORY for EDIT. The original PG5 (v2.4.3) asserted
+    // Save was disabled on Edit too — that contract is retired.
+    // The gate still exists, it's just narrower. CREATE-mode coverage
+    // lives in Suite 37 QW5. This test covers EDIT-mode: Save enabled
+    // AND the save-gate hint is present (warn flavour, not error).
     clearSkills();
     loadSkills();
     const container = document.createElement("div");
@@ -4362,10 +4368,12 @@ describe("29 · Phase 19d.1 · Prompt guards + Refine-to-CARE button + test-befo
     assert(hint, "footer-summary hint must render under the system-prompt field");
     const saveBtn = [...container.querySelectorAll("button")].find(b => /save|create/i.test(b.textContent));
     assert(saveBtn, "Save/Create button must render");
-    assert(saveBtn.disabled, "Save must be DISABLED before a successful test (gate)");
+    assertEqual(saveBtn.disabled, false,
+      "EDIT mode: Save must stay ACTIVE (v2.4.6 rule change — test-before-save is CREATE-only)");
     const gateHint = container.querySelector(".save-gate-hint");
-    assert(gateHint, "save-gate hint must render next to Save");
-    assert(/test/i.test(gateHint.textContent), "gate hint must tell user to test first");
+    assert(gateHint, "save-gate hint must still render next to Save (advisory state)");
+    assert(gateHint.className.indexOf("save-gate-hint-error") < 0,
+      "EDIT mode: gate hint must NOT carry error styling (Save is not blocked)");
     container.remove();
     clearSkills();
   });
@@ -4835,6 +4843,163 @@ describe("36 · Phase 19f · AI reliability — Anthropic header + retry + fallb
     assertEqual(loaded.providers.gemini.fallbackModels[0], "custom-fallback",
       "user-supplied fallbackModels survive mergeWithDefaults");
     window.localStorage.removeItem("ai_config_v1");
+  });
+
+});
+
+// ── Phase 19g / v2.4.6 · UX quick-wins (QW1-QW7) ──────────────────────
+import { APP_VERSION } from "../core/version.js";
+import { SEED_SKILL_IDS as SEED_IDS_FOR_QW } from "../core/seedSkills.js";
+
+describe("37 · Phase 19g · v2.4.6 UX quick-wins — version chip + skill chip + save gate + banner", () => {
+
+  function clearSkills() { window.localStorage.removeItem("ai_skills_v1"); }
+
+  it("QW1 · APP_VERSION is a non-empty semver-shaped string (distinct from session schema version)", () => {
+    assert(typeof APP_VERSION === "string" && APP_VERSION.length > 0,
+      "APP_VERSION must be a non-empty string");
+    assert(/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(APP_VERSION),
+      "APP_VERSION must look like a semver (got: " + APP_VERSION + ")");
+    // Must not be "2.0" — that's the session schema version in
+    // sessionMeta.version. Confusing them is the bug this fixes.
+    assert(APP_VERSION !== "2.0",
+      "APP_VERSION must not collide with the session-schema version '2.0'");
+  });
+
+  it("QW2 · header renders TWO separate elements: session meta + app version chip", () => {
+    // Both IDs must exist in the live DOM per index.html.
+    var metaEl = document.getElementById("sessionMetaHeader");
+    var verEl  = document.getElementById("appVersionChip");
+    assert(metaEl, "header must render a #sessionMetaHeader element");
+    assert(verEl,  "header must render a separate #appVersionChip element (v2.4.6 split)");
+    // Version chip should display "Canvas v{{APP_VERSION}}" after the
+    // initial render pass in app.js.
+    assert(verEl.textContent.indexOf("Canvas v") === 0,
+      "app version chip must prefix with 'Canvas v' (got: " + verEl.textContent + ")");
+    assert(verEl.textContent.indexOf(APP_VERSION) >= 0,
+      "app version chip must render APP_VERSION");
+    // Session-meta must NOT contain the session-schema version marker
+    // any more ("v2.0" was the old confusion source).
+    assert(metaEl.textContent.indexOf("v2.0") < 0,
+      "session meta chip must NOT display the session-schema version (v2.4.6 removed it)");
+  });
+
+  it("QW3 · every seeded skill round-trips into a renderSkillAdmin row with non-empty chip set (no more empty `mode` chip)", () => {
+    clearSkills();
+    loadSkills(); // seed
+    const container = document.createElement("div");
+    renderSkillAdmin(container);
+    const rows = container.querySelectorAll(".skill-row");
+    assertEqual(rows.length, SEED_IDS_FOR_QW.length,
+      "one row per seeded skill");
+    rows.forEach(function(row) {
+      // Old bug: skill.outputMode was rendered → empty <span> → empty chip.
+      const oldChip = row.querySelector(".skill-row-mode");
+      if (oldChip) {
+        assert(oldChip.textContent.trim().length > 0,
+          "legacy .skill-row-mode chip (if still rendered for non-seeds) must not be empty");
+      }
+      // New contract: every row carries a responseFormat chip AND
+      // an applyPolicy chip, both with non-empty text.
+      const fmtChip    = row.querySelector(".skill-row-format");
+      const policyChip = row.querySelector(".skill-row-policy");
+      assert(fmtChip,
+        "every skill row must render a .skill-row-format chip (v2.4.6)");
+      assert(policyChip,
+        "every skill row must render a .skill-row-policy chip (v2.4.6)");
+      assert(fmtChip.textContent.trim().length > 0,
+        "responseFormat chip must be non-empty");
+      assert(policyChip.textContent.trim().length > 0,
+        "applyPolicy chip must be non-empty");
+    });
+    clearSkills();
+  });
+
+  it("QW4 · skill-row chip vocabulary matches RESPONSE_FORMATS + APPLY_POLICIES (no stale values)", () => {
+    clearSkills();
+    loadSkills();
+    const container = document.createElement("div");
+    renderSkillAdmin(container);
+    container.querySelectorAll(".skill-row-format").forEach(function(c) {
+      assert(RESPONSE_FORMATS.indexOf(c.textContent.trim()) >= 0,
+        "chip '" + c.textContent + "' must be a known responseFormat");
+    });
+    container.querySelectorAll(".skill-row-policy").forEach(function(c) {
+      assert(APPLY_POLICIES.indexOf(c.textContent.trim()) >= 0,
+        "chip '" + c.textContent + "' must be a known applyPolicy");
+    });
+    clearSkills();
+  });
+
+  it("QW5 · Save button for NEW skill stays disabled until a successful test run", () => {
+    clearSkills();
+    const container = document.createElement("div");
+    renderSkillAdmin(container);
+    // Click the "+ Add skill" button to open the form in create mode.
+    const addBtn = [...container.querySelectorAll("button")].find(b => /add skill/i.test(b.textContent));
+    assert(addBtn, "+ Add skill button must exist");
+    addBtn.click();
+    // Save button text for a new skill reads "Create skill".
+    const saveBtn = container.querySelector(".form-actions .btn-primary");
+    assert(saveBtn, "Save button must render inside the edit form");
+    assertEqual(/create|save/i.test(saveBtn.textContent), true, "Save button label is present");
+    assertEqual(saveBtn.disabled, true,
+      "NEW skill: Save button MUST start disabled (test-before-save is mandatory for creation)");
+    // The hint alongside must render the error-styled class.
+    const hint = container.querySelector(".save-gate-hint");
+    assert(hint, "Save gate hint must render");
+    assert(hint.className.indexOf("save-gate-hint-error") >= 0,
+      "NEW skill + untested: hint must carry error style (blocks save)");
+    clearSkills();
+  });
+
+  it("QW6 · Save button for EDIT mode stays ENABLED even without re-test (v2.4.6 rule change)", () => {
+    clearSkills();
+    loadSkills();
+    // Pick an existing seed skill and render its edit form directly.
+    const seedId = SEED_IDS_FOR_QW[0];
+    const container = document.createElement("div");
+    renderSkillAdmin(container);
+    // Find the Edit button for the first row and click it.
+    const editBtn = [...container.querySelectorAll("button")].find(b => /edit/i.test(b.textContent));
+    assert(editBtn, "first skill row must surface an Edit button");
+    editBtn.click();
+    const saveBtn = container.querySelector(".form-actions .btn-primary");
+    assert(saveBtn, "Save button must render after Edit click");
+    // Edit mode + no re-test = warn, not block.
+    assertEqual(saveBtn.disabled, false,
+      "EDIT mode: Save button MUST stay active even without re-test (v2.4.6 rule change)");
+    const hint = container.querySelector(".save-gate-hint");
+    assert(hint, "Save gate hint must render");
+    // Hint must be warn OR ok (never error) for existing skills.
+    assert(hint.className.indexOf("save-gate-hint-error") < 0,
+      "EDIT mode: hint must NOT carry error style (save is not blocked)");
+    clearSkills();
+  });
+
+  it("QW7 · test runner banner: green fades in ~5s; red stays sticky", () => {
+    // Fabricate a results object and call the runner's renderBanner via
+    // the side effect of running the suite. Simpler: create a minimal
+    // fake results object, invoke the code path by temporarily
+    // re-running a single suite? That's heavy. Instead inspect the
+    // banner's data attribute we set in testRunner.js.
+    // The live banner on the page came from the full run — if it's
+    // green it must carry the autoDismissMs marker; if it's red it
+    // must NOT.
+    const banner = document.getElementById("test-banner");
+    if (banner && /passed/i.test(banner.textContent) && !/failed/i.test(banner.textContent)) {
+      assertEqual(banner.dataset.autoDismissMs, "5000",
+        "green banner must declare a 5s auto-dismiss (v2.4.6 U3)");
+    } else if (banner) {
+      assert(!banner.dataset.autoDismissMs,
+        "failure banner must NOT auto-dismiss — user needs to act on it");
+    }
+    // Either way the banner must have the opacity transition wired so
+    // the fade-out is not a jarring snap.
+    if (banner) {
+      assert(/opacity/.test(banner.style.transition || ""),
+        "banner must declare an opacity transition for graceful fade");
+    }
   });
 
 });

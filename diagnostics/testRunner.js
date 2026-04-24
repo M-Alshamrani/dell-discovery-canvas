@@ -63,7 +63,8 @@ export function createTestRunner() {
       justifyContent:"space-between", alignItems:"center",
       background: passed ? "#DCFCE7" : "#FEE2E2",
       borderTop: `1px solid ${passed ? "#86EFAC" : "#FCA5A5"}`,
-      color: "#111827"
+      color: "#111827",
+      transition: "opacity 400ms ease-out, transform 400ms ease-out"
     });
     banner.textContent = passed
       ? `✅  All ${results.passed} tests passed`
@@ -73,6 +74,20 @@ export function createTestRunner() {
     x.addEventListener("click", () => banner.remove());
     banner.appendChild(x);
     document.body.appendChild(banner);
+
+    // v2.4.6 · U3 · auto-dismiss the green banner after 5s. Failure
+    // banner stays sticky until the user clicks ✕ — they need to act
+    // on it. Setter exposed on the banner so tests can cancel the
+    // timer deterministically.
+    if (passed) {
+      banner.dataset.autoDismissMs = "5000";
+      banner._autoDismissTimer = setTimeout(() => {
+        if (!document.body.contains(banner)) return;
+        banner.style.opacity = "0";
+        banner.style.transform = "translateY(8px)";
+        setTimeout(() => banner.remove(), 450);
+      }, 5000);
+    }
   }
 
   return { describe, it, assert, assertEqual, run };

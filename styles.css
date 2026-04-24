@@ -115,6 +115,18 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
 .header-title { font-size: 14px; font-weight: 700; color: #fff; letter-spacing: -0.01em; }
 .header-sub   { font-size: 10px; color: rgba(255,255,255,0.7); margin-top: 1px; }
 .header-meta  { font-size: 11px; color: rgba(255,255,255,0.85); font-weight: 400; }
+/* v2.4.6 · L4 · app-version chip. Distinct from session.sessionMeta.version
+   (the session-schema version); this is the running build. */
+.header-app-version {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: 10px; font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: rgba(255,255,255,0.92);
+  letter-spacing: 0.02em;
+}
 
 /* ── Stepper ────────────────────────────────────────────────── */
 #stepper {
@@ -1458,13 +1470,17 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .skill-row-name     { font-size: 13px; font-weight: 600; color: var(--text-1); letter-spacing: -0.01em; }
 .skill-row-desc     { font-size: 11px; color: var(--text-2); margin-top: 2px; line-height: 1.4; }
 .skill-row-meta     { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-.skill-row-tab, .skill-row-mode, .skill-row-seed {
+.skill-row-tab, .skill-row-mode, .skill-row-format, .skill-row-policy, .skill-row-seed {
   font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
   padding: 2px 7px; border-radius: 999px;
 }
 .skill-row-tab  { background: var(--brand-faint); color: var(--brand-dark); border: 1px solid var(--brand-light); }
-.skill-row-mode { background: var(--surface-2);   color: var(--text-3);      border: 1px solid var(--border); }
-.skill-row-seed { background: #FBF3E0;            color: #92400E;            border: 1px solid #FCD34D; }
+.skill-row-mode   { background: var(--surface-2); color: var(--text-3); border: 1px solid var(--border); }
+/* v2.4.6 · L5 · responseFormat + applyPolicy chips. Keep the neutral look
+   of the old `mode` chip; small gap so they visually read as a pair. */
+.skill-row-format { background: var(--surface-2); color: var(--text-3); border: 1px solid var(--border); }
+.skill-row-policy { background: var(--surface-2); color: var(--text-3); border: 1px solid var(--border); }
+.skill-row-seed   { background: #FBF3E0;          color: #92400E;        border: 1px solid #FCD34D; }
 
 .skill-row-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .skill-row-actions .btn-outline,
@@ -1749,6 +1765,13 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   font-size: 11px; color: var(--text-3); font-style: italic;
   margin-left: 8px;
 }
+/* v2.4.6 · L6 · three states for the save-gate hint.
+   error = blocks save (new skill, not tested)
+   warn  = allows save with caution (edit mode, untested)
+   ok    = safe to save */
+.save-gate-hint-error { color: #B91C1C; }
+.save-gate-hint-warn  { color: #92400E; }
+.save-gate-hint-ok    { color: #166534; }
 .btn-primary.save-disabled,
 .btn-primary:disabled {
   opacity: 0.5;

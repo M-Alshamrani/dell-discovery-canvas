@@ -5,6 +5,7 @@ import { runAllTests }               from "./diagnostics/appSpec.js";
 import { openSettingsModal }         from "./ui/views/SettingsModal.js";
 import * as aiUndoStack              from "./state/aiUndoStack.js";
 import { onSessionChanged }          from "./core/sessionEvents.js";
+import { APP_VERSION }               from "./core/version.js";
 import { renderContextView }         from "./ui/views/ContextView.js";
 import { renderMatrixView }          from "./ui/views/MatrixView.js";
 import { renderGapsEditView }        from "./ui/views/GapsEditView.js";
@@ -109,13 +110,19 @@ function wireUndoBtn() {
 }
 
 function renderHeaderMeta() {
+  // v2.4.6 · L4 · split the header into TWO chips:
+  //   - session identity: customer | date | status
+  //   - app version: "Canvas v{{APP_VERSION}}" (separate <span> so
+  //     nobody confuses the session-schema version with the app build)
   var el = document.getElementById("sessionMetaHeader");
-  if (!el) return;
-  var name   = session.customer.name || "New session";
-  var date   = session.sessionMeta.date;
-  var ver    = session.sessionMeta.version;
-  var status = session.sessionMeta.status;
-  el.textContent = name + "  |  " + date + "  |  v" + ver + "  |  " + status;
+  if (el) {
+    var name   = session.customer.name || "New session";
+    var date   = session.sessionMeta.date;
+    var status = session.sessionMeta.status;
+    el.textContent = name + "  |  " + date + "  |  " + status;
+  }
+  var verEl = document.getElementById("appVersionChip");
+  if (verEl) verEl.textContent = "Canvas v" + APP_VERSION;
 }
 
 function renderStepper() {
