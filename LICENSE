@@ -1,0 +1,30 @@
+Copyright (c) 2026 Dell Technologies. All rights reserved.
+
+Dell Discovery Canvas — internal Dell Technologies presales tool.
+
+This software is intended for internal use by Dell Technologies presales
+engineers and authorised partners. It is not licensed for redistribution,
+modification, or use outside Dell Technologies and its authorised channels
+without prior written permission.
+
+The software is provided "AS IS", without warranty of any kind, express
+or implied, including but not limited to the warranties of merchantability,
+fitness for a particular purpose and noninfringement. In no event shall
+Dell Technologies be liable for any claim, damages or other liability,
+whether in an action of contract, tort or otherwise, arising from, out
+of or in connection with the software or the use or other dealings in
+the software.
+
+For licensing questions or external collaboration requests, contact
+the project owner via the GitHub repository:
+https://github.com/M-Alshamrani/dell-discovery-canvas
+
+---
+
+Note · this LICENSE was bootstrapped during the v2.4.11.d02 hygiene
+pass per procedure §15.3.L. The licensing terms above reflect the
+project's current internal-only intent. If the project's distribution
+posture changes (open-source release, partner-channel licensing,
+SaaS offering), this file should be replaced with the appropriate
+licence text and a copyright header should be added to every shipped
+source file.
