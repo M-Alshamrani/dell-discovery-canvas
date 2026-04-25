@@ -30,7 +30,8 @@
 //   TOTAL: 204 assertions
 // ============================================================================
 
-import { createTestRunner } from "./testRunner.js";
+import { createTestRunner, runIsolated } from "./testRunner.js";
+import { emitSessionChanged } from "../core/sessionEvents.js";
 
 import {
   LAYERS, ENVIRONMENTS, CATALOG,
@@ -5645,6 +5646,19 @@ describe("41 · Phase 19j · v2.4.10 save/open file (.canvas round-trip)", () =>
 import { registerDemoSuite } from "./demoSpec.js";
 registerDemoSuite({ describe: describe, it: it, assert: assert, assertEqual: assertEqual });
 
+// v2.4.10.1 · isolation guard. Wrap the test pass in runIsolated so
+// any test that mutates localStorage (replaceSession + applyProposal,
+// CL2's canary, anything else) cannot pollute the user's real storage.
+// After tests, reload the in-memory `session` from the restored
+// localStorage and emit session-changed so app.js re-renders the
+// USER's data, not whatever the last test left in memory. Fixes the
+// v2.4.5–v2.4.10 "Bus Co" pollution that made Clear-all appear broken.
 export function runAllTests() {
-  return run();
+  return runIsolated(run, function afterRestore() {
+    if (!loadFromLocalStorage()) {
+      // No saved session in localStorage → fresh-start state.
+      resetSession();
+    }
+    emitSessionChanged("session-replace", "Tests complete");
+  });
 }

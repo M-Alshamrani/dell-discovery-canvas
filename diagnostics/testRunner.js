@@ -1,4 +1,46 @@
 // diagnostics/testRunner.js — minimal in-browser test framework
+//
+// v2.4.10.1 · isolation guard. Tests routinely call replaceSession() +
+// applyProposal() with synthetic data; applyProposal calls
+// saveToLocalStorage() under the hood, which means a single test pass
+// can persist test data ("Bus Co", "Round-trip Co", etc.) into the
+// real localStorage. On the next page load, sessionStore's IIFE reads
+// that polluted localStorage and the user sees test data instead of
+// their own session. v2.4.5–v2.4.10 shipped with this bug.
+//
+// The fix below: any caller can wrap their `run()` call in
+// `runIsolated(run, restoreCallback)`. We snapshot every localStorage
+// key before tests, run them, then ALWAYS restore the original keys
+// (try/finally, even if a test throws). The optional restoreCallback
+// runs after the storage restore so callers can also reload in-memory
+// state from the freshly-restored localStorage and emit a
+// session-changed so the UI re-renders the user's REAL data.
+
+export function runIsolated(run, restoreCallback) {
+  // Snapshot every storage key.
+  var snapshot = {};
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k != null) snapshot[k] = localStorage.getItem(k);
+    }
+  } catch (e) { /* private mode etc. — best-effort */ }
+
+  try {
+    return run();
+  } finally {
+    // Restore: wipe any test-side keys, then re-write the snapshot.
+    try {
+      localStorage.clear();
+      Object.keys(snapshot).forEach(function(k) {
+        localStorage.setItem(k, snapshot[k]);
+      });
+    } catch (e) { /* best-effort */ }
+    if (typeof restoreCallback === "function") {
+      try { restoreCallback(); } catch (e) { /* don't let cleanup throw */ }
+    }
+  }
+}
 
 export function createTestRunner() {
   const suites = [];
