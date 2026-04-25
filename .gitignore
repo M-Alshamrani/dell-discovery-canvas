@@ -9,9 +9,6 @@ desktop.ini
 *.swp
 *.swo
 
-# Stray folder from an earlier brace-expansion accident that OneDrive won't let us delete.
-{core,state,services,interactions,ui/views,diagnostics}/
-
 # Build / dep artefacts (none today, placeholder for future)
 node_modules/
 dist/

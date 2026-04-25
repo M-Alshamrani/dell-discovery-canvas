@@ -9,25 +9,28 @@
 //            Never weaken a test to make it pass.
 //
 // COVERAGE:
-//   Suite 01  core/config — layer definitions            (12 tests)
-//   Suite 02  core/config — technology catalog           (10 tests)
-//   Suite 03  core/models — validateInstance             (14 tests)
-//   Suite 04  core/models — validateGap                  (20 tests)
-//   Suite 05  state/sessionStore                         (10 tests)
-//   Suite 06  interactions/matrixCommands                (18 tests)
-//   Suite 07  interactions/gapsCommands                  (22 tests)
-//   Suite 08  services/healthMetrics                     (16 tests)
-//   Suite 09  services/gapsService                       (12 tests)
-//   Suite 10  services/vendorMixService                  (14 tests)
-//   Suite 11  services/roadmapService                    (12 tests)
-//   Suite 12  ui/views/ContextView — DOM contract         (10 tests)
-//   Suite 13  ui/views/MatrixView — DOM contract          (14 tests)
-//   Suite 14  ui/views/GapsEditView — DOM contract        (10 tests)
-//   Suite 15  ui/views/Summary views — DOM contracts      (12 tests)
-//   Suite 16  app shell — stepper & navigation           ( 8 tests)
-//   Suite 17  AI integration readiness                   (10 tests)
+//   Suites 01-17  · v2.0-v2.1 baseline (config, models, sessionStore, *Commands,
+//                   services, view DOM contracts, app shell, AI integration readiness)
+//   Suites 18-23  · v2.1.1-v2.3.0 (right-panel drill-downs, Session Brief,
+//                   Roadmap unification, gap-link visibility + double-link safety)
+//   Suite 24      · v2.3.1 / Phase 16 — Workload Mapping (W1-W5)
+//   Suite 25      · v2.4.0 / Phase 19a — AI foundations (AI1-AI9)
+//   Suite 26      · v2.4.1 / Phase 19b — Skill Builder (SB1-SB8)
+//   Suite 27      · v2.4.2 / Phase 19c — Field-pointer (FP1-FP9)
+//   Suite 28      · v2.4.2.1 / Phase 19c.1 — Pill editor (PE1-PE7)
+//   Suite 29      · v2.4.3 / Phase 19d.1 — Prompt guards (PG1-PG6)
+//   Suite 30      · v2.4.4 / Phase 19d — Output handling (OH1-OH17)
+//   Suite 36      · v2.4.5.1 / Phase 19f — Reliability/backoff (RB1-RB7)
+//   Suite 38      · v2.4.7 / Phase 19h — Fresh-start UX (FS1-FS5)
+//   Suite 39      · v2.4.8 / Phase 17 — Taxonomy (TX1-TX10)
+//   Suite 40      · v2.4.9 — Primary-layer + projectId (PL1-PL5, PR1-PR5)
+//   Suite 41      · v2.4.10 — .canvas save/open (SF1-SF11)
+//   Suite 42      · v2.4.11 / Phase 19k — Rules Hardening (RH1-RH20)
 //
-//   TOTAL: 204 assertions
+//   Demo-surface assertions live in `diagnostics/demoSpec.js`
+//   (Suites 31-35 · v2.4.5 + 35b/35c later · DS1-DS22).
+//
+//   TOTAL (this file): 487 assertions. Combined with demoSpec: 509.
 // ============================================================================
 
 import { createTestRunner, runIsolated } from "./testRunner.js";

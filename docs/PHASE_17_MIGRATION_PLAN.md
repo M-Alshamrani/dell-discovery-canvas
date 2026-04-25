@@ -1,8 +1,8 @@
 # Phase 17 · Taxonomy unification · migration plan
 
-**Status**: DRAFT 2026-04-24 · ships as v2.4.8 · table APPROVED by user 2026-04-24.
-**Depends on**: v2.4.7 (Fresh-start UX) merged.
-**Blocks**: v2.4.9 primary-layer rework, because that work also touches `validateGap`.
+**Status**: SHIPPED as v2.4.8 on 2026-04-24. This document is preserved as the as-shipped audit trail; the live rules are in [core/taxonomy.js](../core/taxonomy.js) and [docs/RULES.md §2 + §10](RULES.md). Annotation added by the `v2.4.11+d01` hygiene pass.
+**Predecessor**: v2.4.7 (Fresh-start UX) merged before this slice.
+**Successor**: v2.4.9 primary-layer rework + explicit `gap.projectId` (also touched `validateGap`).
 
 ## 1 · What changes
 

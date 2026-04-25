@@ -1,14 +1,14 @@
 # Dell Discovery Canvas — Session Handoff
 
-**Last session end**: 2026-04-25, after shipping `v2.4.11` Rules Hardening (review-time enforcement + closed-vs-deleted gaps + visible auto-behaviour + Operational/Services clarity + 3 in-flight bug fixes caught by browser smoke).
+**Last session end**: 2026-04-25, after shipping `v2.4.11` Rules Hardening (review-time enforcement + closed-vs-deleted gaps + visible auto-behaviour + Operational/Services clarity + 3 in-flight bug fixes caught by browser smoke), followed by the first hygiene-pass clone `v2.4.11+d01` (no behaviour change — code-quality + perf + security + relationship-integrity audit + doc/memory reconciliation + new [docs/MAINTENANCE_LOG.md](docs/MAINTENANCE_LOG.md)).
 **File purpose**: anyone (human or a fresh Claude Code session) opening this folder should read this file first to know exactly where work stopped, what's shipped, what's queued, and how to pick up.
 
 ---
 
 ## 1 · Where you are
 
-- `git log --oneline main` → HEAD = `v2.4.11`.
-- `git tag --list 'v2.*' | sort -V` → 22 tags: `v2.1.1` through `v2.4.11`.
+- `git log --oneline main` → HEAD = `v2.4.11+d01` (functional source = `v2.4.11`).
+- `git tag --list 'v2.*' | sort -V` → 23 functional tags `v2.1.1` through `v2.4.11`, plus `v2.4.11+d01` hygiene-pass clone (SemVer-equivalent to `v2.4.11`, no behaviour change).
 - Working tree: clean. Everything that was built is tagged and pushed to `origin/main`.
 - GitHub: https://github.com/M-Alshamrani/dell-discovery-canvas (private).
 
@@ -32,40 +32,46 @@ Full chronology and commit refs live in `.claude/projects/.../memory/project_cur
 | v2.4.3 | 19d.1 Prompt guards | text-brief footer + Refine-to-CARE + save gate |
 | v2.4.4 | 19d Unified AI platform | SPEC §12 + responseFormat/applyPolicy + writable resolvers + undo + per-skill provider |
 | v2.4.5 | 19e Foundations Refresh | session-changed bus + persistent undo + demoSession module + 6 seed skills + demoSpec (DS1-DS17) + DEMO_CHANGELOG |
-| **v2.4.5.1** | **19f AI reliability** | **Anthropic browser-direct header + retry-with-backoff on 429/5xx + per-provider fallback-model chain (Suite 36 RB1-RB7)** |
+| v2.4.5.1 | 19f AI reliability | Anthropic browser-direct header + retry-with-backoff on 429/5xx + per-provider fallback-model chain (Suite 36 RB1-RB7) |
+| v2.4.6 | 19f UX quick-wins | auto-dismiss test banner + UX polish |
+| v2.4.7 | 19h Fresh-start UX | empty-canvas first-run + Load-demo welcome card |
+| v2.4.8 | 17 Taxonomy unification | "Disposition" → "Action" rename, 7-term taxonomy, `rationalize` removed (migrator coerces) |
+| v2.4.9 | 19i Primary-layer + projectId | `affectedLayers[0] === layerId` invariant + explicit `gap.projectId` (pre-crown-jewel rollback anchor) |
+| v2.4.10 | 19j .canvas save/open | user-owned workbook file + File System Access API + PWA manifest |
+| v2.4.10.1 | 19j.1 HOTFIX | test-runner localStorage isolation (`runIsolated` snapshot/restore) |
+| **v2.4.11** | **19k Rules Hardening** | **review-time validation, status:closed (not delete), visible auto-behaviour, 90-rule audit in `docs/RULES.md`, 3 in-flight bug fixes from mandatory browser smoke** |
 
-**Test count**: 440 assertions across 36 suites in `diagnostics/appSpec.js` + `diagnostics/demoSpec.js`, all green.
+**Test count**: 509 assertions across 42+ suites in `diagnostics/appSpec.js` + `diagnostics/demoSpec.js`, all green.
 
-## 3 · What closed in v2.4.5 + v2.4.5.1
+## 3 · What closed in v2.4.6 → v2.4.11
 
-All six UX issues from v2.4.4 are resolved, and the two reliability failure modes the user hit in live Gemini / Anthropic use are fixed:
+Recent wins by tag:
 
-- v2.4.5 · session-changed bus → driver tile no longer vanishes on AI apply; tab no longer blanks after undo.
-- v2.4.5 · undo chip tooltip + depth badge + "↶↶ Undo all" chip.
-- v2.4.5 · undo persisted to `localStorage` (`ai_undo_v1`, cap 10, cleared on reset).
-- v2.4.5 · demo session refreshed (Phase 16 workload + Phase 18 multi-link + driverId on every gap); extracted to `state/demoSession.js` with 3 personas.
-- v2.4.5 · seed skill library of 6 (json-scalars exercising writable fields on 4 tabs); deployed by default.
-- v2.4.5 · `diagnostics/demoSpec.js` Suites 31-35 (DS1-DS17) + `docs/DEMO_CHANGELOG.md` audit trail.
-- v2.4.5.1 · Anthropic `anthropic-dangerous-direct-browser-access: true` header fixes the 401 loop.
-- v2.4.5.1 · retry-with-backoff on 429/5xx (3 attempts, 500ms→4s with full jitter).
-- v2.4.5.1 · per-provider `fallbackModels[]` chain (Gemini defaults to `gemini-2.0-flash, gemini-1.5-flash`).
-- v2.4.5.1 · Settings UI exposes the fallback chain; `Test connection` reports which model answered.
+- **v2.4.6** · auto-dismiss test banner; UX quick-wins.
+- **v2.4.7** · empty-canvas first-run; "Load demo" welcome card on fresh sessions (Suite 38 FS1-FS5).
+- **v2.4.8 · Phase 17** · "Disposition" → "Action" rename; 7-term taxonomy (`keep / enhance / replace / consolidate / retire / introduce / ops`); migrator coerces legacy `rationalize` values; mandatory action-link rules on reviewed gaps (Suite 39 TX1-TX10 + DS18-DS22).
+- **v2.4.9** · primary-layer invariant (`affectedLayers[0] === gap.layerId`) + explicit `gap.projectId` (replaces silent `buildProjects` bucketing). Pre-crown-jewel rollback anchor.
+- **v2.4.10** · user-owned `.canvas` workbook file via File System Access API; PWA manifest; save/open round-trip with migrator coverage (Suite 41 SF1-SF11).
+- **v2.4.10.1 HOTFIX** · `runIsolated` snapshot/restore guard so test runs no longer pollute real `localStorage`.
+- **v2.4.11 · Phase 19k** · Rules Hardening + Visible-Rules UX. Five locked design principles (Draft permissive / Review enforced; status:closed not delete; auto-behaviour visible; rules from one place; workshop flow > ideal data shape). 21 spec items + 3 in-flight bug fixes (urgency-lock silently failing, demo g-004 mis-typed Replace, Save button no feedback) — all caught by mandatory Chrome-MCP browser smoke. Codified discipline in [feedback_browser_smoke_required.md](C:/Users/Mahmo/.claude/projects/C--Users-Mahmo-OneDrive-Documents-Claud-AI-PreSales-App/memory/feedback_browser_smoke_required.md).
+- **v2.4.11+d01** · first hygiene-pass clone (no behaviour change). Code-quality + perf + security + relationship-integrity audit; doc/memory reconciliation; new [docs/MAINTENANCE_LOG.md](docs/MAINTENANCE_LOG.md). See that file for the full sweep summary.
 
-## 4 · NEXT UP — Bucket A2 · v2.4.6 Action-command skills
+## 4 · NEXT UP — Bucket A4 · v2.4.12 Services scope (LOCKED 2026-04-25)
 
-Scope locked in `SPEC.md §12.6`. Runtime for the `json-commands` response format already declared in the skill schema but stub-rejected today. One disciplined slice:
+Full spec in [docs/CHANGELOG_PLAN.md § v2.4.12](docs/CHANGELOG_PLAN.md). Single tag, ~3-4 hr.
 
-1. NEW `core/actionCommands.js` — whitelist of ops: `updateField`, `updateGap`, `createGap`, `deleteGap`, `linkInstance`, `setGapDriver`. Each op routes to an existing function in `interactions/*Commands.js` (no business-logic duplication).
-2. Extend `interactions/aiCommands.js parseCommands(responseText)` — parse `{ commands: [...] }` shape, validate each op against the whitelist, reject unknown ops at parse time (not at apply time).
-3. `applyCommands(commands, ctx)` — batches under one undo snapshot, emits `session-changed` once per batch (reason `"ai-apply"` as usual).
-4. Wire `skillEngine.js` · when `responseFormat === "json-commands"`, call parser instead of `parseProposals`. `UseAiButton.js` renders a distinct "N actions proposed" panel (reuse the `applyPolicy` dispatch).
-5. Remove the v2.4.4 stub that rejects json-commands outright.
-6. Test vectors — Suite 37 · AC1-AC10 covering: parser rejects unknown op; each op mutates correctly; invalid args throw with a readable message; batch + undo is byte-identical; skillEngine integration returns `result.commands[]`.
-7. Per `feedback_foundational_testing.md`: add at least one seed skill in `core/seedSkills.js` that uses `json-commands` (e.g., "Link these two gaps to their desired tiles" on the Gaps tab); refresh demo session if any new field is needed; update `docs/DEMO_CHANGELOG.md`.
+Key shipping:
+- New `gap.services[]` field (multi-select string array).
+- `core/services.js` 10-entry `SERVICE_TYPES` catalog (assessment, migration, deployment, integration, training, knowledge_transfer, runbook, managed, decommissioning, custom_dev).
+- Opt-in suggested chips per `gapType` ("Suggested" eyebrow over greyed-until-clicked chips).
+- Roadmap project cards roll up services (deduped union of constituent gaps' services).
+- New "Services scope" sub-tab on Tab 5 Reporting (rows = service types, columns = gap count + project count + project names).
+- `.canvas` save/open already passes through unknown fields — no envelope changes needed.
+- Two-surface treatment: demo refresh + DS-22-style assertion + DEMO_CHANGELOG entry.
 
-Estimated scope: ~3 hr. Fresh session can execute directly.
+Action-command runtime (`json-commands` `responseFormat`) is now Bucket A5 → **v2.6.0** (deferred so UX + crown-jewel land first).
 
-## 5 · Full backlog (after v2.4.6)
+## 5 · Full backlog (after v2.4.11)
 
 Ordered for logical progression. Each bucket has locked scope in memory or SPEC.
 
@@ -120,7 +126,7 @@ Then verify the build works locally:
 cd C:/Users/Mahmo/Projects/dell-discovery
 docker compose up -d --build   # image cached ~75MB; should start in <10s
 curl http://localhost:8080/health   # → ok
-# Open http://localhost:8080 in incognito → confirm green banner (~416 assertions)
+# Open http://localhost:8080 in incognito → confirm green banner (509 assertions)
 ```
 
 Then ask the user to confirm the starting point and which bucket to tackle first. **Default next work as of 2026-04-25: v2.4.12 Services scope** — the spec is locked in `docs/CHANGELOG_PLAN.md § v2.4.12`, files to touch are named, two-surface treatment included. Execute on the spec without re-deriving.
@@ -139,13 +145,13 @@ The browser smoke is non-negotiable: v2.4.11's three pre-tag bug fixes (urgency 
 
 Paste this verbatim (or adapt) as your first message in the new session:
 
-> Resume work on the Dell Discovery Canvas project. Read, in order: `C:\Users\Mahmo\Projects\dell-discovery\HANDOFF.md`, then the memory files listed in its § 6, then `SPEC.md § 12`. The last session ended after shipping v2.4.4 with known UX issues explicitly queued for v2.4.5 Foundations Refresh (scope locked in `feedback_foundational_testing.md`). Before proposing anything, confirm back to me:
-> 1. The current HEAD tag and what was in it.
-> 2. The six-item v2.4.5 scope.
-> 3. The full backlog buckets A-E.
-> 4. Whether the local Docker build still serves 416/416 green.
+> Resume work on the Dell Discovery Canvas project. Read, in order: `C:\Users\Mahmo\Projects\dell-discovery\HANDOFF.md`, then the memory files listed in its § 6, then `SPEC.md § 12` and `docs/RULES.md`. The last session shipped v2.4.11 (Rules Hardening + Visible-Rules UX) followed by `v2.4.11+d01` (first hygiene-pass clone, no behaviour change). NEXT UP is v2.4.12 Services scope, locked spec in `docs/CHANGELOG_PLAN.md § v2.4.12`. Before proposing anything, confirm back to me:
+> 1. The current HEAD tag (functional latest = v2.4.11; hygiene-pass clone = v2.4.11+d01).
+> 2. The locked v2.4.12 scope (services field + 10-entry catalog + opt-in chips + Roadmap roll-up + new sub-tab).
+> 3. The full backlog buckets A-E (A4 NEXT UP, A5 → v2.6.0, B = v2.5.0/v2.5.1 crown-jewel).
+> 4. Whether the local Docker build still serves 509/509 green.
 >
-> Then wait for my direction on which bucket to start — the default is v2.4.5 Foundations Refresh.
+> Then wait for my direction on which bucket to start — the default is v2.4.12 Services scope.
 
 ## 8 · Process rule for every session going forward
 
@@ -153,4 +159,8 @@ Per `feedback_foundational_testing.md`:
 
 > Every phase that adds or renames a data-model field must, in the SAME commit, (1) update the demo session to exercise the new field, (2) update or add a seed skill that demonstrates the new capability, (3) update `diagnostics/demoSpec.js` with an assertion pinning the new shape, (4) log the change to `docs/DEMO_CHANGELOG.md`.
 
-v2.4.5 is the first release under this rule. Every release after it carries the rule forward. The 416-tests-pass-but-UX-broken pattern that caused v2.4.4's known issues is what this rule prevents.
+Per `feedback_browser_smoke_required.md` (locked since v2.4.11):
+
+> Every functional tag MUST go through manual Chrome MCP browser smoke against a verification spec BEFORE commit. Tests-pass-alone is necessary but not sufficient — three v2.4.11 bugs slipped past 488 green tests and only surfaced via smoke. PAUSE for explicit "tag it" approval; no tag without it.
+
+v2.4.5 is the first release under the two-surface rule. v2.4.11 is the first release under the browser-smoke rule. Every release after carries both forward. The 416-tests-pass-but-UX-broken pattern that caused v2.4.4's known issues is what these rules prevent.

@@ -30,5 +30,3 @@ desktop.ini
 Thumbs.db
 .DS_Store
 
-# Known stray folder from a failed brace-expansion in the OneDrive copy
-{core,state,services,interactions,ui

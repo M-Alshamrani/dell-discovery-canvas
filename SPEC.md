@@ -1,7 +1,7 @@
 # Dell Discovery Canvas v2 — Implementation Spec
 
-**Status**: Phases 0–15.3 + 16 + 18 + 19a/b/c/c.1/d.1/d SHIPPED. Phases 17 / 19e (v2.4.5 Foundations Refresh) / v2.5.0 / 20+ queued.
-**Current tagged releases**: `v2.1.1`, `v2.1.2`, `v2.2.0` (Docker), `v2.2.1` (LAN auth), `v2.2.2` (Dell tokens), `v2.2.3` (visual depth), `v2.3.0` (Phase 18 gap-links), `v2.3.1` (Phase 16 Workload), `v2.4.0` (Phase 19a AI foundations), `v2.4.1` (Phase 19b Skill Builder), `v2.4.2` (Phase 19c Field-pointer + coercion + test-skill), `v2.4.2.1` (Phase 19c.1 Pill editor + error-message categorisation), `v2.4.3` (Phase 19d.1 Prompt guards + Refine-to-CARE + test-before-save gate), `v2.4.4` (Phase 19d Unified AI platform — responseFormat + applyPolicy + writable resolvers + undo)
+**Status**: Phases 0–15.3 + 16 + 17 + 18 + 19a–k SHIPPED. v2.5.0/v2.5.1 (crown-jewel) / v2.6.0 (action-commands runtime) / v3.0.0 (multi-user) queued.
+**Current tagged releases**: 23 tags · `v2.1.1` through `v2.4.11` · full version history in [README.md](README.md). Most recent: `v2.4.11` Phase 19k (Rules Hardening + Visible-Rules UX + browser-smoke discipline). Hygiene-pass clones (`+dNN` build metadata) tracked in [docs/MAINTENANCE_LOG.md](docs/MAINTENANCE_LOG.md).
 **Predecessor**: v1.3 (legacy)
 **Repo**: https://github.com/M-Alshamrani/dell-discovery-canvas (private)
 **Discussion record**: [docs/CHANGELOG_PLAN.md](docs/CHANGELOG_PLAN.md) — see "Post-v2.1.2 · v2.2+ design review" section for items 2-10 decisions.
@@ -86,7 +86,7 @@ A Dell presales engineer runs a 30-45 min workshop. At the end, the customer's C
   layerId:                   string,
   affectedLayers:            string[],
   affectedEnvironments:      string[],
-  gapType?:                  "rationalize" | "enhance" | "replace" | "introduce" | "consolidate" | "ops",
+  gapType?:                  "enhance" | "replace" | "introduce" | "consolidate" | "ops",  // v2.4.8 dropped "rationalize"; migrator coerces legacy gaps to "ops"
   urgency:                   "High" | "Medium" | "Low",   // STRICT DERIVED, never user-edited
   phase:                     "now" | "next" | "later",    // BIDIRECTIONAL SYNC with linked desired instance
   mappedDellSolutions:       string,                      // DEPRECATED v2.1 — retained in JSON for legacy
@@ -651,15 +651,14 @@ See CHANGELOG_PLAN § v2.3.1 entry for as-shipped detail.
 - Cascade: deleting a workload removes its `mappedAssetIds` array implicitly (no back-references). Deleting an asset leaves dangling ids in workloads' `mappedAssetIds` — `proposeCriticalityUpgrades` tolerates this gracefully (skips).
 - Tests: `appSpec.js` Suite 24 — W1 (layer present, accepts empty mapping), W1b (rejects mappedAssetIds on non-workload), W2 (map dedups, refuses self/workload-to-workload/cross-state, unmap removes), W3 (proposes upward upgrades, opt-in apply via updateInstance), W4 (never proposes downgrades), W5 (proposeCriticalityUpgrades is pure).
 
-### Phase 17 · v2.3 · Taxonomy unification + "Action" rename (Item 4)
+### Phase 17 · v2.4.8 · Taxonomy unification + "Action" rename — IMPLEMENTED 2026-04-24
 
-See CHANGELOG_PLAN § v2.2+ Item 4 for proposed table (pending user confirm).
+Single source of truth for the 7-term Action table now lives in [core/taxonomy.js](core/taxonomy.js). Migrator (M4/M5 in [docs/RULES.md §10](docs/RULES.md)) coerces legacy `rationalize` values idempotently — gap.gapType → `ops`, instance.disposition → `retire`. Full as-shipped detail in [docs/PHASE_17_MIGRATION_PLAN.md](docs/PHASE_17_MIGRATION_PLAN.md); post-shipping rule audit in [docs/RULES.md §2 + §10](docs/RULES.md).
 
-- `DISPOSITION_ACTIONS` → renamed `ACTION_ITEMS` (or keep key, update labels).
-- UI label "Disposition" → "Action" across ContextView / MatrixView / GapsEditView / SummaryGapsView.
-- Drop `rationalize` from ACTION_TO_GAP_TYPE and the gap-type enum; migrate any legacy sessions at load time (bump migration rule).
-- `createGap` and `buildGapFromDisposition` enforce mandatory linking rules from the table (throw on Replace/Consolidate without required links at create-time, symmetric with existing unlink rule).
-- Tests: new assertions per table row; legacy session loads without error (migration strips rationalize).
+- `DISPOSITION_ACTIONS` re-exported from `core/taxonomy.js`. UI label "Disposition" → "Action" across all views.
+- `rationalize` removed from `GAP_TYPES`; migrator coerces legacy `gap.gapType` / `instance.disposition` on load.
+- `createGap` + `updateGap` enforce mandatory action-link rules via `validateActionLinks` (reviewed gaps only — see SPEC §12.8 invariant 9).
+- Tests: Suite 39 TX1-TX10 + demoSpec DS18-DS22.
 
 ### Phase 18 · v2.3.0 · Linked assets always visible + warn-but-allow double-link + roadmap dedup — IMPLEMENTED
 
@@ -688,7 +687,7 @@ Three-provider client (OpenAI-compatible vLLM / Anthropic Claude / Google Gemini
 - **`services/aiService.js`** — `chatCompletion({providerKey, baseUrl, model, apiKey, messages})`; builds the correct request shape per provider (OpenAI chat-completions, Anthropic `/v1/messages` with `x-api-key` + `anthropic-version`, Gemini `:generateContent` with `key=` query); response parsing per provider; `testConnection` helper for the settings probe.
 - **`ui/views/SettingsModal.js`** — gear-icon-opened modal with three provider pills (switching persists), endpoint URL / model / API key fields (public provider URLs are read-only since they're locked to the nginx proxy), and a Test-connection probe that fires "Reply OK" and surfaces the result inline.
 - **Header** — new `#settingsBtn` (gear) in `.header-right` alongside the session meta. `app.js → wireSettingsBtn()` binds the click to open the modal.
-- **Tab 1 demo skill** — `ContextView.renderDriverDetail` appends an `.ai-skill-card` ("✨ AI assistance") with a "Suggest discovery questions" button that calls `runDriverQuestionSkill(session, driver)` in `interactions/skillCommands.js`. Result renders in a `.ai-skill-result` card with provider label + the raw text (monospace).
+- **Tab 1 demo skill** — `ContextView.renderDriverDetail` appends an `.ai-skill-card` ("✨ AI assistance") with a "Suggest discovery questions" button. v2.4.0 wired this through a `runDriverQuestionSkill` adapter; v2.4.1 superseded it with the generic `UseAiButton` component routing through `runSkillById`. The legacy adapter was retained as a backward-compat safety net through v2.4.10.1 and removed in `v2.4.11+d01` after five releases of zero callers. Result renders in a `.ai-skill-result` card with provider label + the raw text (monospace).
 - **Container plumbing** — new `docker-entrypoint.d/45-setup-llm-proxy.sh` writes `/etc/nginx/snippets/llm-proxy.conf` at container start with three `location` blocks: `/api/llm/local/` → `http://${LLM_HOST}:${LLM_LOCAL_PORT}/` (default `host.docker.internal:8000`), `/api/llm/anthropic/` → `https://api.anthropic.com/` (with SNI + resolver), `/api/llm/gemini/` → `https://generativelanguage.googleapis.com/`. `docker-compose.yml` declares `LLM_HOST` + `LLM_LOCAL_PORT` env passthroughs and maps `host.docker.internal:host-gateway` for Linux Docker.
 - **Security posture** — API keys live in browser localStorage; visible in DevTools. Acceptable for personal dev; v3 multi-user platform will move keys server-side. `/api/llm/*` paths have `access_log off` to keep keys out of nginx logs.
 - **Tests** — Suite 25 AI1-AI9: loadAiConfig defaults, save/load round-trip, deprecated-model migration, `isActiveProviderReady`, `buildRequest` shape per provider (OpenAI/Anthropic/Gemini), `extractText` per provider, gear-button presence, ContextView AI card render.
@@ -699,14 +698,12 @@ Turn v2.4.0 from "one hardcoded button" into a platform. Users define, deploy, a
 
 - `core/skillStore.js` — localStorage-backed CRUD. Schema: `{id, name, description, tabId, systemPrompt, promptTemplate, outputMode, deployed, seed, createdAt, updatedAt}`. Seeds the Tab 1 driver-question skill on first load so fresh installs work out of the box.
 - `services/skillEngine.js` — `renderTemplate({{dot.path}})` with missing-is-empty semantics; `extractBindings()` returns unique path references for the UI readout; `runSkill(skill, session, context)` composes system + user messages and routes through `aiService.chatCompletion()`.
-- `interactions/skillCommands.js` — generic `runSkillById(id, session, context)` + `skillsForTab(tabId)` exports. Legacy `runDriverQuestionSkill` wrapper preserved over the seeded skill for backward-compat.
+- `interactions/skillCommands.js` — generic `runSkillById(id, session, context)` + `skillsForTab(tabId)` exports. (A legacy `runDriverQuestionSkill` wrapper was retained for backward-compat through v2.4.10.1; removed in `v2.4.11+d01` hygiene pass.)
 - `ui/views/SkillAdmin.js` — list view (one row per skill with deploy toggle + edit + delete), inline add/edit form with live "detected bindings" readout. Field labels intentionally user-friendly: *"AI role / instructions"* and *"Data for the AI"* rather than the technical `systemPrompt` / `promptTemplate` names.
 - `ui/views/SettingsModal.js` — new top-level section row: *AI Providers* | *Skills*. `initialSection` param routes the body to the right surface.
 - `ui/components/UseAiButton.js` — tab-agnostic dropdown factory. Renders `"✨ Use AI ▾"` with a menu of deployed skills for the given `tabId`. Returns an empty hidden span when no deployed skills exist (avoids empty dropdown chrome).
 - `ui/views/ContextView.js` — driver detail panel now hosts `useAiButton("context")`; output card unchanged so users see the same UX as v2.4.0.
 - Suite 26 — 8 new assertions (SB1-SB8) covering seed-on-first-run, CRUD round-trip, template rendering, binding extraction, per-tab filter with `onlyDeployed` opt-out, admin row render, admin empty state, and the generic dropdown on Tab 1.
-
-#### Phase 19c · v2.4.2 · Field-pointer mechanic — QUEUED
 
 #### Phase 19c · v2.4.2 · Field-pointer mechanic + LLM-friendly coercion + test-skill — IMPLEMENTED
 

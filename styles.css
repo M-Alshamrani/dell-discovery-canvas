@@ -836,7 +836,6 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .badge-keep       { background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE; }
 .badge-enhance    { background: #F0FDF4; color: #15803D; border: 1px solid #86EFAC; }
 .badge-replace    { background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; }
-.badge-rationalize{ background: #FFFBEB; color: #92400E; border: 1px solid #FDE68A; }
 .badge-retire     { background: #F9FAFB; color: #9CA3AF; border: 1px solid #E5E7EB; text-decoration: line-through; }
 .badge-introduce  { background: #F5F3FF; color: #6D28D9; border: 1px solid #DDD6FE; }
 .badge-consolidate{ background: #FFF7ED; color: #C2410C; border: 1px solid #FED7AA; }

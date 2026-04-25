@@ -912,9 +912,9 @@ Four small independently-mergeable fixes. Each item in its own commit; one tag a
 
 ---
 
-## v2.4.7 · Fresh-start UX · QUEUED
+## v2.4.7 · Fresh-start UX · IMPLEMENTED 2026-04-24
 
-U1 · empty-canvas default + visible "↺ Load demo" button in the empty-state placeholder. Today's auto-load-demo on first run confuses real users. Estimated ~30 min.
+U1 · empty-canvas default + visible "↺ Load demo" button in the empty-state placeholder. The auto-load-demo on first run was confusing real users. Shipped as Phase 19h with Suite 38 FS1-FS5; `isFreshSession(s)` predicate gates the welcome card; footer "↺ Load demo" persists as the durable affordance.
 
 ---
 
