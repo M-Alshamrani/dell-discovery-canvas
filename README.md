@@ -126,7 +126,7 @@ dell-discovery/
     DEMO_CHANGELOG.md     demo-surface audit trail (per two-surface rule)
     RULES.md              rules-as-built audit (90+ rules tagged HARD/SOFT/AUTO/MIGRATE)
     PHASE_17_MIGRATION_PLAN.md  Phase 17 migration plan (shipped as v2.4.8)
-    MAINTENANCE_LOG.md    +dNN hygiene-pass log (one entry per pass)
+    MAINTENANCE_LOG.md    .dNN hygiene-pass log (one entry per pass)
 ```
 
 ---

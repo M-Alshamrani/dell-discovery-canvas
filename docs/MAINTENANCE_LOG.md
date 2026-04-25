@@ -1,15 +1,15 @@
 # Maintenance Log
 
-Per-pass log of every `+dNN` hygiene-pass clone made on the Dell Discovery Canvas project. Procedure: `C:/Users/Mahmo/Projects/MAINTENANCE_PROCEDURE.md`. Each entry records date, source tag, target tag, findings, files touched, and any perf deltas. `+dNN` tags are SemVer-equivalent to their source tag — same software, different build (cleaned, audited, re-documented, no behaviour change).
+Per-pass log of every `.dNN` hygiene-pass clone made on the Dell Discovery Canvas project. Procedure: `C:/Users/Mahmo/Projects/MAINTENANCE_PROCEDURE.md`. Each entry records date, source tag, target tag, findings, files touched, and any perf deltas. `.dNN` tags are SemVer-equivalent to their source tag — same software, different build (cleaned, audited, re-documented, no behaviour change).
 
 ---
 
-## v2.4.11+d01 · 2026-04-25 · First hygiene-pass clone
+## v2.4.11.d01 · 2026-04-25 · First hygiene-pass clone
 
 **Source tag**: `v2.4.11` (HEAD = `6d7ac61`).
-**Target tag**: `v2.4.11+d01`.
-**Branch**: `clean-pass-v2.4.11+d01`.
-**Split plan** (per procedure §14): this pass covers procedure sections 1–8. Sections 9–10 + §15 (C4 diagrams, ADRs, GLOSSARY/INVARIANTS/RUNBOOK/RISK_REGISTER + the full 13-artefact onboarding/operational set) are scheduled for `+d02`.
+**Target tag**: `v2.4.11.d01`.
+**Branch**: `clean-pass-v2.4.11.d01`.
+**Split plan** (per procedure §14): this pass covers procedure sections 1–8. Sections 9–10 + §15 (C4 diagrams, ADRs, GLOSSARY/INVARIANTS/RUNBOOK/RISK_REGISTER + the full 13-artefact onboarding/operational set) are scheduled for `.d02`.
 **Outcome**: no behaviour change. 509/509 tests green. Manual Chrome-MCP browser smoke clean.
 
 ### §2 Audit findings (drift reconciled this pass)
@@ -40,9 +40,9 @@ Per-pass log of every `+dNN` hygiene-pass clone made on the Dell Discovery Canva
 - **§3a · `.gitignore` brace-expansion line** (`{core,state,services,interactions,ui/views,diagnostics}/`) — was meant to ignore a literal-named "stray brace folder" that no longer exists. Git treats it as a literal pattern (matches nothing); ripgrep/globset **brace-expands** it and silently excluded ALL source dirs from `rg` searches. Pure dead config + dev-tooling bug. Removed.
 - **§3b · `.badge-rationalize` orphan CSS** (styles.css:839) — orphan since v2.4.8 dropped the value from the taxonomy. Zero JS/HTML refs. Removed.
 - **§3c · `.dockerignore` brace-expansion line** (lines 33-34, malformed/unbalanced) — same dead-config story; the Dockerfile uses an explicit COPY whitelist as the actual safety mechanism. Removed.
-- **§3d · `runDriverQuestionSkill` legacy adapter** (`interactions/skillCommands.js:24-30`) — zero callers since v2.4.1 (five releases), retained as a "safety net" that never proved necessary. Removed; SPEC.md historical references annotated to note removal in `v2.4.11+d01`.
+- **§3d · `runDriverQuestionSkill` legacy adapter** (`interactions/skillCommands.js:24-30`) — zero callers since v2.4.1 (five releases), retained as a "safety net" that never proved necessary. Removed; SPEC.md historical references annotated to note removal in `v2.4.11.d01`.
 
-**Deferred (out of `+dNN` scope)**:
+**Deferred (out of `.dNN` scope)**:
 
 - **§3e · `JSON.parse(JSON.stringify(o))` deep-clone duplication** — 11 occurrences across `core/aiConfig.js` ×3, `state/aiUndoStack.js` ×1, `services/sessionFile.js` ×1, `diagnostics/appSpec.js` ×6. Worth extracting to a `core/util.js deepClone(obj)` helper, but that's a refactor (introduces a new module), not a hygiene-fix; defer to a future functional release.
 
@@ -95,9 +95,9 @@ Test-to-app LOC ratio: ~40%.
 
 No new keys discovered.
 
-### Relationship complexity audit (this pass's `+d02` evidence)
+### Relationship complexity audit (this pass's `.d02` evidence)
 
-Inventory of every place relationships are stored, read, and written in shipped code (per the user's `+d01` scope addition; informs the `+d02` ER diagram + RISK_REGISTER + the open CMDB-vs-UX question).
+Inventory of every place relationships are stored, read, and written in shipped code (per the user's `.d01` scope addition; informs the `.d02` ER diagram + RISK_REGISTER + the open CMDB-vs-UX question).
 
 #### Inventory — the FK-style fields
 
@@ -119,13 +119,13 @@ Inventory of every place relationships are stored, read, and written in shipped 
 
 | ID | Finding | Severity | Disposition |
 |---|---|---|---|
-| **R-INT-1** | `interactions/matrixCommands.js deleteInstance` does NOT cascade-clean references. Deleting an instance leaves dangling IDs in `gap.relatedCurrentInstanceIds` / `gap.relatedDesiredInstanceIds` / other workloads' `mappedAssetIds`. Renderers tolerate gracefully (e.g., `proposeCriticalityUpgrades` `if (!asset) return;`); validators don't enforce link integrity (intentional UX trade-off). Orphans accumulate but don't crash. | Medium | Don't fix in `+dNN` (behaviour change). Surface in `+d02` ER diagram + RISK_REGISTER. |
-| **R-INT-2** | `customer.drivers` is mutated **directly** by [ContextView.js:130](../ui/views/ContextView.js) via `splice()`, violating "Only `interactions/*` writes session" architecture invariant (RULES.md §1, SPEC.md §1 invariant 6). No `interactions/contextCommands.js` module exists. | High (architectural drift, but functional) | Don't fix in `+dNN`. Flag for v2.5.x — a `removeDriver` helper in `interactions/` that also cascade-clears `gap.driverId === removedId`. Add to RISK_REGISTER in `+d02`. |
+| **R-INT-1** | `interactions/matrixCommands.js deleteInstance` does NOT cascade-clean references. Deleting an instance leaves dangling IDs in `gap.relatedCurrentInstanceIds` / `gap.relatedDesiredInstanceIds` / other workloads' `mappedAssetIds`. Renderers tolerate gracefully (e.g., `proposeCriticalityUpgrades` `if (!asset) return;`); validators don't enforce link integrity (intentional UX trade-off). Orphans accumulate but don't crash. | Medium | Don't fix in `.dNN` (behaviour change). Surface in `.d02` ER diagram + RISK_REGISTER. |
+| **R-INT-2** | `customer.drivers` is mutated **directly** by [ContextView.js:130](../ui/views/ContextView.js) via `splice()`, violating "Only `interactions/*` writes session" architecture invariant (RULES.md §1, SPEC.md §1 invariant 6). No `interactions/contextCommands.js` module exists. | High (architectural drift, but functional) | Don't fix in `.dNN`. Flag for v2.5.x — a `removeDriver` helper in `interactions/` that also cascade-clears `gap.driverId === removedId`. Add to RISK_REGISTER in `.d02`. |
 | **R-INT-3** | Driver-delete does not cascade to `gap.driverId`. Gaps with the dead reference fall through to driver-suggestion ladder D10 → "Unassigned" swimlane on Roadmap. Ghost data, not a crash. | Low | Bundle with R-INT-2 fix. |
 | **R-INT-4** | `gap.projectId` is derived **and** stored. `deriveProjectId` runs at create + structural-patch updates + migrator backfill. No drift between derived and stored values found in the live code paths. | Clean | None. |
 | **R-INT-5** | Asset-delete cascade for `workload.mappedAssetIds`: same orphan-accumulation pattern as R-INT-1, gracefully skipped at render. | Medium | Bundle with R-INT-1. |
 | **R-INT-6** | `gap.affectedLayers[0] === gap.layerId` (primary-layer invariant) **enforced** AND migrator-backfilled (M6). `setPrimaryLayer` is the only safe mutator. | Clean | None. |
-| **R-INT-7** | `instance.originId` is set at desired-tile creation but never cleared. If the source current instance is deleted, the desired tile keeps the dead pointer (used only for visual carry-through). Same accumulation pattern. | Low | Note for `+d02` ER diagram. |
+| **R-INT-7** | `instance.originId` is set at desired-tile creation but never cleared. If the source current instance is deleted, the desired tile keeps the dead pointer (used only for visual carry-through). Same accumulation pattern. | Low | Note for `.d02` ER diagram. |
 
 #### Evidence for the open CMDB-vs-UX question (no action this pass)
 
@@ -133,7 +133,7 @@ Inventory of every place relationships are stored, read, and written in shipped 
 - The "no validate relationship integrity" decision is **documented and intentional** ([core/models.js:96-98](../core/models.js)) — UX trade-off, not structural debt. Trade-off is real: orphans persist but workshop save flow stays unblocked.
 - **R-INT-2 is the strongest structural-debt signal** — a layer-discipline violation that survived v2.4.4 → v2.4.11. A CMDB rewrite would naturally surface this; a UX-visualization fix can address it with one helper method (no entity-shape change).
 - AI-writable surface (via `core/bindingResolvers.js`) deliberately exposes ZERO relationship-array writes — all relationship mutations are required to flow through `interactions/*` link/unlink helpers. v2.6.0 action-commands runtime will close this loop on the AI side via the existing function whitelist.
-- **Net**: nothing in `+d01` forces a CMDB rewrite. Friction is at the UX surface (relationship visibility, addressed in v2.5.0 crown-jewel) and at the cascade boundary (delete cleanup, addressable as a small helper). Fuller evidence will come from `+d02` C4/ER diagrams + ADR + RISK_REGISTER.
+- **Net**: nothing in `.d01` forces a CMDB rewrite. Friction is at the UX surface (relationship visibility, addressed in v2.5.0 crown-jewel) and at the cascade boundary (delete cleanup, addressable as a small helper). Fuller evidence will come from `.d02` C4/ER diagrams + ADR + RISK_REGISTER.
 
 ### §6 Documentation + memory consolidation (executed this pass)
 
@@ -144,7 +144,7 @@ Inventory of every place relationships are stored, read, and written in shipped 
 - diagnostics/appSpec.js header COVERAGE comment refresh.
 - docs/PHASE_17_MIGRATION_PLAN.md status annotation.
 - This file (NEW).
-- Auto-memory: MEMORY.md index entries refreshed (project_dell_discovery, feedback_testing, reference_runtime, project_current_state); MAINTENANCE_LOG pointer added; project_dell_discovery.md slim-rewritten to current state; reference_runtime.md path corrected (project moved out of OneDrive); feedback_testing.md test-count corrected; project_current_state.md tag count corrected (22 → 23 + `+d01`).
+- Auto-memory: MEMORY.md index entries refreshed (project_dell_discovery, feedback_testing, reference_runtime, project_current_state); MAINTENANCE_LOG pointer added; project_dell_discovery.md slim-rewritten to current state; reference_runtime.md path corrected (project moved out of OneDrive); feedback_testing.md test-count corrected; project_current_state.md tag count corrected (22 → 23 + `.d01`).
 
 ### §7 Agreement-trail re-validation
 
@@ -171,7 +171,7 @@ All foundational memory files confirmed present and consistent with current disc
 
 Per `feedback_browser_smoke_required.md` — full evidence captured in this pass's verification report (DOM state / event payloads / banner screenshot). Walked: load → green banner → tab switch through all 5 tabs → demo session reset → AI skill apply + undo → save/open `.canvas` round-trip.
 
-### Out of scope (deferred to `+d02`)
+### Out of scope (deferred to `.d02`)
 
 - Procedure §9 — C4 diagrams (System Context, Container, Component) under `docs/wiki/explanation/diagrams/`.
 - Procedure §9.2 — ADRs (`docs/adr/ADR-001` through `ADR-008+` per the bootstrap list).
@@ -181,13 +181,13 @@ Per `feedback_browser_smoke_required.md` — full evidence captured in this pass
 - Procedure §10 — scalability profile + stress assertions in demoSpec (PERF-1 through PERF-5).
 - Procedure §15 — all 13 onboarding/operational artefacts (ONBOARDING / CONTRIBUTING / GLOSSARY / INVARIANTS / RUNBOOK / VERSION_COMPAT / RISK_REGISTER / DEPENDENCY_POLICY / BROWSER_SUPPORT / RELEASE_NOTES / PERFORMANCE_BUDGET / LICENSE / .github templates).
 
-### Decisions deferred (out of `+dNN` scope, surfaced for future)
+### Decisions deferred (out of `.dNN` scope, surfaced for future)
 
-1. **`_dev/` convention** for genuine scratch/dev artefacts (browser-smoke evidence dumps, CMDB-exploration scratch, throwaway test fixtures). Not adopted in `+d01` because no real artefact qualifies yet. Re-evaluate in `+d02`.
+1. **`_dev/` convention** for genuine scratch/dev artefacts (browser-smoke evidence dumps, CMDB-exploration scratch, throwaway test fixtures). Not adopted in `.d01` because no real artefact qualifies yet. Re-evaluate in `.d02`.
 2. **R-INT-2 fix** (`interactions/contextCommands.removeDriver` + cascade clear of `gap.driverId`). Belongs in v2.5.x (behaviour change).
 3. **`deepClone()` extraction** (§3e). Belongs in a future functional release (introduces new module).
-4. **CMDB-vs-UX evaluation**. Holds until `+d02` ER diagram + ADR + RISK_REGISTER provide the full evidence. No structural finding in `+d01` forces a rewrite.
+4. **CMDB-vs-UX evaluation**. Holds until `.d02` ER diagram + ADR + RISK_REGISTER provide the full evidence. No structural finding in `.d01` forces a rewrite.
 
 ### Time spent
 
-Approximately one focused session, including the §2 audit, three sweep passes (§3–§5), the doc consolidation (§6), and the build/smoke verification (§8). DevTools profiling deliberately deferred to `+d02` so this pass stays scoped to documentation + hygiene.
+Approximately one focused session, including the §2 audit, three sweep passes (§3–§5), the doc consolidation (§6), and the build/smoke verification (§8). DevTools profiling deliberately deferred to `.d02` so this pass stays scoped to documentation + hygiene.

@@ -1,14 +1,14 @@
 # Dell Discovery Canvas — Session Handoff
 
-**Last session end**: 2026-04-25, after shipping `v2.4.11` Rules Hardening (review-time enforcement + closed-vs-deleted gaps + visible auto-behaviour + Operational/Services clarity + 3 in-flight bug fixes caught by browser smoke), followed by the first hygiene-pass clone `v2.4.11+d01` (no behaviour change — code-quality + perf + security + relationship-integrity audit + doc/memory reconciliation + new [docs/MAINTENANCE_LOG.md](docs/MAINTENANCE_LOG.md)).
+**Last session end**: 2026-04-25, after shipping `v2.4.11` Rules Hardening (review-time enforcement + closed-vs-deleted gaps + visible auto-behaviour + Operational/Services clarity + 3 in-flight bug fixes caught by browser smoke), followed by the first hygiene-pass clone `v2.4.11.d01` (no behaviour change — code-quality + perf + security + relationship-integrity audit + doc/memory reconciliation + new [docs/MAINTENANCE_LOG.md](docs/MAINTENANCE_LOG.md)).
 **File purpose**: anyone (human or a fresh Claude Code session) opening this folder should read this file first to know exactly where work stopped, what's shipped, what's queued, and how to pick up.
 
 ---
 
 ## 1 · Where you are
 
-- `git log --oneline main` → HEAD = `v2.4.11+d01` (functional source = `v2.4.11`).
-- `git tag --list 'v2.*' | sort -V` → 23 functional tags `v2.1.1` through `v2.4.11`, plus `v2.4.11+d01` hygiene-pass clone (SemVer-equivalent to `v2.4.11`, no behaviour change).
+- `git log --oneline main` → HEAD = `v2.4.11.d01` (functional source = `v2.4.11`).
+- `git tag --list 'v2.*' | sort -V` → 23 functional tags `v2.1.1` through `v2.4.11`, plus `v2.4.11.d01` hygiene-pass clone (SemVer-equivalent to `v2.4.11`, no behaviour change).
 - Working tree: clean. Everything that was built is tagged and pushed to `origin/main`.
 - GitHub: https://github.com/M-Alshamrani/dell-discovery-canvas (private).
 
@@ -54,7 +54,7 @@ Recent wins by tag:
 - **v2.4.10** · user-owned `.canvas` workbook file via File System Access API; PWA manifest; save/open round-trip with migrator coverage (Suite 41 SF1-SF11).
 - **v2.4.10.1 HOTFIX** · `runIsolated` snapshot/restore guard so test runs no longer pollute real `localStorage`.
 - **v2.4.11 · Phase 19k** · Rules Hardening + Visible-Rules UX. Five locked design principles (Draft permissive / Review enforced; status:closed not delete; auto-behaviour visible; rules from one place; workshop flow > ideal data shape). 21 spec items + 3 in-flight bug fixes (urgency-lock silently failing, demo g-004 mis-typed Replace, Save button no feedback) — all caught by mandatory Chrome-MCP browser smoke. Codified discipline in [feedback_browser_smoke_required.md](C:/Users/Mahmo/.claude/projects/C--Users-Mahmo-OneDrive-Documents-Claud-AI-PreSales-App/memory/feedback_browser_smoke_required.md).
-- **v2.4.11+d01** · first hygiene-pass clone (no behaviour change). Code-quality + perf + security + relationship-integrity audit; doc/memory reconciliation; new [docs/MAINTENANCE_LOG.md](docs/MAINTENANCE_LOG.md). See that file for the full sweep summary.
+- **v2.4.11.d01** · first hygiene-pass clone (no behaviour change). Code-quality + perf + security + relationship-integrity audit; doc/memory reconciliation; new [docs/MAINTENANCE_LOG.md](docs/MAINTENANCE_LOG.md). See that file for the full sweep summary.
 
 ## 4 · NEXT UP — Bucket A4 · v2.4.12 Services scope (LOCKED 2026-04-25)
 
@@ -145,8 +145,8 @@ The browser smoke is non-negotiable: v2.4.11's three pre-tag bug fixes (urgency 
 
 Paste this verbatim (or adapt) as your first message in the new session:
 
-> Resume work on the Dell Discovery Canvas project. Read, in order: `C:\Users\Mahmo\Projects\dell-discovery\HANDOFF.md`, then the memory files listed in its § 6, then `SPEC.md § 12` and `docs/RULES.md`. The last session shipped v2.4.11 (Rules Hardening + Visible-Rules UX) followed by `v2.4.11+d01` (first hygiene-pass clone, no behaviour change). NEXT UP is v2.4.12 Services scope, locked spec in `docs/CHANGELOG_PLAN.md § v2.4.12`. Before proposing anything, confirm back to me:
-> 1. The current HEAD tag (functional latest = v2.4.11; hygiene-pass clone = v2.4.11+d01).
+> Resume work on the Dell Discovery Canvas project. Read, in order: `C:\Users\Mahmo\Projects\dell-discovery\HANDOFF.md`, then the memory files listed in its § 6, then `SPEC.md § 12` and `docs/RULES.md`. The last session shipped v2.4.11 (Rules Hardening + Visible-Rules UX) followed by `v2.4.11.d01` (first hygiene-pass clone, no behaviour change). NEXT UP is v2.4.12 Services scope, locked spec in `docs/CHANGELOG_PLAN.md § v2.4.12`. Before proposing anything, confirm back to me:
+> 1. The current HEAD tag (functional latest = v2.4.11; hygiene-pass clone = v2.4.11.d01).
 > 2. The locked v2.4.12 scope (services field + 10-entry catalog + opt-in chips + Roadmap roll-up + new sub-tab).
 > 3. The full backlog buckets A-E (A4 NEXT UP, A5 → v2.6.0, B = v2.5.0/v2.5.1 crown-jewel).
 > 4. Whether the local Docker build still serves 509/509 green.
