@@ -932,6 +932,208 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
+## v2.4.12 · Services scope · QUEUED + LOCKED 2026-04-25 (execute after v2.4.11)
+
+**Theme**: surface professional-services scope on every gap. Services aren't a separate gap type — they're a **facet of nearly every gap** (a Replace gap implies migration + deployment; Consolidate implies migration + integration; Introduce implies deployment + training; Retire implies decommissioning; Operational gaps usually ARE services). Without this, the workshop deliverable is incomplete: customers ask "ok how do we actually do this" and the presales engineer doesn't have it captured.
+
+### Data model addition (one new field)
+
+```js
+gap.services = ["migration", "deployment", "training"]   // optional; multi-select
+```
+
+Two-surface treatment per `feedback_foundational_testing.md`:
+- Demo session refresh: a few demo gaps get appropriate `services` arrays (e.g., g-001 PowerProtect replace gets `["migration", "deployment", "training"]`).
+- Seed skill update: at least one seed skill writable to `context.selectedGap.services` (multi-value writes need a small `bindingResolver` extension).
+- demoSpec assertion: SS-DS22 — "every demo gap with `gapType: replace|consolidate|introduce|retire` has a `services` array (may be empty if user explicitly cleared)".
+- DEMO_CHANGELOG entry.
+
+### NEW `core/services.js` — catalog (mirrors `BUSINESS_DRIVERS` shape)
+
+```js
+export const SERVICE_TYPES = [
+  { id: "assessment",         label: "Assessment / Health check",   hint: "Pre-engagement audit before the work starts" },
+  { id: "migration",          label: "Migration",                   hint: "Move data / workloads from current to desired platform" },
+  { id: "deployment",         label: "Deployment / Install",        hint: "Build out the desired-state system" },
+  { id: "integration",        label: "Integration",                 hint: "Connect to existing systems, APIs, identity, monitoring" },
+  { id: "training",           label: "Training",                    hint: "Skill the customer's ops team on the new platform" },
+  { id: "knowledge_transfer", label: "Knowledge transfer",          hint: "Hand-off documentation + walkthroughs" },
+  { id: "runbook",            label: "Runbook authoring",           hint: "Operational playbooks (DR, incident response, change-mgmt)" },
+  { id: "managed",            label: "Managed services",            hint: "Ongoing operational support contract" },
+  { id: "decommissioning",    label: "Decommissioning",             hint: "Safe removal + data archive of retired systems" },
+  { id: "custom_dev",         label: "Custom development",          hint: "Bespoke connectors, scripts, tooling" }
+];
+
+// Auto-suggest map (gapType → suggested services). UX is OPT-IN per
+// approved pick: chips appear under a "Suggested" eyebrow but are NOT
+// pre-selected. User clicks to add. Less surprising than auto-applying.
+export const SUGGESTED_SERVICES_BY_GAP_TYPE = {
+  replace:     ["migration", "deployment"],
+  consolidate: ["migration", "integration", "knowledge_transfer"],
+  introduce:   ["deployment", "training"],
+  // retire-action gaps have gapType: "ops" — distinguish via a fallback
+  // map keyed on action when needed (handled in the UI helper).
+  enhance:     ["assessment"],
+  ops:         ["runbook"],
+  // null gapType (Keep) → no suggestions
+};
+```
+
+### UI surfaces
+
+1. **Gap detail panel** (Tab 4 right side, GapsEditView):
+   - New "Services needed" section under "Mapped Dell solutions"
+   - Multi-chip selector reading from `SERVICE_TYPES`
+   - Above the selector, an eyebrow row labelled **SUGGESTED** showing greyed chips for `SUGGESTED_SERVICES_BY_GAP_TYPE[gap.gapType]` minus already-selected ones; click-to-add
+   - Selected chips are full-color; clickable to remove
+   - When `gapType` changes, the SUGGESTED row re-derives but never auto-selects
+2. **Project card** (Tab 5.5 SummaryRoadmapView):
+   - Below the dell-solutions chips, a "Services needed" chip row showing the union of services across constituent gaps (deduped)
+3. **NEW Reporting sub-tab "Services scope"** (REPORTING_TABS gets a 6th entry between "Vendor Mix" and "Roadmap"):
+   - Roll-up table: rows = service types from catalog, columns = (count of gaps needing it, count of projects spanning it, list of project names)
+   - At the top: a "Services scope summary" sentence: "Across N projects: X migrations · Y deployments · Z trainings · W runbooks"
+   - This is the workshop deliverable for "engagement shape"
+
+### Tests — Suite 43 · SVC1-SVC10
+
+- SVC1 · `SERVICE_TYPES` is a 10-entry array with id+label+hint shape
+- SVC2 · gap.services persists round-trip through createGap + updateGap
+- SVC3 · gap.services dedupes on createGap (same id twice → one)
+- SVC4 · `SUGGESTED_SERVICES_BY_GAP_TYPE` returns the right chips per gapType
+- SVC5 · changing `gap.gapType` does NOT auto-mutate `gap.services` (opt-in confirmed)
+- SVC6 · empty array is a valid services value (not undefined)
+- SVC7 · invalid id in services array (e.g., "foo") drops on normalizeGap or fails validateGap (decide which during impl)
+- SVC8 · Roadmap project services chip = union of constituent gap services, deduped
+- SVC9 · "Services scope" sub-tab renders one row per service that has ≥1 gap
+- SVC10 · `.canvas` file save/open round-trips `gap.services` (sessionFile envelope already passes through unknown fields)
+
+Plus DS22 in demoSpec for the demo refresh.
+
+### What you'll see post-v2.4.12
+
+- Click any gap in Tab 4 → "Services needed" section appears with greyed "Suggested" chips you can click-to-add
+- Click a Replace gap → suggested chips show "Migration" and "Deployment" greyed; one click each adds them
+- Tab 5.5 Roadmap → each project card shows its services scope in a chip row
+- New "Services scope" sub-tab in Reporting → a clean roll-up of every service type and which projects need it
+
+### Effort: ~3-4 hr · single tag
+
+---
+
+## v2.4.11 · Rules hardening + Q1-Q4 fixes · QUEUED + LOCKED 2026-04-25 (execute next)
+
+**Theme**: lock the rules so the live workshop stays permissive but review enforces shape. Surface the silent magic. Fix the desired-link bug. Make Operational/Services first-class.
+
+**Reference**: `docs/RULES.md` (the full rules-as-built audit, committed alongside this entry).
+
+### Design principles applied across every item below
+
+1. **Draft mode permissive, Review mode enforced.** Every "force the user to fix" rule fires at the `reviewed: true` transition, NOT at workshop-time. The `reviewed` flag becomes meaningful: it asserts "I've checked this".
+2. **Destructive ops use `status: closed`, not delete.** Reversible. Visible. Auditable.
+3. **Automatic behaviour is visible.** Suggested drivers show their reason. Auto-drafts announce themselves. Manual overrides have indicators.
+4. **Rules derive from one place.** `core/taxonomy.js` is the source. UI safety nets call taxonomy helpers, not literal arrays.
+5. **Workshop flow > ideal data shape.** Soft chip first; hard block only at the "I'm done" moment.
+
+### Section A · Rules hardening
+
+| # | Item | File(s) | Effort |
+|---|---|---|---|
+| A1 | `validateActionLinks` runs at the `reviewed: true` transition (in `approveGap` and any `updateGap` patch flipping `reviewed` from false to true). Emit a soft chip during draft if shape is wrong. | `interactions/gapsCommands.js`; new chip in `GapsEditView.js` | 20 min |
+| A2 | Changing a desired tile's disposition to `keep` switches its linked gaps to `status: "closed"` with `closeReason: "auto: disposition changed to keep"`, **not delete**. Add a "Closed gaps" filter chip on Tab 4 so users can see them. | `interactions/desiredStateSync.js` (replace splice with status mutation); `GapsEditView.js` (filter chip + badge) | 30 min |
+| A3 | NEW helpers `taxonomy.requiresAtLeastOneCurrent(gapType)` and `requiresAtLeastOneDesired(gapType)`. `unlinkCurrentInstance` + `unlinkDesiredInstance` use them instead of literal arrays. Auto-includes `keep` and `retire` (currently missing from the L1 list). | `core/taxonomy.js`; `interactions/gapsCommands.js` | 15 min |
+| A4 | `linkDesiredInstance(session, gapId, instanceId, opts)` refuses to link if `confirmPhaseOnLink` returns conflict AND `opts.acknowledged !== true`. `GapsEditView.js` link picker calls `confirmPhaseOnLink` first; on user confirm, passes `acknowledged: true`. | `interactions/gapsCommands.js`; `GapsEditView.js` link picker | 25 min |
+| A5 | NEW helper `effectiveDriverReason(gap, session)` returns `{ driverId, source: "explicit"|"suggested", reason: "matched layer dataProtection" }`. Gap detail panel renders an "Auto-suggested driver: X (because Y). [Override]" chip when source === "suggested". | `services/programsService.js`; `GapsEditView.js` | 30 min |
+| A6 | NEW field `gap.urgencyOverride: boolean` (default false). Propagation rules P4 (`syncGapFromDesired` → urgency mirror) and P7 (`syncGapsFromCurrentCriticality`) skip gaps where `urgencyOverride === true`. UI shows "🔒 manually set / ↺ auto" toggle on the urgency selector. Migrator: existing gaps default to `urgencyOverride: false`. | `core/models.js` (validate optional); `state/sessionStore.js migrateLegacySession` (M10); `interactions/desiredStateSync.js`; `GapsEditView.js`; demoSpec DS22 | 30 min |
+| A7 | Project detail panel shows an "Also affects: {env labels}" chip row when the project's constituent gaps span more than one environment. | `ui/views/SummaryRoadmapView.js` | 15 min |
+| A8 | Workload detail panel shows a "Linked variants in other environments" chip row when another workload tile shares the same `label` field but lives in a different env. | `ui/views/MatrixView.js` workload detail | 20 min |
+| A9 | `validateActionLinks` extended: ops gaps require `relatedCurrentInstanceIds.length + relatedDesiredInstanceIds.length >= 1` OR `(notes||"").trim().length >= 10`. Soft chip during draft, hard block at review. | `core/taxonomy.js validateActionLinks`; copy update | 15 min |
+
+### Section B · Filter + form fixes (Q1)
+
+| # | Item | File(s) | Effort |
+|---|---|---|---|
+| B1 | Tab 4 layer-chip filter changes from `gap.layerId === selectedLayer` to `gap.affectedLayers.includes(selectedLayer)`. Multi-layer gaps now appear under EVERY layer chip they touch. | `ui/views/GapsEditView.js` filter logic | 15 min |
+| B2 | Gap form: rename "Primary layer *" → **"Primary layer (drives the project bucket) *"**. Add a multi-chip selector below labelled "Also affects" (writes `gap.affectedLayers` minus the primary; setPrimaryLayer keeps the invariant). | `ui/views/GapsEditView.js` add/edit form | 30 min |
+
+### Section C · Auto-draft visibility + UX (Q2)
+
+| # | Item | File(s) | Effort |
+|---|---|---|---|
+| C1 | Post-draft toast on Tab 3 when an auto-draft fires: `"↳ Gap drafted on Tab 4 (N unreviewed)"`. Auto-dismisses after 4s. | `ui/views/MatrixView.js` (toast on disposition save); `state/sessionEvents.js` (no change) | 20 min |
+| C2 | Tab 4 banner upgrade: "N unreviewed auto-drafted gaps" gets a "**Review all →**" button that opens each unreviewed gap in sequence. | `ui/views/GapsEditView.js` auto-gap-notice block | 30 min |
+| C3 | `buildGapFromDisposition` description template: `"{ActionVerb} {sourceLabel} → {desiredLabel} [{layerLabel}]"`. Falls back to current template if either side missing. | `interactions/desiredStateSync.js` | 15 min |
+| C4 | `buildGapFromDisposition` pre-fills `notes` for ALL action types, not just ops. Format: `"From workshop: {ActionLabel} {sourceLabel}"` for tile-bound; `"Net-new: {desiredLabel}"` for introduce. | same | 10 min |
+
+### Section D · Operational / Services clarity (Q4)
+
+| # | Item | File(s) | Effort |
+|---|---|---|---|
+| D1 | Rename label "Operational" → "Operational / Services" in `core/taxonomy.js ACTIONS[6].label`. UI auto-picks up via `DISPOSITION_ACTIONS` re-export. | `core/taxonomy.js` (one-line label change) | 15 min |
+| D2 | New "+ Add operational / services gap" button on Tab 4, distinct from the generic "+ Add gap". Pre-fills `gapType: "ops"`, opens the form with placeholder note: `"e.g., Build DR runbook for tier-1 workloads · Train ops team on PowerProtect · Establish change-management for cloud spend"`. | `ui/views/GapsEditView.js` | 25 min |
+| D3 | Project card label: when ALL constituent gaps are `disposition === "retire"`, show project name suffix "Retirement" instead of `ACTION_VERBS.ops` "Operational Improvement". Edge case: mixed retire+ops projects still say "Operational Improvement". | `services/roadmapService.js` (verb override after grouping) | 10 min |
+
+### Section E · The bug (Q reported)
+
+| # | Item | File(s) | Effort |
+|---|---|---|---|
+| E1 | Investigate why the desired-link in the gap detail panel isn't clickable. Likely a missing event handler in `GapsEditView.js renderGapDetail` link rendering. Fix to make the link navigate to / highlight the linked desired tile on Tab 3 (or open it in a side panel — pick during impl). | `ui/views/GapsEditView.js` | 15 min (estimate) |
+
+### Section F · Friendly errors (cross-cutting)
+
+| # | Item | File(s) | Effort |
+|---|---|---|---|
+| F1 | Replace `validateActionLinks` raw error messages with workshop-friendly prose. Examples: `"Replace needs the technology being replaced. Link a current-state tile to this gap."` instead of `"Action 'Replace' requires exactly 1 current link (got 0)"`. Same for every other action. | `core/taxonomy.js validateActionLinks` (message generator) | 20 min |
+
+### Section G · Tests + docs
+
+| # | Item | Effort |
+|---|---|---|
+| G1 | NEW Suite 42 · RH1-RH20 covering A1-A9, B1-B2, C1-C4, D1-D3, E1, F1. Plus demoSpec DS22 for `gap.urgencyOverride`. | 60 min |
+| G2 | Manual smoke checklist: incognito → fresh state OK · "Bus Co" never appears · Clear all data wipes · Save/Open round-trip · auto-draft toast appears · suggested-driver chip visible · desired-link clickable · "+ Add operational / services gap" present · review-time validation fires. APP_VERSION 2.4.10.1 → 2.4.11. RULES.md committed (already drafted). CHANGELOG_PLAN entry flips to IMPLEMENTED. | 30 min |
+
+### Total · ~7 hours · single tag
+
+### What you'll see post-v2.4.11 (verification spec)
+
+- **Tab 4 layer filter** — clicking "Compute" now shows gaps with Compute as primary AND gaps where Compute is in `affectedLayers`.
+- **Gap form** — "Primary layer (drives the project bucket)" label + a separate "Also affects" multi-chip selector.
+- **Tab 4 unreviewed banner** — has a "Review all →" button that walks you through unreviewed gaps one by one.
+- **Tab 3 disposition save** — brief toast appears: "↳ Gap drafted on Tab 4 (N unreviewed)".
+- **Gap detail** — "Auto-suggested driver: Cyber Resilience (because: data-protection layer). [Override]" chip when no explicit driver.
+- **Gap urgency selector** — "🔒 manually set" indicator + "↺ auto" reset link when user has overridden propagation.
+- **Tab 4 "+ Add operational / services gap"** — new prominent button with placeholder examples in the description field.
+- **Tab 5.5 project card** — "Also affects: DR DC, Public Cloud" chip when the project spans multiple envs.
+- **Validation messages** — workshop-friendly: "Replace needs the technology being replaced..." instead of raw rule text.
+- **Approving an unreviewed gap with bad shape** — blocks with the friendly message; user must fix before approval succeeds.
+- **Setting a tile to "Keep" with linked gaps** — gaps move to `status: closed` and a "Closed gaps" filter chip appears on Tab 4.
+- **Desired-state link in gap detail** — clickable now (the bug).
+
+### Tag protocol (per the discipline established 2026-04-25)
+
+1. Spec committed (this doc + RULES.md) — DONE before code.
+2. Code execution — single coherent pass.
+3. **Manual smoke against the verification spec** — every bullet above checked in the live app, results reported back to user.
+4. **Pause for user approval** — no tag without explicit "tag it".
+5. Tag, push, update HANDOFF.
+
+---
+
+## v2.4.10.1 · Phase 19j.1 · HOTFIX · test-runner localStorage isolation · IMPLEMENTED 2026-04-25
+
+**Bug**: Every release v2.4.5 → v2.4.10 silently shipped a regression where the auto-running test suite POLLUTED the user's real localStorage on every page load. Symptoms: incognito-fresh-load showed "Bus Co" + a test-data gap; clicking Clear all data appeared to do nothing because tests re-polluted on the reload.
+
+**Root cause**: tests like DS13/DS14/DS16/DS17 in demoSpec.js call `replaceSession({customer: {name: "Bus Co", ...}})` then `applyProposal(...)`. `applyProposal` calls `saveToLocalStorage()`. The test session ends up persisted as `dell_discovery_v1`. Next page load: sessionStore IIFE reads polluted localStorage and renders test data instantly.
+
+**Why missed**: green test banner + `localStorage.clear()` before every Chrome MCP nav masked the pollution during verification.
+
+**Fix**: NEW `runIsolated(run, restoreCallback)` helper in `diagnostics/testRunner.js`. Snapshots every localStorage key, runs tests, restores keys in finally. The callback re-loads in-memory `session` from restored localStorage and emits `session-changed`.
+
+**Verified live before commit**: incognito-fresh load shows "New session" + fresh-start card + `lsKeys: []`. Clear all data wipes + reloads cleanly.
+
+**Files**: `diagnostics/testRunner.js` (new helper) · `diagnostics/appSpec.js` (`runAllTests` wraps via `runIsolated`).
+
+---
+
 ## v2.4.10 · User-owned save/open file (.canvas workbook) · IMPLEMENTED 2026-04-24
 
 **Goal**: give volunteer test users a real data-durability lifeline. Before this tag, a user's work existed only in browser localStorage — a reinstall, a Clear-all, or a version upgrade that broke migrations would lose everything. After this tag, the user owns their work as a `.canvas` file they can save, open, back up, or hand to a colleague.

@@ -72,8 +72,15 @@ Ordered for logical progression. Each bucket has locked scope in memory or SPEC.
 ### Bucket A — finish AI platform
 - ✅ A1. v2.4.5 Foundations Refresh (shipped).
 - ✅ A1.1. v2.4.5.1 AI reliability (shipped).
-- **A2.** v2.4.6 **Action-command skills** — NEXT UP (scope above).
-- **A3.** v2.4.7 **UX polish** — 7-item curated list in `docs/CHANGELOG_PLAN.md § v2.4.7`. Small fixes the user flagged in live use: skill Save button wiring (test mandatory on create, optional on edit), empty chip on skill rows (deprecated `outputMode` field), fresh-start UX (empty vs demo default), AI-powered conversation starter, auto-dismiss green test banner, app-version source of truth (`core/version.js`). Reference HTML for the crown-jewel visual target: `C:/Users/Mahmo/Downloads/GPLC Digital Unified Platform v1.0.html`.
+- ✅ A2. v2.4.6 UX quick-wins (shipped 2026-04-24).
+- ✅ A2.1. v2.4.7 Fresh-start UX (shipped 2026-04-24).
+- ✅ A2.2. v2.4.8 Phase 17 taxonomy (shipped 2026-04-24).
+- ✅ A2.3. v2.4.9 Primary-layer + Gap→Project data model · pre-crown-jewel rollback anchor (shipped 2026-04-24).
+- ✅ A2.4. v2.4.10 User-owned save/open .canvas file (shipped 2026-04-24).
+- ✅ A2.5. v2.4.10.1 HOTFIX · test-runner localStorage isolation (shipped 2026-04-25).
+- **A3. v2.4.11 Rules hardening + Q1-Q4 fixes — NEXT UP (LOCKED 2026-04-25).** Full spec in `docs/CHANGELOG_PLAN.md § v2.4.11`. Inputs: `docs/RULES.md` (rules-as-built audit) + 5 design principles (draft permissive / review enforced; status:closed not delete; visible auto-behaviour; rules from one source; workshop flow > shape). 21 items across 7 sections (A rules / B filter+form / C auto-draft visibility / D operational+services clarity / E desired-link bug / F friendly errors / G tests+docs). ~7 hr · single tag · spec committed before code.
+- **A4. v2.4.12 Services scope — QUEUED + LOCKED 2026-04-25** (execute after v2.4.11). Full spec in `docs/CHANGELOG_PLAN.md § v2.4.12`. New `gap.services[]` field + 10-entry `SERVICE_TYPES` catalog + opt-in suggested chips + roll-up on Roadmap project cards + new "Services scope" sub-tab on Reporting. ~3-4 hr · single tag.
+- **A5. v2.6.0 Action-command skills** — runtime for `json-commands` response format. Was originally v2.4.6; deferred so UX + crown-jewel land first.
 
 ### Bucket B — Crown-jewel UX rework (v2.5.0)
 Locked spec in `project_deferred_design_review.md` §§ 1-5. Single big release, best done in a fresh session with full context.
@@ -83,8 +90,8 @@ Locked spec in `project_deferred_design_review.md` §§ 1-5. Single big release,
 - **B4.** "✨ Use AI" button placement across Tabs 2-5.
 - **B5.** Whitespace + density + real SVG icon system + tag vocabulary unification + side-panel-as-drawer IA (per the GPLC sample comparison).
 
-### Bucket C — User-gated
-- **C1.** Phase 17 **Taxonomy unification** — drop `rationalize` gap type, rename Disposition → Action, 7-term mandatory-link table. Blocked on user sign-off of the table in `docs/CHANGELOG_PLAN.md § v2.2+ Item 4`.
+### Bucket C — Was user-gated, now done
+- ✅ C1. Phase 17 Taxonomy unification — shipped as v2.4.8 (2026-04-24, sign-off in hand).
 
 ### Bucket D — Deployment
 - **D1.** GB10 (or any linux/arm64 host) **multi-arch verification** — the image is multi-arch-tagged but nobody has built/run it on real ARM64 hardware. Recipe in `project_current_state.md § Pending GB10 verification`.
@@ -102,8 +109,9 @@ Read these files **in this order**:
 4. `.claude/projects/.../memory/feedback_foundational_testing.md` — **the rule that governs every data-model change**.
 5. `.claude/projects/.../memory/project_deferred_design_review.md` — crown-jewel scope.
 6. `SPEC.md § 12` — the AI Platform Specification (including §12.4a reliability contract + §12.5a sessionEvents bus + §12.8 invariants).
-7. `docs/CHANGELOG_PLAN.md` — latest entries at top are `v2.4.5.1` (AI reliability) and `v2.4.5` (Foundations Refresh).
-8. `docs/DEMO_CHANGELOG.md` — demo + seed surface audit trail (read before touching `state/demoSession.js` or `core/seedSkills.js`).
+7. `docs/CHANGELOG_PLAN.md` — latest entries at top: v2.4.12 (services scope, queued+locked), v2.4.11 (rules hardening, queued+locked NEXT UP), v2.4.10.1 hotfix, v2.4.10 save/open file, v2.4.9 rollback anchor.
+8. `docs/RULES.md` — **rules-as-built audit (committed 2026-04-25)**. Must read before any rule change. 12 sections, ~80 numbered rules tagged 🔴 HARD / 🟡 SOFT / 🔵 AUTO / 📦 MIGRATE.
+9. `docs/DEMO_CHANGELOG.md` — demo + seed surface audit trail (read before touching `state/demoSession.js` or `core/seedSkills.js`).
 
 Then verify the build works locally:
 
