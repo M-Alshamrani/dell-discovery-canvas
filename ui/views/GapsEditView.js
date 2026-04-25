@@ -6,10 +6,11 @@ import { createGap, updateGap, deleteGap, setGapDriverId, approveGap,
          linkCurrentInstance, linkDesiredInstance,
          unlinkCurrentInstance, unlinkDesiredInstance } from "../../interactions/gapsCommands.js";
 import { syncDesiredFromGap, confirmPhaseOnLink } from "../../interactions/desiredStateSync.js";
-import { suggestDriverId, effectiveDriverId, driverLabel as driverLabelFor,
+import { suggestDriverId, effectiveDriverId, effectiveDriverReason, driverLabel as driverLabelFor,
          effectiveDellSolutions } from "../../services/programsService.js";
 import { saveToLocalStorage } from "../../state/sessionStore.js";
 import { helpButton } from "./HelpModal.js";
+import { validateActionLinks, actionById } from "../../core/taxonomy.js";
 
 // Phase 18: count how many gaps reference an instance id (in either link
 // list). Used for the "linked to N gaps" multi-link chip and for the
@@ -38,6 +39,11 @@ export function renderGapsEditView(left, right, session) {
   var selectedGapId         = null;
   var dragGapId             = null;
   var showNeedsReviewOnly   = false;
+  // v2.4.11 · A2 · "Show closed gaps" filter. Default off — closed gaps
+  // (auto-closed when their tile's disposition flips to Keep) stay
+  // hidden from the main board so they don't clutter active work.
+  // User can flip on to see + recover them.
+  var showClosedGaps        = false;
 
   // ---- Header ----
   var header = mk("div", "card");
@@ -48,12 +54,29 @@ export function renderGapsEditView(left, right, session) {
   header.appendChild(mkt("div", "card-hint",
     "Each gap bridges current to desired state. Auto-drafted gaps appear when you set a disposition in Desired State. Drag cards between phases to re-prioritise."));
 
-  // Auto-gap notice
+  // Auto-gap notice + v2.4.11 · C2 · "Review all" guided walkthrough button.
   var autoGaps = getAutoGaps();
   if (autoGaps.length > 0) {
     var notice = mk("div", "auto-gap-notice");
-    notice.innerHTML = "<strong>" + autoGaps.length + " auto-drafted gap" + (autoGaps.length > 1 ? "s" : "") +
-      "</strong> from Desired State dispositions -- review them in the board below.";
+    var msg = "<strong>" + autoGaps.length + " auto-drafted gap" + (autoGaps.length > 1 ? "s" : "") +
+      "</strong> from Desired State dispositions — review them in the board below.";
+    notice.innerHTML = msg + " ";
+    var reviewAllBtn = mkt("button", "btn-primary auto-gap-review-all", "Review all →");
+    reviewAllBtn.title = "Walk through each unreviewed gap in sequence so you can approve, edit, or delete it.";
+    reviewAllBtn.addEventListener("click", function() {
+      // Walkthrough: select unreviewed gaps one at a time. Clicking the
+      // button each time advances to the next; when none remain, it
+      // auto-disables. Lightweight first cut — doesn't need a full
+      // wizard chrome to be useful.
+      var nextUnreviewed = (session.gaps || []).find(function(g) {
+        return g.reviewed === false && g.status !== "closed";
+      });
+      if (nextUnreviewed) {
+        selectedGapId = nextUnreviewed.id;
+        renderAll();
+      }
+    });
+    notice.appendChild(reviewAllBtn);
     header.appendChild(notice);
   }
 
@@ -103,10 +126,40 @@ export function renderGapsEditView(left, right, session) {
   needsReviewToggle.title = "Show only gaps that still need approval or review.";
   filterRow.appendChild(needsReviewToggle);
 
+  // v2.4.11 · A2 · "Show closed gaps" filter chip. Dynamic count badge
+  // when there are closed gaps so the user knows there's something to
+  // recover. Toggle re-renders the board.
+  var closedCount = (session.gaps || []).filter(function(g) { return g.status === "closed"; }).length;
+  var closedToggle = mk("label", "chip-filter closed-gaps-toggle");
+  var closedCb = document.createElement("input");
+  closedCb.type = "checkbox";
+  closedCb.className = "closed-gaps-check";
+  closedCb.checked = showClosedGaps;
+  closedCb.addEventListener("change", function() {
+    showClosedGaps = closedCb.checked;
+    closedToggle.classList.toggle("active", showClosedGaps);
+    renderAll();
+  });
+  closedToggle.appendChild(closedCb);
+  closedToggle.appendChild(document.createTextNode(
+    " Show closed gaps" + (closedCount > 0 ? " (" + closedCount + ")" : "")));
+  closedToggle.title = "Closed gaps are hidden by default. They appear when their tile's disposition was set to Keep, or when manually closed. Tick to see + recover them.";
+  filterRow.appendChild(closedToggle);
+
   var addBtn = mkt("button", "btn-primary", "+ Add gap");
   addBtn.style.marginLeft = "auto";
   addBtn.addEventListener("click", function() { openAddDialog(); });
   filterRow.appendChild(addBtn);
+
+  // v2.4.11 · D2 · prominent "+ Add operational / services gap" button.
+  // Distinct from the generic + Add gap because cross-cutting service
+  // work (DR runbook, training, governance, decommissioning) is a
+  // workshop output that doesn't fit the tile-bound disposition flow.
+  var addOpsBtn = mkt("button", "btn-secondary", "+ Add operational / services gap");
+  addOpsBtn.title = "Add a cross-cutting Operational / Services gap (e.g. build DR runbook · train ops team · establish change-management · decommission program).";
+  addOpsBtn.addEventListener("click", function() { openAddDialog({ presetGapType: "ops" }); });
+  filterRow.appendChild(addOpsBtn);
+
   header.appendChild(filterRow);
   left.appendChild(header);
 
@@ -116,6 +169,19 @@ export function renderGapsEditView(left, right, session) {
   showPlaceholder(right);
 
   // ---- Helpers ----
+  // v2.4.11 · A1 · soft-chip helper. Probes the gap as if reviewed:true
+  // and catches the friendly error from validateActionLinks. Returns the
+  // friendly message string (or null if the gap is shape-valid).
+  function computeDraftIssue(gap) {
+    if (!gap || gap.status === "closed") return null;
+    try {
+      validateActionLinks(Object.assign({}, gap, { reviewed: true }));
+      return null;
+    } catch (e) {
+      return e.message || String(e);
+    }
+  }
+
   function getAutoGaps() {
     return (session.gaps || []).filter(function(g) {
       return g.relatedDesiredInstanceIds && g.relatedDesiredInstanceIds.length > 0
@@ -126,13 +192,21 @@ export function renderGapsEditView(left, right, session) {
   function filteredGaps() {
     var layerIds = Array.from(activeLayerIds);
     var envId    = activeEnvId;
+    // v2.4.11 · B1 · already correctly operates on `affectedLayers` (with
+    // a fallback to [layerId] for legacy sessions). The v2.4.9 invariant
+    // ensures affectedLayers[0] === layerId, so a primary-Compute gap
+    // with affectedLayers=["compute","storage"] correctly matches the
+    // Storage layer chip too.
     return (session.gaps || []).filter(function(g) {
       var layers = (g.affectedLayers && g.affectedLayers.length) ? g.affectedLayers : [g.layerId];
       var envs   = g.affectedEnvironments || [];
       var lOk = !layerIds.length || layers.some(function(l) { return layerIds.indexOf(l) >= 0; });
       var eOk = envId === "all" || envs.length === 0 || envs.indexOf(envId) >= 0;
       var nrOk = !showNeedsReviewOnly || g.reviewed === false;
-      return lOk && eOk && nrOk;
+      // v2.4.11 · A2 · closed gaps (status === "closed") are hidden by
+      // default. Show them only when the "Show closed" filter chip is on.
+      var statusOk = (g.status !== "closed") || showClosedGaps;
+      return lOk && eOk && nrOk && statusOk;
     });
   }
 
@@ -309,6 +383,35 @@ export function renderGapsEditView(left, right, session) {
         ? " | " + gap.affectedEnvironments.map(envName).join(", ") : ""));
     panel.appendChild(subEl);
 
+    // v2.4.11 · A1 · soft chip when this gap's shape doesn't satisfy its
+    // Action's link rules. Doesn't block editing — just surfaces what's
+    // missing so the user knows what to fix before approving.
+    var draftIssue = computeDraftIssue(gap);
+    if (draftIssue) {
+      var draftChip = mk("div", "draft-issue-chip");
+      draftChip.appendChild(mkt("span", "draft-issue-eyebrow", "REVIEW NEEDED"));
+      draftChip.appendChild(mkt("span", "draft-issue-msg", draftIssue));
+      panel.appendChild(draftChip);
+    }
+    // v2.4.11 · A2 · closed-status banner when the gap is closed.
+    if (gap.status === "closed") {
+      var closedChip = mk("div", "closed-status-chip");
+      closedChip.appendChild(mkt("span", "closed-status-eyebrow", "CLOSED"));
+      closedChip.appendChild(mkt("span", "closed-status-msg",
+        gap.closeReason || "manually closed"));
+      var reopenBtn = mkt("button", "btn-ghost-sm", "Reopen");
+      reopenBtn.title = "Reopen this gap. Status returns to 'open'.";
+      reopenBtn.addEventListener("click", function() {
+        try {
+          updateGap(session, gap.id, { status: "open", closeReason: undefined, closedAt: undefined });
+          saveToLocalStorage();
+          renderAll();
+        } catch(e) { showErr(panel, e.message); }
+      });
+      closedChip.appendChild(reopenBtn);
+      panel.appendChild(closedChip);
+    }
+
     // ---- Edit form ----
     var form = mk("div", "edit-form");
     var layerMap = {};
@@ -316,8 +419,28 @@ export function renderGapsEditView(left, right, session) {
 
     form.appendChild(fg("Description",
       ta("description", gap.description || "", "One-line description of the gap or initiative")));
-    form.appendChild(fg("Primary layer",
+    // v2.4.11 · B2 · clarified label.
+    form.appendChild(fg("Primary layer (drives the project bucket)",
       selEl("layerId", LayerIds, gap.layerId, layerMap)));
+    // v2.4.11 · B2 · "Also affects" chips for additional layers. Excludes
+    // the primary (which is always in affectedLayers[0] per the v2.4.9
+    // invariant); user adds/removes layers here. Save handler stitches
+    // primary back at index 0.
+    var alsoGroup = mk("div", "form-group");
+    alsoGroup.appendChild(mkt("label", "form-label", "Also affects (additional layers)"));
+    var alsoRow = mk("div", "chips-row also-affects-chips");
+    var existingAlso = (gap.affectedLayers || []).slice(1);  // skip primary at [0]
+    LAYERS.forEach(function(layer) {
+      if (layer.id === gap.layerId) return;  // primary not selectable here
+      var chip = mkt("div", "chip-filter" + (existingAlso.indexOf(layer.id) >= 0 ? " active" : ""), layer.label);
+      chip.dataset.alsoLayerId = layer.id;
+      chip.addEventListener("click", function() {
+        chip.classList.toggle("active");
+      });
+      alsoRow.appendChild(chip);
+    });
+    alsoGroup.appendChild(alsoRow);
+    form.appendChild(alsoGroup);
     // Gap type: read-only display for auto-drafted gaps (T4.3);
     // editable ONLY when it's manual + hasn't been set yet (T4.14).
     if (isAutoDrafted(gap)) {
@@ -327,10 +450,56 @@ export function renderGapsEditView(left, right, session) {
       form.appendChild(fg("Gap type",
         selEl("gapType", ["","enhance","replace","introduce","consolidate","ops"], gap.gapType || "")));
     }
-    // Urgency: always read-only (strict-derived per SPEC §2.3 / T4.1 / T3.16).
-    form.appendChild(fg("Urgency", readOnlyField(gap.urgency || "—",
-      "Urgency is derived from the linked current instance's criticality. " +
-      "If you think urgency should be different, update criticality in Current State.")));
+    // v2.4.11 · A6 · urgency selector with override semantics.
+    //   urgencyOverride: false → propagation owns urgency (P4/P7 sync from
+    //                            linked current's criticality). UI shows the
+    //                            value as derived + a "🔒 lock" button to pin.
+    //   urgencyOverride: true  → user pinned. UI shows a real selector + an
+    //                            "↺ auto" button to release back to derived.
+    var urgencyGroup = mk("div", "form-group");
+    urgencyGroup.appendChild(mkt("label", "form-label", "Urgency"));
+    var urgencyRow = mk("div", "urgency-row");
+    var isOverridden = gap.urgencyOverride === true;
+    if (isOverridden) {
+      // Editable selector + ↺ auto button.
+      var urgSel = selEl("urgency", ["High","Medium","Low"], gap.urgency || "Medium");
+      urgencyRow.appendChild(urgSel);
+      var autoBtn = mkt("button", "btn-ghost-sm urg-auto-btn", "↺ auto");
+      autoBtn.title = "Release urgency back to auto-derive (urgency follows the linked current's criticality).";
+      autoBtn.addEventListener("click", function() {
+        try {
+          updateGap(session, gap.id, { urgencyOverride: false });
+          // Re-derive urgency immediately from any linked current.
+          var firstCur = (gap.relatedCurrentInstanceIds || []).map(function(id) {
+            return (session.instances || []).find(function(i) { return i.id === id; });
+          }).find(Boolean);
+          if (firstCur && firstCur.criticality) {
+            updateGap(session, gap.id, { urgency: firstCur.criticality });
+          }
+          saveToLocalStorage();
+          renderAll();
+        } catch(e) { showErr(panel, e.message); }
+      });
+      urgencyRow.appendChild(autoBtn);
+      urgencyRow.appendChild(mkt("span", "urg-override-indicator", "🔒 manually set"));
+    } else {
+      // Read-only display + 🔒 lock button.
+      urgencyRow.appendChild(mkt("span", "urg-derived-value urg-" + (gap.urgency||"Medium").toLowerCase(),
+        gap.urgency || "—"));
+      var lockBtn = mkt("button", "btn-ghost-sm urg-lock-btn", "🔒 set manually");
+      lockBtn.title = "Pin this urgency. Future propagation from criticality changes will not overwrite it.";
+      lockBtn.addEventListener("click", function() {
+        try {
+          updateGap(session, gap.id, { urgencyOverride: true });
+          saveToLocalStorage();
+          renderAll();
+        } catch(e) { showErr(panel, e.message); }
+      });
+      urgencyRow.appendChild(lockBtn);
+      urgencyRow.appendChild(mkt("span", "urg-derived-indicator", "↺ auto from linked current"));
+    }
+    urgencyGroup.appendChild(urgencyRow);
+    form.appendChild(urgencyGroup);
     form.appendChild(fg("Phase",
       selEl("phase", ["now","next","later"], gap.phase)));
     form.appendChild(fg("Status",
@@ -346,17 +515,37 @@ export function renderGapsEditView(left, right, session) {
     });
     var currentDriverVal = gap.driverId || "";
     var progSel = selEl("driverId", programOpts, currentDriverVal, programLabels);
-    var autoHit = gap.driverId ? null : suggestDriverId(gap, session);
-    if (autoHit && programLabels[autoHit]) {
-      // Visually mark the auto-suggested option with a star + "(suggested)" so the
-      // presales can spot it at a glance in the dropdown list.
-      [...progSel.options].forEach(function(opt) {
-        if (opt.value === autoHit) opt.textContent = "★ " + programLabels[autoHit] + " (suggested)";
-      });
-    }
     progSel.setAttribute("title",
-      "Which strategic driver does this gap serve? Auto-suggested from gap type + layer + environment. Pick explicitly to override.");
+      "Which strategic driver does this gap serve? Pick to override the auto-suggestion.");
     form.appendChild(fg("Strategic driver", progSel));
+    // v2.4.11 · A5 · explicit "Auto-suggested driver: X because Y" chip
+    // below the dropdown, replacing the silent ★-in-dropdown affordance.
+    // Makes the suggestion logic visible and overridable.
+    var driverReason = effectiveDriverReason(gap, session);
+    if (driverReason && driverReason.source === "suggested" && driverReason.driverId) {
+      var meta = BUSINESS_DRIVERS.find(function(d) { return d.id === driverReason.driverId; });
+      var label = meta ? meta.label : driverReason.driverId;
+      var hintRow = mk("div", "auto-driver-chip");
+      hintRow.appendChild(mkt("span", "auto-driver-eyebrow", "AUTO-SUGGESTED"));
+      hintRow.appendChild(mkt("span", "auto-driver-label", label));
+      hintRow.appendChild(mkt("span", "auto-driver-reason", "because " + driverReason.reason));
+      var acceptBtn = mkt("button", "btn-ghost-sm auto-driver-accept", "Pin this driver");
+      acceptBtn.title = "Set this gap's driver explicitly to '" + label + "' so future heuristic changes don't reassign it.";
+      acceptBtn.addEventListener("click", function() {
+        try {
+          setGapDriverId(session, gap.id, driverReason.driverId);
+          saveToLocalStorage();
+          renderAll();
+        } catch(e) { showErr(panel, e.message); }
+      });
+      hintRow.appendChild(acceptBtn);
+      form.appendChild(hintRow);
+    } else if (driverReason && driverReason.source === "none") {
+      var noneRow = mk("div", "auto-driver-chip auto-driver-none");
+      noneRow.appendChild(mkt("span", "auto-driver-eyebrow", "AUTO-SUGGESTED"));
+      noneRow.appendChild(mkt("span", "auto-driver-reason", driverReason.reason));
+      form.appendChild(noneRow);
+    }
 
     // Affected environments -- multi-check
     var envGroup = mk("div", "form-group");
@@ -404,8 +593,15 @@ export function renderGapsEditView(left, right, session) {
       actions.appendChild(approveBtn);
     }
 
-    var saveBtn = mkt("button", "btn-primary", "Save changes");
+    var saveBtn = mkt("button", "btn-primary save-btn", "Save changes");
     saveBtn.addEventListener("click", function() {
+      // v2.4.11 · save button gets visible loading + success + error states.
+      // Before: text swapped to "Saved" briefly on success only — no feedback
+      // on click, no error state. User reported "save doesn't have any
+      // dynamic clicking pattern". Fixing.
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+      saveBtn.classList.remove("save-ok", "save-err");
       var patch = {};
       form.querySelectorAll("[data-prop]").forEach(function(el) {
         patch[el.getAttribute("data-prop")] = el.value || undefined;
@@ -416,8 +612,27 @@ export function renderGapsEditView(left, right, session) {
         checkedEnvs.push(cb.value);
       });
       patch.affectedEnvironments = checkedEnvs;
-      // Urgency is strict-derived; never comes from a form control. Keep existing value.
-      patch.urgency = gap.urgency || "Medium";
+      // v2.4.11 · B2 · collect Also-affects chips into affectedLayers
+      // (with primary stitched at index 0 by setPrimaryLayer in updateGap).
+      var alsoChips = form.querySelectorAll(".also-affects-chips .chip-filter.active");
+      var alsoLayers = [];
+      alsoChips.forEach(function(c) {
+        if (c.dataset && c.dataset.alsoLayerId) alsoLayers.push(c.dataset.alsoLayerId);
+      });
+      var primaryForLayers = patch.layerId || gap.layerId;
+      patch.affectedLayers = [primaryForLayers].concat(
+        alsoLayers.filter(function(l) { return l !== primaryForLayers; })
+      );
+      // v2.4.11 · A6 · urgency comes from the override-aware UI. If
+      // gap.urgencyOverride is true, the form has a real selector; if
+      // false, the form has a read-only display (no data-prop). In the
+      // override=false case, preserve existing urgency. In the
+      // override=true case, accept the user's choice.
+      if (gap.urgencyOverride === true && patch.urgency) {
+        // accept whatever the selector chose
+      } else {
+        patch.urgency = gap.urgency || "Medium";
+      }
       patch.phase   = patch.phase   || "now";
       patch.status  = patch.status  || "open";
       // Lock gapType for auto-drafted gaps (T4.3 / T4.14 — derived from disposition).
@@ -432,9 +647,25 @@ export function renderGapsEditView(left, right, session) {
         // Bidirectional phase sync after manual phase edit (T4.5).
         syncDesiredFromGap(session, gap.id);
         saveToLocalStorage();
-        saveBtn.textContent = "Saved";
-        setTimeout(function() { saveBtn.textContent = "Save changes"; renderAll(); }, 800);
-      } catch(e) { showErr(panel, e.message); }
+        saveBtn.textContent = "Saved ✓";
+        saveBtn.classList.add("save-ok");
+        setTimeout(function() {
+          saveBtn.classList.remove("save-ok");
+          saveBtn.textContent = "Save changes";
+          saveBtn.disabled = false;
+          renderAll();
+        }, 900);
+      } catch(e) {
+        // Visible error state on the button + inline error in the panel.
+        saveBtn.textContent = "Couldn't save";
+        saveBtn.classList.add("save-err");
+        saveBtn.disabled = false;
+        showErr(panel, e.message);
+        setTimeout(function() {
+          saveBtn.classList.remove("save-err");
+          saveBtn.textContent = "Save changes";
+        }, 2000);
+      }
     });
     actions.appendChild(saveBtn);
 
@@ -507,14 +738,19 @@ export function renderGapsEditView(left, right, session) {
       openLinkPicker("desired", gap, function(instId) {
         // v2.1 · phase-conflict guard: if the tile's current phase differs from the gap's,
         // ask the presales before auto-reassigning. Gap wins per locked decision.
+        // v2.4.11 · A4 · the function now refuses without { acknowledged: true }
+        // when there's a conflict — make the confirm + acknowledged opt-in
+        // explicit so no caller can accidentally bypass.
         var check = confirmPhaseOnLink(session, gap.id, instId);
+        var acknowledged = false;
         if (check.status === "conflict") {
           var msg = "Linking '" + check.desiredLabel + "' will reassign its Phase from " +
                     check.currentPriority + " to " + check.targetPriority + ".\n\nProceed?";
           if (!window.confirm(msg)) return;
+          acknowledged = true;
         }
         try {
-          linkDesiredInstance(session, gap.id, instId);
+          linkDesiredInstance(session, gap.id, instId, { acknowledged: acknowledged });
           syncDesiredFromGap(session, gap.id);     // gap wins → desired tile picks up gap.phase
           saveToLocalStorage();
           renderAll();
@@ -533,12 +769,30 @@ export function renderGapsEditView(left, right, session) {
   // red `.multi-linked-chip` so the presales sees the cross-gap link
   // implication at a glance.
   function buildLinkRow(inst, onUnlink) {
-    var row = mk("div", "link-row");
+    var row = mk("div", "link-row link-row-clickable");
     var dot = mk("span", "cmd-dot cmd-dot-" + (inst.vendorGroup || "custom"));
     row.appendChild(dot);
     row.appendChild(mkt("span", "link-row-label", inst.label));
     row.appendChild(mkt("span", "link-row-sub",
       layerName(inst.layerId) + " / " + envName(inst.environmentId)));
+    // v2.4.11 · E1 · clickable navigation to the linked tile. Was a
+    // visual-only row before; now the dot+label area dispatches a custom
+    // event that app.js listens for, switches to the right tab (Tab 2 for
+    // current, Tab 3 for desired), and scrolls the tile into view.
+    row.title = "Click to open this " + inst.state + "-state tile in Tab " +
+      (inst.state === "current" ? "2" : "3");
+    row.addEventListener("click", function(e) {
+      // Don't fire when the unlink × is clicked.
+      if (e.target && e.target.classList && e.target.classList.contains("link-unlink-btn")) return;
+      document.dispatchEvent(new CustomEvent("dell-canvas:navigate-to-tile", {
+        detail: {
+          instanceId:    inst.id,
+          state:         inst.state,
+          layerId:       inst.layerId,
+          environmentId: inst.environmentId
+        }
+      }));
+    });
     var totalGaps = countGapsLinking(session, inst.id);
     if (totalGaps >= 2) {
       var chip = mkt("span", "multi-linked-chip", "linked to " + totalGaps + " gaps");
@@ -611,18 +865,69 @@ export function renderGapsEditView(left, right, session) {
   }
 
   // ---- Add gap dialog ----
-  function openAddDialog() {
+  function openAddDialog(opts) {
+    opts = opts || {};
     document.getElementById("gap-dialog")?.remove();
     var overlay = mk("div", "dialog-overlay"); overlay.id = "gap-dialog";
     var box     = mk("div", "dialog-box");
-    box.appendChild(mkt("div", "dialog-title", "Add gap / initiative"));
+    box.appendChild(mkt("div", "dialog-title",
+      opts.presetGapType === "ops" ? "Add operational / services gap" : "Add gap / initiative"));
 
     var form = mk("div", "edit-form");
     var layerMap = {};
     LAYERS.forEach(function(l) { layerMap[l.id] = l.label; });
-    form.appendChild(fg("Description *",      ta("description", "", "One-line description of what needs to change")));
-    form.appendChild(fg("Primary layer *",    selEl("layerId", LayerIds, LayerIds[0], layerMap)));
-    form.appendChild(fg("Gap type",           selEl("gapType", ["","enhance","replace","introduce","consolidate","ops"], "")));
+    var descPlaceholder = opts.presetGapType === "ops"
+      ? "e.g. Build DR runbook for tier-1 workloads · Train ops team on PowerProtect · Establish change-management for cloud spend"
+      : "One-line description of what needs to change";
+    form.appendChild(fg("Description *",      ta("description", "", descPlaceholder)));
+    // v2.4.11 · B2 · primary layer label clarified.
+    form.appendChild(fg("Primary layer (drives the project bucket) *",
+      selEl("layerId", LayerIds, LayerIds[0], layerMap)));
+    // v2.4.11 · B2 · "Also affects" multi-chip selector. User picks ANY
+    // additional layers the gap touches; setPrimaryLayer keeps the
+    // invariant (primary always at index 0) on save. The chip list is
+    // serialized into a hidden data-prop so the existing form-collection
+    // loop picks it up.
+    var alsoGroup = mk("div", "form-group");
+    alsoGroup.appendChild(mkt("label", "form-label", "Also affects (optional)"));
+    var alsoChipRow = mk("div", "chips-row");
+    var alsoSelected = new Set();
+    var primarySelect = form.querySelector('[data-prop="layerId"]');
+    LAYERS.forEach(function(layer) {
+      var chip = mkt("div", "chip-filter", layer.label);
+      chip.dataset.layerId = layer.id;
+      chip.addEventListener("click", function() {
+        if (chip.classList.contains("disabled")) return;
+        chip.classList.toggle("active");
+        if (chip.classList.contains("active")) alsoSelected.add(layer.id);
+        else alsoSelected.delete(layer.id);
+      });
+      alsoChipRow.appendChild(chip);
+    });
+    function syncPrimaryDisable() {
+      var pid = primarySelect ? primarySelect.value : null;
+      [...alsoChipRow.querySelectorAll(".chip-filter")].forEach(function(c) {
+        var disabled = c.dataset.layerId === pid;
+        c.classList.toggle("disabled", disabled);
+        if (disabled) {
+          c.classList.remove("active");
+          alsoSelected.delete(c.dataset.layerId);
+          c.title = "Already the primary layer";
+        } else {
+          c.title = "Click to add as an affected layer";
+        }
+      });
+    }
+    if (primarySelect) {
+      primarySelect.addEventListener("change", syncPrimaryDisable);
+      syncPrimaryDisable();
+    }
+    alsoGroup.appendChild(alsoChipRow);
+    alsoGroup.appendChild(mkt("div", "field-hint",
+      "Only one project bucket per gap (set by Primary layer). Additional layers are listed for filtering + impact analysis."));
+    form.appendChild(alsoGroup);
+    form.appendChild(fg("Gap type",
+      selEl("gapType", ["","enhance","replace","introduce","consolidate","ops"], opts.presetGapType || "")));
     // Manual-gap defaults (T4.13): urgency Medium (no linked current), phase Next, status open.
     form.appendChild(fg("Urgency",            selEl("urgency", ["High","Medium","Low"], "Medium")));
     form.appendChild(fg("Phase",              selEl("phase",   ["now","next","later"],  "next")));
@@ -642,13 +947,18 @@ export function renderGapsEditView(left, right, session) {
         alert("Description is required."); return;
       }
       try {
+        // v2.4.11 · B2 · build affectedLayers from the Also-affects chips.
+        // Primary is always at index 0; setPrimaryLayer in createGap
+        // reasserts that even if we forgot.
+        var alsoLayers = Array.from(alsoSelected);
         var newGap = createGap(session, {
-          description: vals.description,
-          layerId:     vals.layerId,
-          gapType:     vals.gapType || undefined,
-          urgency:     vals.urgency || "Medium",
-          phase:       vals.phase   || "next",
-          status:      "open"
+          description:    vals.description,
+          layerId:        vals.layerId,
+          affectedLayers: [vals.layerId].concat(alsoLayers.filter(function(l) { return l !== vals.layerId; })),
+          gapType:        vals.gapType || undefined,
+          urgency:        vals.urgency || "Medium",
+          phase:          vals.phase   || "next",
+          status:         "open"
           // reviewed defaults to true for manual creation per createGap.
         });
         saveToLocalStorage();

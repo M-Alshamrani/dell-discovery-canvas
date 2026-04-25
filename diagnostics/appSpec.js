@@ -946,13 +946,17 @@ describe("07 · interactions/gapsCommands", () => {
     }), "reviewed introduce with 0 desired must throw (Phase 17 rule)");
   });
 
-  it("createGap accepts ops without notes (soft rule)", () => {
+  it("createGap accepts ops without notes on auto-drafts (soft rule); review-time enforcement covered separately by RH5", () => {
+    // v2.4.11 · A9 · review-time substance rule applies — but auto-drafts
+    // (reviewed:false) bypass per A1. Test the unreviewed path here; the
+    // review-time rejection lives in Suite 42 RH5.
     doesNotThrow(() => createGap(freshSession(), {
       description: "Operational change",
       layerId: LayerIds[0],
       gapType: "ops",
-      notes: ""
-    }), "ops gap must not hard-fail on empty notes");
+      notes: "",
+      reviewed: false
+    }), "ops gap must not hard-fail on empty notes when reviewed:false");
   });
 
   it("updateGap patches fields and re-validates", () => {
@@ -2247,12 +2251,21 @@ describe("22 · services/programsService", () => {
     assertEqual(gap.reviewed, true, "manual createGap → reviewed: true");
   });
 
-  it("updateGap flips reviewed to true on any substantive edit (T6.6)", () => {
+  it("updateGap flips reviewed to true on any STRUCTURAL edit (T6.6 · revised v2.4.11)", () => {
+    // v2.4.11 · A1 · was "any substantive edit". Now: only structural
+    // edits (gapType / layer / env / links) trigger the implicit flip.
+    // Metadata edits (notes / urgency / status) NO longer auto-flip,
+    // so users can save notes on an invalid auto-draft without
+    // tripping the review-time validation.
     const s = freshSession();
     const gap = createGap(s, { description:"G", layerId:LayerIds[0], reviewed:false });
     assertEqual(gap.reviewed, false, "starts unreviewed");
+    // Metadata-only edit: NO implicit flip.
     updateGap(s, gap.id, { notes: "added context" });
-    assertEqual(s.gaps[0].reviewed, true, "any edit sets reviewed: true");
+    assertEqual(s.gaps[0].reviewed, false, "metadata-only edit does NOT auto-flip reviewed");
+    // Structural edit (add a link) on a valid-shape gapless gap: implicit flip.
+    updateGap(s, gap.id, { relatedCurrentInstanceIds: ["i-x"] });
+    assertEqual(s.gaps[0].reviewed, true, "structural edit on a valid gap auto-flips reviewed");
   });
 
   it("approveGap flips reviewed to true with no other edits (T6.7)", () => {
@@ -2365,8 +2378,10 @@ describe("22 · services/programsService", () => {
     const des = addInstance(s, { state:"desired", layerId:LayerIds[0], environmentId:EnvironmentIds[0],
       label:"Tgt", vendorGroup:"dell", priority:"Now" });
     const gap = createGap(s, { description:"G", layerId:LayerIds[0], phase:"later" });
-    // Simulate the view path: link + syncDesiredFromGap after user confirms.
-    linkDesiredInstance(s, gap.id, des.id);
+    // v2.4.11 · A4 · linkDesiredInstance now requires { acknowledged: true }
+    // when there's a phase conflict (Now → Later here). UI calls
+    // confirmPhaseOnLink first; on user confirm, passes acknowledged: true.
+    linkDesiredInstance(s, gap.id, des.id, { acknowledged: true });
     syncDesiredFromGap(s, gap.id);
     assertEqual(des.priority, "Later", "gap wins on link: desired priority becomes Later");
   });
@@ -3053,7 +3068,7 @@ describe("18 * interactions/desiredStateSync", () => {
     assertEqual(gap.gapType, "ops", "gap.gapType must re-sync to ACTION_TO_GAP_TYPE[retire] = 'ops'");
   });
 
-  it("syncGapFromDesired · changing disposition to 'keep' deletes the linked gap (T3.5)", () => {
+  it("syncGapFromDesired · changing disposition to 'keep' CLOSES the linked gap (was: deleted; v2.4.11 · A2)", () => {
     var s = freshSession();
     var cur = addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[0],
       label:"Src", vendorGroup:"dell", criticality:"Medium" });
@@ -3063,7 +3078,12 @@ describe("18 * interactions/desiredStateSync", () => {
     assertEqual(s.gaps.length, 1, "gap created before keep switch");
     des.disposition = "keep";
     syncGapFromDesired(s, des.id);
-    assertEqual(s.gaps.length, 0, "keep disposition removes the linked gap");
+    // v2.4.11 · A2 · gap is no longer DELETED — it's status:"closed" with a
+    // closeReason. Reversible. Visible in Tab 4 via "Show closed gaps" filter.
+    assertEqual(s.gaps.length, 1, "gap MUST still exist (no destructive delete)");
+    assertEqual(s.gaps[0].status, "closed", "gap.status flips to 'closed' on Keep");
+    assert(/disposition changed to keep/i.test(s.gaps[0].closeReason || ""),
+      "closeReason must explain the auto-close");
   });
 
   it("syncGapsFromCurrentCriticality · updating criticality propagates to linked gap urgency (T3.13)", () => {
@@ -3348,7 +3368,9 @@ describe("20 * services/roadmapService -- project grouping", () => {
 
   it("Cross-cutting project for gaps with no env and no linked instances (T5.14)", () => {
     var s = freshSession();
-    createGap(s, { description:"Process gap", layerId:LayerIds[0], phase:"next", gapType:"ops" });
+    // v2.4.11 · A9 · ops gaps need substance at review time. This test
+    // is shape-only (project bucketing); use reviewed:false to bypass.
+    createGap(s, { description:"Process gap", layerId:LayerIds[0], phase:"next", gapType:"ops", reviewed:false });
     var proj = buildProjects(s, {}).projects[0];
     assertEqual(proj.envId, "crossCutting", "envId must be 'crossCutting'");
     assert(proj.name.indexOf("Cross-cutting") >= 0, "name must include 'Cross-cutting'");
@@ -5635,6 +5657,336 @@ describe("41 · Phase 19j · v2.4.10 save/open file (.canvas round-trip)", () =>
     // Skills come back too.
     assertEqual(res.skills.length, bundle.skills.length, "skills round-trip count matches");
     assertEqual(res.skills[0].id, bundle.skills[0].id, "skills round-trip by identity");
+  });
+
+});
+
+// ── Phase 19k / v2.4.11 · Rules hardening (RH1-RH20) ───────────────────
+import {
+  requiresAtLeastOneCurrent,
+  requiresAtLeastOneDesired,
+  validateActionLinks as validateActionLinksRH,
+  actionById as actionByIdRH
+} from "../core/taxonomy.js";
+import { effectiveDriverReason } from "../services/programsService.js";
+import { setPrimaryLayer as setPrimaryLayerRH } from "../interactions/gapsCommands.js";
+
+describe("42 · Phase 19k · v2.4.11 rules hardening + relationships polish", () => {
+
+  it("RH1 · D1 · taxonomy renames Operational → 'Operational / Services'", () => {
+    const ops = actionByIdRH("ops");
+    assert(ops, "ops action exists");
+    assertEqual(ops.label, "Operational / Services", "ops label is now 'Operational / Services'");
+  });
+
+  it("RH2 · A3 · requiresAtLeastOneCurrent derives from taxonomy (covers keep + retire too)", () => {
+    // keep + retire both gapType: ops/null but linksCurrent: 1
+    // Rule fires per-gapType: any Action with that gapType requiring ≥1
+    assertEqual(requiresAtLeastOneCurrent("replace"),     true,  "replace needs current");
+    assertEqual(requiresAtLeastOneCurrent("enhance"),     true,  "enhance needs current");
+    assertEqual(requiresAtLeastOneCurrent("consolidate"), true,  "consolidate needs current (2+)");
+    assertEqual(requiresAtLeastOneCurrent("introduce"),   false, "introduce explicitly forbids current");
+    // ops gapType has multiple actions: keep (1), retire (1), ops (optional).
+    // Since SOME action with this gapType requires ≥1, the helper returns true.
+    assertEqual(requiresAtLeastOneCurrent("ops"),         true,  "ops gapType has at least one action requiring current (keep, retire)");
+  });
+
+  it("RH3 · A3 · requiresAtLeastOneDesired derives from taxonomy", () => {
+    assertEqual(requiresAtLeastOneDesired("replace"),     true,  "replace needs desired");
+    assertEqual(requiresAtLeastOneDesired("introduce"),   true,  "introduce needs desired");
+    assertEqual(requiresAtLeastOneDesired("consolidate"), true,  "consolidate needs desired");
+    assertEqual(requiresAtLeastOneDesired("enhance"),     false, "enhance desired is optional");
+    assertEqual(requiresAtLeastOneDesired("ops"),         false, "ops desired is optional (nothing in the table requires it)");
+  });
+
+  it("RH4 · F1 · validateActionLinks raises FRIENDLY messages, not raw rule text", () => {
+    // Build a reviewed Replace gap with no current → should fire the
+    // friendly Replace message.
+    const bad = { gapType: "replace", reviewed: true,
+      relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: ["d1"] };
+    let msg = "";
+    try { validateActionLinksRH(bad); } catch (e) { msg = e.message || String(e); }
+    assert(/Replace needs the technology being replaced/i.test(msg),
+      "Replace error must use the workshop-friendly sentence (got: " + msg + ")");
+    // Consolidate with 1 current → friendly Consolidate message.
+    const badCons = { gapType: "consolidate", reviewed: true,
+      relatedCurrentInstanceIds: ["c1"], relatedDesiredInstanceIds: ["d1"] };
+    let msg2 = "";
+    try { validateActionLinksRH(badCons); } catch (e) { msg2 = e.message || String(e); }
+    assert(/merging multiple things into one/i.test(msg2),
+      "Consolidate error must describe the merge concept (got: " + msg2 + ")");
+  });
+
+  it("RH5 · A9 · ops gap requires ≥1 link OR ≥10-char notes (review-time)", () => {
+    // Reviewed ops gap with NO links and short notes → throw.
+    const empty = {
+      gapType: "ops", reviewed: true,
+      relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
+      notes: "todo"
+    };
+    throws(() => validateActionLinksRH(empty), "empty ops gap must throw with substance hint");
+    // Same gap with sufficient notes → passes.
+    const withNotes = Object.assign({}, empty, { notes: "Build DR runbook for tier-1 systems by Q3." });
+    doesNotThrow(() => validateActionLinksRH(withNotes), "ops gap with notes ≥10 chars passes");
+    // Same gap with a link → passes.
+    const withLink = Object.assign({}, empty, { relatedCurrentInstanceIds: ["c1"], notes: "" });
+    doesNotThrow(() => validateActionLinksRH(withLink), "ops gap with a linked instance passes even without notes");
+    // Auto-draft (reviewed:false) bypasses regardless.
+    doesNotThrow(() => validateActionLinksRH(Object.assign({}, empty, { reviewed: false })),
+      "auto-draft ops gap bypasses the substance rule");
+  });
+
+  it("RH6 · A1 · approveGap throws with friendly message for shape-invalid gaps", () => {
+    const s = createEmptySession();
+    const draft = createGap(s, {
+      description: "Bad replace",
+      layerId: "compute", gapType: "replace",
+      relatedCurrentInstanceIds: ["i-x"],
+      // missing desired link — Replace requires 1 desired
+      reviewed: false   // auto-draft bypasses on create
+    });
+    let msg = "";
+    try { approveGapCmd(s, draft.id); } catch (e) { msg = e.message || String(e); }
+    assert(/Replace needs the new technology/i.test(msg),
+      "approveGap must surface the friendly Replace error (got: " + msg + ")");
+    // gap.reviewed must STILL be false — not flipped on a failed approve.
+    assertEqual(draft.reviewed, false, "approveGap failure must NOT flip reviewed:true");
+  });
+
+  it("RH7 · A1 · updateGap implicit reviewed-flip skips when shape is invalid", () => {
+    // Create an invalid auto-draft. Edit notes (no patch.reviewed). Should
+    // succeed AND keep reviewed:false.
+    const s = createEmptySession();
+    const draft = createGap(s, {
+      description: "Auto-drafted enhance",
+      layerId: "compute", gapType: "enhance",
+      relatedCurrentInstanceIds: [],   // missing required current
+      reviewed: false
+    });
+    const after = updateGap(s, draft.id, { notes: "Some workshop note" });
+    assertEqual(after.reviewed, false,
+      "implicit reviewed-flip must NOT happen when validateActionLinks would fail");
+    assertEqual(after.notes, "Some workshop note", "the notes edit STILL saves");
+  });
+
+  it("RH8 · A1 · updateGap implicit reviewed-flip succeeds on STRUCTURAL change with valid shape", () => {
+    // v2.4.11 · A1 (refined) · only STRUCTURAL patches (gapType / layer /
+    // env / links) trigger the implicit flip. Metadata edits (notes,
+    // urgency, status, driverId, urgencyOverride) deliberately do NOT
+    // flip — that would block users mid-workshop from adding a side
+    // note to an in-progress invalid gap.
+    const s = createEmptySession();
+    const valid = createGap(s, {
+      description: "Valid enhance",
+      layerId: "compute", gapType: "enhance",
+      relatedCurrentInstanceIds: ["i-x"],
+      reviewed: false
+    });
+    // Metadata-only patch: NO flip.
+    var meta = updateGap(s, valid.id, { notes: "Side note from workshop" });
+    assertEqual(meta.reviewed, false,
+      "metadata-only patch must NOT auto-flip reviewed (workshop-flow protection)");
+    // Structural patch (add a link): flip happens because shape is valid.
+    var struct = updateGap(s, valid.id, { relatedCurrentInstanceIds: ["i-x", "i-y"] });
+    // 2 currents on enhance — but enhance requires exactly 1, so this
+    // would fail. Use a valid structural change instead: change
+    // affectedEnvironments which is structural but doesn't break shape.
+    var struct2 = updateGap(s, valid.id, {
+      relatedCurrentInstanceIds: ["i-x"],   // back to 1
+      affectedEnvironments: ["coreDc"]
+    });
+    assertEqual(struct2.reviewed, true,
+      "structural patch with valid resulting shape auto-flips reviewed");
+  });
+
+  it("RH9 · A2 · syncGapFromDesired flips linked gaps to status:closed when disposition becomes 'keep'", () => {
+    var s = createEmptySession();
+    var cur = addInstance(s, { state:"current", layerId:"storage", environmentId:"coreDc",
+      label:"Cur", vendorGroup:"dell", criticality:"Medium" });
+    var des = addInstance(s, { state:"desired", layerId:"storage", environmentId:"coreDc",
+      label:"Des", vendorGroup:"dell", disposition:"replace", priority:"Now", originId: cur.id });
+    var gap = createGap(s, buildGapFromDisposition(s, des));
+    assertEqual(gap.status, "open", "baseline open");
+    des.disposition = "keep";
+    syncGapFromDesired(s, des.id);
+    var afterGap = s.gaps.find(g => g.id === gap.id);
+    assert(afterGap, "gap MUST still exist (no delete)");
+    assertEqual(afterGap.status, "closed", "gap.status must flip to 'closed' on Keep");
+    assert(/disposition changed to keep/i.test(afterGap.closeReason || ""),
+      "closeReason must explain the auto-close");
+    assert(typeof afterGap.closedAt === "string", "closedAt must be set as ISO timestamp");
+  });
+
+  it("RH10 · A4 · linkDesiredInstance throws PHASE_CONFLICT_NEEDS_ACK when conflict + no acknowledged", () => {
+    var s = createEmptySession();
+    var des = addInstance(s, { state:"desired", layerId:"compute", environmentId:"coreDc",
+      label:"Des", vendorGroup:"dell", priority:"Later" });
+    var gap = createGap(s, {
+      description:"Phase conflict probe", layerId:"compute",
+      phase:"now", reviewed:false
+    });
+    let err = null;
+    try { linkDesiredInstance(s, gap.id, des.id); } catch (e) { err = e; }
+    assert(err, "must throw when phase conflicts and acknowledged not passed");
+    assertEqual(err.code, "PHASE_CONFLICT_NEEDS_ACK", "error code is PHASE_CONFLICT_NEEDS_ACK");
+    // With acknowledged: true the link succeeds.
+    doesNotThrow(() => linkDesiredInstance(s, gap.id, des.id, { acknowledged: true }),
+      "acknowledged opt-in unblocks the link");
+  });
+
+  it("RH11 · A4 · linkDesiredInstance does NOT require acknowledged when there's no conflict", () => {
+    var s = createEmptySession();
+    var des = addInstance(s, { state:"desired", layerId:"compute", environmentId:"coreDc",
+      label:"Des", vendorGroup:"dell", priority:"Now" });
+    var gap = createGap(s, {
+      description:"No conflict", layerId:"compute",
+      phase:"now", reviewed:false
+    });
+    doesNotThrow(() => linkDesiredInstance(s, gap.id, des.id),
+      "no-conflict link works without acknowledged");
+  });
+
+  it("RH12 · A5 · effectiveDriverReason returns explicit/suggested/none with reason text", () => {
+    var s = createEmptySession();
+    s.customer.drivers = [{ id: "cyber_resilience" }, { id: "cost_optimization" }];
+    // Explicit
+    var explicit = effectiveDriverReason({ driverId: "cyber_resilience" }, s);
+    assertEqual(explicit.source, "explicit", "explicit when driverId is set");
+    assertEqual(explicit.driverId, "cyber_resilience");
+    // Suggested via dataProtection layer rule
+    var sug = effectiveDriverReason({ layerId: "dataProtection" }, s);
+    assertEqual(sug.source, "suggested", "DP layer triggers suggestion");
+    assertEqual(sug.driverId, "cyber_resilience");
+    assert(/data protection/i.test(sug.reason), "reason mentions Data Protection");
+    // None — no rule matches AND no addedIds intersect
+    var none = effectiveDriverReason({ layerId: "compute" }, { customer: { drivers: [] } });
+    assertEqual(none.source, "none");
+    assertEqual(none.driverId, null);
+  });
+
+  it("RH13 · A6 · gap.urgencyOverride blocks propagation from current criticality", () => {
+    var s = createEmptySession();
+    var cur = addInstance(s, { state:"current", layerId:"storage", environmentId:"coreDc",
+      label:"X", vendorGroup:"dell", criticality:"High" });
+    var pinnedGap = createGap(s, {
+      description:"Pinned urgency", layerId:"storage",
+      gapType:"replace",
+      relatedCurrentInstanceIds:[cur.id], relatedDesiredInstanceIds:["d-x"],
+      urgency:"Low", urgencyOverride:true, reviewed:false
+    });
+    syncGapsFromCurrentCriticality(s, cur.id);
+    assertEqual(pinnedGap.urgency, "Low", "urgencyOverride must block propagation (urgency stays Low)");
+    // Same setup without override → urgency follows current.
+    var unpinned = createGap(s, {
+      description:"Auto urgency", layerId:"storage",
+      gapType:"replace",
+      relatedCurrentInstanceIds:[cur.id], relatedDesiredInstanceIds:["d-y"],
+      urgency:"Low", urgencyOverride:false, reviewed:false
+    });
+    syncGapsFromCurrentCriticality(s, cur.id);
+    assertEqual(unpinned.urgency, "High", "without override, urgency syncs to current's criticality");
+  });
+
+  it("RH14 · A6 · validateGap rejects non-boolean urgencyOverride", () => {
+    throws(() => validateGap({ ...validGap(), urgencyOverride: "yes" }),
+      "string urgencyOverride must throw");
+    doesNotThrow(() => validateGap({ ...validGap(), urgencyOverride: true }),  "true is valid");
+    doesNotThrow(() => validateGap({ ...validGap(), urgencyOverride: false }), "false is valid");
+    doesNotThrow(() => validateGap({ ...validGap() }), "absent is valid");
+  });
+
+  it("RH15 · A6 · migrator defaults urgencyOverride:false on legacy gaps", () => {
+    var legacy = {
+      sessionId: "sess-rh15",
+      customer: { name: "L", vertical: "", segment: "", industry: "", region: "", primaryDriver: "" },
+      sessionMeta: { date: "2025-01-01", presalesOwner: "", status: "Draft", version: "1.0" },
+      instances: [],
+      gaps: [{ id: "g-l", description: "L", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [],
+        relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
+        status: "open", reviewed: true /* no urgencyOverride */ }]
+    };
+    var m = migrateLegacySession(JSON.parse(JSON.stringify(legacy)));
+    assertEqual(m.gaps[0].urgencyOverride, false,
+      "migrator must default urgencyOverride to false on legacy gaps");
+  });
+
+  it("RH16 · D3 · roadmap project verb becomes 'Retirement' when ALL constituent gaps are retire-action", () => {
+    var s = createEmptySession();
+    var cur = addInstance(s, { state:"current", layerId:"storage", environmentId:"coreDc",
+      label:"Old", vendorGroup:"dell", criticality:"Medium" });
+    var des = addInstance(s, { state:"desired", layerId:"storage", environmentId:"coreDc",
+      label:"Out", vendorGroup:"dell", disposition:"retire", priority:"Later", originId: cur.id });
+    createGap(s, buildGapFromDisposition(s, des));
+    var projects = buildProjects(s, {}).projects;
+    var p = projects.find(pr => pr.envId === "coreDc" && pr.layerId === "storage" && pr.gapType === "ops");
+    assert(p, "retire→ops project must exist");
+    assert(/Retirement/.test(p.name),
+      "project name must include 'Retirement' when all constituent gaps are retire-action (got: " + p.name + ")");
+  });
+
+  it("RH17 · C3 · auto-draft description uses arrow template when both source + desired labels present", () => {
+    var s = createEmptySession();
+    var cur = addInstance(s, { state:"current", layerId:"compute", environmentId:"coreDc",
+      label:"PowerEdge old", vendorGroup:"dell" });
+    var des = addInstance(s, { state:"desired", layerId:"compute", environmentId:"coreDc",
+      label:"PowerEdge new", vendorGroup:"dell", disposition:"replace", originId: cur.id });
+    var props = buildGapFromDisposition(s, des);
+    assert(/PowerEdge old → PowerEdge new/.test(props.description),
+      "description must read 'Replace PowerEdge old → PowerEdge new' (got: " + props.description + ")");
+  });
+
+  it("RH18 · C4 · auto-draft pre-fills notes for every action (not just ops)", () => {
+    var s = createEmptySession();
+    var cur = addInstance(s, { state:"current", layerId:"storage", environmentId:"coreDc",
+      label:"X", vendorGroup:"dell" });
+    var des = addInstance(s, { state:"desired", layerId:"storage", environmentId:"coreDc",
+      label:"Y", vendorGroup:"dell", disposition:"replace", originId: cur.id });
+    var props = buildGapFromDisposition(s, des);
+    assert(props.notes && props.notes.length > 0,
+      "Replace auto-draft must have non-empty notes (got: " + JSON.stringify(props.notes) + ")");
+    // Introduce path
+    var introDes = addInstance(s, { state:"desired", layerId:"workload", environmentId:"coreDc",
+      label:"AI Pilot", vendorGroup:"dell", disposition:"introduce" });
+    var introProps = buildGapFromDisposition(s, introDes);
+    assert(/Net-new/i.test(introProps.notes),
+      "Introduce auto-draft notes must mention 'Net-new' (got: " + introProps.notes + ")");
+  });
+
+  it("RH19 · B2 · setPrimaryLayer keeps invariant when called from updateGap with new layerId", () => {
+    var s = createEmptySession();
+    var gap = createGap(s, {
+      description:"Multi-layer", layerId:"compute",
+      affectedLayers: ["compute", "storage"], reviewed:false
+    });
+    assertEqual(gap.affectedLayers[0], "compute", "baseline primary first");
+    var moved = updateGap(s, gap.id, { layerId: "virtualization" });
+    assertEqual(moved.layerId, "virtualization", "layerId updated");
+    assertEqual(moved.affectedLayers[0], "virtualization",
+      "primary moved to index 0; old primary 'compute' demoted to non-primary");
+    assert(moved.affectedLayers.indexOf("compute") > 0,
+      "old primary stays in affectedLayers as a non-primary entry");
+    // No duplicates
+    var virtCount = moved.affectedLayers.filter(l => l === "virtualization").length;
+    assertEqual(virtCount, 1, "new primary appears exactly once");
+  });
+
+  it("RH20 · A3 · unlinkCurrentInstance now blocks for keep + retire too (was missing in pre-v2.4.11 hand-typed list)", () => {
+    var s = createEmptySession();
+    // 'keep' has gapType: null — unlinkCurrentInstance fires on gapType, so
+    // keep gaps don't have a gapType to fire the rule against. Use 'retire'
+    // instead (gapType: ops, requiresAtLeastOneCurrent → true via the
+    // taxonomy-derived helper).
+    var gap = createGap(s, {
+      description:"Retire", layerId:"compute", gapType:"ops",
+      relatedCurrentInstanceIds:["c1"], relatedDesiredInstanceIds:[],
+      // For ops gapType, requires-at-least-one-current is TRUE because
+      // 'keep' AND 'retire' actions both require 1. So unlinking the last
+      // current must throw via the new helper.
+      reviewed:false
+    });
+    throws(() => unlinkCurrentInstance(s, gap.id, "c1"),
+      "ops gap unlinking last current must throw — keep+retire actions need 1 current");
   });
 
 });

@@ -17,7 +17,12 @@
 // visible + queryable for the crown-jewel rework (v2.5.0).
 
 import { validateGap } from "../core/models.js";
-import { validateActionLinks } from "../core/taxonomy.js";
+import {
+  validateActionLinks,
+  requiresAtLeastOneCurrent,
+  requiresAtLeastOneDesired
+} from "../core/taxonomy.js";
+import { confirmPhaseOnLink } from "./desiredStateSync.js";
 
 // v2.4.9 · maintain the primary-layer invariant in one place.
 // layerId becomes the first entry of affectedLayers; any subsequent
@@ -69,6 +74,9 @@ export function createGap(session, props) {
     reviewed:                  props.reviewed === false ? false : true
   };
   if (props.driverId) gap.driverId = props.driverId;
+  // v2.4.11 · A6 · preserve urgencyOverride opt-in. Default false (urgency
+  // follows propagation rules unless user explicitly pinned it).
+  gap.urgencyOverride = props.urgencyOverride === true;
   // v2.4.9 · ensure primary-layer invariant holds from creation onward.
   if (gap.layerId) setPrimaryLayer(gap, gap.layerId);
   // v2.4.9 · auto-assign projectId if caller didn't supply one.
@@ -81,9 +89,18 @@ export function createGap(session, props) {
 }
 
 // v2.1 — explicit approval without other edits.
+// v2.4.11 · A1 · approveGap is one of the two "I'm done with this" gates.
+// Run validateActionLinks AFTER flipping reviewed:true so the friendly
+// error fires if the gap doesn't satisfy its Action's link rules. Caller
+// gets a readable message; gap.reviewed stays whatever it was (we don't
+// commit reviewed=true if validation throws).
 export function approveGap(session, gapId) {
   const gap = (session.gaps || []).find(g => g.id === gapId);
   if (!gap) throw new Error(`approveGap: gap '${gapId}' not found`);
+  // Build a probe with reviewed:true so validateActionLinks actually runs
+  // (it bypasses for reviewed:false). If valid, commit; else throw.
+  const probe = Object.assign({}, gap, { reviewed: true });
+  validateActionLinks(probe);
   gap.reviewed = true;
   return gap;
 }
@@ -97,7 +114,34 @@ export function updateGap(session, gapId, patch) {
   if (patch.relatedDesiredInstanceIds)  updated.relatedDesiredInstanceIds  = [...new Set(patch.relatedDesiredInstanceIds)];
   // v2.1 · substantive edits flip the gap to reviewed. (Passing an explicit reviewed: false
   // in patch is respected — that's how approveGap-adjacent workflows could undo if needed.)
-  if (patch.reviewed === undefined) updated.reviewed = true;
+  // v2.4.11 · A1 · STRUCTURAL vs METADATA distinction. Only re-run
+  // action-link validation when the patch could plausibly change link
+  // shape (or when the caller explicitly sets reviewed:true). Pure
+  // metadata edits (urgencyOverride toggle, notes, urgency value,
+  // phase, status, driverId) MUST NOT trigger link-rule errors — that
+  // would mean a user can never save a side note on an already-invalid
+  // gap, which blocks the workshop flow we promised.
+  var STRUCTURAL_FIELDS = [
+    "gapType", "layerId", "affectedLayers", "affectedEnvironments",
+    "relatedCurrentInstanceIds", "relatedDesiredInstanceIds"
+  ];
+  var hasStructuralPatch = STRUCTURAL_FIELDS.some(function(f) { return patch[f] !== undefined; });
+
+  if (patch.reviewed === true || patch.reviewed === false) {
+    updated.reviewed = patch.reviewed;
+  } else if (hasStructuralPatch) {
+    // Structural change: try implicit flip to reviewed:true — if shape
+    // is valid post-change, commit; otherwise keep current reviewed.
+    var probe = Object.assign({}, updated, { reviewed: true });
+    try {
+      validateActionLinks(probe);
+      updated.reviewed = true;
+    } catch (e) {
+      if (typeof updated.reviewed !== "boolean") updated.reviewed = false;
+    }
+  }
+  // Metadata-only patches with no explicit reviewed: leave reviewed alone.
+
   // v2.4.9 · if caller changed layerId, re-normalise affectedLayers
   // through setPrimaryLayer so the invariant still holds.
   if (patch.layerId !== undefined) setPrimaryLayer(updated, patch.layerId);
@@ -111,7 +155,16 @@ export function updateGap(session, gapId, patch) {
     updated.projectId = deriveProjectId(updated);
   }
   validateGap(updated);
-  validateActionLinks(updated);   // v2.4.8 · Phase 17
+  // v2.4.11 · A1 · enforce action-link rules ONLY when:
+  //   - caller explicitly set reviewed:true (the "I'm done" moment), OR
+  //   - structural patch caused the implicit flip to reviewed:true above.
+  // Metadata-only edits on a pre-existing-but-invalid gap save without
+  // re-tripping the rule. The soft chip on the gap detail still shows
+  // the violation — the user is informed but not blocked.
+  var shouldValidateLinks =
+    (patch.reviewed === true) ||
+    (hasStructuralPatch && updated.reviewed === true);
+  if (shouldValidateLinks) validateActionLinks(updated);
   list[idx] = updated;
   return updated;
 }
@@ -133,9 +186,27 @@ export function linkCurrentInstance(session, gapId, instanceId) {
   return gap;
 }
 
-export function linkDesiredInstance(session, gapId, instanceId) {
+// v2.4.11 · A4 · mandatory phase-conflict acknowledgement. If the
+// candidate desired instance has a priority that doesn't match the gap's
+// phase, refuse the link unless the caller explicitly passes
+// `opts.acknowledged === true`. UI calls confirmPhaseOnLink() first; on
+// the user's confirm, calls linkDesiredInstance(.., { acknowledged: true }).
+// This makes the check unbypassable from any code path — the safety lives
+// in the function, not in "the UI must remember to ask".
+export function linkDesiredInstance(session, gapId, instanceId, opts) {
   const gap = (session.gaps || []).find(g => g.id === gapId);
   if (!gap) throw new Error(`linkDesiredInstance: gap '${gapId}' not found`);
+  // v2.4.11 · A4 · gate.
+  const conflict = confirmPhaseOnLink(session, gapId, instanceId);
+  if (conflict && conflict.status === "conflict" && !(opts && opts.acknowledged === true)) {
+    const e = new Error(
+      `Linking '${conflict.desiredLabel}' (${conflict.currentPriority}) to a gap in phase '${conflict.gapPhase}' will change the tile's priority to '${conflict.targetPriority}'. ` +
+      `Confirm in the UI, then re-call with { acknowledged: true }.`
+    );
+    e.code = "PHASE_CONFLICT_NEEDS_ACK";
+    e.conflict = conflict;
+    throw e;
+  }
   if (!gap.relatedDesiredInstanceIds.includes(instanceId))
     gap.relatedDesiredInstanceIds.push(instanceId);
   markReviewed(gap);
@@ -146,12 +217,11 @@ export function linkDesiredInstance(session, gapId, instanceId) {
 export function unlinkCurrentInstance(session, gapId, instanceId) {
   const gap = (session.gaps || []).find(g => g.id === gapId);
   if (!gap) throw new Error(`unlinkCurrentInstance: gap '${gapId}' not found`);
-  // v2.4.8 · Phase 17 · rationalize dropped from the taxonomy. Kept
-  // the same narrow "can't unlink if this gap type requires a current"
-  // safety net here; the broader rules live in validateActionLinks.
-  const currentTypes = ["enhance","replace","consolidate"];
+  // v2.4.11 · A3 · derive "requires ≥1 current" from the taxonomy
+  // automatically (was a hand-typed allowlist that drifted from the
+  // table — `keep` and `retire` were missing).
   const afterRemoval = (gap.relatedCurrentInstanceIds || []).filter(id => id !== instanceId);
-  if (currentTypes.includes(gap.gapType) && afterRemoval.length === 0) {
+  if (requiresAtLeastOneCurrent(gap.gapType) && afterRemoval.length === 0) {
     throw new Error(`Cannot unlink: a '${gap.gapType}' gap requires at least one current technology linked`);
   }
   gap.relatedCurrentInstanceIds = afterRemoval;
@@ -175,9 +245,9 @@ export function setGapDriverId(session, gapId, driverId) {
 export function unlinkDesiredInstance(session, gapId, instanceId) {
   const gap = (session.gaps || []).find(g => g.id === gapId);
   if (!gap) throw new Error(`unlinkDesiredInstance: gap '${gapId}' not found`);
-  const desiredTypes = ["introduce","enhance","replace","consolidate"];
+  // v2.4.11 · A3 · derive from taxonomy.
   const afterRemoval = (gap.relatedDesiredInstanceIds || []).filter(id => id !== instanceId);
-  if (desiredTypes.includes(gap.gapType) && afterRemoval.length === 0) {
+  if (requiresAtLeastOneDesired(gap.gapType) && afterRemoval.length === 0) {
     throw new Error(`Cannot unlink: a '${gap.gapType}' gap requires at least one desired technology linked`);
   }
   gap.relatedDesiredInstanceIds = afterRemoval;

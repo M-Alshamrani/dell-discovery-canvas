@@ -110,6 +110,7 @@ export function migrateLegacySession(raw) {
   // v2.4.9 · backfill primary-layer invariant (affectedLayers[0] === layerId)
   // and explicit gap.projectId for every gap. Both are idempotent — a
   // gap already conforming gets a no-op; re-running the migrator is safe.
+  // v2.4.11 · M10 · also default gap.urgencyOverride to false on legacy gaps.
   s.gaps.forEach(function(g) {
     if (!g || !g.layerId) return;
     // Primary-layer invariant — setPrimaryLayer prepends+dedupes.
@@ -119,6 +120,9 @@ export function migrateLegacySession(raw) {
     if (!alreadyOk) setPrimaryLayer(g, g.layerId);
     // Project relationship — derive if missing.
     if (!g.projectId) g.projectId = deriveProjectId(g);
+    // v2.4.11 · A6 · default urgencyOverride to false (urgency follows
+    // propagation rules unless user explicitly set it).
+    if (typeof g.urgencyOverride !== "boolean") g.urgencyOverride = false;
   });
 
   if (!s.sessionMeta || typeof s.sessionMeta !== "object") {

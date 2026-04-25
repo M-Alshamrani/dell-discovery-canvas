@@ -85,6 +85,14 @@ export function validateGap(gap) {
       "Gap.status must be one of: " + VALID_STATUS.join(", "));
   }
 
+  // v2.4.11 · A6 · urgencyOverride is a user-set flag that pins gap.urgency
+  // against propagation rules (P4/P7). Optional — defaults to false via the
+  // sessionStore migrator (M10). Must be a boolean if present.
+  if (gap.urgencyOverride !== undefined) {
+    assert(typeof gap.urgencyOverride === "boolean",
+      "Gap.urgencyOverride must be a boolean if set (got " + typeof gap.urgencyOverride + ")");
+  }
+
   // NOTE: relationship rules (relatedCurrentInstanceIds, relatedDesiredInstanceIds)
   // are intentionally NOT validated here. They are soft constraints shown as
   // UI warnings, not hard blocks. This prevents frustrating save failures.

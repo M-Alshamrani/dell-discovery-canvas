@@ -54,6 +54,27 @@ document.addEventListener("DOMContentLoaded", function() {
     renderHeaderMeta();
     renderStage();
   });
+  // v2.4.11 · E1 · cross-tab navigation event. GapsEditView dispatches
+  // this when the user clicks a linked-instance row in a gap's detail
+  // panel. We switch to the right tab (current → Tab 2, desired → Tab 3)
+  // and scroll the matching tile into view with a brief highlight.
+  document.addEventListener("dell-canvas:navigate-to-tile", function(ev) {
+    var d = ev.detail || {};
+    if (!d.state || !d.instanceId) return;
+    currentStep = (d.state === "current") ? "current" : "desired";
+    renderStepper();
+    renderStage();
+    // After render, scroll + highlight on the next tick.
+    setTimeout(function() {
+      var sel = '[data-instance-id="' + d.instanceId + '"]';
+      var node = document.querySelector(sel);
+      if (node) {
+        node.scrollIntoView({ block: "center", behavior: "smooth" });
+        node.classList.add("nav-highlight");
+        setTimeout(function() { node.classList.remove("nav-highlight"); }, 1800);
+      }
+    }, 50);
+  });
   // v2.4.10 · If the user installed Canvas as a PWA and double-clicked
   // a .canvas file, Chromium's launchQueue delivers the file handle
   // here. We reuse the same openFileInput-change pipeline by routing

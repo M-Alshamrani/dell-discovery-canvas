@@ -183,20 +183,30 @@ function buildAcmeFinancialServices() {
         status:"open", reviewed:true
       },
       {
-        id:"g-004", description:"Aging compute — 60% servers approaching end of support",
+        // v2.4.11 · was gapType:"replace" but with TWO current items
+        // (PowerEdge old + HPE ProLiant) → ONE desired (PowerEdge new),
+        // which is semantically Consolidate (merge two compute platforms
+        // into one Dell-standard fleet). The old shape violated the
+        // Replace 1-to-1 rule that v2.4.11 now enforces at review time.
+        id:"g-004", description:"Aging compute — consolidate two vendor platforms onto PowerEdge",
         layerId:"compute", affectedLayers:["compute"], affectedEnvironments:["coreDc","drDc"],
-        gapType:"replace", urgency:"Medium", phase:"now",
+        gapType:"consolidate", urgency:"Medium", phase:"now",
         driverId:"modernize_infra",
         mappedDellSolutions:"PowerEdge (current gen)",
-        notes:"Hardware maintenance costs increasing.",
+        notes:"60% servers past end of support. Consolidating PowerEdge old + HPE ProLiant onto one Dell PowerEdge fleet for support + ops simplicity.",
         relatedCurrentInstanceIds:["i-001","i-002"], relatedDesiredInstanceIds:["d-001"],
         status:"open", reviewed:true
       },
       {
+        // v2.4.11 · A6 · this gap exercises urgencyOverride. Auto-derived
+        // urgency from linked current would be Medium; user pinned it
+        // to High because the cloud-spend trajectory is more urgent than
+        // any single instance's criticality. Demonstrates the lock+auto
+        // toggle in the gap detail UI.
         id:"g-005", description:"No cloud governance — uncontrolled AWS spend",
         layerId:"infrastructure", affectedLayers:["infrastructure"],
         affectedEnvironments:["publicCloud"],
-        gapType:"ops", urgency:"Low", phase:"later",
+        gapType:"ops", urgency:"High", urgencyOverride:true, phase:"later",
         driverId:"cost_optimization",
         mappedDellSolutions:"APEX Cloud Platform",
         notes:"AWS spend growing 30% YoY. Repatriation candidates identified.",

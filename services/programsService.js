@@ -97,6 +97,67 @@ export function effectiveDriverId(gap, session) {
   return suggestDriverId(gap, session);
 }
 
+// v2.4.11 · A5 · WHY did this driver get assigned? Returns a structured
+// answer the UI can render into a chip ("Auto-suggested driver: X
+// because Y. [Override]"). Source = "explicit" when gap.driverId is
+// set; "suggested" when a ladder rule matched; "none" when nothing
+// suggested. Mirrors the rule ladder in suggestDriverId.
+export function effectiveDriverReason(gap, session) {
+  if (gap && gap.driverId) {
+    return { driverId: gap.driverId, source: "explicit", reason: "explicitly set on this gap" };
+  }
+  var addedIds = new Set(
+    ((session && session.customer && session.customer.drivers) || []).map(function(d) { return d.id; })
+  );
+  function propose(id) { return addedIds.has(id) ? id : null; }
+  var mappedLower = (gap && gap.mappedDellSolutions || "").toLowerCase();
+  var notesLower  = (gap && gap.notes || "").toLowerCase();
+  var descLower   = (gap && gap.description || "").toLowerCase();
+  var textBlob    = notesLower + " " + descLower;
+  var envs = (gap && gap.affectedEnvironments) || [];
+  var linkedInstances = ((session && session.instances) || []).filter(function(i) {
+    return ((gap && gap.relatedCurrentInstanceIds) || []).indexOf(i.id) >= 0 ||
+           ((gap && gap.relatedDesiredInstanceIds) || []).indexOf(i.id) >= 0;
+  });
+  var linkedInPublicCloud = linkedInstances.some(function(i) { return i.environmentId === "publicCloud"; });
+  var hit;
+
+  if (gap && gap.layerId === "dataProtection" && (hit = propose("cyber_resilience"))) {
+    return { driverId: hit, source: "suggested", reason: "primary layer is Data Protection" };
+  }
+  if (mappedLower.indexOf("cyber") >= 0 && (hit = propose("cyber_resilience"))) {
+    return { driverId: hit, source: "suggested", reason: "mapped solutions mention 'cyber'" };
+  }
+  if (gap && gap.gapType === "ops" && (hit = propose("ops_simplicity"))) {
+    return { driverId: hit, source: "suggested", reason: "Operational / Services gap type" };
+  }
+  if ((envs.indexOf("publicCloud") >= 0 || linkedInPublicCloud) && (hit = propose("cloud_strategy"))) {
+    return { driverId: hit, source: "suggested", reason: "touches Public Cloud (directly or via linked tile)" };
+  }
+  if (gap && gap.gapType === "consolidate" && (hit = propose("cost_optimization"))) {
+    return { driverId: hit, source: "suggested", reason: "Consolidate gaps are typically cost-driven" };
+  }
+  if (gap && gap.gapType === "replace" &&
+      ["compute", "storage", "virtualization"].indexOf(gap.layerId) >= 0 &&
+      (hit = propose("modernize_infra"))) {
+    return { driverId: hit, source: "suggested", reason: "Replace on " + gap.layerId + " layer" };
+  }
+  if (gap && gap.gapType === "introduce" && gap.layerId === "infrastructure" &&
+      /(^|\W)(ai|ml|gpu)(\W|$)/i.test(descLower + " " + notesLower) &&
+      (hit = propose("ai_data"))) {
+    return { driverId: hit, source: "suggested", reason: "Introduce + AI/ML/GPU keywords in description/notes" };
+  }
+  if (/compliance|audit|nis2|gdpr|hipaa|pci/i.test(textBlob) &&
+      (hit = propose("compliance_sovereignty"))) {
+    return { driverId: hit, source: "suggested", reason: "compliance/audit framework keywords in description/notes" };
+  }
+  if (/energy|carbon|sustainab|esg/i.test(textBlob) &&
+      (hit = propose("sustainability"))) {
+    return { driverId: hit, source: "suggested", reason: "energy/carbon/ESG keywords in description/notes" };
+  }
+  return { driverId: null, source: "none", reason: "no suggestion rule matched (lands in Unassigned swimlane)" };
+}
+
 /** Human label lookup. */
 export function driverLabel(driverId) {
   var d = BUSINESS_DRIVERS.find(function(b) { return b.id === driverId; });

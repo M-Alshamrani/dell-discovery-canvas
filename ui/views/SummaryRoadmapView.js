@@ -8,7 +8,7 @@
 // Layout: portfolio pulse bar above a swimlane × phase grid; projects placed by
 // (driverId, phase). Unassigned projects land in a subdued row at the bottom.
 
-import { LAYERS, BUSINESS_DRIVERS } from "../../core/config.js";
+import { LAYERS, ENVIRONMENTS, BUSINESS_DRIVERS } from "../../core/config.js";
 import { session as liveSession } from "../../state/sessionStore.js";
 import { buildProjects } from "../../services/roadmapService.js";
 import { groupProjectsByProgram, driverLabel as driverLabelFor } from "../../services/programsService.js";
@@ -242,6 +242,28 @@ function renderProjectDetail(right, session, proj) {
     '<span class="urgency-badge urg-' + (proj.urgency || "low").toLowerCase() + '">' + proj.urgency + '</span>' +
     '<span class="crit-shape-' + (proj.urgency || "low").toLowerCase() + '"></span>';
   panel.appendChild(badges);
+
+  // v2.4.11 · A7 · "Also affects" environments. Sometimes a project's
+  // primary env is e.g. coreDc but its constituent gaps span coreDc +
+  // drDc + publicCloud. Surface the ALL the unique envs across the
+  // gaps' affectedEnvironments arrays (deduped, primary first), so the
+  // user sees the full scope without splitting the project.
+  var envIds = new Set();
+  if (proj.envId) envIds.add(proj.envId);
+  proj.gaps.forEach(function(g) {
+    (g.affectedEnvironments || []).forEach(function(e) { envIds.add(e); });
+  });
+  envIds.delete("crossCutting");   // not user-meaningful
+  if (envIds.size > 1) {
+    var envSep = mk("div", "detail-sep"); envSep.textContent = "Also affects"; panel.appendChild(envSep);
+    var envChipRow = mk("div", "detail-chip-row");
+    Array.from(envIds).forEach(function(eid) {
+      if (eid === proj.envId) return;   // primary already in the project name
+      var em = ENVIRONMENTS.find(function(e) { return e.id === eid; });
+      envChipRow.appendChild(mkt("span", "env-also-chip", em ? em.label : eid));
+    });
+    panel.appendChild(envChipRow);
+  }
 
   // Dell solutions
   var solSep = mk("div", "detail-sep"); solSep.textContent = "Dell solutions mapped"; panel.appendChild(solSep);

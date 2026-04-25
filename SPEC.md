@@ -776,7 +776,7 @@ A separate `SPEC_v3.md` will capture this architecture when work starts.
 
 **Purpose**: every AI feature — existing or future — composes against these shapes. New provider, new tab binding, new action command, new output mode all follow the same pattern. Adding a scenario should never require rewriting earlier ones.
 
-Shipped through **v2.4.5.1** · Phase 19a-f · enterprise-grade, vendor-neutral.
+Shipped through **v2.4.11** · Phase 19a-k · enterprise-grade, vendor-neutral.
 
 ### §12.1 · Storage contracts (localStorage, `ai_*_v<n>` namespace)
 
@@ -1014,6 +1014,12 @@ Today (v2.4.4): parser declared but `getSystemFooter("json-commands")` returns a
 6. **(v2.4.5)** Every session-root mutation emits a `session-changed` event. `applyProposal` → `"ai-apply"`; `undoLast` / `undoAll` → `"ai-undo"`; `resetSession` → `"session-reset"`; `resetToDemo` → `"session-demo"`. Enforced by `demoSpec DS16 / DS17`.
 7. **(v2.4.5)** Every seed skill's `outputSchema` path must exist in `FIELD_MANIFEST[tab]` AND be `writable: true`. Enforced by `demoSpec DS9 / DS10`.
 8. **(v2.4.5 · two-surface rule — feedback_foundational_testing.md)** Every data-model change (add / rename / remove a field on instances, gaps, drivers, session metadata) MUST ship in the same commit as: (a) a refreshed `state/demoSession.js` that exercises the field, (b) a seed skill in `core/seedSkills.js` that demonstrates it (if writable), (c) a new or updated assertion in `diagnostics/demoSpec.js`, (d) an entry in `docs/DEMO_CHANGELOG.md`. Reviewers reject PRs that miss any of the four surfaces.
+9. **(v2.4.11)** **Draft-permissive / Review-enforced.** Action-link validation (`validateActionLinks`) only fires on:
+   - `gap.reviewed === true` AND
+   - the patch changes a STRUCTURAL field (`gapType` / `layerId` / `affectedLayers` / `affectedEnvironments` / `relatedCurrentInstanceIds` / `relatedDesiredInstanceIds`) OR `patch.reviewed === true` is explicit OR the call is `approveGap`.
+   Metadata patches (`urgencyOverride` / `notes` / `urgency` / `phase` / `status` / `driverId`) on already-invalid gaps save WITHOUT re-tripping link validation. Soft chip in the gap detail panel still surfaces the violation.
+10. **(v2.4.11)** **Destructive ops use `status: closed`, not delete.** Setting a desired tile's disposition to `keep` flips linked gaps to `status: "closed"` with `closeReason` + `closedAt` instead of deleting them. Reversible via the gap detail panel's "Reopen" button.
+11. **(v2.4.11)** **Browser smoke mandatory before tag.** Tests-pass-alone is necessary but not sufficient. Every tag MUST include a manual smoke against the verification spec via Chrome MCP (or equivalent live-browser inspection). Three v2.4.11 bugs (urgency lock silently failing, demo `g-004` mis-typed Replace, save button no feedback) only surfaced through smoke. Discipline written into `feedback_browser_smoke_required.md`.
 
 ---
 

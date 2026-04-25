@@ -46,9 +46,17 @@ export function buildGapFromDisposition(session, desiredInst) {
   var actionLabel = DISPOSITION_ACTIONS.find(function(a) { return a.id === action; });
   var label = actionLabel ? actionLabel.label : action;
 
-  var description = sourceInst
-    ? label + ": " + sourceInst.label + " [" + layerLabel + "]"
-    : label + " " + desiredInst.label + " [" + layerLabel + "]";
+  // v2.4.11 · C3 · description template upgrade. Reads like a sentence:
+  // "Replace PowerEdge → PowerStore [Compute]" when both sides are
+  // present; falls back gracefully when one side is missing.
+  var description;
+  if (sourceInst && desiredInst.label && desiredInst.label !== sourceInst.label) {
+    description = label + " " + sourceInst.label + " → " + desiredInst.label + " [" + layerLabel + "]";
+  } else if (sourceInst) {
+    description = label + ": " + sourceInst.label + " [" + layerLabel + "]";
+  } else {
+    description = label + " " + desiredInst.label + " [" + layerLabel + "]";
+  }
 
   // Phase = priority → now/next/later (SPEC §7.3).
   // Default "next" matches the introduce-default used by the UI.
@@ -62,10 +70,23 @@ export function buildGapFromDisposition(session, desiredInst) {
   var currentIds = sourceInst ? [sourceInst.id] : [];
   var desiredIds = [desiredInst.id];
 
-  // ops gap needs non-empty notes (from models) -- prefill
-  var notes = action === "ops"
-    ? "Operational change: " + description
-    : "";
+  // v2.4.11 · C4 · pre-fill notes for EVERY action, not just ops. Gives
+  // the user something to read on Tab 4 instead of an empty notes field.
+  // Templates differ by whether there's a current source.
+  var notes;
+  if (action === "ops") {
+    notes = "Operational / services work: " + description;
+  } else if (action === "introduce") {
+    notes = "Net-new: " + desiredInst.label + ". No current technology to replace.";
+  } else if (sourceInst) {
+    notes = "From workshop: " + label + " " + sourceInst.label;
+    if (desiredInst.label && desiredInst.label !== sourceInst.label) {
+      notes += " → " + desiredInst.label;
+    }
+    notes += ".";
+  } else {
+    notes = "From workshop: " + label + " " + desiredInst.label + ".";
+  }
 
   return {
     description:               description,
@@ -111,11 +132,17 @@ export function syncGapFromDesired(session, desiredInstanceId) {
     return (g.relatedDesiredInstanceIds || []).indexOf(desiredInstanceId) >= 0;
   });
 
-  // Keep disposition → no gap exists for this desired instance.
+  // v2.4.11 · A2 · Keep disposition no longer DELETES linked gaps.
+  // Instead, mark them status:"closed" with a closeReason so the user
+  // can recover them from a "Closed gaps" filter on Tab 4 if they
+  // change their mind. Reversible. Visible. Auditable.
   if (desiredInst.disposition === "keep") {
     linkedGaps.forEach(function(gap) {
-      var idx = session.gaps.indexOf(gap);
-      if (idx >= 0) session.gaps.splice(idx, 1);
+      // Don't re-close already-closed gaps.
+      if (gap.status === "closed") return;
+      gap.status = "closed";
+      gap.closeReason = "auto: disposition changed to keep on " + (desiredInst.label || desiredInst.id);
+      gap.closedAt = new Date().toISOString();
     });
     return;
   }
@@ -128,6 +155,10 @@ export function syncGapFromDesired(session, desiredInstanceId) {
       var newGapType = ACTION_TO_GAP_TYPE[desiredInst.disposition];
       if (newGapType) gap.gapType = newGapType;
     }
+
+    // v2.4.11 · A6 · respect urgencyOverride. User explicitly set the
+    // urgency → don't propagate over their decision.
+    if (gap.urgencyOverride === true) return;
 
     if (desiredInst.originId) {
       var origin = (session.instances || []).find(function(i) { return i.id === desiredInst.originId; });
@@ -198,6 +229,8 @@ export function syncGapsFromCurrentCriticality(session, currentInstanceId) {
 
   (session.gaps || []).forEach(function(gap) {
     if ((gap.relatedCurrentInstanceIds || []).indexOf(currentInstanceId) >= 0) {
+      // v2.4.11 · A6 · respect urgencyOverride.
+      if (gap.urgencyOverride === true) return;
       gap.urgency = curInst.criticality;
     }
   });

@@ -368,6 +368,20 @@ export function registerDemoSuite(api) {
   });
 
   // ──────────────────────────────────────────────────────────────
+  // Suite 35c · v2.4.11 · urgencyOverride coverage in demo
+  // (DS22 — rides along to keep the two-surface rule honest)
+  // ──────────────────────────────────────────────────────────────
+  describe("35c · Phase 19k · demo session · urgencyOverride exercised", function() {
+
+    it("DS22 · default demo includes ≥1 gap with urgencyOverride:true (so the lock+auto UI is exercisable from Load demo)", function() {
+      var s = createDemoSession();
+      var pinned = s.gaps.filter(function(g) { return g.urgencyOverride === true; });
+      assert(pinned.length >= 1,
+        "demo must include at least one gap with urgencyOverride:true so the override toggle is visible from Load demo");
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────
   // Suite 35 · session-changed bus wiring
   // ──────────────────────────────────────────────────────────────
   describe("35 · Phase 19e · session-changed bus · apply & undo emit", function() {

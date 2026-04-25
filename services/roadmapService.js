@@ -202,6 +202,28 @@ export function buildProjects(session, opts) {
       if (c > bestDriverCount) { bestDriver = did; bestDriverCount = c; }
     });
     proj.driverId = bestDriver;
+
+    // v2.4.11 · D3 · Retirement verb override. When EVERY constituent gap's
+    // linked desired instance(s) carry disposition: "retire" (or there are
+    // NO linked desired tiles AND the gapType is ops, indicating manual
+    // retirement gaps), relabel the project from "Operational Improvement"
+    // to "Retirement". Captures the semantic distinction without adding a
+    // new gapType.
+    if (proj.gapType === "ops") {
+      var allRetire = proj.gaps.every(function(g) {
+        var desiredIds = g.relatedDesiredInstanceIds || [];
+        if (desiredIds.length === 0) return false;
+        return desiredIds.every(function(did) {
+          var d = (session.instances || []).find(function(i) { return i.id === did; });
+          return d && d.disposition === "retire";
+        });
+      });
+      if (allRetire) {
+        var retName = envLabel(proj.envId) + " — " + layerLabel(proj.layerId) + " Retirement";
+        proj.name  = retName;
+        proj.label = retName;
+      }
+    }
   });
 
   return { projects: projects };

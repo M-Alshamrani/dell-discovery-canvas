@@ -1,14 +1,14 @@
 # Dell Discovery Canvas — Session Handoff
 
-**Last session end**: 2026-04-24 afternoon, after shipping `v2.4.5` (Foundations Refresh) + `v2.4.5.1` (AI reliability).
+**Last session end**: 2026-04-25, after shipping `v2.4.11` Rules Hardening (review-time enforcement + closed-vs-deleted gaps + visible auto-behaviour + Operational/Services clarity + 3 in-flight bug fixes caught by browser smoke).
 **File purpose**: anyone (human or a fresh Claude Code session) opening this folder should read this file first to know exactly where work stopped, what's shipped, what's queued, and how to pick up.
 
 ---
 
 ## 1 · Where you are
 
-- `git log --oneline main` → HEAD = `v2.4.5.1`.
-- `git tag --list 'v2.*' | sort -V` → 16 tags: `v2.1.1` through `v2.4.5.1`.
+- `git log --oneline main` → HEAD = `v2.4.11`.
+- `git tag --list 'v2.*' | sort -V` → 22 tags: `v2.1.1` through `v2.4.11`.
 - Working tree: clean. Everything that was built is tagged and pushed to `origin/main`.
 - GitHub: https://github.com/M-Alshamrani/dell-discovery-canvas (private).
 
@@ -78,8 +78,8 @@ Ordered for logical progression. Each bucket has locked scope in memory or SPEC.
 - ✅ A2.3. v2.4.9 Primary-layer + Gap→Project data model · pre-crown-jewel rollback anchor (shipped 2026-04-24).
 - ✅ A2.4. v2.4.10 User-owned save/open .canvas file (shipped 2026-04-24).
 - ✅ A2.5. v2.4.10.1 HOTFIX · test-runner localStorage isolation (shipped 2026-04-25).
-- **A3. v2.4.11 Rules hardening + Q1-Q4 fixes — NEXT UP (LOCKED 2026-04-25).** Full spec in `docs/CHANGELOG_PLAN.md § v2.4.11`. Inputs: `docs/RULES.md` (rules-as-built audit) + 5 design principles (draft permissive / review enforced; status:closed not delete; visible auto-behaviour; rules from one source; workshop flow > shape). 21 items across 7 sections (A rules / B filter+form / C auto-draft visibility / D operational+services clarity / E desired-link bug / F friendly errors / G tests+docs). ~7 hr · single tag · spec committed before code.
-- **A4. v2.4.12 Services scope — QUEUED + LOCKED 2026-04-25** (execute after v2.4.11). Full spec in `docs/CHANGELOG_PLAN.md § v2.4.12`. New `gap.services[]` field + 10-entry `SERVICE_TYPES` catalog + opt-in suggested chips + roll-up on Roadmap project cards + new "Services scope" sub-tab on Reporting. ~3-4 hr · single tag.
+- ✅ A3. v2.4.11 Rules hardening + Q1-Q4 fixes (shipped 2026-04-25). 21 spec items + 3 browser-smoke-discovered bugs (urgency-lock silently failed because metadata patches re-validated links · demo g-004 was mis-typed Replace with 2 currents · Save button had no dynamic feedback). 509 tests green; verified live in browser before commit per `feedback_browser_smoke_required.md`.
+- **A4. v2.4.12 Services scope — NEXT UP (LOCKED 2026-04-25).** Full spec in `docs/CHANGELOG_PLAN.md § v2.4.12`. New `gap.services[]` field + 10-entry `SERVICE_TYPES` catalog + opt-in suggested chips per gapType + roll-up on Roadmap project cards + new "Services scope" sub-tab on Reporting. ~3-4 hr · single tag.
 - **A5. v2.6.0 Action-command skills** — runtime for `json-commands` response format. Was originally v2.4.6; deferred so UX + crown-jewel land first.
 
 ### Bucket B — Crown-jewel UX rework (v2.5.0)
@@ -109,9 +109,10 @@ Read these files **in this order**:
 4. `.claude/projects/.../memory/feedback_foundational_testing.md` — **the rule that governs every data-model change**.
 5. `.claude/projects/.../memory/project_deferred_design_review.md` — crown-jewel scope.
 6. `SPEC.md § 12` — the AI Platform Specification (including §12.4a reliability contract + §12.5a sessionEvents bus + §12.8 invariants).
-7. `docs/CHANGELOG_PLAN.md` — latest entries at top: v2.4.12 (services scope, queued+locked), v2.4.11 (rules hardening, queued+locked NEXT UP), v2.4.10.1 hotfix, v2.4.10 save/open file, v2.4.9 rollback anchor.
-8. `docs/RULES.md` — **rules-as-built audit (committed 2026-04-25)**. Must read before any rule change. 12 sections, ~80 numbered rules tagged 🔴 HARD / 🟡 SOFT / 🔵 AUTO / 📦 MIGRATE.
+7. `docs/CHANGELOG_PLAN.md` — latest entries at top: v2.4.12 (services scope, NEXT UP), v2.4.11 IMPLEMENTED (rules hardening), v2.4.10.1 hotfix, v2.4.10 save/open file, v2.4.9 rollback anchor.
+8. `docs/RULES.md` — **rules-as-built audit (post-v2.4.11)**. Must read before any rule change. 12 sections, ~90 numbered rules tagged 🔴 HARD / 🟡 SOFT / 🔵 AUTO / 📦 MIGRATE, plus a "v2.4.11 UI surfaces" map.
 9. `docs/DEMO_CHANGELOG.md` — demo + seed surface audit trail (read before touching `state/demoSession.js` or `core/seedSkills.js`).
+10. **Memory `feedback_browser_smoke_required.md`** — locked discipline since v2.4.11: every tag MUST include a manual browser smoke against the verification spec BEFORE commit. Tests pass alone is NOT enough — three v2.4.11 bugs (urgency lock, demo g-004 type, save feedback) only surfaced via browser smoke.
 
 Then verify the build works locally:
 
@@ -122,7 +123,17 @@ curl http://localhost:8080/health   # → ok
 # Open http://localhost:8080 in incognito → confirm green banner (~416 assertions)
 ```
 
-Then ask the user to confirm the starting point and which bucket to tackle first. **Default next work is v2.4.5 Foundations Refresh** — the scope is locked, the tests to add are specified, the files to create are named. Execute on the spec without re-deriving.
+Then ask the user to confirm the starting point and which bucket to tackle first. **Default next work as of 2026-04-25: v2.4.12 Services scope** — the spec is locked in `docs/CHANGELOG_PLAN.md § v2.4.12`, files to touch are named, two-surface treatment included. Execute on the spec without re-deriving.
+
+**TAG PROTOCOL (mandatory since v2.4.10.1 — written into `feedback_browser_smoke_required.md`)**:
+
+1. Spec committed BEFORE code (locked in `docs/CHANGELOG_PLAN.md`).
+2. Code execution as one coherent pass.
+3. **Manual browser smoke** against the verification spec via Chrome MCP (`mcp__Claude_in_Chrome__navigate` + `javascript_tool` to simulate real user actions and inspect resulting DOM/state). Every "what you'll see" bullet checked in the live app, results reported back to user.
+4. **PAUSE for explicit "tag it" approval.** No tag without it.
+5. Tag, push, update memory + HANDOFF.
+
+The browser smoke is non-negotiable: v2.4.11's three pre-tag bug fixes (urgency lock, demo g-004 type, save feedback) all came from browser smoke catching things the green test banner missed.
 
 ## 7 · A suggested opening prompt for the fresh session
 

@@ -292,6 +292,7 @@ export function renderMatrixView(left, right, session, opts) {
     }
 
     // Auto-create gap draft if applicable (only if no existing gap already links these)
+    var gapDrafted = false;
     if (ACTION_TO_GAP_TYPE[actionId]) {
       var alreadyLinked = (session.gaps || []).some(function(g) {
         return (g.relatedCurrentInstanceIds || []).indexOf(curInst.id) >= 0
@@ -300,7 +301,7 @@ export function renderMatrixView(left, right, session, opts) {
       if (!alreadyLinked) {
         var gapProps = buildGapFromDisposition(session, desiredInst);
         if (gapProps) {
-          try { createGap(session, gapProps); } catch(e) { /* soft fail */ }
+          try { createGap(session, gapProps); gapDrafted = true; } catch(e) { /* soft fail */ }
         }
       }
     }
@@ -314,8 +315,16 @@ export function renderMatrixView(left, right, session, opts) {
     // Show the detail panel with the selected disposition pre-populated
     showDetailPanel(right, desiredInst);
 
-    // Show success notification
-    showToast("Disposition set: " + actionId + (ACTION_TO_GAP_TYPE[actionId] ? " -- gap drafted automatically" : ""), "ok");
+    // v2.4.11 · C1 · post-draft toast tells the user where to find the
+    // freshly-drafted gap. Counts unreviewed so the user knows the total.
+    if (gapDrafted) {
+      var unreviewed = (session.gaps || []).filter(function(g) { return g.reviewed === false && g.status !== "closed"; }).length;
+      showToast("↳ Gap drafted on Tab 4 (" + unreviewed + " unreviewed)", "ok");
+    } else if (actionId === "keep") {
+      showToast("Set to Keep — any linked gaps were closed (Tab 4 → Show closed)", "ok");
+    } else {
+      showToast("Disposition set: " + actionId, "ok");
+    }
   }
 
   // ---- Command palette ----
@@ -582,6 +591,39 @@ export function renderMatrixView(left, right, session, opts) {
   function buildMappedAssetsSection(right, workload) {
     var section = mk("div", "mapped-assets-section");
     section.appendChild(mkt("div", "mapped-assets-title", "Mapped infrastructure"));
+
+    // v2.4.11 · A8 · "Linked variants in other environments" chip row.
+    // When another workload tile shares the same `label` AND `state` but
+    // lives in a different environment, surface it so the user remembers
+    // their hybrid workload is modelled across multiple tiles.
+    var variants = (session.instances || []).filter(function(i) {
+      return i !== workload &&
+             i.layerId === "workload" &&
+             i.state === workload.state &&
+             i.label === workload.label &&
+             i.environmentId !== workload.environmentId;
+    });
+    if (variants.length > 0) {
+      var variantBox = mk("div", "linked-variants-box");
+      variantBox.appendChild(mkt("span", "linked-variants-eyebrow", "LINKED VARIANTS"));
+      variantBox.appendChild(mkt("span", "linked-variants-msg",
+        "Same workload also runs in: "));
+      variants.forEach(function(v, idx) {
+        var envObj = ENVIRONMENTS.find(function(e) { return e.id === v.environmentId; });
+        var chip = mkt("span", "linked-variant-chip", envObj ? envObj.label : v.environmentId);
+        chip.title = "Click to open this variant tile in " + (envObj ? envObj.label : v.environmentId);
+        chip.style.cursor = "pointer";
+        chip.addEventListener("click", function() {
+          document.dispatchEvent(new CustomEvent("dell-canvas:navigate-to-tile", {
+            detail: { instanceId: v.id, state: v.state, layerId: v.layerId, environmentId: v.environmentId }
+          }));
+        });
+        variantBox.appendChild(chip);
+        if (idx < variants.length - 1) variantBox.appendChild(document.createTextNode(" "));
+      });
+      section.appendChild(variantBox);
+    }
+
 
     var mapped = (workload.mappedAssetIds || [])
       .map(function(id) { return (session.instances || []).find(function(i) { return i.id === id; }); })

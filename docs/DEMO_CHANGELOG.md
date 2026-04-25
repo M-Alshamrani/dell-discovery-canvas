@@ -18,6 +18,27 @@ gaps, drivers, or session metadata) must, in the **same commit**:
 
 ---
 
+## v2.4.11 · 2026-04-25 · Rules hardening + relationships polish
+
+**Status**: shipped (Phase 19k).
+
+### What changed for the demo surface
+
+- **NEW gap field `urgencyOverride: boolean`** (default false). When true, propagation rules P4/P7 skip the gap so user-pinned urgency stays put. Migrator (M10) defaults all legacy gaps to `false`.
+- **Demo `g-005` `urgencyOverride: true`** (and urgency raised to "High"). Exercises the lock+auto toggle in the gap detail UI from Load demo, so DS22 has a target.
+- **Demo `g-004` retyped from `replace` → `consolidate`** + description updated. The original 2-current → 1-desired shape is semantically Consolidate (merging PowerEdge + HPE onto Dell PowerEdge); the rule v2.4.11 enforces (Replace = exactly 1 current) caught the mismatch.
+- **demoSpec DS22** asserts at least one demo gap has `urgencyOverride: true` so the override toggle stays visible from Load demo across future refactors.
+
+### Why this matters for the demo surface
+
+Two pre-existing bugs surfaced once v2.4.11 enforced action-link rules at review time:
+1. The lock button on urgency was silently failing (because every `updateGap` re-ran link validation, even on metadata-only patches like the urgencyOverride toggle).
+2. Demo `g-004` violated the Replace 1-to-1 rule with its 2-current-1-desired shape.
+
+Both are fixed. The lesson written into `feedback_browser_smoke_required.md` (new memory): **every tag MUST include a manual browser smoke against the verification spec before commit.** Tests pass + manual smoke = ship. Tests pass alone = NOT enough.
+
+---
+
 ## v2.4.10 · 2026-04-24 · User-owned save/open file (.canvas workbook)
 
 **Status**: shipped (Phase 19j). No data-model changes.

@@ -1020,7 +1020,17 @@ Plus DS22 in demoSpec for the demo refresh.
 
 ---
 
-## v2.4.11 · Rules hardening + Q1-Q4 fixes · QUEUED + LOCKED 2026-04-25 (execute next)
+## v2.4.11 · Rules hardening + Q1-Q4 fixes · IMPLEMENTED 2026-04-25
+
+### Bug-fixes addendum (caught in browser smoke before tag)
+
+- Lock button on urgency selector silently failed because `updateGap` ran `validateActionLinks` on EVERY edit including metadata-only patches (urgencyOverride toggle). Demo `g-004` was mis-typed as `replace` but had 2 currents (semantically Consolidate). Two fixes:
+  1. **`updateGap` now only runs `validateActionLinks` when STRUCTURAL fields change** (gapType / layerId / affectedLayers / affectedEnvironments / relatedCurrentInstanceIds / relatedDesiredInstanceIds) OR when caller explicitly sets `reviewed: true`. Metadata-only patches (urgencyOverride / notes / urgency / phase / status / driverId) skip link validation. The soft chip on the gap detail still shows the violation — user is informed but not blocked from saving side notes.
+  2. **Demo `g-004` retyped to `consolidate`** (correct: 2 current PowerEdge old + HPE ProLiant → 1 desired PowerEdge new). Description updated to "Aging compute — consolidate two vendor platforms onto PowerEdge".
+- **Save button visible feedback** — was just a text swap. Now shows: idle "Save changes" → click → disabled "Saving…" → success → green "Saved ✓" + 900ms revert; error → red "Couldn't save" + shake animation + 2s revert + inline error in panel.
+- **2 pre-existing tests revised to match the new contract**:
+  - T6.6 (any-edit-flips-reviewed) — was "any substantive edit"; now correctly asserts only structural edits auto-flip + metadata edits don't (workshop-flow protection).
+  - RH8 (implicit reviewed-flip on valid shape) — updated to use a structural patch (relatedCurrentInstanceIds) instead of a metadata patch (notes).
 
 **Theme**: lock the rules so the live workshop stays permissive but review enforces shape. Surface the silent magic. Fix the desired-link bug. Make Operational/Services first-class.
 

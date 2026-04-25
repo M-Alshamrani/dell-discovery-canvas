@@ -1,10 +1,10 @@
-# Rules-as-built · v2.4.10.1
+# Rules-as-built · v2.4.11
 
 The complete inventory of every rule the app enforces today, extracted from
 the source so we can read it in one place and decide what's right, what's
-wrong, and what's missing. Use this as the input for the v2.4.11 Rules
-Hardening discussion. **No code changes attached** — this is a discovery
-artifact.
+wrong, and what's missing. v2.4.11 incorporated the rules-hardening pass
+that came out of this audit; this version of the doc reflects the
+post-v2.4.11 state. Italics flag changes from the v2.4.10.1 baseline.
 
 Every rule is tagged:
 - 🔴 **HARD** — throws on violation; the action is blocked.
@@ -82,7 +82,11 @@ Notes baked into the resolution logic:
 | AL3 | Enhance gap: requires exactly 1 current; desired is optional | 🔴 HARD | reviewed gaps only |
 | AL4 | Consolidate gap: requires 2+ current AND exactly 1 desired | 🔴 HARD | reviewed gaps only |
 | AL5 | Introduce gap: requires 0 current AND exactly 1 desired (this is the rule you saw fire when you tried to move from Now→Next) | 🔴 HARD | reviewed gaps only |
-| AL6 | Ops gap: optional/optional — never blocks | 🟡 SOFT | n/a |
+| AL6 | Ops gap: optional/optional link counts — never blocks on links alone | 🟡 SOFT | n/a |
+| AL7 | *(v2.4.11 · A9)* **Operational/Services substance rule**: a reviewed `ops` gap requires `relatedCurrentInstanceIds + relatedDesiredInstanceIds >= 1` OR `notes.trim() >= 10 chars`. Auto-drafts bypass per AL1. | 🔴 HARD | reviewed ops gaps |
+| AL8 | *(v2.4.11 · F1)* All AL2–AL7 violations emit **workshop-friendly sentences**, not raw rule text (e.g. *"Replace needs the technology being replaced. Link a current-state tile to this gap."*) | 🔵 AUTO | n/a |
+| AL9 | *(v2.4.11 · A1)* `updateGap` only re-runs `validateActionLinks` on STRUCTURAL patches (gapType / layerId / affectedLayers / affectedEnvironments / relatedCurrentInstanceIds / relatedDesiredInstanceIds) OR when caller explicitly sets `reviewed: true`. Metadata patches (urgencyOverride / notes / urgency / phase / status / driverId) skip link validation so users can save side notes on imperfect auto-drafts. | 🔵 AUTO | every `updateGap` |
+| AL10 | *(v2.4.11 · A1)* `approveGap` always runs `validateActionLinks` (the explicit "I'm done" gate). Failure throws AND keeps `gap.reviewed: false`. | 🔴 HARD | every `approveGap` |
 
 ---
 
@@ -112,11 +116,11 @@ When the user mutates a desired tile, linked gaps should re-sync. When the user 
 |---|---|---|---|
 | P1 | Changing a desired tile's `priority` (Now/Next/Later) → linked gaps' `phase` re-derives via `priorityToPhase` | 🔵 AUTO | `syncGapFromDesired` after editing a desired tile |
 | P2 | Changing a desired tile's `disposition` to a non-keep action → linked gaps' `gapType` re-derives via `ACTION_TO_GAP_TYPE` | 🔵 AUTO | same |
-| P3 | Changing a desired tile's `disposition` to `keep` → **all linked gaps are deleted outright** | 🔴 HARD (silent) | same |
-| P4 | When source current's `originId` exists → linked gaps' `urgency` re-derives from origin's `criticality`; otherwise reset to `"Medium"` | 🔵 AUTO | same |
+| P3 | *(v2.4.11 · A2)* Changing a desired tile's `disposition` to `keep` → linked gaps move to `status: "closed"` with `closeReason: "auto: disposition changed to keep on {desiredLabel}"` and `closedAt` timestamp. **No longer destructive** — visible via Tab 4 "Show closed gaps" filter chip; reopen via the gap detail panel's "Reopen" button. | 🔴 HARD (visible) | same |
+| P4 | When source current's `originId` exists → linked gaps' `urgency` re-derives from origin's `criticality`; otherwise reset to `"Medium"`. *(v2.4.11 · A6)* SKIPS gaps where `urgencyOverride === true`. | 🔵 AUTO | same |
 | P5 | Moving a gap between phases (Tab 4 drag-drop) → every linked desired tile's `priority` re-syncs to match | 🔵 AUTO | `syncDesiredFromGap` after gap.phase change |
 | P6 | Linking a desired tile to a gap whose phase doesn't match the tile's priority → returns `{status: "conflict", ...}` for the UI to raise a confirmation modal (warn-but-allow) | 🟡 SOFT | `confirmPhaseOnLink` before `linkDesiredInstance` |
-| P7 | Mutating a current instance's `criticality` → every linked gap's `urgency` re-derives | 🔵 AUTO | `syncGapsFromCurrentCriticality` |
+| P7 | Mutating a current instance's `criticality` → every linked gap's `urgency` re-derives. *(v2.4.11 · A6)* SKIPS gaps where `urgencyOverride === true`. | 🔵 AUTO | `syncGapsFromCurrentCriticality` |
 
 ---
 
@@ -126,8 +130,9 @@ These are NARROWER than the action-link rules and fire on EVERY gap (reviewed or
 
 | # | Rule | Tier | When it fires |
 |---|---|---|---|
-| L1 | Cannot unlink the LAST current instance from `enhance` / `replace` / `consolidate` gaps | 🔴 HARD | `unlinkCurrentInstance` |
-| L2 | Cannot unlink the LAST desired instance from `introduce` / `enhance` / `replace` / `consolidate` gaps | 🔴 HARD | `unlinkDesiredInstance` |
+| L1 | Cannot unlink the LAST current instance from gaps whose `gapType` requires ≥1 current. *(v2.4.11 · A3)* Now derived from `taxonomy.requiresAtLeastOneCurrent(gapType)` instead of a hand-typed allowlist. Auto-includes `keep` and `retire` (both gapType: `null`/`ops` → require 1 current). | 🔴 HARD | `unlinkCurrentInstance` |
+| L2 | Cannot unlink the LAST desired instance from gaps whose `gapType` requires ≥1 desired. *(v2.4.11 · A3)* Derived from `taxonomy.requiresAtLeastOneDesired(gapType)`. | 🔴 HARD | `unlinkDesiredInstance` |
+| L8 | *(v2.4.11 · A4)* `linkDesiredInstance(session, gapId, instanceId, opts)` REFUSES the link with error code `PHASE_CONFLICT_NEEDS_ACK` when `confirmPhaseOnLink` returns conflict AND `opts.acknowledged !== true`. UI shows the confirm; on user OK, calls with `{ acknowledged: true }`. Eliminates the v2.4.10 footgun where a UI could forget the check and link silently. | 🔴 HARD | `linkDesiredInstance` |
 | L3 | Linking adds the id only if absent (idempotent — no duplicates) | 🔵 AUTO | `linkCurrentInstance` / `linkDesiredInstance` |
 | L4 | Linking or unlinking a gap → automatically marks `reviewed: true` (clears the pulsing dot) | 🔵 AUTO | all four link/unlink helpers |
 | L5 | `setGapDriverId(driverId=null|""|undefined)` → deletes `gap.driverId` (gap falls back to suggestion) | 🔵 AUTO | UI driver picker |
@@ -212,6 +217,7 @@ Every load runs through this. Pure, idempotent, additive.
 | M7 | **v2.4.9**: backfill `gap.projectId` via `deriveProjectId` if missing | 📦 MIGRATE | every gap |
 | M8 | Default `sessionMeta` (with today's date / version "2.0") if missing | 📦 MIGRATE | sessions saved without sessionMeta |
 | M9 | Generate `sessionId` if missing | 📦 MIGRATE | same |
+| M10 | *(v2.4.11)* Default `gap.urgencyOverride: false` on every legacy gap. Idempotent. | 📦 MIGRATE | every gap |
 
 ---
 
@@ -243,6 +249,27 @@ These are the load-bearing properties the test suite asserts.
 | INV6 | Every session-root mutation emits `session-changed` (ai-apply / ai-undo / session-reset / session-demo / session-replace) | Suite 35 DS16/DS17 |
 | INV7 | Every seed skill's `outputSchema` path exists in `FIELD_MANIFEST[tab]` AND is `writable: true` | Suite 32 DS9 |
 | INV8 | Two-surface rule: every data-model change ships demo + seed + demoSpec + DEMO_CHANGELOG entry in the same commit | code review (no automated check) |
+
+---
+
+## v2.4.11 · UI surfaces that make rules visible
+
+Rules without visible UI are surprises. v2.4.11 added these surfaces so users see WHY the app does what it does:
+
+| Surface | Where | Triggered by |
+|---|---|---|
+| Soft "REVIEW NEEDED" chip on gap detail | Tab 4 → gap detail panel, between status row and edit form | Auto-draft gap (reviewed:false) AND `validateActionLinks` would throw if reviewed |
+| "🔒 manually set / ↺ auto" indicator on Urgency selector | Tab 4 → gap detail panel, Urgency field | `gap.urgencyOverride === true` |
+| "AUTO-SUGGESTED driver: X because Y. [Pin this driver]" chip | Tab 4 → gap detail, below Strategic Driver dropdown | `gap.driverId` absent AND `effectiveDriverReason` returns `source: "suggested"` |
+| "Also affects: {env labels}" chip on project detail | Tab 5.5 → project detail panel | Project's constituent gaps span > 1 environment |
+| "LINKED VARIANTS in other environments: {env chips}" on workload tile | Tab 2/3 → workload tile detail | Same `label`/`state` workload exists in another environment |
+| "↳ Gap drafted on Tab 4 (N unreviewed)" toast | Tab 3 → after disposition save | Auto-draft just fired |
+| "Show closed gaps (N)" filter chip with count badge | Tab 4 → filter row | Any gap has `status: "closed"` |
+| "Reopen" button + closed-status banner on gap detail | Tab 4 → gap detail panel | Gap has `status: "closed"` |
+| "Click to open this {state}-state tile in Tab N" tooltip + cross-tab nav | Tab 4 → gap detail panel link rows | Always |
+| "+ Add operational / services gap" CTA with placeholder examples | Tab 4 → filter row | Always |
+| "Review all →" button on auto-draft notice | Tab 4 → above filter row | Any auto-drafted unreviewed gap exists |
+| Save button states: Saving… / Saved ✓ (green) / Couldn't save (red+shake) | Tab 4 → gap detail Save button | On click |
 
 ---
 
