@@ -4,6 +4,138 @@ Per-pass log of every `.dNN` hygiene-pass clone made on the Dell Discovery Canva
 
 ---
 
+## v2.4.11.d02 · 2026-04-25 · Architecture documentation + 13 onboarding/operational artefacts
+
+**Source tag**: `v2.4.11` (functional release; via `.d01` commit chain on `main`).
+**Target tag**: `v2.4.11.d02`.
+**Branch**: `clean-pass-v2.4.11.d02`.
+**Pair**: completes the planned split started in `.d01` per procedure §14. `.d01` covered §1-§8; `.d02` covers §9-§10 + §15.
+**Outcome**: no behaviour change. 509/509 tests still green. Manual Chrome-MCP browser smoke confirmed pre-tag.
+
+### §9.1-§9.2 · Architecture documentation
+
+**3 C4 Mermaid diagrams** in `docs/wiki/explanation/diagrams/`:
+
+- [`context.md`](wiki/explanation/diagrams/context.md) · C4-1 System Context — presales engineer, customer CxO observer, three LLM upstreams (Anthropic / Gemini / local vLLM), no telemetry, single-tenant data sovereignty.
+- [`containers.md`](wiki/explanation/diagrams/containers.md) · C4-2 Container — nginx static-file container, 4-localStorage-compartment SPA, LLM proxy paths, deploy modes (localhost-only default + LAN-exposed with auth).
+- [`components.md`](wiki/explanation/diagrams/components.md) · C4-3 Components — every module per layer (`core/` 12 modules, `state/` 3, `services/` 8, `interactions/` 5 writers, `ui/` 12 views + 2 components, `diagnostics/` 3) and the strict-layering rule.
+
+**9 bootstrap ADRs** in `docs/adr/`:
+
+- [`ADR-001 vanilla-JS / no framework / no build`](adr/ADR-001-vanilla-js-no-build.md) — load-bearing decision; rejecting React + npm + Webpack.
+- [`ADR-002 localStorage-only persistence`](adr/ADR-002-localstorage-only-persistence.md) — single-tenant, browser-local; v3 supersedes.
+- [`ADR-003 nginx reverse-proxy for LLM CORS`](adr/ADR-003-nginx-reverse-proxy-llm-cors.md) — same-origin proxy via existing container.
+- [`ADR-004 Unified output-behavior model`](adr/ADR-004-unified-output-behavior.md) — `responseFormat × applyPolicy` orthogonality (Phase 19d / v2.4.4).
+- [`ADR-005 Writable-path resolver protocol`](adr/ADR-005-writable-path-resolver-protocol.md) — `FIELD_MANIFEST.writable` + `WRITE_RESOLVERS`.
+- [`ADR-006 session-changed event bus`](adr/ADR-006-session-changed-event-bus.md) — single-subscriber re-render model (Phase 19e / v2.4.5).
+- [`ADR-007 Skill seed library + demoSession separation (two-surface rule)`](adr/ADR-007-skill-seed-demosession-separation.md) — Phase 19e / v2.4.5.
+- [`ADR-008 Undo stack — in-memory + localStorage hybrid`](adr/ADR-008-undo-stack-hybrid.md) — Phase 19e / v2.4.5.
+- [`ADR-009 Relationship cascade policy`](adr/ADR-009-relationship-cascade-policy.md) — captures the as-built policy AND the planned tightening (R-INT-2 fix queued for v2.5.x).
+
+### §9.3 · Diátaxis docs structure
+
+NEW `docs/wiki/{tutorials,how-to,reference,explanation}/` with index pages for each mode:
+
+- [`tutorials/index.md`](wiki/tutorials/index.md) + 1 representative tutorial: [`run-first-workshop.md`](wiki/tutorials/run-first-workshop.md).
+- [`how-to/index.md`](wiki/how-to/index.md) + 2 representative recipes: [`add-ai-provider.md`](wiki/how-to/add-ai-provider.md), [`add-writable-field.md`](wiki/how-to/add-writable-field.md).
+- [`reference/index.md`](wiki/reference/index.md) (links to all reference pages below).
+- [`explanation/index.md`](wiki/explanation/index.md) (links to ADRs + diagrams + scalability).
+
+### §9.4 · Auto-derived reference tables
+
+5 generated reference pages in `docs/wiki/reference/`:
+
+- [`file-tree.md`](wiki/reference/file-tree.md) — directory ASCII + LOC roll-up (~9 970 shipped, ~6 596 tests).
+- [`dependency-graph.md`](wiki/reference/dependency-graph.md) — Mermaid layer-level graph + module-level edges; cycle check (acyclic).
+- [`test-inventory.md`](wiki/reference/test-inventory.md) — every Suite 01-42 + DS1-DS22, 487+22=509 assertions.
+- [`localStorage-keys.md`](wiki/reference/localStorage-keys.md) — 4 keys + their normalizers + storage budget.
+- [`field-manifest.md`](wiki/reference/field-manifest.md) — full FIELD_MANIFEST dump per tab + writable/resolver column.
+
+### §9.5 · Sequence + state + ER diagrams
+
+4 diagrams in `docs/wiki/explanation/diagrams/`:
+
+- [`flow-skill-execution.md`](wiki/explanation/diagrams/flow-skill-execution.md) — end-to-end: button click → AI call → parse → apply → undo → re-render.
+- [`flow-undo.md`](wiki/explanation/diagrams/flow-undo.md) — single + bulk undo + reset boundaries; persistence round-trip; failure modes.
+- [`data-model-er.md`](wiki/explanation/diagrams/data-model-er.md) — full entity-relationship picture with 11-row cardinality summary, derivation chains, integrity zones (R-INT-1 through R-INT-7).
+- [`state-machine-save-gate.md`](wiki/explanation/diagrams/state-machine-save-gate.md) — skill-admin save gate (test-must-pass loop, Phase 19d.1).
+
+### §10 · Scalability + performance ceiling
+
+[`docs/wiki/explanation/scalability.md`](wiki/explanation/scalability.md) — three ceilings (current target = workshop ~20-50 instances; next = multi-customer ~200-500; hard = localStorage 5-10 MB) + v3 path. Performance budgets per surface documented in [`docs/operations/PERFORMANCE_BUDGET.md`](operations/PERFORMANCE_BUDGET.md).
+
+**Advisory PERF-* assertions deferred** — adding new test code is borderline-functional-change for a `.dNN` hygiene clone. The budgets are documented; assertions follow as a v2.5.x slice when a real failure justifies adding them. Documented in scalability.md.
+
+### §15 · 13 onboarding + operational artefacts
+
+All 13 bootstrapped this pass per procedure §15.5:
+
+```
+[15.1 Onboardability]
+[x] A · ONBOARDING.md (Day 1 / Week 1 / Month 1 with stop-and-ask markers)
+[x] B · CONTRIBUTING.md (branch / commit / tag / pure-write / two-surface / browser-smoke)
+[x] C · GLOSSARY.md (domain terms)
+[x] D · INVARIANTS.md (consolidated always-true list with regression gates)
+
+[15.2 Operations]
+[x] E · RUNBOOK.md (deploy / rollback / recover / switch provider / bump nginx)
+[x] F · VERSION_COMPAT.md (session-shape × app-tag matrix + per-field compat)
+[x] G · RISK_REGISTER.md (10 risks: R-001 keys, R-002 single-device, R-003 nginx CVE,
+        R-004 storage limit, R-005 LLM outage, R-006 Anthropic header, R-007
+        ContextView splice, R-008 orphan accumulation, R-009 GB10 unverified,
+        R-010 memory drift)
+[x] H · DEPENDENCY_POLICY.md (nginx 3-month, AI model auto-migration, browser baseline)
+
+[15.3 Polish]
+[x] I · BROWSER_SUPPORT.md (last 2 majors of Chromium / Firefox / Safari)
+[x] J · RELEASE_NOTES.md (user-facing release notes — different audience from CHANGELOG_PLAN)
+[x] K · PERFORMANCE_BUDGET.md (per-surface budgets + thresholds for action)
+[x] L · LICENSE (internal Dell-only attribution; bootstrapped per §15.3.L)
+[x] M · .github/ templates (ISSUE_TEMPLATE/{bug-report,feature-request}.md + PULL_REQUEST_TEMPLATE.md)
+```
+
+**Fresh-developer test (procedure §15 acceptance gate)**:
+
+- ✅ Run the app locally within 15 min — ONBOARDING Day-1 + RUNBOOK §1.1.
+- ✅ Understand domain vocabulary within 30 min — GLOSSARY (read twice).
+- ✅ Identify a "good first contribution" within 1 day — ONBOARDING Week-1 backlog discussion + CONTRIBUTING §branch-strategy.
+- ✅ Deploy a clean instance within 1 day — RUNBOOK §1 (recipe complete).
+
+### Files touched (this pass)
+
+```
+NEW · docs/adr/ (9 ADRs)
+NEW · docs/operations/ (5 files: RUNBOOK, VERSION_COMPAT, RISK_REGISTER, DEPENDENCY_POLICY, PERFORMANCE_BUDGET)
+NEW · docs/wiki/ (16 files: 5 index pages + 1 tutorial + 2 how-tos + 6 reference + 7 explanation/diagrams + scalability)
+NEW · ONBOARDING.md, CONTRIBUTING.md, INVARIANTS.md, LICENSE, RELEASE_NOTES.md (root)
+NEW · .github/ISSUE_TEMPLATE/{bug-report,feature-request}.md + .github/PULL_REQUEST_TEMPLATE.md
+MOD · docs/MAINTENANCE_LOG.md (this file — second entry)
+MOD · HANDOFF.md (refresh §1 + §2 to point at .d02)
+```
+
+Net diff (across 3 commits in this branch): ~46 new files, ~5000 lines of documentation.
+
+### Verification (this pass)
+
+- ✅ Build: `docker compose up -d --build` (clean rebuild from working tree).
+- ✅ Tests: 509/509 green (browser banner observed via Chrome MCP).
+- ✅ Manual smoke: tabs switch, demo session loads (19 instances + 7 gaps + 3 drivers), undo stack inspectable, fresh-start UX renders, reporting Overview renders.
+- ✅ Console: zero errors. Migration warnings only from Suite TX9/SF8 expected paths (Phase 17 coercion of synthetic legacy data).
+
+### Out of scope (deferred to v2.4.12 or later)
+
+- v2.4.12 functional release (services scope) — locked spec in CHANGELOG_PLAN.md § v2.4.12; will build on top of `.d02`.
+- Advisory PERF-* assertions — see §10 note above.
+- R-INT-2 fix (`interactions/contextCommands.removeDriver` + cascade clear) — see [ADR-009](adr/ADR-009-relationship-cascade-policy.md), queued for v2.5.x.
+- In-app `/knowledge` route — separate functional release (Bucket F1, ~v2.7.0). Markdown surface ships in this commit; the in-app themed renderer is a UX feature, not a hygiene-pass deliverable.
+- Refresh of the auto-derived tables — they're up-to-date as of 2026-04-25 / `v2.4.11.d02`. Refresh on every subsequent `.dNN` pass.
+
+### Time spent
+
+One focused session split across phases. C4 + ADRs + diagrams = ~half the bytes; §15 artefacts = the other half. No DevTools profiling this pass (deferred to a v2.5.x slice when the budgets need assertions to back them).
+
+---
+
 ## v2.4.11.d01 · 2026-04-25 · First hygiene-pass clone
 
 **Source tag**: `v2.4.11` (HEAD = `6d7ac61`).

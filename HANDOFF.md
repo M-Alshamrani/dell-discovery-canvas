@@ -1,16 +1,17 @@
 # Dell Discovery Canvas — Session Handoff
 
-**Last session end**: 2026-04-25, after shipping `v2.4.11` Rules Hardening (review-time enforcement + closed-vs-deleted gaps + visible auto-behaviour + Operational/Services clarity + 3 in-flight bug fixes caught by browser smoke), followed by the first hygiene-pass clone `v2.4.11.d01` (no behaviour change — code-quality + perf + security + relationship-integrity audit + doc/memory reconciliation + new [docs/MAINTENANCE_LOG.md](docs/MAINTENANCE_LOG.md)).
+**Last session end**: 2026-04-25, after shipping `v2.4.11` Rules Hardening, then the planned hygiene-pass split: `v2.4.11.d01` (procedure §1-§8 — code-quality + perf + security + relationship-integrity audit + doc/memory reconciliation) and `v2.4.11.d02` (procedure §9-§10 + §15 — C4 diagrams + 9 ADRs + Diátaxis docs structure + 13 onboarding/operational artefacts + ER diagram). Convention rename `+dNN` → `.dNN` mid-pass for Docker/shell compatibility. No behaviour change in either hygiene clone.
 **File purpose**: anyone (human or a fresh Claude Code session) opening this folder should read this file first to know exactly where work stopped, what's shipped, what's queued, and how to pick up.
 
 ---
 
 ## 1 · Where you are
 
-- `git log --oneline main` → HEAD = `v2.4.11.d01` (functional source = `v2.4.11`).
-- `git tag --list 'v2.*' | sort -V` → 23 functional tags `v2.1.1` through `v2.4.11`, plus `v2.4.11.d01` hygiene-pass clone (SemVer-equivalent to `v2.4.11`, no behaviour change).
+- `git log --oneline main` → HEAD = `v2.4.11.d02` (functional source = `v2.4.11`).
+- `git tag --list 'v2.*' | sort -V` → 23 functional tags `v2.1.1` through `v2.4.11`, plus two hygiene-pass clones `v2.4.11.d01` and `v2.4.11.d02` (both SemVer-equivalent to `v2.4.11`, no behaviour change).
 - Working tree: clean. Everything that was built is tagged and pushed to `origin/main`.
 - GitHub: https://github.com/M-Alshamrani/dell-discovery-canvas (private).
+- **Documentation surface fully bootstrapped**: 9 ADRs (`docs/adr/`), 4-mode Diátaxis wiki (`docs/wiki/{tutorials,how-to,reference,explanation}/`), 5 operational artefacts (`docs/operations/`), 4 root onboarding/contributing/invariants/license/release-notes. Per-pass `.dNN` log in `docs/MAINTENANCE_LOG.md`.
 
 ## 2 · What is shipped
 
@@ -55,6 +56,7 @@ Recent wins by tag:
 - **v2.4.10.1 HOTFIX** · `runIsolated` snapshot/restore guard so test runs no longer pollute real `localStorage`.
 - **v2.4.11 · Phase 19k** · Rules Hardening + Visible-Rules UX. Five locked design principles (Draft permissive / Review enforced; status:closed not delete; auto-behaviour visible; rules from one place; workshop flow > ideal data shape). 21 spec items + 3 in-flight bug fixes (urgency-lock silently failing, demo g-004 mis-typed Replace, Save button no feedback) — all caught by mandatory Chrome-MCP browser smoke. Codified discipline in [feedback_browser_smoke_required.md](C:/Users/Mahmo/.claude/projects/C--Users-Mahmo-OneDrive-Documents-Claud-AI-PreSales-App/memory/feedback_browser_smoke_required.md).
 - **v2.4.11.d01** · first hygiene-pass clone (no behaviour change). Code-quality + perf + security + relationship-integrity audit; doc/memory reconciliation; new [docs/MAINTENANCE_LOG.md](docs/MAINTENANCE_LOG.md). See that file for the full sweep summary.
+- **v2.4.11.d02** · second hygiene-pass clone (no behaviour change). Architecture + onboarding/operational bootstrap: 3 C4 Mermaid diagrams + 9 ADRs + Diátaxis 4-mode wiki + 5 auto-derived reference tables + 4 sequence/state/ER diagrams + scalability profile + all 13 §15 artefacts ([ONBOARDING](ONBOARDING.md), [CONTRIBUTING](CONTRIBUTING.md), [GLOSSARY](docs/wiki/reference/GLOSSARY.md), [INVARIANTS](INVARIANTS.md), [RUNBOOK](docs/operations/RUNBOOK.md), [VERSION_COMPAT](docs/operations/VERSION_COMPAT.md), [RISK_REGISTER](docs/operations/RISK_REGISTER.md), [DEPENDENCY_POLICY](docs/operations/DEPENDENCY_POLICY.md), [BROWSER_SUPPORT](docs/wiki/reference/BROWSER_SUPPORT.md), [RELEASE_NOTES](RELEASE_NOTES.md), [PERFORMANCE_BUDGET](docs/operations/PERFORMANCE_BUDGET.md), [LICENSE](LICENSE), [.github templates](.github/)). See [docs/MAINTENANCE_LOG.md · v2.4.11.d02](docs/MAINTENANCE_LOG.md).
 
 ## 4 · NEXT UP — Bucket A4 · v2.4.12 Services scope (LOCKED 2026-04-25)
 
@@ -145,7 +147,7 @@ The browser smoke is non-negotiable: v2.4.11's three pre-tag bug fixes (urgency 
 
 Paste this verbatim (or adapt) as your first message in the new session:
 
-> Resume work on the Dell Discovery Canvas project. Read, in order: `C:\Users\Mahmo\Projects\dell-discovery\HANDOFF.md`, then the memory files listed in its § 6, then `SPEC.md § 12` and `docs/RULES.md`. The last session shipped v2.4.11 (Rules Hardening + Visible-Rules UX) followed by `v2.4.11.d01` (first hygiene-pass clone, no behaviour change). NEXT UP is v2.4.12 Services scope, locked spec in `docs/CHANGELOG_PLAN.md § v2.4.12`. Before proposing anything, confirm back to me:
+> Resume work on the Dell Discovery Canvas project. Read, in order: `C:\Users\Mahmo\Projects\dell-discovery\HANDOFF.md`, then [`ONBOARDING.md`](ONBOARDING.md) Day-1 / Week-1 sections, then the memory files listed in §6, then `SPEC.md § 12` and `docs/RULES.md`. The last session shipped v2.4.11 (Rules Hardening + Visible-Rules UX) followed by the planned hygiene-pass split — `v2.4.11.d01` (procedure §1-§8) and `v2.4.11.d02` (procedure §9-§10 + §15: full architecture + 13 onboarding/operational artefacts). Both are SemVer-equivalent to v2.4.11 — no behaviour change. NEXT UP is v2.4.12 Services scope, locked spec in `docs/CHANGELOG_PLAN.md § v2.4.12`, building on top of the .d02 commit. Before proposing anything, confirm back to me:
 > 1. The current HEAD tag (functional latest = v2.4.11; hygiene-pass clone = v2.4.11.d01).
 > 2. The locked v2.4.12 scope (services field + 10-entry catalog + opt-in chips + Roadmap roll-up + new sub-tab).
 > 3. The full backlog buckets A-E (A4 NEXT UP, A5 → v2.6.0, B = v2.5.0/v2.5.1 crown-jewel).
