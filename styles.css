@@ -133,12 +133,12 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   color: var(--text-1);
 }
 
-/* ── Header (v2.5.0 TB1 white topbar) ───────────────────────────
-   Replaced the v2.2.x blue gradient with the philosophy's white +
-   bottom hairline pattern. Sticky-ready (position:sticky in caller),
-   72px tall with a backdrop-filter blur for a polished feel.
-   Brand-blue surface area drops materially (was the largest single
-   blue surface in the app). */
+/* ── Header (v2.5.0 TB1 white topbar with anchor elements) ──────
+   Three-column grid: brand | doc-meta | actions. Subtle dell-blue-faint
+   to canvas vertical gradient gives the topbar perceptible depth without
+   color sprawl; bottom accent gradient (philosophy hero::after pattern)
+   reinforces the brand without filling it; subtle ink-tinted shadow
+   defines it as a distinct surface. */
 #app-header {
   position: sticky;
   top: 0;
@@ -146,12 +146,28 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   height: 72px;
   background: var(--canvas);
   border-bottom: 1px solid var(--rule);
+  box-shadow: 0 1px 3px rgba(11, 42, 74, 0.05);
   backdrop-filter: saturate(180%) blur(8px);
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
+  gap: 32px;
+  padding: 0 28px;
   flex-shrink: 0;
+}
+/* Bottom accent gradient . tapered Dell-blue rule, philosophy
+   hero::after pattern, gives the topbar a quiet brand statement
+   without making it loud. */
+#app-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, var(--dell-blue) 35%, var(--dell-blue) 65%, transparent 100%);
+  opacity: 0.5;
+  pointer-events: none;
 }
 .header-brand {
   display: flex;
@@ -160,7 +176,7 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
 }
 .header-brand img {
   /* TB2 . local Dell logo, no inversion (logo is dark blue on white now). */
-  height: 36px !important;
+  height: 38px !important;
   width: auto;
   display: block;
   flex-shrink: 0;
@@ -170,32 +186,63 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   display: flex;
   flex-direction: column;
   line-height: 1.15;
-  padding-left: 14px;
+  padding-left: 16px;
   border-left: 1px solid var(--rule-strong);
 }
-.header-logo  { width: 36px; height: 36px; flex-shrink: 0; }
+.header-logo  { width: 38px; height: 38px; flex-shrink: 0; }
 .header-title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   color: var(--ink);
-  letter-spacing: -0.005em;
+  letter-spacing: -0.01em;
 }
 .header-sub {
   font-size: 10.5px;
   color: var(--ink-mute);
   font-family: var(--font-mono);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  margin-top: 2px;
+  margin-top: 3px;
+  font-weight: 500;
 }
+
+/* Doc-meta strip in center column. Mono caps with vertical 1px rules
+   between fields. Anchors the topbar with structured information. */
+.header-meta-strip {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 24px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-mute);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.meta-field {
+  font-weight: 500;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.meta-field:first-child { color: var(--ink); font-weight: 600; }
+.meta-sep {
+  display: inline-block;
+  width: 1px;
+  height: 14px;
+  background: var(--rule-strong);
+  flex-shrink: 0;
+}
+
+/* Legacy alias retained for any caller still referencing .header-meta. */
 .header-meta {
   font-size: 10.5px;
   color: var(--ink-mute);
   font-family: var(--font-mono);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  font-weight: 400;
+  font-weight: 500;
 }
+
 /* v2.5.0 . app-version chip on white topbar. Mono caps subdued. */
 .header-app-version {
   font-family: var(--font-mono);
@@ -210,30 +257,31 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
 }
 
 /* ── Stepper (v2.5.0 TB6 leading-zero mono pattern) ─────────────
-   Replaces the v2.2.x rounded-pill stepper with the philosophy's
-   leading-zero idiom: mono Dell-blue "01" + sentence-case label,
-   active state shown by a 2px Dell-blue bottom rule (not a filled
-   background). Reduces brand-blue surface area and aligns with the
-   "L.01" numeric-id style elsewhere. */
+   Distinct band beneath the topbar: canvas-soft background instead
+   of pure white so the two surfaces read as related-but-separate
+   bands. Active step gets a 3px Dell-blue bottom rule plus a faint
+   dell-blue-faint background tint so it carries weight without
+   filling. Mono Dell-blue leading-zero number + sans sentence-case
+   label per philosophy "L.01" idiom. */
 #stepper {
   display: flex;
-  align-items: center;
-  gap: 28px;
-  padding: 0 24px;
-  background: var(--canvas);
+  align-items: stretch;
+  gap: 0;
+  padding: 0 28px;
+  background: var(--canvas-soft);
   border-bottom: 1px solid var(--rule);
   flex-shrink: 0;
-  height: 44px;
+  height: 48px;
 }
 .step {
   display: inline-flex;
   align-items: baseline;
-  gap: 8px;
-  padding: 14px 0 12px;
-  border-bottom: 2px solid transparent;
+  gap: 10px;
+  padding: 16px 18px 13px;
+  border-bottom: 3px solid transparent;
   cursor: pointer;
   white-space: nowrap;
-  transition: color 0.15s ease, border-color 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
   user-select: none;
   background: transparent;
   border-radius: 0;
@@ -243,7 +291,7 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   font-size: 11px;
   font-weight: 600;
   color: var(--ink-mute);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
 }
 .step .step-label {
   font-family: var(--font);
@@ -252,11 +300,13 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   color: var(--ink-soft);
 }
 .step:hover {
+  background: var(--canvas);
   border-bottom-color: var(--rule-strong);
 }
 .step:hover .step-num   { color: var(--dell-blue); }
 .step:hover .step-label { color: var(--ink); }
 .step.active {
+  background: var(--dell-blue-faint);
   border-bottom-color: var(--dell-blue);
 }
 .step.active .step-num   { color: var(--dell-blue); font-weight: 700; }

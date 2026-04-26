@@ -169,19 +169,36 @@ function wireUndoBtn() {
 }
 
 function renderHeaderMeta() {
-  // v2.4.6 · L4 · split the header into TWO chips:
-  //   - session identity: customer | date | status
-  //   - app version: "Canvas v{{APP_VERSION}}" (separate <span> so
-  //     nobody confuses the session-schema version with the app build)
+  // v2.5.0 TB3: doc-meta strip rendered as structured spans with 1px
+  // vertical rules between fields (philosophy three-column topbar).
+  // Each meta field is a span; .sep elements are visual dividers; the
+  // overall element is a flex row with mono caps typography.
   var el = document.getElementById("sessionMetaHeader");
   if (el) {
     var name   = session.customer.name || "New session";
     var date   = session.sessionMeta.date;
     var status = session.sessionMeta.status;
-    el.textContent = name + "  |  " + date + "  |  " + status;
+    el.innerHTML = "";
+    el.appendChild(metaField(name));
+    el.appendChild(metaSep());
+    el.appendChild(metaField(date));
+    el.appendChild(metaSep());
+    el.appendChild(metaField(status));
   }
   var verEl = document.getElementById("appVersionChip");
   if (verEl) verEl.textContent = "Canvas v" + APP_VERSION;
+}
+
+function metaField(text) {
+  var s = document.createElement("span");
+  s.className = "meta-field";
+  s.textContent = text;
+  return s;
+}
+function metaSep() {
+  var s = document.createElement("span");
+  s.className = "meta-sep";
+  return s;
 }
 
 function renderStepper() {
