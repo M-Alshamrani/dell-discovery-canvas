@@ -6266,6 +6266,163 @@ describe("43 · Phase 19l · v2.4.12 services scope + pre-flight regression fixe
       "v2.4.12 U1 — '+ Add operational / services gap' CTA must be REMOVED (services attach to regular gaps; dedicated CTA is redundant). Found buttons: " + JSON.stringify(btnTexts));
   });
 
+  // ──────────────────────────────────────────────────────────────────────
+  // Hot-patch addendum (P1-P3 · post-smoke fixes folded into v2.4.12)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("SVC11 · P1 · gap detail exposes a picker covering the FULL catalog (any service can be added regardless of gapType)", () => {
+    var s = createEmptySession();
+    var gap = createGap(s, {
+      description: "Picker probe", layerId: "compute", gapType: "replace",
+      relatedCurrentInstanceIds: ["c-x"], relatedDesiredInstanceIds: ["d-x"],
+      services: []
+    });
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderGapsEditView(l, r, s);
+    // Click the gap card to open the right-panel detail.
+    var card = l.querySelector(".gap-card");
+    assert(card, "gap card must render so detail can open");
+    card.click();
+    // The picker is named via class `services-add-picker` (P1 contract).
+    var picker = r.querySelector(".services-add-picker");
+    assert(picker, "v2.4.12 P1 — gap detail must expose a 'services-add-picker' element");
+    // It must offer at least one option NOT in SUGGESTED_SERVICES_BY_GAP_TYPE['replace']
+    // (which is just ["migration","deployment"]). e.g. 'decommissioning' must be reachable.
+    var optionTexts = Array.from(picker.querySelectorAll("option"))
+      .map(o => (o.value || "").trim()).filter(Boolean);
+    assert(optionTexts.indexOf("decommissioning") >= 0,
+      "picker must include 'decommissioning' (not in SUGGESTED_SERVICES_BY_GAP_TYPE.replace) — covers SVC11 contract that any catalog id is reachable");
+    assert(optionTexts.indexOf("custom_dev") >= 0,
+      "picker must include 'custom_dev' so the full catalog is reachable");
+    // Sanity: at least 8 options (10 catalog - any already-picked, here 0 picked).
+    assert(optionTexts.length >= 8,
+      "picker must offer at least 8 unselected options; got " + optionTexts.length);
+  });
+
+  it("SVC12 · P2 · M11 migrator backfills services:[] on legacy gaps without the field", () => {
+    var legacy = {
+      sessionId: "sess-svc12",
+      customer: { name: "L", vertical: "", segment: "", industry: "", region: "", primaryDriver: "" },
+      sessionMeta: { date: "2025-01-01", presalesOwner: "", status: "Draft", version: "1.0" },
+      instances: [],
+      gaps: [{
+        id: "g-svc12", description: "L", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [],
+        relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
+        status: "open", reviewed: true
+        // no services key
+      }, {
+        id: "g-svc12b", description: "preserves existing", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [],
+        relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
+        status: "open", reviewed: true,
+        services: ["migration", "deployment"]
+      }]
+    };
+    var m = migrateLegacySession(JSON.parse(JSON.stringify(legacy)));
+    assert(Array.isArray(m.gaps[0].services),
+      "M11 — legacy gap without services key must get services:[] post-migrate");
+    assertEqual(m.gaps[0].services.length, 0,
+      "M11 — backfilled services must be an empty array");
+    // Existing services preserved
+    assertEqual(m.gaps[1].services.length, 2,
+      "M11 — gap WITH services preserves the array unchanged");
+    assertEqual(m.gaps[1].services[0], "migration",
+      "M11 — first existing service preserved at original index");
+  });
+
+  it("SVC13 · P2 · buildProjects rollup excludes services from gaps with status:'closed'", () => {
+    var s = createEmptySession();
+    var cur1 = addInstance(s, { state: "current", layerId: "storage", environmentId: "coreDc",
+      label: "Active", vendorGroup: "dell", criticality: "Medium" });
+    var cur2 = addInstance(s, { state: "current", layerId: "storage", environmentId: "coreDc",
+      label: "Closed", vendorGroup: "dell", criticality: "Medium" });
+    var des1 = addInstance(s, { state: "desired", layerId: "storage", environmentId: "coreDc",
+      label: "Active des", vendorGroup: "dell", disposition: "replace", priority: "Now", originId: cur1.id });
+    var des2 = addInstance(s, { state: "desired", layerId: "storage", environmentId: "coreDc",
+      label: "Closed des", vendorGroup: "dell", disposition: "replace", priority: "Now", originId: cur2.id });
+    createGap(s, { description: "open gap", layerId: "storage", gapType: "replace",
+      relatedCurrentInstanceIds: [cur1.id], relatedDesiredInstanceIds: [des1.id],
+      services: ["migration", "training"], status: "open" });
+    var closedGap = createGap(s, { description: "closed gap", layerId: "storage", gapType: "replace",
+      relatedCurrentInstanceIds: [cur2.id], relatedDesiredInstanceIds: [des2.id],
+      services: ["decommissioning", "managed"], status: "open" });
+    closedGap.status = "closed";
+    closedGap.closeReason = "manual";
+    closedGap.closedAt = new Date().toISOString();
+    var projects = buildProjects(s, {}).projects;
+    var proj = projects.find(p => p.envId === "coreDc" && p.layerId === "storage" && p.gapType === "replace");
+    assert(proj, "project must build from the open gap");
+    assert(Array.isArray(proj.services), "project services must exist");
+    assert(proj.services.indexOf("migration") >= 0, "open gap's 'migration' included");
+    assert(proj.services.indexOf("training")  >= 0, "open gap's 'training' included");
+    assert(proj.services.indexOf("decommissioning") < 0,
+      "P2 — closed gap's services must NOT bleed into project rollup (got: " + JSON.stringify(proj.services) + ")");
+    assert(proj.services.indexOf("managed") < 0,
+      "P2 — closed gap's services must NOT bleed into project rollup");
+  });
+
+  it("SVC14 · P2 · applyProposal + undoLast preserves services byte-identically", () => {
+    aiUndoStack._resetForTests();
+    replaceSession({
+      sessionId: "sess-svc14", isDemo: false,
+      customer: { name: "Svc14 Co", vertical: "Enterprise", region: "EMEA",
+                  drivers: [{ id: "cyber_resilience", priority: "High", outcomes: "" }] },
+      sessionMeta: { date: "2026-04-26", presalesOwner: "", status: "Draft", version: "2.0" },
+      instances: [],
+      gaps: [{ id: "g-svc14", description: "round-trip probe", layerId: "compute",
+               affectedLayers: ["compute"], affectedEnvironments: [],
+               urgency: "Medium", phase: "now", gapType: "replace",
+               relatedCurrentInstanceIds: ["c-x"], relatedDesiredInstanceIds: ["d-x"],
+               services: ["migration"],
+               status: "open", reviewed: true }]
+    });
+    var before = JSON.stringify(session);
+    applyProposal(
+      { path: "context.selectedGap.services", label: "Gap services", kind: "array",
+        before: ["migration"], after: ["migration", "deployment", "training"] },
+      { label: "apply for SVC14", context: { selectedGap: { id: "g-svc14" } } }
+    );
+    assertEqual(session.gaps[0].services.length, 3, "apply mutated services array");
+    aiUndoStack.undoLast();
+    var after = JSON.stringify(session);
+    assertEqual(after, before,
+      "P2 — apply + undoLast on services must return session to byte-identical JSON");
+    aiUndoStack._resetForTests();
+  });
+
+  it("SVC15 · P3 · SummaryGapsView right-panel detail surfaces selected gap's services as a chip row", () => {
+    var s = createEmptySession();
+    var cur = addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "Old", vendorGroup: "dell", criticality: "Medium" });
+    var des = addInstance(s, { state: "desired", layerId: "compute", environmentId: "coreDc",
+      label: "New", vendorGroup: "dell", disposition: "replace", priority: "Now", originId: cur.id });
+    createGap(s, { description: "Replace probe", layerId: "compute", gapType: "replace",
+      relatedCurrentInstanceIds: [cur.id], relatedDesiredInstanceIds: [des.id],
+      services: ["migration", "training"] });
+    // SummaryGapsView reads from the live session singleton (per Phase 14 t7.2 pattern),
+    // so swap the gap into liveSession then re-render.
+    var origGaps = session.gaps.slice();
+    session.gaps = s.gaps.slice();
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderSummaryGapsView(l, r);
+    var card = l.querySelector(".gap-card");
+    assert(card, "Reporting Gaps Board must render at least one card with our gap");
+    card.click();
+    var detail = r.querySelector(".detail-panel");
+    assert(detail, "right panel must contain .detail-panel after clicking a gap card");
+    var detailText = (detail.innerText || "").toLowerCase();
+    var hasServicesLabel = /services needed|services/i.test(detailText);
+    var migrationChipPresent = /migration/i.test(detailText);
+    var trainingChipPresent  = /training/i.test(detailText);
+    // restore live session before asserting
+    session.gaps = origGaps;
+    assert(hasServicesLabel,
+      "P3 — Reporting Gaps Board detail panel must label the services section");
+    assert(migrationChipPresent && trainingChipPresent,
+      "P3 — detail panel must surface BOTH services from the selected gap (migration + training)");
+  });
+
 });
 
 // v2.4.5 · Foundations Refresh · register the human-surface demo suite

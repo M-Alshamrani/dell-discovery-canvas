@@ -932,6 +932,39 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
+## v2.4.12 · Services scope + Pre-flight regression fixes + hot-patches · IMPLEMENTED 2026-04-26 (P1-P3 folded in pre-tag)
+
+### Hot-patch addendum (caught in user smoke before tag)
+
+User smoke against the v2.4.12 implementation surfaced three real issues; all folded back into v2.4.12 (no separate tag). Three issues from the same smoke (Services scope sub-tab visual quality, side-panel-as-drawer UX, cross-tab filters) are deferred to v2.5.0 crown-jewel where they belong with the broader visual rework.
+
+| # | Issue | Severity | Resolution |
+|---|---|---|---|
+| **P1** | Services chips on a gap can only be REMOVED — there's no way to ADD a service that isn't in the SUGGESTED list for that gapType (e.g. `assessment` on a Replace gap is unreachable). The headline feature is half-broken. | 🔴 functional | NEW "+ Add service ▾" picker shows all 10 catalog entries with a `★` marker on the SUGGESTED ones for the current gapType. Click → adds to pickedServices → repaints. Reset on selection. SVC11 enforces "any catalog id is reachable regardless of gapType." |
+| **P2** | Data-model + relationship integrity unverified across all paths (legacy `.canvas` files saved pre-v2.4.12, closed-gap exclusion in roll-ups, apply/undo round-trips). | 🟡 latent | M11 migrator default: any gap loaded without a `services` field gets `services: []`. `.canvas` open path normalizes services through `normalizeServices` (drops legacy unknowns + dedupes). SVC12 covers M11. SVC13 covers closed-gap exclusion from project rollup. SVC14 covers apply/undo round-trip preserves byte-identical session JSON. |
+| **P3** | Two related UX issues: (a) Reporting → Gaps Board → click a gap → right-panel detail does NOT show `gap.services`; (b) Roadmap project-card "SERVICES NEEDED" chips render as plain unstyled spans. | 🟠 UX quality | SummaryGapsView's `renderGapDetail` (or equivalent) gets a "Services needed" chip row when the selected gap has services. Roadmap project-card chips get `solutions-chip`-class equivalent CSS pill styling (rounded background pill, padding, gap). SVC15 enforces SummaryGapsView surfaces services in the detail panel. |
+
+### Tests added (SVC11-15) — RED first, then GREEN
+
+- **SVC11** · `+ Add service` picker exposes all 10 catalog entries + the new entry persists into `gap.services` after click
+- **SVC12** · Migrator M11 backfills `services: []` on a legacy gap (no `services` key); existing gaps with a services array are preserved unchanged
+- **SVC13** · `buildProjects` rollup excludes services from gaps with `status: "closed"` (the project services array reflects only OPEN gaps)
+- **SVC14** · `applyProposal({ path: "context.selectedGap.services", ... })` then `undoLast()` returns session to byte-identical JSON (services round-trip is undo-safe)
+- **SVC15** · SummaryGapsView right-panel detail surfaces selected gap's services as a chip row when present
+
+### Effort: ~3 hr · single tag (folded into v2.4.12; no separate v2.4.12.1)
+
+### Deferred to v2.5.0 crown-jewel (per user smoke)
+
+Three issues NOT fixed in v2.4.12 — they belong with the broader visual rework:
+- **Issue #3** Services scope sub-tab is visually primitive (plain HTML table, no chip pills, jammed text). v2.5.0 redesign per GPLC sample HTML.
+- **Issue #5** No filter chips for `gap.services`, `gap.affectedEnvironments`, or `gap.driverId` on Tab 4 / Reporting Gaps Board. v2.5.0 cross-tab filter system.
+- **Issue #6** Side-panel detail UX feels static — sample HTML uses dynamic, animated, hierarchical card patterns. v2.5.0 side-panel-as-drawer redesign.
+
+These three are tracked in HANDOFF.md §5 Bucket B (B6, B7, B8 added to the existing crown-jewel scope).
+
+---
+
 ## v2.4.12 · Services scope + Pre-flight regression fixes · IMPLEMENTED 2026-04-26
 
 **History**: v2.4.12 was attempted 2026-04-25 then rolled back per user direction; the rolled-back attempt's services UI (chip selector on each gap) was kept, but two add-on choices proved wrong:

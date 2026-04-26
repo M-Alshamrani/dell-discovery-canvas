@@ -11,7 +11,7 @@ import { suggestDriverId, effectiveDriverId, effectiveDriverReason, driverLabel 
 import { saveToLocalStorage } from "../../state/sessionStore.js";
 import { helpButton } from "./HelpModal.js";
 import { validateActionLinks, actionById } from "../../core/taxonomy.js";
-import { SERVICE_TYPES, suggestedFor, serviceLabel } from "../../core/services.js";
+import { SERVICE_TYPES, SUGGESTED_SERVICES_BY_GAP_TYPE, suggestedFor, serviceLabel } from "../../core/services.js";
 
 // Phase 18: count how many gaps reference an instance id (in either link
 // list). Used for the "linked to N gaps" multi-link chip and for the
@@ -582,11 +582,13 @@ export function renderGapsEditView(left, right, session) {
     var pickedServices = Array.isArray(gap.services) ? gap.services.slice() : [];
     var suggestedRow = mk("div", "services-suggested-row");
     var pickedRow    = mk("div", "services-picked-row");
+    var addRow       = mk("div", "services-add-row");
     pickedRow.dataset.servicesPicked = "true";   // Save handler queries this.
 
     function paintServices() {
       pickedRow.innerHTML = "";
       suggestedRow.innerHTML = "";
+      addRow.innerHTML = "";
       // Picked chips (full color, click to remove).
       pickedServices.forEach(function(id) {
         var lbl = serviceLabel(id) || id;
@@ -624,10 +626,47 @@ export function renderGapsEditView(left, right, session) {
           suggestedRow.appendChild(chip);
         });
       }
+      // v2.4.12 · P1 · "+ Add service" picker exposes the FULL catalog so
+      // service ids OUTSIDE the SUGGESTED-for-this-gapType list are reachable
+      // (e.g. assessment, decommissioning, custom_dev on a Replace gap).
+      // SUGGESTED ones for the current gapType get a ★ marker in the option
+      // label so the user sees which are recommended without losing access
+      // to the rest. Resets after each pick.
+      var suggestedSet = (SUGGESTED_SERVICES_BY_GAP_TYPE[gap.gapType] || []);
+      var availableForPicker = SERVICE_TYPES.filter(function(svc) {
+        return pickedServices.indexOf(svc.id) < 0;
+      });
+      if (availableForPicker.length > 0) {
+        var picker = document.createElement("select");
+        picker.className = "services-add-picker";
+        picker.title = "Pick any service from the catalog. ★ = suggested for this gap type.";
+        var placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "+ Add service…";
+        placeholder.selected = true;
+        picker.appendChild(placeholder);
+        availableForPicker.forEach(function(svc) {
+          var opt = document.createElement("option");
+          opt.value = svc.id;
+          var star = (suggestedSet.indexOf(svc.id) >= 0) ? "★ " : "   ";
+          opt.textContent = star + svc.label;
+          picker.appendChild(opt);
+        });
+        picker.addEventListener("change", function() {
+          var pickedId = picker.value;
+          if (!pickedId) return;
+          pickedServices.push(pickedId);
+          paintServices();   // re-paints; new picker fresh-resets to placeholder
+        });
+        addRow.appendChild(picker);
+      } else {
+        addRow.appendChild(mkt("span", "services-empty-hint", "All services attached."));
+      }
     }
     paintServices();
     servicesGroup.appendChild(suggestedRow);
     servicesGroup.appendChild(pickedRow);
+    servicesGroup.appendChild(addRow);
     form.appendChild(servicesGroup);
 
     form.appendChild(fg("Notes / business context",

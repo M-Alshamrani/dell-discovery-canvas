@@ -175,9 +175,15 @@ export function buildProjects(session, opts) {
     });
 
     // v2.4.12 · accumulate services from this gap into the project rollup.
-    (gap.services || []).forEach(function(sid) {
-      if (proj.services.indexOf(sid) < 0) proj.services.push(sid);
-    });
+    // P2 hot-patch: skip closed gaps so their stale services don't bleed
+    // into the engagement-shape rollup. (Closed gaps still exist in the
+    // gaps list so users can reopen them; they just don't drive the
+    // services-needed view of the project anymore.)
+    if (gap.status !== "closed") {
+      (gap.services || []).forEach(function(sid) {
+        if (proj.services.indexOf(sid) < 0) proj.services.push(sid);
+      });
+    }
   });
 
   var projects = Object.keys(buckets).map(function(k) { return buckets[k]; });

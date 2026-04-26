@@ -2370,6 +2370,45 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   color: var(--brand-dark);
   border-radius: 999px;
 }
+/* v2.4.12 · P3 · Services-scope chip pills. Distinct from solutions-chip
+ * (which carries the Dell-blue brand) — services are an orthogonal facet,
+ * so they get a neutral slate styling. Same pill shape + spacing as
+ * solutions-chip so the two rows stack cleanly on a project card. */
+.services-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 500;
+  background: var(--surface-2, #f1f5f9);
+  border: 1px solid var(--border-1, #cbd5e1);
+  color: var(--text-1, #1e293b);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.project-card-services {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-1, #e2e8f0);
+}
+.project-card-services-eyebrow {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--text-3, #94a3b8);
+  margin-right: 4px;
+  text-transform: uppercase;
+}
+/* v2.4.12 · P3 · Reporting Gaps Board detail panel services row */
+.detail-services-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
 .project-card-unmapped {
   font-size: 10px;
   font-style: italic;

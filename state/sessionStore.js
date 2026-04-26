@@ -9,6 +9,7 @@ import { createDemoSession as createDemoSessionImpl } from "./demoSession.js";
 import { emitSessionChanged } from "../core/sessionEvents.js";
 import { clear as clearAiUndoStack } from "./aiUndoStack.js";
 import { setPrimaryLayer, deriveProjectId } from "../interactions/gapsCommands.js";
+import { normalizeServices } from "../core/services.js";
 
 export { createDemoSession } from "./demoSession.js";
 
@@ -111,6 +112,9 @@ export function migrateLegacySession(raw) {
   // and explicit gap.projectId for every gap. Both are idempotent — a
   // gap already conforming gets a no-op; re-running the migrator is safe.
   // v2.4.11 · M10 · also default gap.urgencyOverride to false on legacy gaps.
+  // v2.4.12 · M11 · default gap.services to [] on legacy gaps; normalize
+  // arrays through normalizeServices so unknown ids (e.g. left over from a
+  // hand-edited .canvas file) are dropped + duplicates collapsed.
   s.gaps.forEach(function(g) {
     if (!g || !g.layerId) return;
     // Primary-layer invariant — setPrimaryLayer prepends+dedupes.
@@ -123,6 +127,12 @@ export function migrateLegacySession(raw) {
     // v2.4.11 · A6 · default urgencyOverride to false (urgency follows
     // propagation rules unless user explicitly set it).
     if (typeof g.urgencyOverride !== "boolean") g.urgencyOverride = false;
+    // v2.4.12 · M11 · services backfill + normalization.
+    if (!Array.isArray(g.services)) {
+      g.services = [];
+    } else {
+      g.services = normalizeServices(g.services);
+    }
   });
 
   if (!s.sessionMeta || typeof s.sessionMeta !== "object") {

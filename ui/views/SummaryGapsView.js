@@ -5,6 +5,7 @@ import { getFilteredGaps, getGapsByPhase } from "../../services/gapsService.js";
 import { helpButton } from "./HelpModal.js";
 import { effectiveDellSolutions } from "../../services/programsService.js";
 import { session as liveSession } from "../../state/sessionStore.js";
+import { serviceLabel } from "../../core/services.js";
 
 export function renderSummaryGapsView(left, right) {
   let activeLayerIds = new Set(LAYERS.map(l => l.id));
@@ -144,6 +145,25 @@ export function renderSummaryGapsView(left, right) {
     const derived = effectiveDellSolutions(gap, liveSession);
     sol.textContent = derived.length ? derived.join(", ") : "No Dell solutions linked yet.";
     panel.appendChild(sol);
+
+    // v2.4.12 · P3 · Services needed chip row on the Reporting Gaps Board
+    // detail panel. Mirrors the Tab 4 gap-detail "Services needed" idea but
+    // read-only here (Reporting is consumption-only, edits happen on Tab 4).
+    sep(panel, "Services needed");
+    const svcRow = mk("div", "detail-services-row");
+    const svcs = Array.isArray(gap.services) ? gap.services : [];
+    if (svcs.length === 0) {
+      const empty = mk("span", "detail-text");
+      empty.textContent = "No services attached yet.";
+      svcRow.appendChild(empty);
+    } else {
+      svcs.forEach(function(sid) {
+        const chip = mk("span", "services-chip");
+        chip.textContent = serviceLabel(sid) || sid;
+        svcRow.appendChild(chip);
+      });
+    }
+    panel.appendChild(svcRow);
 
     sep(panel, "Business context & notes");
     const notes = mk("div", "detail-text");
