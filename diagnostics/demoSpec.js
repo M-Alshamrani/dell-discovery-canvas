@@ -29,6 +29,7 @@ import { applyProposal, applyAllProposals } from "../interactions/aiCommands.js"
 import * as aiUndoStack from "../state/aiUndoStack.js";
 import { onSessionChanged } from "../core/sessionEvents.js";
 import { ACTION_IDS, GAP_TYPES as DEMO_GAP_TYPES } from "../core/taxonomy.js";
+import { SERVICE_TYPES } from "../core/services.js";
 
 // Count how many gaps reference an instanceId in EITHER link list.
 // A "multi-linked" instance is one referenced by ≥2 gaps — the Phase 18
@@ -397,6 +398,37 @@ export function registerDemoSuite(api) {
       actionable.forEach(function(g) {
         assert(Array.isArray(g.services) && g.services.length >= 1,
           "demo gap " + g.id + " (gapType: " + g.gapType + ") must have services.length ≥ 1 to exercise the new chip UI from Load demo");
+      });
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────
+  // Suite 35e · v2.5.0 · domain-mapped services in demo so layered
+  // signal color (urgency × domain) renders visibly from Load demo
+  // ──────────────────────────────────────────────────────────────
+  describe("35e · Phase 19m · demo session · services domain coverage", function() {
+
+    it("DS24 · every demo gap with services has at least one service mapped to domain in {cyber, ops, data}", function() {
+      // Layered-signal contract for v2.5.0 §3 CD5: catalog entries each grow
+      // an optional `domain: "cyber"|"ops"|"data"|null` field. Demo gaps
+      // include at least one domain-mapped service so the layered signal
+      // accent renders visibly from Load demo. Today (RED): no service has
+      // a domain field; this test fails until §3 CD5 lands.
+      var s = createDemoSession();
+      var withServices = s.gaps.filter(function(g) {
+        return Array.isArray(g.services) && g.services.length > 0;
+      });
+      assert(withServices.length >= 1,
+        "demo must include ≥1 gap with services to exercise DS24");
+
+      var KNOWN_DOMAINS = ["cyber", "ops", "data"];
+      withServices.forEach(function(g) {
+        var hasDomainMapped = g.services.some(function(sid) {
+          var entry = SERVICE_TYPES.find(function(svc) { return svc.id === sid; });
+          return entry && KNOWN_DOMAINS.indexOf(entry.domain) >= 0;
+        });
+        assert(hasDomainMapped,
+          "DS24: demo gap " + g.id + " (services: " + JSON.stringify(g.services) + ") must include at least one service mapped to a domain in {cyber, ops, data}. The catalog needs the domain field added in §3 CD5 of the v2.5.0 spec.");
       });
     });
   });

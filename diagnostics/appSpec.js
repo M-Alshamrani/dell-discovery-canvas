@@ -6425,6 +6425,510 @@ describe("43 · Phase 19l · v2.4.12 services scope + pre-flight regression fixe
 
 });
 
+// ============================================================================
+// SUITE 44, Phase 19m / v2.5.0 crown-jewel UI rework
+// ============================================================================
+// VT1-VT20 covering Sections 1-9 of the v2.5.0 spec:
+//   .1 design system tokens + eyebrow utility (VT1, VT2)
+//   .8 single .tag primitive vocabulary migration (VT3)
+//   .2 topbar white + local logo + mono-leading-zero stepper (VT4-VT6)
+//   .5 drawer module + per-tab wiring + content-swap (VT7-VT12)
+//   .4 detail panel template (VT13-VT15)
+//   .AI AI assist mounted on every entity drawer (VT16)
+//   .6 cross-tab filter system (VT17-VT18)
+//   .7 services scope redesign (VT19)
+//   .0 em-dash absence audit (VT20)
+//
+// Stubs in place so imports resolve and tests fail RED on content,
+// not on module-load errors:
+//   ui/components/Drawer.js   STUB no-op exports.
+//   core/services.js          domain field added in implementation phase.
+// Implementation phase fills in Drawer DOM construction, design tokens,
+// eyebrow utility, .tag migration, drawer wiring per tab, AI mounting,
+// filter system, services-scope cards, and the em-dash sweep.
+// ============================================================================
+
+import {
+  openDrawer, closeDrawer, isOpen as isDrawerOpen,
+  _resetForTests as _resetDrawerForTests
+} from "../ui/components/Drawer.js";
+
+describe("44 · Phase 19m · v2.5.0 crown-jewel UI rework", () => {
+
+  // Helpers scoped to Suite 44.
+  function fixtureSession() {
+    var s = createEmptySession();
+    var cur = addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "VT probe current", vendorGroup: "dell", criticality: "Medium" });
+    var des = addInstance(s, { state: "desired", layerId: "compute", environmentId: "coreDc",
+      label: "VT probe desired", vendorGroup: "dell", disposition: "replace", priority: "Now", originId: cur.id });
+    createGap(s, { description: "VT probe gap", layerId: "compute", gapType: "replace",
+      relatedCurrentInstanceIds: [cur.id], relatedDesiredInstanceIds: [des.id],
+      services: ["migration", "training"], urgency: "High" });
+    return s;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section 1, design system tokens + eyebrow utility (VT1-VT2)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("VT1 · DS1 design tokens resolve on body (4-tier ink, 3-tier surface, hairline scale, signal palette, hover-only shadow scale)", () => {
+    const cs = getComputedStyle(document.body);
+    const required = [
+      "--ink", "--ink-soft", "--ink-mute", "--ink-faint",
+      "--canvas", "--canvas-soft", "--canvas-alt",
+      "--rule", "--rule-strong",
+      "--dell-blue", "--dell-blue-deep", "--dell-blue-soft",
+      "--shadow-sm", "--shadow-md", "--shadow-lg",
+      "--red", "--green", "--amber"
+    ];
+    required.forEach((name) => {
+      const val = cs.getPropertyValue(name).trim();
+      assert(val.length > 0, "DS1 token " + name + " must resolve to a non-empty value (got '" + val + "')");
+    });
+  });
+
+  it("VT2 · DS2 eyebrow utility renders mono uppercase with letter-spacing >= 1.5px", () => {
+    const fixture = document.createElement("span");
+    fixture.className = "eyebrow";
+    fixture.textContent = "TEST EYEBROW";
+    document.body.appendChild(fixture);
+    try {
+      const cs = getComputedStyle(fixture);
+      assert(/JetBrains Mono|monospace/i.test(cs.fontFamily),
+        "DS2 eyebrow must use mono font (got: " + cs.fontFamily + ")");
+      assertEqual(cs.textTransform, "uppercase",
+        "DS2 eyebrow must be uppercase");
+      const ls = parseFloat(cs.letterSpacing);
+      assert(ls >= 1.5,
+        "DS2 eyebrow letter-spacing must be >= 1.5px (got " + cs.letterSpacing + ")");
+    } finally {
+      document.body.removeChild(fixture);
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section 8, tag vocabulary migration (VT3)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("VT3 · TV1-TV9 single .tag primitive (legacy chip/badge classes are absent from rendered DOM)", () => {
+    var s = fixtureSession();
+    var legacyClasses = [
+      "urgency-badge", "urg-high", "urg-med", "urg-low",
+      "type-badge", "status-badge", "status-closed-pill",
+      "services-chip-picked", "services-chip-suggested",
+      "solutions-chip", "chip-filter",
+      "priority-chip", "priority-high", "priority-medium", "priority-low",
+      "dell-tag", "env-also-chip", "also-affects-chip"
+    ];
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderGapsEditView(l, r, s);
+    legacyClasses.forEach(function(cls) {
+      var hits = l.querySelectorAll("." + cls);
+      assertEqual(hits.length, 0,
+        "TV migration: legacy class '." + cls + "' must NOT appear in rendered DOM (found " + hits.length + ")");
+    });
+    var chips = l.querySelectorAll(".tag");
+    chips.forEach(function(chip) {
+      var v = chip.dataset.variant;
+      assert(v && /^(neutral|emphasis|filled|state|signal-r|signal-a|signal-g)$/.test(v),
+        "Every .tag must have a valid data-variant (got '" + v + "')");
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section 2, topbar (VT4-VT6)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("VT4 · TB1 topbar is white (no linear-gradient background)", () => {
+    var header = document.querySelector("header") || document.querySelector(".topbar");
+    assert(header, "Topbar must exist in the document");
+    var cs = getComputedStyle(header);
+    assertEqual(cs.backgroundImage, "none",
+      "TB1 topbar must NOT have a background-image / linear-gradient. Got: " + cs.backgroundImage);
+    var bgc = cs.backgroundColor;
+    var ok = /rgb\(255,\s*255,\s*255\)|rgba\(255,\s*255,\s*255/.test(bgc) ||
+             /rgb\(250,\s*251,\s*252\)/.test(bgc);
+    assert(ok, "TB1 topbar background must be canvas white or canvas-soft (got " + bgc + ")");
+  });
+
+  it("VT5 · TB2 topbar logo is local (./Logo/, not i.dell.com CDN at default)", () => {
+    var img = document.querySelector("header img, .topbar img");
+    assert(img, "TB2 topbar must contain a logo <img>");
+    assert(/(\.\/|\/)Logo\//.test(img.getAttribute("src") || img.src),
+      "TB2 logo src must reference local Logo/ path at default (got '" + img.src + "')");
+    assert(!/i\.dell\.com/.test(img.getAttribute("src") || ""),
+      "TB2 logo must NOT default-load from i.dell.com CDN (got '" + img.src + "')");
+  });
+
+  it("VT6 · TB6 stepper steps render with mono leading-zero pattern (01 02 03 04 05)", () => {
+    var steps = document.querySelectorAll("#stepper .step");
+    assertEqual(steps.length, 5, "TB6 stepper must have exactly 5 steps");
+    steps.forEach(function(s, idx) {
+      var text = (s.textContent || "").trim();
+      var idStr = "0" + (idx + 1);
+      assert(text.indexOf(idStr) === 0,
+        "TB6 step " + idx + " must start with '" + idStr + "' (got '" + text + "')");
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section 5, drawer module + per-tab wiring + content-swap (VT7-VT12)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("VT7 · DR1-DR2 drawer module: openDrawer adds .panel.open, closeDrawer removes it, Escape + backdrop click also close, click inside does not", () => {
+    _resetDrawerForTests();
+    closeDrawer();
+    var probe = document.createElement("div");
+    probe.textContent = "probe-body";
+    openDrawer({ crumbs: "TEST · LEAF", title: "Probe title", lede: "smoke", body: probe, kind: "gap" });
+    var panel = document.querySelector(".panel.open");
+    assert(panel, "VT7 openDrawer must add a .panel.open element");
+    assert(panel.textContent.indexOf("Probe title") >= 0, "VT7 panel must contain title");
+    closeDrawer();
+    assert(!document.querySelector(".panel.open"), "VT7 closeDrawer must remove .panel.open");
+
+    openDrawer({ crumbs: "T", title: "P", lede: "", body: document.createElement("div"), kind: "gap" });
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    assert(!document.querySelector(".panel.open"), "VT7 Escape must close drawer");
+
+    openDrawer({ crumbs: "T", title: "P", lede: "", body: document.createElement("div"), kind: "gap" });
+    var backdrop = document.querySelector(".panel-backdrop");
+    assert(backdrop, "VT7 openDrawer must produce a .panel-backdrop element");
+    backdrop.click();
+    assert(!document.querySelector(".panel.open"), "VT7 backdrop click must close drawer");
+
+    closeDrawer();
+    _resetDrawerForTests();
+  });
+
+  it("VT8 · DR3 Tab 1 driver tile click opens drawer with driver body", () => {
+    _resetDrawerForTests(); closeDrawer();
+    replaceSession({
+      sessionId: "sess-vt8", isDemo: false,
+      customer: { name: "VT8 Co", vertical: "Enterprise", region: "EMEA",
+        drivers: [{ id: "cyber_resilience", priority: "High", outcomes: "" }] },
+      sessionMeta: { date: "2026-04-26", presalesOwner: "", status: "Draft", version: "2.0" },
+      instances: [], gaps: []
+    });
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderContextView(l, r, session);
+    var tile = l.querySelector(".driver-tile, [data-driver-id]");
+    assert(tile, "VT8 ContextView must render at least one driver tile");
+    tile.click();
+    var panel = document.querySelector(".panel.open");
+    assert(panel, "VT8 driver tile click must open drawer");
+    assert(/CYBER|cyber|Cyber/i.test(panel.textContent),
+      "VT8 panel must contain driver context (got first 100: " + panel.textContent.slice(0, 100) + ")");
+    closeDrawer();
+  });
+
+  it("VT9 · DR4 Tab 2 + Tab 3 tile click opens drawer with KEY ATTRIBUTES tech-grid", () => {
+    _resetDrawerForTests(); closeDrawer();
+    var s = fixtureSession();
+    var origGaps = session.gaps.slice();
+    var origInstances = session.instances.slice();
+    session.instances = s.instances.slice();
+    session.gaps = s.gaps.slice();
+    try {
+      var l = document.createElement("div"); var r = document.createElement("div");
+      renderMatrixView(l, r, session, { stateFilter: "current" });
+      var tile = l.querySelector("[data-instance-id], .matrix-tile, .tile");
+      assert(tile, "VT9 MatrixView must render at least one tile");
+      tile.click();
+      var panel = document.querySelector(".panel.open");
+      assert(panel, "VT9 tile click must open drawer");
+      assert(panel.querySelector(".tech-grid"),
+        "VT9 drawer body must include a .tech-grid (KEY ATTRIBUTES section)");
+    } finally {
+      session.gaps = origGaps;
+      session.instances = origInstances;
+      closeDrawer();
+    }
+  });
+
+  it("VT10 · DR5 Tab 4 gap card click opens drawer with SERVICES NEEDED section", () => {
+    _resetDrawerForTests(); closeDrawer();
+    var s = fixtureSession();
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderGapsEditView(l, r, s);
+    var card = l.querySelector(".gap-card");
+    assert(card, "VT10 GapsEditView must render at least one gap card");
+    card.click();
+    var panel = document.querySelector(".panel.open");
+    assert(panel, "VT10 gap-card click must open drawer");
+    assert(/services needed|services/i.test(panel.textContent),
+      "VT10 drawer body must include a SERVICES NEEDED eyebrow / section");
+    closeDrawer();
+  });
+
+  it("VT11 · DR6 Tab 5 sub-tab click paths open drawers (gap card, project card, per-service row)", () => {
+    _resetDrawerForTests(); closeDrawer();
+    var s = fixtureSession();
+    var origGaps = session.gaps.slice();
+    var origInstances = session.instances.slice();
+    session.instances = s.instances.slice();
+    session.gaps = s.gaps.slice();
+    try {
+      // SummaryGapsView, gap card click
+      var l1 = document.createElement("div"); var r1 = document.createElement("div");
+      renderSummaryGapsView(l1, r1);
+      var gapCard = l1.querySelector(".gap-card");
+      if (gapCard) {
+        gapCard.click();
+        assert(document.querySelector(".panel.open"),
+          "VT11 SummaryGapsView gap-card click must open drawer");
+        closeDrawer();
+      }
+      // SummaryRoadmapView, project card click
+      var l2 = document.createElement("div"); var r2 = document.createElement("div");
+      renderSummaryRoadmapView(l2, r2);
+      var projCard = l2.querySelector(".project-card, [data-project-id]");
+      if (projCard) {
+        projCard.click();
+        assert(document.querySelector(".panel.open"),
+          "VT11 SummaryRoadmapView project-card click must open drawer");
+        closeDrawer();
+      }
+    } finally {
+      session.gaps = origGaps;
+      session.instances = origInstances;
+      closeDrawer();
+    }
+  });
+
+  it("VT12 · DR7 content swap on different-card-click (no close-then-open)", () => {
+    _resetDrawerForTests(); closeDrawer();
+    var s = createEmptySession();
+    createGap(s, { description: "VT12 alpha", layerId: "compute", gapType: "replace",
+      relatedCurrentInstanceIds: ["i-x"], relatedDesiredInstanceIds: ["d-x"], services: [] });
+    createGap(s, { description: "VT12 bravo", layerId: "compute", gapType: "replace",
+      relatedCurrentInstanceIds: ["i-y"], relatedDesiredInstanceIds: ["d-y"], services: [] });
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderGapsEditView(l, r, s);
+    var cards = l.querySelectorAll(".gap-card");
+    assert(cards.length >= 2, "VT12 needs at least 2 gap cards in fixture");
+    cards[0].click();
+    assert(document.querySelector(".panel.open"), "VT12 first card must open drawer");
+    var titleAlpha = (document.querySelector(".panel.open h3") || {}).textContent || "";
+    assert(/alpha/i.test(titleAlpha), "VT12 first drawer must show alpha title");
+    cards[1].click();
+    assert(document.querySelector(".panel.open"),
+      "VT12 second card must keep drawer open (content-swap, not close-then-open)");
+    var titleBravo = (document.querySelector(".panel.open h3") || {}).textContent || "";
+    assert(/bravo/i.test(titleBravo),
+      "VT12 drawer title must update to bravo (got: " + titleBravo + ")");
+    closeDrawer();
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section 4, detail panel template (VT13-VT15)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("VT13 · DP1 every drawer body has sticky head shape (.panel-head with .panel-crumbs + h3 + .panel-lede)", () => {
+    _resetDrawerForTests(); closeDrawer();
+    var s = fixtureSession();
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderGapsEditView(l, r, s);
+    var card = l.querySelector(".gap-card");
+    assert(card, "VT13 needs a gap card to open");
+    card.click();
+    var panel = document.querySelector(".panel.open");
+    assert(panel, "VT13 drawer must be open");
+    var head = panel.querySelector(".panel-head");
+    assert(head, "VT13 drawer must contain .panel-head");
+    assert(head.querySelector(".panel-crumbs"), "VT13 .panel-head must contain .panel-crumbs");
+    assert(head.querySelector("h3"), "VT13 .panel-head must contain h3 title");
+    var ledeEl = head.querySelector(".panel-lede");
+    assert(ledeEl !== null, "VT13 .panel-head must contain .panel-lede element (may be empty for some entities)");
+    closeDrawer();
+  });
+
+  it("VT14 · DP3 KEY ATTRIBUTES tech-grid renders with at least 4 cells in any entity drawer", () => {
+    _resetDrawerForTests(); closeDrawer();
+    var s = fixtureSession();
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderGapsEditView(l, r, s);
+    var card = l.querySelector(".gap-card");
+    card.click();
+    var grid = document.querySelector(".panel.open .tech-grid");
+    assert(grid, "VT14 drawer body must include .tech-grid");
+    var cells = grid.querySelectorAll(".tech-item");
+    assert(cells.length >= 4, "VT14 .tech-grid must have >= 4 .tech-item cells (got " + cells.length + ")");
+    closeDrawer();
+  });
+
+  it("VT15 · DP5 dash bullet list renders with 6x2px Dell-blue ::before on .panel-section li", () => {
+    var fixture = document.createElement("div");
+    fixture.className = "panel-section";
+    fixture.innerHTML = "<ul><li>probe</li></ul>";
+    document.body.appendChild(fixture);
+    try {
+      var li = fixture.querySelector("li");
+      var cs = getComputedStyle(li, "::before");
+      var bg = cs.backgroundColor;
+      var w = parseFloat(cs.width);
+      var h = parseFloat(cs.height);
+      assert(/rgb\(0,\s*118,\s*206\)|rgba\(0,\s*118,\s*206/.test(bg) ||
+             /rgb\(0,\s*99,\s*174\)/.test(bg),
+        "VT15 .panel-section li::before must be Dell-blue (got " + bg + ")");
+      assert(w >= 5 && w <= 8 && h >= 1 && h <= 3,
+        "VT15 dash bullet must be ~6x2px (got " + w + "x" + h + ")");
+    } finally {
+      document.body.removeChild(fixture);
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section AI, AI assist on every entity drawer (VT16)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("VT16 · AI1-AI5 every entity drawer body has an AI ASSIST eyebrow + .use-ai-wrap", () => {
+    _resetDrawerForTests(); closeDrawer();
+    var s = fixtureSession();
+
+    // Gap drawer (Tab 4)
+    var l1 = document.createElement("div"); var r1 = document.createElement("div");
+    renderGapsEditView(l1, r1, s);
+    l1.querySelector(".gap-card").click();
+    var panelGap = document.querySelector(".panel.open");
+    assert(panelGap, "VT16 gap drawer must open");
+    assert(/AI ASSIST|ai assist/i.test(panelGap.textContent),
+      "VT16 gap drawer must include 'AI ASSIST' eyebrow");
+    assert(panelGap.querySelector(".use-ai-wrap"),
+      "VT16 gap drawer must include a .use-ai-wrap (mounted useAiButton)");
+    closeDrawer();
+
+    // Driver drawer (Tab 1)
+    replaceSession({
+      sessionId: "sess-vt16-driver", isDemo: false,
+      customer: { name: "VT16 Co", vertical: "Enterprise", region: "EMEA",
+        drivers: [{ id: "cyber_resilience", priority: "High", outcomes: "" }] },
+      sessionMeta: { date: "2026-04-26", presalesOwner: "", status: "Draft", version: "2.0" },
+      instances: [], gaps: []
+    });
+    var l2 = document.createElement("div"); var r2 = document.createElement("div");
+    renderContextView(l2, r2, session);
+    var dtile = l2.querySelector(".driver-tile, [data-driver-id]");
+    if (dtile) {
+      dtile.click();
+      var panelDrv = document.querySelector(".panel.open");
+      assert(panelDrv, "VT16 driver drawer must open");
+      assert(panelDrv.querySelector(".use-ai-wrap"),
+        "VT16 driver drawer must include .use-ai-wrap");
+      closeDrawer();
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section 6, cross-tab filter system (VT17-VT18)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("VT17 · F1 filter body data attributes dim non-matching cards via CSS", () => {
+    document.body.removeAttribute("data-filter-services");
+    var s = fixtureSession();
+    createGap(s, { description: "VT17 unmatch", layerId: "compute", gapType: "replace",
+      relatedCurrentInstanceIds: ["i-z"], relatedDesiredInstanceIds: ["d-z"], services: ["deployment"] });
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderGapsEditView(l, r, s);
+    document.body.appendChild(l);
+    try {
+      document.body.setAttribute("data-filter-services", "migration");
+      var cards = l.querySelectorAll(".gap-card");
+      var matching = 0, dimmed = 0;
+      cards.forEach(function(c) {
+        var cs = getComputedStyle(c);
+        var op = parseFloat(cs.opacity);
+        if (op < 0.5) dimmed++;
+        else matching++;
+      });
+      assert(dimmed >= 1, "VT17 at least one non-matching card must dim (opacity < 0.5) when filter active");
+    } finally {
+      document.body.removeAttribute("data-filter-services");
+      document.body.removeChild(l);
+    }
+  });
+
+  it("VT18 · F2 filter chip click sets body data attribute; re-click clears", () => {
+    document.body.removeAttribute("data-filter-services");
+    var s = fixtureSession();
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderGapsEditView(l, r, s);
+    var chip = l.querySelector("[data-filter-chip][data-filter-dim='services'], .filter-chip[data-service-id]");
+    assert(chip, "VT18 filter chip row must include at least one services chip");
+    chip.click();
+    assert(document.body.getAttribute("data-filter-services"),
+      "VT18 first click must set body[data-filter-services]");
+    chip.click();
+    assert(!document.body.getAttribute("data-filter-services"),
+      "VT18 re-click must clear body[data-filter-services]");
+    document.body.removeAttribute("data-filter-services");
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section 7, services scope redesign (VT19)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("VT19 · SR1-SR2 Reporting Services scope sub-tab renders .service-card grid (no <table>)", () => {
+    var s = fixtureSession();
+    var origGaps = session.gaps.slice();
+    var origInstances = session.instances.slice();
+    session.instances = s.instances.slice();
+    session.gaps = s.gaps.slice();
+    try {
+      var l = document.createElement("div"); var r = document.createElement("div");
+      renderSummaryServicesView(l, r);
+      var cards = l.querySelectorAll(".service-card");
+      assert(cards.length >= 1, "VT19 Services scope must render >= 1 .service-card (got " + cards.length + ")");
+      var firstCard = cards[0];
+      assert(firstCard.querySelector(".eyebrow, .service-id"),
+        "VT19 .service-card must include a mono caps id eyebrow");
+      var noTable = l.querySelectorAll("table").length === 0;
+      assert(noTable, "VT19 Services scope must NOT use a <table> element (got " + l.querySelectorAll('table').length + ")");
+    } finally {
+      session.gaps = origGaps;
+      session.instances = origInstances;
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section 0, em-dash audit (VT20)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("VT20 · A1 em-dash absence in served UI files (styles.css + curated UI-copy paths)", async () => {
+    const paths = [
+      "/styles.css",
+      "/app.js",
+      "/ui/views/ContextView.js",
+      "/ui/views/MatrixView.js",
+      "/ui/views/GapsEditView.js",
+      "/ui/views/SummaryGapsView.js",
+      "/ui/views/SummaryRoadmapView.js",
+      "/ui/views/SummaryServicesView.js",
+      "/ui/views/ReportingView.js",
+      "/ui/components/UseAiButton.js",
+      "/ui/components/Drawer.js",
+      "/state/demoSession.js",
+      "/core/seedSkills.js",
+      "/core/services.js"
+    ];
+    var hits = [];
+    for (var i = 0; i < paths.length; i++) {
+      try {
+        var resp = await fetch(paths[i]);
+        if (!resp.ok) continue;
+        var text = await resp.text();
+        if (text.indexOf("—") >= 0) {
+          hits.push(paths[i]);
+        }
+      } catch (e) { /* skip files that 404 */ }
+    }
+    assertEqual(hits.length, 0,
+      "VT20 em-dash sweep: U+2014 found in " + hits.length + " UI file(s): " + hits.join(", "));
+  });
+
+});
+
 // v2.4.5 · Foundations Refresh · register the human-surface demo suite
 // into the same runner so there's a single green banner for the whole
 // release. Import at bottom to avoid circular-dependency risk with the
