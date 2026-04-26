@@ -1,4 +1,4 @@
-// ui/views/SummaryServicesView.js — Phase 19l / v2.4.12
+// ui/views/SummaryServicesView.js , Phase 19l / v2.4.12
 //
 // Reporting → "Services scope" sub-tab. Workshop deliverable for the
 // engagement-shape conversation: across the whole session, what
@@ -55,7 +55,7 @@ function renderSummarySentence() {
 }
 
 export function renderSummaryServicesView(left, right) {
-  // NOTE: do NOT clear left.innerHTML here — app.js appends the
+  // NOTE: do NOT clear left.innerHTML here , app.js appends the
   // sub-tab bar (#summary-tabs) into left BEFORE calling us, and
   // wiping left would erase the navigation. Other Summary views
   // follow the same convention (append-only on left).
@@ -103,7 +103,7 @@ export function renderSummaryServicesView(left, right) {
       row.appendChild(labelCell);
       row.appendChild(mkt("td", "services-scope-num", String(r.gapCount)));
       row.appendChild(mkt("td", "services-scope-num", String(r.projectCount)));
-      row.appendChild(mkt("td", "services-scope-projects", r.projectNames.join(" · ") || "—"));
+      row.appendChild(mkt("td", "services-scope-projects", r.projectNames.join(" · ") || ","));
       tbody.appendChild(row);
     });
   }

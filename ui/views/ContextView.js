@@ -1,8 +1,8 @@
-// ui/views/ContextView.js — Tab 1 · Context (v2 · SPEC §7.1)
+// ui/views/ContextView.js , Tab 1 · Context (v2 · SPEC §7.1)
 //
 // UX contract:
 //   1. Identity card (customer name, vertical, region, presales owner).
-//   2. "Your drivers" panel — tiles of added drivers + "+ Add driver" button.
+//   2. "Your drivers" panel , tiles of added drivers + "+ Add driver" button.
 //      Click "+ Add driver" → command palette overlay of the 8 catalog drivers.
 //      Select a driver → pushed into session.customer.drivers[] idempotently.
 //      Click a tile → right panel shows:
@@ -10,7 +10,7 @@
 //        - Priority select (High / Medium / Low)
 //        - Business-outcomes textarea with auto-bullet-on-Enter behaviour
 //      Remove control on each tile: silent if outcomes empty, confirms otherwise.
-//   3. No session-level businessOutcomes or primaryDriver — those moved under drivers[].
+//   3. No session-level businessOutcomes or primaryDriver , those moved under drivers[].
 
 import { BUSINESS_DRIVERS, CUSTOMER_VERTICALS } from "../../core/config.js";
 import { useAiButton }             from "../components/UseAiButton.js";
@@ -300,7 +300,7 @@ function renderDriverDetail(right, session, driver, onPriorityChange) {
 
   right.appendChild(formCard);
 
-  // Phase 19b / v2.4.1 — generic "Use AI" button driven by deployed
+  // Phase 19b / v2.4.1 , generic "Use AI" button driven by deployed
   // skills from the Skills admin panel. Replaces the hardcoded v2.4.0
   // demo card; the seeded driver-question skill is pre-deployed on
   // first run so this panel still works out of the box.
@@ -386,13 +386,13 @@ function attachAutoBullet(textarea) {
 // ── Helpers ─────────────────────────────────────────────────
 function renderDemoBanner(container) {
   var b = mk("div", "demo-mode-banner");
-  b.innerHTML = "<strong>Demo mode</strong> — Edit the fields below to start your own session, then click Save.";
+  b.innerHTML = "<strong>Demo mode</strong> , Edit the fields below to start your own session, then click Save.";
   container.appendChild(b);
 }
 
 // v2.4.7 · U1 · brand-new-session welcome card. Two CTAs: Load demo
 // (flips to the Acme FSI persona + re-renders via the session-changed
-// bus) or dismiss (just hides the card — fresh-start state remains).
+// bus) or dismiss (just hides the card , fresh-start state remains).
 function renderFreshStartCard(container) {
   var card = mk("div", "card fresh-start-card");
   card.setAttribute("data-fresh-start", "");
@@ -412,7 +412,7 @@ function renderFreshStartCard(container) {
   var dismissBtn = mkt("button", "btn-secondary", "Start fresh");
   dismissBtn.type = "button";
   dismissBtn.addEventListener("click", function() {
-    // Local dismiss only — no session mutation. User can still load demo
+    // Local dismiss only , no session mutation. User can still load demo
     // later via the footer "↺ Load demo" button.
     card.remove();
   });

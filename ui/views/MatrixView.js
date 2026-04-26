@@ -148,7 +148,7 @@ export function renderMatrixView(left, right, session, opts) {
   function buildTile(inst) {
     var vg  = inst.vendorGroup || "custom";
 
-    // Severity accent — current tiles use own criticality;
+    // Severity accent , current tiles use own criticality;
     // desired tiles with an originId inherit from the source current instance (carry-through).
     // Net-new desired tiles (introduce, no originId) get no criticality class (T2.14).
     var critLevel   = null;
@@ -160,7 +160,7 @@ export function renderMatrixView(left, right, session, opts) {
       var origin = (session.instances || []).find(function(i) { return i.id === inst.originId; });
       if (origin && origin.criticality) {
         critLevel = origin.criticality.toLowerCase();
-        critSourceLbl = origin.criticality + " — carried from '" + origin.label + "'";
+        critSourceLbl = origin.criticality + " , carried from '" + origin.label + "'";
       }
     }
 
@@ -321,7 +321,7 @@ export function renderMatrixView(left, right, session, opts) {
       var unreviewed = (session.gaps || []).filter(function(g) { return g.reviewed === false && g.status !== "closed"; }).length;
       showToast("↳ Gap drafted on Tab 4 (" + unreviewed + " unreviewed)", "ok");
     } else if (actionId === "keep") {
-      showToast("Set to Keep — any linked gaps were closed (Tab 4 → Show closed)", "ok");
+      showToast("Set to Keep , any linked gaps were closed (Tab 4 → Show closed)", "ok");
     } else {
       showToast("Disposition set: " + actionId, "ok");
     }
@@ -384,13 +384,13 @@ export function renderMatrixView(left, right, session, opts) {
       if (q && !filtered.find(function(t) { return t.label.toLowerCase() === q.toLowerCase(); })) {
         results.appendChild(mkt("div", "cmd-group-sep", "Add new"));
         // 1) Dell SKU
-        results.appendChild(buildItem("+ Add \"" + q + "\" — Dell SKU", "Dell", "dell", function() {
+        results.appendChild(buildItem("+ Add \"" + q + "\" , Dell SKU", "Dell", "dell", function() {
           addToCell(q, "Dell", "dell");
         }));
-        // 2) 3rd-party vendor — opens inline chooser
+        // 2) 3rd-party vendor , opens inline chooser
         var thirdParty = mk("div", "cmd-item cmd-item-3p");
         thirdParty.appendChild(mk("span", "cmd-dot cmd-dot-nonDell"));
-        thirdParty.appendChild(mkt("span", "cmd-item-name", "+ Add \"" + q + "\" — 3rd-party vendor..."));
+        thirdParty.appendChild(mkt("span", "cmd-item-name", "+ Add \"" + q + "\" , 3rd-party vendor..."));
         thirdParty.appendChild(mkt("span", "cmd-item-vendor", "Non-Dell"));
         thirdParty.addEventListener("click", function() { openVendorChooser(q); });
         thirdParty.addEventListener("mouseenter", function() {
@@ -399,7 +399,7 @@ export function renderMatrixView(left, right, session, opts) {
         });
         results.appendChild(thirdParty);
         // 3) Custom / internal
-        results.appendChild(buildItem("+ Add \"" + q + "\" — Custom / internal", "Custom", "custom", function() {
+        results.appendChild(buildItem("+ Add \"" + q + "\" , Custom / internal", "Custom", "custom", function() {
           addToCell(q, "Custom", "custom");
         }));
       }
@@ -514,7 +514,7 @@ export function renderMatrixView(left, right, session, opts) {
       DISPOSITION_ACTIONS.forEach(function(a) { dispLabels[a.id] = a.label; });
       form.appendChild(fg("Action", selEl("disposition", dispOpts, inst.disposition || "", dispLabels)));
 
-      // Phase — hidden entirely when disposition is "keep" (no change = no schedule).
+      // Phase , hidden entirely when disposition is "keep" (no change = no schedule).
       // Label uses compound "Now (0-12 months)" etc. per SPEC §7.3; the JSON key stays `priority`.
       if (inst.disposition !== "keep") {
         // Default "Next" for net-new introduce items (no originId, no priority yet).
@@ -530,7 +530,7 @@ export function renderMatrixView(left, right, session, opts) {
           "Phase drives the roadmap column and the linked gap's phase. Defaults to 'Next' for net-new items. Change it to reschedule the related project.");
         form.appendChild(fg("Phase", phaseSel));
       }
-      // Timeline dropped per SPEC §7.3 — collapsed into the compound Phase label.
+      // Timeline dropped per SPEC §7.3 , collapsed into the compound Phase label.
     }
 
     var notesHint = stateFilter === "current"
@@ -575,7 +575,7 @@ export function renderMatrixView(left, right, session, opts) {
     actions.appendChild(delBtn);
     panel.appendChild(actions);
 
-    // Phase 16 — Mapped infrastructure section, only on workload tiles.
+    // Phase 16 , Mapped infrastructure section, only on workload tiles.
     if (inst.layerId === "workload") {
       panel.appendChild(buildMappedAssetsSection(right, inst));
     }
@@ -681,7 +681,7 @@ export function renderMatrixView(left, right, session, opts) {
     box.appendChild(mkt("div", "dialog-title", "Map an asset to '" + workload.label + "'"));
 
     var alreadyMapped = workload.mappedAssetIds || [];
-    // v2.3.1 — restrict the picker to assets in the workload's same
+    // v2.3.1 , restrict the picker to assets in the workload's same
     // environment. A hybrid workload is modelled as separate per-env tiles.
     var candidates = (session.instances || []).filter(function(i) {
       return i.state === workload.state

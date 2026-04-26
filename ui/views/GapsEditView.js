@@ -40,7 +40,7 @@ export function renderGapsEditView(left, right, session) {
   var selectedGapId         = null;
   var dragGapId             = null;
   var showNeedsReviewOnly   = false;
-  // v2.4.11 · A2 · "Show closed gaps" filter. Default off — closed gaps
+  // v2.4.11 · A2 · "Show closed gaps" filter. Default off , closed gaps
   // (auto-closed when their tile's disposition flips to Keep) stay
   // hidden from the main board so they don't clutter active work.
   // User can flip on to see + recover them.
@@ -60,14 +60,14 @@ export function renderGapsEditView(left, right, session) {
   if (autoGaps.length > 0) {
     var notice = mk("div", "auto-gap-notice");
     var msg = "<strong>" + autoGaps.length + " auto-drafted gap" + (autoGaps.length > 1 ? "s" : "") +
-      "</strong> from Desired State dispositions — review them in the board below.";
+      "</strong> from Desired State dispositions , review them in the board below.";
     notice.innerHTML = msg + " ";
     var reviewAllBtn = mkt("button", "btn-primary auto-gap-review-all", "Review all →");
     reviewAllBtn.title = "Walk through each unreviewed gap in sequence so you can approve, edit, or delete it.";
     reviewAllBtn.addEventListener("click", function() {
       // Walkthrough: select unreviewed gaps one at a time. Clicking the
       // button each time advances to the next; when none remain, it
-      // auto-disables. Lightweight first cut — doesn't need a full
+      // auto-disables. Lightweight first cut , doesn't need a full
       // wizard chrome to be useful.
       var nextUnreviewed = (session.gaps || []).find(function(g) {
         return g.reviewed === false && g.status !== "closed";
@@ -154,7 +154,7 @@ export function renderGapsEditView(left, right, session) {
 
   // v2.4.12 · U1 · the v2.4.11 D2 "+ Add operational / services gap"
   // button is removed. Services attach to any gap as a multi-chip facet
-  // (see "Services needed" section in the gap detail panel) — a dedicated
+  // (see "Services needed" section in the gap detail panel) , a dedicated
   // ops-typed gap CTA reinforced a wrong mental model.
 
   header.appendChild(filterRow);
@@ -271,7 +271,7 @@ export function renderGapsEditView(left, right, session) {
     var needsReview = gap.reviewed === false;
     var cls = "gap-card" + (isSelected ? " selected" : "") + (isAuto ? " gap-card-auto" : "");
     if (needsReview) cls += " gap-needs-review";
-    // Criticality accent — derived from gap.urgency (T4.4).
+    // Criticality accent , derived from gap.urgency (T4.4).
     if (gap.urgency) cls += " crit-" + gap.urgency.toLowerCase();
     var card = mk("div", cls);
     card.draggable = true;
@@ -279,7 +279,7 @@ export function renderGapsEditView(left, right, session) {
     // v2.1 · pulsing review dot for unreviewed auto-drafts.
     if (needsReview) {
       var dot = mk("span", "gap-review-dot");
-      dot.title = "Auto-drafted — review and approve in the detail panel.";
+      dot.title = "Auto-drafted , review and approve in the detail panel.";
       card.appendChild(dot);
     }
 
@@ -299,13 +299,13 @@ export function renderGapsEditView(left, right, session) {
     var urgBadge = mkt("span", "urgency-badge " + urgClass(gap.urgency), gap.urgency);
     // Tooltip explains urgency is derived and points at source (T4.2 / T3.16).
     var srcLabel = gapOriginCriticalityHint(gap, session);
-    urgBadge.title = "Urgency is derived from the linked current instance's criticality — not editable. " + srcLabel;
+    urgBadge.title = "Urgency is derived from the linked current instance's criticality , not editable. " + srcLabel;
     badgesEl.appendChild(urgBadge);
     var shape = mk("span", "crit-shape-" + (gap.urgency || "medium").toLowerCase());
     shape.title = urgBadge.title;
     badgesEl.appendChild(shape);
 
-    // Strategic-driver chip (effective — explicit override OR auto-suggest).
+    // Strategic-driver chip (effective , explicit override OR auto-suggest).
     // "★" prefix = confirmed manually; "☆" prefix = suggested (one-click confirm).
     var effDid = effectiveDriverId(gap, session);
     if (effDid) {
@@ -381,7 +381,7 @@ export function renderGapsEditView(left, right, session) {
     panel.appendChild(subEl);
 
     // v2.4.11 · A1 · soft chip when this gap's shape doesn't satisfy its
-    // Action's link rules. Doesn't block editing — just surfaces what's
+    // Action's link rules. Doesn't block editing , just surfaces what's
     // missing so the user knows what to fix before approving.
     var draftIssue = computeDraftIssue(gap);
     if (draftIssue) {
@@ -441,7 +441,7 @@ export function renderGapsEditView(left, right, session) {
     // Gap type: read-only display for auto-drafted gaps (T4.3);
     // editable ONLY when it's manual + hasn't been set yet (T4.14).
     if (isAutoDrafted(gap)) {
-      form.appendChild(fg("Gap type", readOnlyField(gap.gapType || "—",
+      form.appendChild(fg("Gap type", readOnlyField(gap.gapType || ",",
         "Gap type is derived from the source disposition. Change disposition in Desired State to change gap type.")));
     } else {
       form.appendChild(fg("Gap type",
@@ -482,7 +482,7 @@ export function renderGapsEditView(left, right, session) {
     } else {
       // Read-only display + 🔒 lock button.
       urgencyRow.appendChild(mkt("span", "urg-derived-value urg-" + (gap.urgency||"Medium").toLowerCase(),
-        gap.urgency || "—"));
+        gap.urgency || ","));
       var lockBtn = mkt("button", "btn-ghost-sm urg-lock-btn", "🔒 set manually");
       lockBtn.title = "Pin this urgency. Future propagation from criticality changes will not overwrite it.";
       lockBtn.addEventListener("click", function() {
@@ -502,7 +502,7 @@ export function renderGapsEditView(left, right, session) {
     form.appendChild(fg("Status",
       selEl("status", ["open","in_progress","closed","deferred"], gap.status || "open")));
 
-    // Program (driver) dropdown — session drivers + Unassigned. Auto-suggested
+    // Program (driver) dropdown , session drivers + Unassigned. Auto-suggested
     // if no explicit driverId is set.
     var programOpts = [""].concat((session.customer.drivers || []).map(function(d) { return d.id; }));
     var programLabels = { "": "Unassigned" };
@@ -566,16 +566,16 @@ export function renderGapsEditView(left, right, session) {
     // as a read-only field so the presales sees the result of their link choices.
     var solutions = effectiveDellSolutions(gap, session);
     var solutionsText = solutions.length === 0
-      ? "None yet — link Dell-tagged desired tiles below to populate."
+      ? "None yet , link Dell-tagged desired tiles below to populate."
       : solutions.join(", ");
     form.appendChild(fg("Dell solutions (derived)",
       readOnlyField(solutionsText,
         "Derived from linked desired tiles with vendor = Dell. Manage the links below to change this list.")));
 
-    // v2.4.12 · Services needed — multi-chip facet attached to any gap.
+    // v2.4.12 · Services needed , multi-chip facet attached to any gap.
     // Picked chips are full-color (click to remove); suggested chips
     // appear under a SUGGESTED eyebrow (greyed, click to add). Suggested
-    // is OPT-IN — never auto-applied. Suggestions re-derive on gapType
+    // is OPT-IN , never auto-applied. Suggestions re-derive on gapType
     // change but never auto-select.
     var servicesGroup = mk("div", "form-group services-group");
     servicesGroup.appendChild(mkt("label", "form-label", "Services needed"));
@@ -691,7 +691,7 @@ export function renderGapsEditView(left, right, session) {
     var saveBtn = mkt("button", "btn-primary save-btn", "Save changes");
     saveBtn.addEventListener("click", function() {
       // v2.4.11 · save button gets visible loading + success + error states.
-      // Before: text swapped to "Saved" briefly on success only — no feedback
+      // Before: text swapped to "Saved" briefly on success only , no feedback
       // on click, no error state. User reported "save doesn't have any
       // dynamic clicking pattern". Fixing.
       saveBtn.disabled = true;
@@ -740,7 +740,7 @@ export function renderGapsEditView(left, right, session) {
       }
       patch.phase   = patch.phase   || "now";
       patch.status  = patch.status  || "open";
-      // Lock gapType for auto-drafted gaps (T4.3 / T4.14 — derived from disposition).
+      // Lock gapType for auto-drafted gaps (T4.3 / T4.14 , derived from disposition).
       if (isAutoDrafted(gap)) patch.gapType = gap.gapType;
       else if (!patch.gapType) delete patch.gapType;
       // driverId is managed separately via setGapDriverId (allows delete when Unassigned)
@@ -844,7 +844,7 @@ export function renderGapsEditView(left, right, session) {
         // v2.1 · phase-conflict guard: if the tile's current phase differs from the gap's,
         // ask the presales before auto-reassigning. Gap wins per locked decision.
         // v2.4.11 · A4 · the function now refuses without { acknowledged: true }
-        // when there's a conflict — make the confirm + acknowledged opt-in
+        // when there's a conflict , make the confirm + acknowledged opt-in
         // explicit so no caller can accidentally bypass.
         var check = confirmPhaseOnLink(session, gap.id, instId);
         var acknowledged = false;
@@ -1135,7 +1135,7 @@ function readOnlyField(text, titleText) {
 
 function gapOriginCriticalityHint(gap, session) {
   var ids = (gap && gap.relatedCurrentInstanceIds) || [];
-  if (!ids.length || !session) return "No linked current instance — defaults to Medium for introduce gaps.";
+  if (!ids.length || !session) return "No linked current instance , defaults to Medium for introduce gaps.";
   var first = (session.instances || []).find(function(i) { return i.id === ids[0]; });
   if (!first) return "";
   return "Source: '" + first.label + "' (criticality " + (first.criticality || "not set") + ").";

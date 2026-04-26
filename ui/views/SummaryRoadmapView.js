@@ -1,4 +1,4 @@
-// ui/views/SummaryRoadmapView.js — Roadmap v2 · the crown jewel (SPEC §7.5.5)
+// ui/views/SummaryRoadmapView.js , Roadmap v2 · the crown jewel (SPEC §7.5.5)
 //
 // Hierarchy:
 //   Programs (swimlanes) = Tab 1 business drivers (from session.customer.drivers[])
@@ -23,7 +23,7 @@ var PHASES = [
 
 export function renderSummaryRoadmapView(left, right, sess) {
   var session = sess || liveSession;
-  // Do NOT clear left/right here — the Reporting tab bar (#summary-tabs) lives in `left`
+  // Do NOT clear left/right here , the Reporting tab bar (#summary-tabs) lives in `left`
   // and the caller has already appended it before calling us. Sibling sub-tab views
   // (Health, Gaps, Vendor) also only append. Clearing here used to make the sub-tab bar
   // disappear whenever Roadmap was selected.
@@ -35,7 +35,7 @@ export function renderSummaryRoadmapView(left, right, sess) {
   titleRow.appendChild(helpButton("reporting_roadmap"));
   header.appendChild(titleRow);
   header.appendChild(mkt("div", "card-hint",
-    "Strategic Drivers (rows) × Phases (Now / Next / Later). Each card is an auto-derived project bundling related gaps. Read-only — edit gaps in Tab 4 to change this view."));
+    "Strategic Drivers (rows) × Phases (Now / Next / Later). Each card is an auto-derived project bundling related gaps. Read-only , edit gaps in Tab 4 to change this view."));
   left.appendChild(header);
 
   var gapsCount = (session.gaps || []).length;
@@ -72,7 +72,7 @@ export function renderSummaryRoadmapView(left, right, sess) {
   _currentRight = right;
   _currentSession = session;
 
-  // Driver swimlanes — in session order
+  // Driver swimlanes , in session order
   var drivers = (session.customer.drivers || []);
   drivers.forEach(function(d) {
     var meta = BUSINESS_DRIVERS.find(function(bd) { return bd.id === d.id; });
@@ -118,7 +118,7 @@ function buildPulseBar(projects, session) {
   row.appendChild(pulseStat(counts.next,  "Next"));
   row.appendChild(pulseStat(counts.later, "Later"));
   row.appendChild(pulseStat(unreviewedCount, "unreviewed gaps",
-    "Auto-drafted gaps still awaiting approval — review in Tab 4."));
+    "Auto-drafted gaps still awaiting approval , review in Tab 4."));
   bar.appendChild(row);
   return bar;
 }
@@ -130,7 +130,7 @@ function pulseStat(num, label, title) {
   if (title) w.setAttribute("title", title);
   w.appendChild(n);
   // Text-node separators so .textContent reads "N projects " with whitespace either side
-  // of the label — keeps regexes with \b boundaries happy when stats concatenate.
+  // of the label , keeps regexes with \b boundaries happy when stats concatenate.
   w.appendChild(document.createTextNode(" "));
   w.appendChild(l);
   w.appendChild(document.createTextNode(" "));
@@ -182,7 +182,7 @@ function appendSwimlane(grid, lane) {
       return b.gapCount - a.gapCount;
     });
     if (cellProjects.length === 0) {
-      cell.appendChild(mkt("div", "swimlane-empty", "—"));
+      cell.appendChild(mkt("div", "swimlane-empty", ","));
     } else {
       cellProjects.forEach(function(p) { cell.appendChild(buildProjectCard(p)); });
     }
@@ -213,10 +213,10 @@ function buildProjectCard(proj) {
     });
     card.appendChild(solutionsRow);
   } else {
-    card.appendChild(mkt("div", "project-card-unmapped", "No Dell solutions mapped yet — see Tab 4."));
+    card.appendChild(mkt("div", "project-card-unmapped", "No Dell solutions mapped yet , see Tab 4."));
   }
 
-  // v2.4.12 · Services needed chip row — union of constituent gaps' services.
+  // v2.4.12 · Services needed chip row , union of constituent gaps' services.
   if (proj.services && proj.services.length) {
     var servicesRow = mk("div", "project-card-services");
     servicesRow.appendChild(mkt("span", "project-card-services-eyebrow", "SERVICES NEEDED"));
@@ -281,7 +281,7 @@ function renderProjectDetail(right, session, proj) {
   var solText = mk("div", "detail-text");
   solText.textContent = (proj.dellSolutions && proj.dellSolutions.length)
     ? proj.dellSolutions.join(", ")
-    : "None yet — link Dell desired tiles to constituent gaps in Tab 4.";
+    : "None yet , link Dell desired tiles to constituent gaps in Tab 4.";
   panel.appendChild(solText);
 
   // Gaps
@@ -296,7 +296,7 @@ function renderProjectDetail(right, session, proj) {
     panel.appendChild(row);
   });
 
-  // Linked-instance count — Phase 18: count UNIQUE instance ids across the
+  // Linked-instance count , Phase 18: count UNIQUE instance ids across the
   // project's gaps. With warn-but-allow double-linking, the same instance
   // can appear in two gaps' relatedXxx arrays; summing lengths would
   // double-count and inflate the project's apparent technology footprint.
@@ -353,7 +353,7 @@ function renderDriverDetail(right, session, driverEntry, projects) {
   // Outcomes
   var outSep = mk("div", "detail-sep"); outSep.textContent = "Business outcomes"; panel.appendChild(outSep);
   var out = mk("div", "detail-text");
-  out.textContent = (driverEntry.outcomes || "").trim() || "No outcomes captured yet — add them in Tab 1.";
+  out.textContent = (driverEntry.outcomes || "").trim() || "No outcomes captured yet , add them in Tab 1.";
   out.style.whiteSpace = "pre-wrap";
   panel.appendChild(out);
 

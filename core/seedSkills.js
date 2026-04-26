@@ -1,4 +1,4 @@
-// core/seedSkills.js — Phase 19e / v2.4.5 Foundations Refresh
+// core/seedSkills.js , Phase 19e / v2.4.5 Foundations Refresh
 //
 // Pre-built AI skill library. Pre-deployed on first run so every tab's
 // "✨ Use AI ▾" dropdown has something on day one, and so the writable
@@ -8,7 +8,7 @@
 // the `json-scalars` response format so the AI returns a strict JSON
 // object and the UI renders an Apply/Skip row per field
 // (applyPolicy = "confirm-per-field"). Every declared `outputSchema`
-// path MUST be writable in the current `FIELD_MANIFEST` — asserted by
+// path MUST be writable in the current `FIELD_MANIFEST` , asserted by
 // diagnostics/demoSpec.js.
 //
 // Process rule (feedback_foundational_testing.md):
@@ -18,7 +18,7 @@
 
 function now() { return new Date().toISOString(); }
 
-// Seeded v2.4.4 — kept id stable so existing installs keep their Tab 1
+// Seeded v2.4.4 , kept id stable so existing installs keep their Tab 1
 // "Use AI" button wired to this skill.
 var DRIVER_QUESTIONS_SKILL = {
   id:           "skill-driver-questions-seed",
@@ -41,7 +41,7 @@ var DRIVER_QUESTIONS_SKILL = {
   seed:           true
 };
 
-// New in v2.4.5 — exercises the writable driver fields in
+// New in v2.4.5 , exercises the writable driver fields in
 // bindingResolvers.js (priority + outcomes).
 var DRIVER_TUNER_SKILL = {
   id:           "skill-context-driver-tuner-seed",
@@ -67,7 +67,7 @@ var DRIVER_TUNER_SKILL = {
   seed:           true
 };
 
-// Current-state tile tuner — exercises instance.criticality + notes.
+// Current-state tile tuner , exercises instance.criticality + notes.
 var CURRENT_TILE_TUNER_SKILL = {
   id:           "skill-current-tile-tuner-seed",
   name:         "Review selected tile (criticality + notes)",
@@ -92,7 +92,7 @@ var CURRENT_TILE_TUNER_SKILL = {
   seed:           true
 };
 
-// Desired-state disposition tuner — exercises disposition + priority + notes.
+// Desired-state disposition tuner , exercises disposition + priority + notes.
 var DESIRED_TILE_TUNER_SKILL = {
   id:           "skill-desired-tile-tuner-seed",
   name:         "Shape desired disposition (action + phase + note)",
@@ -120,14 +120,14 @@ var DESIRED_TILE_TUNER_SKILL = {
   seed:           true
 };
 
-// Gap rewriter — exercises description + urgency + notes, the core
+// Gap rewriter , exercises description + urgency + notes, the core
 // fields the user touches during workshop write-up.
 var GAP_REWRITER_SKILL = {
   id:           "skill-gap-rewriter-seed",
   name:         "Rewrite selected gap (description + urgency + note)",
   description:  "Rewrite the selected gap's description in CxO language, re-classify urgency if warranted, and propose a one-line rationale note.",
   tabId:        "gaps",
-  systemPrompt: "You are a senior Dell Technologies presales engineer. Rewrite the selected gap in CxO-friendly language (one sentence, <=24 words, names the business impact — not the technology). Re-classify urgency (High/Medium/Low) based on the customer's top drivers and outcomes. Propose a concise rationale note (<=140 characters).",
+  systemPrompt: "You are a senior Dell Technologies presales engineer. Rewrite the selected gap in CxO-friendly language (one sentence, <=24 words, names the business impact , not the technology). Re-classify urgency (High/Medium/Low) based on the customer's top drivers and outcomes. Propose a concise rationale note (<=140 characters).",
   promptTemplate: [
     "Customer: {{session.customer.name}} ({{session.customer.vertical}}).",
     "Drivers: {{session.customer.drivers}}.",
@@ -150,7 +150,7 @@ var GAP_REWRITER_SKILL = {
   seed:           true
 };
 
-// v2.4.12 · Gap services suggester — exercises the new gap.services
+// v2.4.12 · Gap services suggester , exercises the new gap.services
 // multi-select facet. Asks the AI to recommend a comma-separated list of
 // service ids from the SERVICE_TYPES catalog based on gapType + notes;
 // the WRITE_RESOLVER for context.selectedGap.services normalizes the
@@ -179,7 +179,7 @@ var GAP_SERVICES_SUGGESTER_SKILL = {
   seed:           true
 };
 
-// Reporting narrator — text-brief; Reporting tab has no writable
+// Reporting narrator , text-brief; Reporting tab has no writable
 // fields in v2.4.5 so this is a show-only narrator.
 var REPORTING_NARRATOR_SKILL = {
   id:           "skill-reporting-narrator-seed",
@@ -201,7 +201,7 @@ var REPORTING_NARRATOR_SKILL = {
   seed:           true
 };
 
-// Public API — returns a fresh array each call so callers (loadSkills
+// Public API , returns a fresh array each call so callers (loadSkills
 // first-run, demoSpec tests) don't share mutable state.
 export function seedSkills() {
   var t = now();
@@ -218,7 +218,7 @@ export function seedSkills() {
   });
 }
 
-// Convenience id list — used by demoSpec to assert every seed survives
+// Convenience id list , used by demoSpec to assert every seed survives
 // normalizeSkill round-tripping without losing structural fields.
 export var SEED_SKILL_IDS = [
   "skill-driver-questions-seed",

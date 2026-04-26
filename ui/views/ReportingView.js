@@ -20,7 +20,7 @@ export function renderReportingOverview(left, right) {
   // ---- Overview header with help icon ----
   var overviewHeader = mk("div", "card");
   var headTitleRow = mk("div", "card-title-row");
-  headTitleRow.appendChild(mkt("div", "card-title", "Reporting — Overview"));
+  headTitleRow.appendChild(mkt("div", "card-title", "Reporting , Overview"));
   headTitleRow.appendChild(helpButton("reporting_overview"));
   overviewHeader.appendChild(headTitleRow);
   overviewHeader.appendChild(mkt("div", "card-hint",
@@ -42,7 +42,7 @@ export function renderReportingOverview(left, right) {
   covBar.appendChild(covFill);
   covCard.appendChild(covBar);
   var covHintList = mk("ul", "coverage-hint-list");
-  (coverage.actions.length ? coverage.actions : ["Coverage complete — nice work."]).forEach(function(a) {
+  (coverage.actions.length ? coverage.actions : ["Coverage complete , nice work."]).forEach(function(a) {
     covHintList.appendChild(mkt("li", "", "• " + a));
   });
   covCard.appendChild(covHintList);
@@ -63,7 +63,7 @@ export function renderReportingOverview(left, right) {
 
   left.appendChild(healthRow);
 
-  // Secondary stats strip — keeps the raw-count context without the old score
+  // Secondary stats strip , keeps the raw-count context without the old score
   var statsRow = mk("div", "health-stats-row");
   var stats = [
     [summary.totalCurrent,  "Current technologies"],
@@ -80,7 +80,7 @@ export function renderReportingOverview(left, right) {
   left.appendChild(statsRow);
 
   // ---- Session Brief (Phase 14 · replaces narrative exec summary with structured bullets) ----
-  // Honest labeling — no pretend auto-generation. Each row is a factual roll-up.
+  // Honest labeling , no pretend auto-generation. Each row is a factual roll-up.
   var execCard = mk("div", "card");
   var execHead = mk("div", "exec-summary-head");
   execHead.appendChild(mkt("div", "card-title", "Session brief"));
@@ -105,7 +105,7 @@ export function renderReportingOverview(left, right) {
   });
   // appended to right panel below (after trim block)
 
-  // ---- Driver chips (T5.2) — mirrors back what the CxO told us matters ----
+  // ---- Driver chips (T5.2) , mirrors back what the CxO told us matters ----
   var drivers = (session.customer.drivers || []);
   if (drivers.length) {
     var driversCard = mk("div", "card");
@@ -159,7 +159,7 @@ export function renderReportingOverview(left, right) {
   var allServiceGaps = (session.gaps || []).filter(function(g) {
     return g.status !== "closed" && Array.isArray(g.services) && g.services.length > 0;
   });
-  // Always render the card — even on an empty session — so the "Services
+  // Always render the card , even on an empty session , so the "Services
   // scope" sub-tab is discoverable from the overview, and so the test
   // contract (SVC9: "'Services scope' appears in the Reporting view DOM")
   // remains stable across session shapes.
@@ -180,7 +180,7 @@ export function renderReportingOverview(left, right) {
       return serviceCounts[svc.id] + " " + compact.toLowerCase();
     });
   var summary = (bits.length === 0)
-    ? "No services attached to any gap yet — open a gap on Tab 4 → 'Services needed' to add chips. The Services scope sub-tab will populate as soon as you do."
+    ? "No services attached to any gap yet , open a gap on Tab 4 → 'Services needed' to add chips. The Services scope sub-tab will populate as soon as you do."
     : "Across " + projects.length + " project" + (projects.length === 1 ? "" : "s") +
       ": " + bits.join(" · ") + ".";
   servicesCard.appendChild(mkt("div", "card-hint", summary));

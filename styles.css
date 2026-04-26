@@ -1,5 +1,5 @@
 /* ============================================================
-   Dell Discovery Canvas — styles.css
+   Dell Discovery Canvas , styles.css
    Design system: Dell brand palette + Inter typography, aligned
    to the GPLC reference design tokens (Phase 15.2 / v2.2.2).
    Variable NAMES are preserved from earlier versions so every
@@ -9,28 +9,58 @@
 
 /* ── CSS variables ─────────────────────────────────────────── */
 :root {
-  /* Brand — Dell official palette (replaces the prior #007DB8 family).
-     `--brand`/`--dell-strip` keep their names for backward compatibility
-     with every existing component selector. */
-  --brand:        #0076CE;   /* Dell Blue */
-  --brand-dark:   #0063AE;   /* deep */
-  --brand-light:  #E8F2FB;   /* soft */
-  --brand-faint:  #F5F9FD;   /* faint background tint */
+  /* Brand, Dell official palette (replaces the prior #007DB8 family).
+     v2.5.0: philosophy-aligned aliases (--dell-blue, --dell-blue-deep,
+     --dell-blue-soft, --dell-blue-faint) added alongside the legacy
+     --brand-* names. Both resolve to the same hex values; legacy names
+     stay for back-compat with un-migrated components, philosophy names
+     drive the new DS1-DS8 layer. */
+  --brand:           #0076CE;
+  --brand-dark:      #0063AE;
+  --brand-light:     #E8F2FB;
+  --brand-faint:     #F5F9FD;
+  --dell-blue:       #0076CE;
+  --dell-blue-deep:  #0063AE;
+  --dell-blue-dark:  #00447C;
+  --dell-blue-ink:   #0B2A4A;
+  --dell-blue-soft:  #E8F2FB;
+  --dell-blue-faint: #F5F9FD;
 
-  /* Surfaces — slightly cooler greys aligned to the Dell brand. */
+  /* Surfaces. Philosophy 3-tier (canvas / canvas-soft / canvas-alt). */
   --bg:           #F4F6F9;
   --surface:      #FFFFFF;
   --surface-2:    #FAFBFC;
   --border:       #E4E8EE;
   --border-mid:   #CBD2DC;
+  --canvas:       #FFFFFF;
+  --canvas-soft:  #FAFBFC;
+  --canvas-alt:   #F4F6F9;
+  --rule:         #E4E8EE;
+  --rule-strong:  #CBD2DC;
 
-  /* Ink scale — subtly bluer than pure neutral grey, per Dell. */
-  --text-1:       #0B2A4A;   /* primary text */
+  /* Ink scale. Philosophy 4-tier (ink / ink-soft / ink-mute / ink-faint).
+     `--ink` is never pure black per the philosophy; uses navy ink #0B2A4A. */
+  --text-1:       #0B2A4A;
   --text-2:       #3E4C62;
   --text-3:       #6B7A90;
   --text-inv:     #FFFFFF;
+  --ink:          #0B2A4A;
+  --ink-soft:     #3E4C62;
+  --ink-mute:     #6B7A90;
+  --ink-faint:    #9AA5B8;
 
-  /* Signal — kept the existing tokens (Tailwind-flavoured red/amber/green
+  /* Signal palette, used sparingly. red = critical / cyber, green =
+     governance / ops, amber = data / consolidation. Used for chip color
+     (urgency level) AND left-bar accent / icon background (domain), per
+     v2.5.0 layered signal. */
+  --red:          #C8102E;
+  --red-soft:     #FCEBED;
+  --green:        #00843D;
+  --green-soft:   #E6F3EC;
+  --amber:        #B27400;
+  --amber-soft:   #FBF3E0;
+
+  /* Signal , kept the existing tokens (Tailwind-flavoured red/amber/green
      pair well with the Dell ink and beat WCAG-AA on white). */
   --high:         #DC2626;
   --high-bg:      #FEF2F2;
@@ -47,26 +77,30 @@
   --nondell-strip:#9CA3AF;
   --custom-strip: #F59E0B;
 
-  /* Radius scale — Phase 15.3 / v2.2.3 tightened from 6/10/14 to 4/6/10
+  /* Radius scale , Phase 15.3 / v2.2.3 tightened from 6/10/14 to 4/6/10
      for a sharper, more enterprise read. The GPLC reference uses 3/5/8;
      we land halfway so corners feel firmer without being clinical. */
   --radius-sm:    4px;
   --radius:       6px;
   --radius-lg:    10px;
 
-  /* Shadow scale — ink-tinted instead of pure rgba(0,0,0,…) so depth
-     reads as "Dell brand-blue shadow" rather than generic darkness. */
+  /* Shadow scale, ink-tinted instead of pure rgba(0,0,0,…) so depth
+     reads as "Dell brand-blue shadow" rather than generic darkness.
+     Used on hover only per philosophy (default state has no shadow).
+     Philosophy alias --shadow-md added for the panel + card hover state. */
   --shadow-sm:    0 1px 2px rgba(11, 42, 74, 0.06);
   --shadow:       0 4px 16px rgba(11, 42, 74, 0.08), 0 1px 2px rgba(11, 42, 74, 0.04);
+  --shadow-md:    0 4px 16px rgba(11, 42, 74, 0.08), 0 1px 2px rgba(11, 42, 74, 0.04);
   --shadow-lg:    0 12px 40px rgba(11, 42, 74, 0.14), 0 2px 6px rgba(11, 42, 74, 0.05);
+  --shadow-panel: -24px 0 60px rgba(11, 42, 74, 0.12);
 
-  /* Typography — Inter + JetBrains Mono (matches the GPLC sample).
+  /* Typography , Inter + JetBrains Mono (matches the GPLC sample).
      index.html loads them from Google Fonts; CSP already allow-lists
      fonts.googleapis.com + fonts.gstatic.com. */
   --font:         "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* Severity palette (Phase 2 · SPEC §4.1) — WCAG-AA against white.
+  /* Severity palette (Phase 2 · SPEC §4.1) , WCAG-AA against white.
      Authoritative hues for criticality + urgency; same values as before
      so heatmaps and chips don't shift. */
   --crit-high:    #d93025;
@@ -89,7 +123,7 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* Phase 15.3 — global heading hardening. Inter at 700-800 with negative
+/* Phase 15.3 , global heading hardening. Inter at 700-800 with negative
    tracking matches the GPLC reference's typographic feel. Specific
    selectors below (.card-title, .detail-title, etc.) override font-size
    and color but inherit weight + tracking. */
@@ -1225,7 +1259,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .tile-dot.nonDell { background: var(--nondell-strip); }
 .tile-dot.custom  { background: var(--custom-strip); }
 
-/* ── Severity accent — Phase 2 · SPEC §4.2, §4.3 ─────────────
+/* ── Severity accent , Phase 2 · SPEC §4.2, §4.3 ─────────────
    Applied to any tile or card that inherits a severity signal
    (current-instance criticality, gap urgency, derived carry-through).
    Rules:
@@ -1614,7 +1648,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .risk-level-pill.risk-elevated { background: #ea580c; }
 .risk-level-pill.risk-high     { background: var(--crit-high); }
 
-/* Phase 19b / v2.4.1 — skill builder UI inside the settings modal,
+/* Phase 19b / v2.4.1 , skill builder UI inside the settings modal,
    plus the per-tab "Use AI" dropdown button. */
 .settings-section-row {
   display: flex; gap: 6px;
@@ -2039,7 +2073,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .use-ai-menu-name { font-size: 12px; font-weight: 600; color: var(--text-1); letter-spacing: -0.01em; }
 .use-ai-menu-desc { font-size: 10px; color: var(--text-3); margin-top: 2px; line-height: 1.4; }
 
-/* Phase 19 / v2.4.0 — header gear button + AI settings modal. */
+/* Phase 19 / v2.4.0 , header gear button + AI settings modal. */
 .header-right {
   display: flex;
   align-items: center;
@@ -2127,7 +2161,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .settings-probe-out.ok      { color: #15803D;          background: #F0FDF4; border: 1px solid #BBF7D0; }
 .settings-probe-out.err     { color: #B91C1C;          background: #FEF2F2; border: 1px solid #FECACA; }
 
-/* Phase 19 — AI skill card on Tab 1 driver detail panel. */
+/* Phase 19 , AI skill card on Tab 1 driver detail panel. */
 .ai-skill-card  { border-left: 3px solid var(--brand); }
 .ai-skill-title { font-size: 13px; font-weight: 700; color: var(--brand-dark); margin-bottom: 4px; letter-spacing: -0.01em; }
 .ai-skill-btn   { margin-top: 8px; }
@@ -2145,7 +2179,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .ai-skill-result-head    { font-size: 10px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
 .ai-skill-result-body    { font-family: var(--font-mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 
-/* Phase 16 · Workload mapping — mapped-infrastructure section in the
+/* Phase 16 · Workload mapping , mapped-infrastructure section in the
    workload tile detail panel. Visually adjacent to but distinct from
    the gap-link panel (which lives in Tab 4). */
 .mapped-assets-section {
@@ -2346,7 +2380,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 }
 
 /* Phase 15.3 · monospace metric numbers in roadmap project cards.
-   Reads more enterprise — counts and quantities in JetBrains Mono align
+   Reads more enterprise , counts and quantities in JetBrains Mono align
    visually like a financial table rather than a chat bubble. */
 .project-card .link-badge {
   font-family: var(--font-mono);
@@ -2371,7 +2405,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   border-radius: 999px;
 }
 /* v2.4.12 · P3 · Services-scope chip pills. Distinct from solutions-chip
- * (which carries the Dell-blue brand) — services are an orthogonal facet,
+ * (which carries the Dell-blue brand) , services are an orthogonal facet,
  * so they get a neutral slate styling. Same pill shape + spacing as
  * solutions-chip so the two rows stack cleanly on a project card. */
 .services-chip {
@@ -2466,3 +2500,56 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   color: var(--brand-dark);
 }
 .reporting-driver-name { font-weight: 600; }
+
+/* ============================================================
+   v2.5.0 · DS2 eyebrow utility (Phase 19m)
+   ============================================================
+   Mono uppercase letter-spaced caps used for section labels,
+   doc-meta, tags, breadcrumbs, tech-item captions. The single
+   most repeating visual pattern in the philosophy. */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-mute);
+  font-weight: 500;
+}
+.eyebrow-blue {
+  color: var(--dell-blue);
+  letter-spacing: 0.2em;
+}
+.eyebrow-rule {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.eyebrow-rule::before {
+  content: "";
+  display: inline-block;
+  width: 36px;
+  height: 2px;
+  background: var(--dell-blue);
+}
+
+/* DS5 dash-bullet pattern for .panel-section li */
+.panel-section ul {
+  list-style: none;
+}
+.panel-section li {
+  padding-left: 18px;
+  position: relative;
+  font-size: 13.5px;
+  color: var(--ink);
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+.panel-section li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  width: 6px;
+  height: 2px;
+  background: var(--dell-blue);
+}

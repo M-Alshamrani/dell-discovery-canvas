@@ -1,4 +1,4 @@
-// ui/components/UseAiButton.js — Phase 19b / v2.4.1
+// ui/components/UseAiButton.js , Phase 19b / v2.4.1
 //
 // Compact "✨ Use AI ▾" button attached near a tab's header. Opens a
 // dropdown listing the deployed skills for that tab. Clicking a skill
@@ -134,7 +134,7 @@ export function useAiButton(tabId, opts) {
   return wrap;
 }
 
-// v2.4.4 · proposals panel — applyPolicy-aware rendering.
+// v2.4.4 · proposals panel , applyPolicy-aware rendering.
 //   show-only         → read-only rows, no buttons
 //   confirm-per-field → Apply/Skip per row (default) + Apply all footer
 //   confirm-all       → per-row read-only, only Apply-all footer
@@ -215,7 +215,7 @@ function renderProposalsPanel(skill, runResult, policy, getContext) {
 }
 
 function formatValue(v) {
-  if (v === undefined || v === null) return "—";
+  if (v === undefined || v === null) return ",";
   if (typeof v === "string") return v.length > 80 ? v.slice(0, 80) + "…" : v;
   try { return JSON.stringify(v); } catch (e) { return String(v); }
 }

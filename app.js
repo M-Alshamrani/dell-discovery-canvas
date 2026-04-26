@@ -32,7 +32,7 @@ var REPORTING_TABS = [
   { id: "health",   label: "Heatmap"        },
   { id: "gaps",     label: "Gaps Board"     },
   { id: "vendor",   label: "Vendor Mix"     },
-  // v2.4.12 · NEW · workshop deliverable for "engagement shape" — rolls
+  // v2.4.12 · NEW · workshop deliverable for "engagement shape" , rolls
   // up gap.services chips across the session into a project-wide table.
   { id: "services", label: "Services scope" },
   { id: "roadmap",  label: "Roadmap"        }
@@ -128,7 +128,7 @@ function wireUndoBtn() {
       return;
     }
     btn.style.display = "";
-    // v2.4.5 — tooltip lists what will be reverted in order.
+    // v2.4.5 , tooltip lists what will be reverted in order.
     var labels = aiUndoStack.recentLabels(5);
     var tooltipLines = ["Undo last (" + depth + " AI change" + (depth === 1 ? "" : "s") + " tracked):"];
     labels.forEach(function(l, i) { tooltipLines.push((i + 1) + ". " + l); });
@@ -269,7 +269,7 @@ function wireFooter() {
     });
   }
 
-  // v2.4.10 · "Open file" — user selects a .canvas file, parser +
+  // v2.4.10 · "Open file" , user selects a .canvas file, parser +
   // migrator apply the envelope, session-changed bus re-renders the app.
   if (openFileBtn && openFileIn) {
     openFileBtn.addEventListener("click", function() { openFileIn.click(); });
@@ -301,12 +301,12 @@ function wireFooter() {
 
   // v2.4.9 · "Clear all data" · wipes every dell_discovery_* and ai_*
   // localStorage key and reloads the page. Distinct from "+ New session",
-  // which only empties the current session object — AI skills, provider
+  // which only empties the current session object , AI skills, provider
   // config, and undo history all survive resetSession. This button is
   // the deliberate "treat me like a brand-new user" escape hatch after
   // an upgrade, so users can see first-run UX changes (e.g. the v2.4.7
   // fresh-start welcome card) without reaching for DevTools.
-  // v2.4.10 · Save dialog — opt-in checkbox for API keys.
+  // v2.4.10 · Save dialog , opt-in checkbox for API keys.
   function openSaveDialog() {
     document.getElementById("save-dialog")?.remove();
     var overlay = document.createElement("div");
@@ -319,7 +319,7 @@ function wireFooter() {
       '<p class="dialog-body">Saves your session, AI skills library, and provider settings to a <code>.canvas</code> file. Re-open it later, back it up, or share with a colleague.</p>' +
       '<label class="save-dialog-check"><input id="saveInclKeysChk" type="checkbox" /> ' +
       'Also include my AI provider API keys in the file' +
-      '<span class="save-dialog-note">Default: off (keys stay on your machine). Tick only if you want the recipient to use your exact AI setup — anyone with the file can use your keys.</span>' +
+      '<span class="save-dialog-note">Default: off (keys stay on your machine). Tick only if you want the recipient to use your exact AI setup , anyone with the file can use your keys.</span>' +
       '</label>' +
       '<div class="form-actions">' +
       '<button id="saveDialogCancel" class="btn-secondary">Cancel</button>' +
@@ -387,7 +387,7 @@ function wireFooter() {
       var msg = "Opened " + file.name + "\n\nSaved by: Canvas v" + res.savedAppVersion +
         (res.savedAt ? " at " + res.savedAt : "");
       if (res.warnings.length) msg += "\n\nNotes:\n  • " + res.warnings.join("\n  • ");
-      // Non-blocking success — console + a brief toast would be nicer,
+      // Non-blocking success , console + a brief toast would be nicer,
       // but alert is honest feedback for v2.4.10. v2.5.x can replace with
       // a toast.
       setTimeout(function() { alert(msg); }, 0);
@@ -406,7 +406,7 @@ function wireFooter() {
         "  • Undo history\n\n" +
         "Cannot be undone. Use 'Save to file' first if you want a backup."
       )) return;
-      try { localStorage.clear(); } catch (e) { /* private mode — ignore */ }
+      try { localStorage.clear(); } catch (e) { /* private mode , ignore */ }
       // v2.4.10 · force a FRESH navigation (not just a cache-revalidating
       // reload) by appending a one-time query string. Some browsers skip
       // the module cache on location.reload() only in certain contexts;

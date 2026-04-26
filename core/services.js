@@ -1,4 +1,4 @@
-// core/services.js — Phase 19l / v2.4.12
+// core/services.js , Phase 19l / v2.4.12
 //
 // Catalog of professional-services "engagement shape" categories that can
 // be attached to any gap as a multi-select facet. The chips appear on the
@@ -6,25 +6,39 @@
 // and rolled-up across the whole session on the new Reporting "Services
 // scope" sub-tab.
 //
-// Services are NOT a separate gap type — they are a facet of any gap.
+// Services are NOT a separate gap type , they are a facet of any gap.
 // A Replace gap implies migration + deployment. A Consolidate gap implies
 // migration + integration + knowledge_transfer. SUGGESTED_SERVICES_BY_GAP_TYPE
 // drives an OPT-IN "SUGGESTED" eyebrow row above the chip selector: chips
 // appear greyed but are NOT auto-selected. User clicks to add. Less
 // surprising than auto-applying.
 
+// v2.5.0 · CD5 · `domain` field added per layered signal-color contract.
+// Domain values: "cyber" (red accent), "ops" (green accent), "data"
+// (amber accent), or null (no accent, neutral chip). Used by the gap
+// detail panel + chip rows to render a domain-coded left-bar or icon
+// background WITHOUT collision with the urgency-level chip color
+// (red/amber/green by High/Medium/Low). Two layers because they apply
+// to different visual roles.
 export const SERVICE_TYPES = [
-  { id: "assessment",         label: "Assessment / Health check",   hint: "Pre-engagement audit before the work starts" },
-  { id: "migration",          label: "Migration",                   hint: "Move data / workloads from current to desired platform" },
-  { id: "deployment",         label: "Deployment / Install",        hint: "Build out the desired-state system" },
-  { id: "integration",        label: "Integration",                 hint: "Connect to existing systems, APIs, identity, monitoring" },
-  { id: "training",           label: "Training",                    hint: "Skill the customer's ops team on the new platform" },
-  { id: "knowledge_transfer", label: "Knowledge transfer",          hint: "Hand-off documentation + walkthroughs" },
-  { id: "runbook",            label: "Runbook authoring",           hint: "Operational playbooks (DR, incident response, change-mgmt)" },
-  { id: "managed",            label: "Managed services",            hint: "Ongoing operational support contract" },
-  { id: "decommissioning",    label: "Decommissioning",             hint: "Safe removal + data archive of retired systems" },
-  { id: "custom_dev",         label: "Custom development",          hint: "Bespoke connectors, scripts, tooling" }
+  { id: "assessment",         label: "Assessment / Health check",   hint: "Pre-engagement audit before the work starts",                       domain: null   },
+  { id: "migration",          label: "Migration",                   hint: "Move data / workloads from current to desired platform",            domain: "data" },
+  { id: "deployment",         label: "Deployment / Install",        hint: "Build out the desired-state system",                                domain: null   },
+  { id: "integration",        label: "Integration",                 hint: "Connect to existing systems, APIs, identity, monitoring",           domain: "ops"  },
+  { id: "training",           label: "Training",                    hint: "Skill the customer's ops team on the new platform",                 domain: null   },
+  { id: "knowledge_transfer", label: "Knowledge transfer",          hint: "Hand-off documentation + walkthroughs",                             domain: null   },
+  { id: "runbook",            label: "Runbook authoring",           hint: "Operational playbooks (DR, incident response, change-mgmt)",        domain: "ops"  },
+  { id: "managed",            label: "Managed services",            hint: "Ongoing operational support contract",                              domain: "ops"  },
+  { id: "decommissioning",    label: "Decommissioning",             hint: "Safe removal + data archive of retired systems",                    domain: "data" },
+  { id: "custom_dev",         label: "Custom development",          hint: "Bespoke connectors, scripts, tooling",                              domain: null   }
 ];
+
+// Convenience: lookup a service's domain by id. Returns null if id is
+// unknown OR if the service has no domain mapping.
+export function serviceDomain(id) {
+  var hit = SERVICE_TYPES.find(function(s) { return s.id === id; });
+  return hit ? (hit.domain || null) : null;
+}
 
 // Auto-suggest map (gapType → suggested services). UX is OPT-IN per the
 // approved pick: chips appear under a "SUGGESTED" eyebrow but are NOT
@@ -42,7 +56,7 @@ export const SUGGESTED_SERVICES_BY_GAP_TYPE = {
   // keep gaps have null gapType → no suggested services
 };
 
-// Convenience: array of all valid service ids — used by validateGap to
+// Convenience: array of all valid service ids , used by validateGap to
 // reject unknown ids, and by normalizeServices to drop unknowns.
 export const SERVICE_IDS = SERVICE_TYPES.map(function(s) { return s.id; });
 

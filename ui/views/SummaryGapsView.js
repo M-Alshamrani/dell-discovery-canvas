@@ -1,4 +1,4 @@
-// ui/views/SummaryGapsView.js — read-only gaps kanban with detail drill-down
+// ui/views/SummaryGapsView.js , read-only gaps kanban with detail drill-down
 
 import { LAYERS, ENVIRONMENTS } from "../../core/config.js";
 import { getFilteredGaps, getGapsByPhase } from "../../services/gapsService.js";

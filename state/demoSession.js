@@ -1,9 +1,9 @@
-// state/demoSession.js — Phase 19e / v2.4.5 Foundations Refresh
+// state/demoSession.js , Phase 19e / v2.4.5 Foundations Refresh
 //
 // Demo-mode seed data. Extracted from sessionStore.js so the demo has
 // its own audit trail (docs/DEMO_CHANGELOG.md) and its own test suite
 // (diagnostics/demoSpec.js). Any data-model change landing a new field
-// MUST refresh the active persona here in the same commit — see
+// MUST refresh the active persona here in the same commit , see
 // feedback_foundational_testing.md for the process rule.
 //
 // This file also defines DEMO_PERSONAS so the user can switch verticals
@@ -84,7 +84,7 @@ function buildAcmeFinancialServices() {
         criticality:"High",   notes:"90% capacity. DB performance issues." },
       { id:"i-004", state:"current", layerId:"storage",        environmentId:"coreDc",
         label:"NetApp AFF / FAS",        vendor:"NetApp", vendorGroup:"nonDell",
-        criticality:"Medium", notes:"NAS tier — large unstructured data." },
+        criticality:"Medium", notes:"NAS tier , large unstructured data." },
       { id:"i-005", state:"current", layerId:"dataProtection", environmentId:"coreDc",
         label:"Veeam Backup & Replication", vendor:"Veeam", vendorGroup:"nonDell",
         criticality:"High",   notes:"Jobs failing 2-3x/week. No air-gap." },
@@ -122,10 +122,14 @@ function buildAcmeFinancialServices() {
         label:"Cyber Recovery Vault", vendor:"Dell", vendorGroup:"dell",
         priority:"Now",  timeline:"0-12 months",  disposition:"enhance",
         notes:"Air-gapped vault. Board priority." },
+      // v2.5.0 · §0 A2 Dell product accuracy: lead with Dell Private Cloud
+      // on PowerFlex via Dell Automation Platform; VxRail listed as the
+      // VMware-committed alternative in the gap notes only. VxRail is no
+      // longer the HCI lead per the 2026 portfolio.
       { id:"d-006", state:"desired", layerId:"virtualization", environmentId:"coreDc",
-        label:"VxRail (VMware-based)", vendor:"Dell", vendorGroup:"dell",
+        label:"Dell Private Cloud (PowerFlex + Automation Platform)", vendor:"Dell", vendorGroup:"dell",
         priority:"Next", timeline:"12-24 months", disposition:"replace",
-        originId:"i-007", notes:"Reduce VMware licensing exposure." },
+        originId:"i-007", notes:"Reduce VMware licensing exposure. VxRail remains a fallback if customer is VMware-committed." },
       // v2.4.8 · Phase 17 · exercise the remaining taxonomy values so
       // demoSpec DS18-DS22 can assert every Action is represented in
       // the default demo. "keep" (i-008 Cisco Nexus) + "retire"
@@ -139,19 +143,19 @@ function buildAcmeFinancialServices() {
         priority:"Later", timeline:"24+ months", disposition:"retire",
         originId:"i-006", notes:"Retire in favour of PowerProtect once cutover is complete." },
       // v2.4.8 · Phase 17 · anchor for the introduce-gap g-007.
-      // No originId — net-new workload with no current counterpart.
+      // No originId , net-new workload with no current counterpart.
       { id:"d-009", state:"desired", layerId:"workload", environmentId:"coreDc",
-        label:"Dell Validated Design — AI / RAG", vendor:"Dell", vendorGroup:"dell",
+        label:"Dell Validated Design , AI / RAG", vendor:"Dell", vendorGroup:"dell",
         priority:"Next", timeline:"12-24 months", disposition:"introduce",
         notes:"Board-mandated AI/RAG pilot." }
     ],
     // Gaps now carry explicit driverId (Phase 14) and the Phase 18
     // multi-linked pattern: i-005 (Veeam) is referenced by BOTH g-001
-    // and g-006 — the warn-but-allow chip should surface on the gap
+    // and g-006 , the warn-but-allow chip should surface on the gap
     // detail view.
     gaps: [
       {
-        id:"g-001", description:"No immutable backup — full ransomware exposure",
+        id:"g-001", description:"No immutable backup , full ransomware exposure",
         layerId:"dataProtection", affectedLayers:["dataProtection","storage"],
         affectedEnvironments:["coreDc"],
         gapType:"replace", urgency:"High", phase:"now",
@@ -164,7 +168,7 @@ function buildAcmeFinancialServices() {
         status:"open", reviewed:true
       },
       {
-        id:"g-002", description:"Unity XT at 90% capacity — performance degrading",
+        id:"g-002", description:"Unity XT at 90% capacity , performance degrading",
         layerId:"storage", affectedLayers:["storage"], affectedEnvironments:["coreDc"],
         gapType:"replace", urgency:"High", phase:"now",
         driverId:"modernize_infra",
@@ -175,12 +179,16 @@ function buildAcmeFinancialServices() {
         status:"open", reviewed:true
       },
       {
-        id:"g-003", description:"VMware licensing tripled — HCI modernisation needed",
+        id:"g-003", description:"VMware licensing tripled, HCI modernisation needed",
         layerId:"virtualization", affectedLayers:["virtualization","compute"],
         affectedEnvironments:["coreDc"],
         gapType:"replace", urgency:"Medium", phase:"next",
         driverId:"cost_optimization",
-        mappedDellSolutions:"VxRail (VMware-based HCI)",
+        // v2.5.0 · §0 A2 Dell product accuracy: VxRail is no longer the HCI
+        // lead in the 2026 portfolio. Lead with Dell Private Cloud on
+        // PowerFlex via Dell Automation Platform; VxRail mentioned as the
+        // VMware-committed alternative.
+        mappedDellSolutions:"Dell Private Cloud (PowerFlex + Dell Automation Platform); VxRail if customer is VMware-committed",
         notes:"Broadcom renewal due in 18 months.",
         relatedCurrentInstanceIds:["i-007"], relatedDesiredInstanceIds:["d-006"],
         services:["assessment","migration","deployment","training"],
@@ -192,7 +200,7 @@ function buildAcmeFinancialServices() {
         // which is semantically Consolidate (merge two compute platforms
         // into one Dell-standard fleet). The old shape violated the
         // Replace 1-to-1 rule that v2.4.11 now enforces at review time.
-        id:"g-004", description:"Aging compute — consolidate two vendor platforms onto PowerEdge",
+        id:"g-004", description:"Aging compute , consolidate two vendor platforms onto PowerEdge",
         layerId:"compute", affectedLayers:["compute"], affectedEnvironments:["coreDc","drDc"],
         gapType:"consolidate", urgency:"Medium", phase:"now",
         driverId:"modernize_infra",
@@ -208,7 +216,7 @@ function buildAcmeFinancialServices() {
         // to High because the cloud-spend trajectory is more urgent than
         // any single instance's criticality. Demonstrates the lock+auto
         // toggle in the gap detail UI.
-        id:"g-005", description:"No cloud governance — uncontrolled AWS spend",
+        id:"g-005", description:"No cloud governance , uncontrolled AWS spend",
         layerId:"infrastructure", affectedLayers:["infrastructure"],
         affectedEnvironments:["publicCloud"],
         gapType:"ops", urgency:"High", urgencyOverride:true, phase:"later",
@@ -222,7 +230,7 @@ function buildAcmeFinancialServices() {
       // Phase 18 multi-link: g-006 also references i-005 (Veeam) alongside g-001.
       // The gap detail view should render the warn-but-allow chip on this row.
       {
-        id:"g-006", description:"Backup platform lock-in — Veeam roadmap diverges from Dell DP",
+        id:"g-006", description:"Backup platform lock-in, Veeam roadmap diverges from Dell DP",
         layerId:"dataProtection", affectedLayers:["dataProtection"],
         affectedEnvironments:["coreDc"],
         gapType:"enhance", urgency:"Medium", phase:"next",
@@ -230,10 +238,12 @@ function buildAcmeFinancialServices() {
         mappedDellSolutions:"PowerProtect Data Manager",
         notes:"Strategic shift: consolidate DP under Dell for single-vendor SLA.",
         relatedCurrentInstanceIds:["i-005"], relatedDesiredInstanceIds:["d-004"],
-        services:["assessment"],
+        // v2.5.0 · DS24 layered-signal coverage: runbook (ops domain) added
+        // so the layered signal renders visibly from Load demo.
+        services:["assessment","runbook"],
         status:"open", reviewed:true
       },
-      // v2.4.8 · Phase 17 · "introduce" action gap — no current link, one
+      // v2.4.8 · Phase 17 · "introduce" action gap , no current link, one
       // desired link. Exercises the Introduce rule (linksCurrent: 0,
       // linksDesired: 1). Realistic scenario: board mandate to add an
       // AI/RAG workload that didn't exist in the current estate.
@@ -243,11 +253,13 @@ function buildAcmeFinancialServices() {
         affectedEnvironments:["coreDc"],
         gapType:"introduce", urgency:"Medium", phase:"next",
         driverId:"ai_data",
-        mappedDellSolutions:"Dell Validated Design — AI / RAG, PowerEdge XE (GPU/AI)",
+        mappedDellSolutions:"Dell Validated Design for AI / RAG; PowerEdge XE (GPU/AI)",
         notes:"Board-mandated GenAI pilot; no current AI workload in scope.",
         relatedCurrentInstanceIds:[],
         relatedDesiredInstanceIds:["d-009"],   // the AI/RAG desired tile
-        services:["assessment","deployment","training","custom_dev"],
+        // v2.5.0 · DS24 layered-signal coverage: integration (ops domain)
+        // added so the gap surfaces a domain accent from Load demo.
+        services:["assessment","deployment","training","custom_dev","integration"],
         status:"open", reviewed:true
       }
     ]
@@ -256,7 +268,7 @@ function buildAcmeFinancialServices() {
 
 // ── Persona · Meridian Health (Healthcare, stub) ──────────────────────
 // Lightweight second persona so the data-switch UX can be exercised in
-// the foundations refresh. Deliberately smaller than the FSI persona —
+// the foundations refresh. Deliberately smaller than the FSI persona ,
 // fill out in a later slice if workshop demand exists.
 function buildMeridianHealth() {
   return {
@@ -293,7 +305,7 @@ function buildMeridianHealth() {
     ],
     gaps: [
       {
-        id:"g-001", description:"Backup scope not HIPAA-aligned — evidence gaps",
+        id:"g-001", description:"Backup scope not HIPAA-aligned , evidence gaps",
         layerId:"dataProtection", affectedLayers:["dataProtection"],
         affectedEnvironments:["coreDc"],
         gapType:"replace", urgency:"High", phase:"now",
@@ -328,14 +340,14 @@ function buildNorthwindPublicSector() {
     instances: [
       { id:"i-001", state:"current", layerId:"compute", environmentId:"coreDc",
         label:"HPE ProLiant", vendor:"HPE", vendorGroup:"nonDell",
-        criticality:"Medium", notes:"Sovereign DC — no cloud workloads." },
+        criticality:"Medium", notes:"Sovereign DC , no cloud workloads." },
       { id:"i-003", state:"current", layerId:"storage", environmentId:"coreDc",
         label:"NetApp AFF / FAS", vendor:"NetApp", vendorGroup:"nonDell",
         criticality:"Medium", notes:"Citizen record archive." }
     ],
     gaps: [
       {
-        id:"g-001", description:"No sovereign cloud — citizen records on foreign-flagged SaaS",
+        id:"g-001", description:"No sovereign cloud , citizen records on foreign-flagged SaaS",
         layerId:"infrastructure", affectedLayers:["infrastructure","storage"],
         affectedEnvironments:["coreDc"],
         gapType:"introduce", urgency:"High", phase:"next",
@@ -359,13 +371,13 @@ export var DEMO_PERSONAS = [
   { id: "northwind-pub",  label: "Northwind Public Sector",   build: buildNorthwindPublicSector }
 ];
 
-// Primary export — preserves the v2.4.4 call signature used by
+// Primary export , preserves the v2.4.4 call signature used by
 // sessionStore and existing callers.
 export function createDemoSession() {
   return DEMO_PERSONAS[0].build();
 }
 
-// v2.4.5 — pick a persona by id. Falls back to the default if id is
+// v2.4.5 , pick a persona by id. Falls back to the default if id is
 // unknown so bad localStorage cannot break the demo reset.
 export function createDemoSessionByPersona(personaId) {
   var p = DEMO_PERSONAS.find(function(p) { return p.id === personaId; });
