@@ -95,27 +95,28 @@ Ordered for logical progression. Each bucket has locked scope in memory or SPEC.
 
 Joint spec in `docs/CHANGELOG_PLAN.md § v2.5.0` (LOCKED 2026-04-26) plus the philosophy alignment from the Dell Advisory Design System document the user provided 2026-04-26 plus the GPLC reference HTML at `C:/Users/Mahmo/Downloads/GPLC Digital Unified Platform v1.0.html`. Carried forward decisions from `project_crown_jewel_design.md` and `project_deferred_design_review.md`.
 
-**v2.5.0, LOCKED 2026-04-26** (next session, ~3 days, single tag):
-- **§0** Pre-flight audit pass: em-dash sweep, Dell product accuracy (g-003 VxRail, no Boomi, no Secureworks/Taegis post-2025, SmartFabric Director → Manager, CloudIQ under APEX AIOps), heading case (Title → sentence), default classification, topbar action audit, anti-pattern sweep on `styles.css`.
-- **§1** Design system foundation (DS1-DS8): tokens, eyebrow utility, ONE `.tag` primitive with `data-variant`, hairline section, card pattern, callout block (red / blue / green / amber 3px-left-border), shared band, mono tabular-nums.
-- **§2** Topbar + footer (TB1-TB6): white topbar replacing blue gradient; real Dell logo from `i.dell.com`; mono uppercase doc-meta strip; no Export PDF / Share; footer 2px Dell-blue top border with 3-col grid; stepper restyle to `01 02 03 04 05` mono leading-zero.
+**v2.5.0, LOCKED 2026-04-26 (revised after user feedback)** (next session, ~4 days, single tag):
+- **§0** Pre-flight audit pass: em-dash sweep, Dell product accuracy (g-003 VxRail, no Boomi, no Secureworks / Taegis post-2025, SmartFabric Director → Manager, CloudIQ under APEX AIOps, VMware as partner not Dell), heading case (Title → sentence), default classification, topbar action audit, anti-pattern sweep on `styles.css`.
+- **§1** Design system foundation (DS1-DS8): tokens (4-tier ink, 3-tier surface, hairline scale, signal palette, hover-only shadows), eyebrow utility, ONE `.tag` primitive with `data-variant`, hairline section, card pattern, callout block (red / blue / green / amber 3px-left-border), shared band, mono tabular-nums.
+- **§2** Topbar + footer (TB1-TB6): white topbar replacing blue gradient; **local Dell logo** (current asset, no CDN dependency, offline-safe); mono uppercase doc-meta strip; no Export PDF / Share; footer 2px Dell-blue top border with 3-col grid; stepper restyle to `01 02 03 04 05` mono leading-zero.
 - **§3** Color discipline (CD1-CD5): brand-blue surface area target ~5% (was ~30%); layered signal mapping (urgency level as chip color, domain as left-bar accent); single primary CTA per surface; everything else ghost / neutral.
-- **§4** Detail panel restructure (DP1-DP6): sticky head with mono crumbs + sentence-case h3 + lede + circular close; hairline-divided sections with mono caps eyebrows; 6×2px Dell-blue dash bullets; 2-col tech-grid for attribute summaries; callout integration for review-needed and AI-applied notices.
-- **§5** Reporting drawer pattern (DR1-DR6, Tab 5 only): NEW `ui/components/Drawer.js` module; click gap / project / service on Reporting → drawer slides in from right at 560px width; backdrop + Escape + ✕ close paths; Tabs 1-4 keep side-by-side persistent panel and adopt the drawer's INTERNAL structure only.
+- **§4** Detail panel restructure (DP1-DP10): research-grounded universal template covering all five entity types (gap, current tile, desired tile, project, service, driver). Sticky head with mono crumbs + sentence-case h3 + lede; STATUS STRIP signal chips; KEY ATTRIBUTES tech-grid 2-col mini-cards (Miller chunk); hairline-divided sections each with mono caps blue eyebrow; 6×2px Dell-blue dash bullets; sections render only when relevant data exists (Hick's Law); first-field auto-focus on add-mode; sticky footer with primary CTA bottom-right (Fitts's Law); callout integration for review-needed + AI-applied + closed + auto-driver notices.
+- **§5** Drawer pattern (DR1-DR9), **drawer-everywhere on Tabs 1-5** (was Tab 5 only): NEW `ui/components/Drawer.js` module; click any entity (driver, current tile, desired tile, gap, project, service) opens the drawer slide-in from right at 560px width; backdrop + Escape + ✕ close paths; content-swap on different-card-click; add-new-entity flow with auto-focused first field; left panel takes the FULL viewport width on every tab (free-win extra real estate for kanban / matrix / context form / sub-tabs).
+- **§AI** AI assist mounting (AI1-AI5), **pulled forward from v2.5.1 U4**: every entity drawer body has an AI ASSIST section as the last body section (predictable location, recognition over recall). `useAiButton` mounted in driver / current-tile / desired-tile / gap / project / service drawers, each filtered to the relevant tab's seed-skill list.
 - **§6** Cross-tab filter system (F1-F6): body data-attribute pattern; multi-chip selectors on Tab 4 + Reporting Gaps Board for layer / gapType / services / environment / driver; non-matching items dim to opacity 0.18-0.30 + grayscale(.5); match-mode toggle (default OR); persistence to `localStorage`.
-- **§7** Services scope sub-tab redesign (SR1-SR4): replace primitive table with hero summary card + per-service grid cards + DR5 click-to-drawer + concentration-risk callouts.
+- **§7** Services scope sub-tab redesign (SR1-SR4): replace primitive table with hero summary card + per-service grid cards + drawer click-to-detail + concentration-risk callouts.
 - **§8** Tag vocabulary migration (TV1-TV9): all 11+ chip / badge / pill classes consolidated to `.tag[data-variant=...]`.
-- **§9** Tests (Suite 44 VT1-VT15 + DS24): token presence, eyebrow utility, single tag primitive, drawer module, filter behaviors, dash bullet, em-dash absence, services-scope cards.
-- **§R** Regression guards: v2.4.12 R1-R10 stay green; new R1-R12 cover the visual rework + Dell product accuracy + drawer paths + color audit.
-- **Hard rules baked in**: no em dashes anywhere; sentence case headings; real Dell logo; hover-only shadows; ONE `.tag` primitive; drawer scope is Tab 5 only (hybrid pattern); layered signal colors.
+- **§9** Tests (Suite 44 VT1-VT20 + DS24): token presence, eyebrow utility, single tag primitive, drawer module, content-swap, AI mount on every entity, filter behaviors, dash bullet, em-dash absence, services-scope cards.
+- **§R** Regression guards: v2.4.12 R1-R10 stay green; new R1-R18 cover drawer-everywhere + AI mount + edit-by-default + Dell product accuracy + color audit + em-dash sweep.
+- **Hard rules baked in**: no em dashes anywhere; sentence case headings; **local Dell logo** (no CDN); hover-only shadows; ONE `.tag` primitive; **drawer-everywhere on Tabs 1-5** (the full GPLC interaction model, not hybrid); AI ASSIST on every entity drawer; layered signal colors; **edit-by-default stays** (no view/edit toggle, ever).
 
-**v2.5.1, queued after v2.5.0 sign-off** (~2 days, separate tag):
-- **U4** "✨ Use AI" button placement on Tabs 2-5 (currently only Tab 1 driver detail).
+**v2.5.1, queued after v2.5.0 sign-off, scope reduced 2026-04-26** (~1.5 days, separate tag):
 - **VC** Vocabulary unification across Gaps (Tab 4) and Roadmap (Tab 5.5).
-- **GV** Visible Gap → Project relationship affordances.
+- **GV** Visible Gap → Project relationship affordances ("trace this gap to its project", "show me the gaps in this project").
 - **PL** Primary-layer semantics rework (`gap.layerId` vs `affectedLayers[]`). Data model touchpoint, explicit spec round before code.
-- **IC** SVG icon system (Lucide library); replace all emoji with stroke icons at uniform 16/20/24px sizes.
-- **EP** Edit-side panel polish refinements once v2.5.0 §4 patterns land.
+- **IC** SVG icon system (Lucide library); replace all emoji with stroke icons at uniform 16 / 20 / 24px sizes.
+
+Pulled into v2.5.0 from the original v2.5.1 list: U4 (AI button placement on Tabs 2-5), drawer-everywhere (was hybrid Tab 5 only), edit-side panel polish (absorbed into §4 universal template). Explicitly NOT added to v2.5.1: view/edit-mode toggle (locked closed per user decision 2026-04-26).
 
 **v2.4.9 remains the pre-crown-jewel rollback anchor**. v2.4.12 is now the safe state; if v2.5.0 sideways, roll to v2.4.12.
 

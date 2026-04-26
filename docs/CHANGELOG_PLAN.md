@@ -948,7 +948,9 @@ Discovery Canvas at v2.4.12 has the right tokens (Inter, JetBrains Mono, Dell pa
 
 | Decision | Why |
 |---|---|
-| **Hybrid drawer pattern**: drawer (slide-in modal) on Tab 5 Reporting only. Tabs 1-4 keep side-by-side persistent right panel. Tabs 1-4 adopt the drawer's INTERNAL structure (sticky head, mono caps eyebrows, hairline-divided sections, tech-grid summaries) but no slide animation. | Reporting is consumption mode; drawer focus works. Tabs 1-4 are edit mode where the user clicks back and forth between list and detail while typing; modal would break flow. |
+| **Drawer-everywhere on Tabs 1-5**: every entity opens in the slide-in drawer pattern. Click a driver tile, current tile, desired tile, gap card, project card, or service row, the drawer slides in from the right at 560px width. Tabs 1-4 lose the persistent right panel; the left panel takes the full viewport width. The drawer carries the visual meat (sections, signal chips, edit fields, AI assist, save/cancel actions). Click another card while a drawer is open: the body content transitions in place, no close-then-open. Click backdrop / press Escape / click ✕: drawer closes. | The user reviewed the GPLC sample and confirmed the drawer pattern is the desired interaction model across the whole app. Edit-flow concerns are mitigated because the kanban / matrix is still ~75% visible behind the drawer on standard monitors, and clicking another card transitions the drawer content rather than forcing close-then-reopen. |
+| **No view/edit-mode toggle**: edit-heavy entities (gaps, current and desired tiles, drivers) keep edit-by-default; click a card, drawer opens with form fields focused. Read-only entities (projects, services scope) are read-by-default by virtue of being computed. The "view first, click Edit" pattern from mainstream SaaS adds a click per tile across hundreds of tiles in a workshop session, with no offsetting benefit because the panels are already short and the app is single-user. | User decision 2026-04-26 after weighing the workflow cost. Locked: do not add view/edit toggle in v2.5.0 or v2.5.1. |
+| **Local Dell logo**: keep the current local `Logo/` asset. No `i.dell.com` CDN dependency. The philosophy's "brand divider + two-line brand text" pattern wraps the local asset. | User decision 2026-04-26: offline-safe testing, no broken-image risk, local logo already correct. |
 | **Layered signal colors**: urgency level (High / Medium / Low) renders red / amber / green respectively as chip color. Domain (cyber resilience driver, ops gap type, data-protection layer, etc.) renders red / green / amber as a left-bar accent or icon background. Blue is reserved for Dell-mapped solutions and the single primary CTA per surface. Two layers do not collide because they apply to different visual roles (chip color vs accent line vs icon background). | Honors "ONE signature color" while still using the philosophy's signal palette where it carries real meaning. |
 | **No em dashes anywhere**: UI copy, comments, docs, demo session text, seed-skill prompts. Use commas, periods, parentheses, colons. | Philosophy hard rule. Em dashes read AI-generated and the user catches them. |
 | **Sentence case for headings**, Title Case reserved for proper nouns. | Philosophy rule. |
@@ -996,7 +998,7 @@ Header is the most visible "this is the new design" surface. Get this right and 
 | # | Item | Effort |
 |---|---|---|
 | **TB1** | White topbar with bottom hairline, replacing the blue-gradient `.app-header`. Sticky, 72px tall, `backdrop-filter: saturate(180%) blur(8px)`. | 30 min |
-| **TB2** | Real Dell logo from `i.dell.com` CDN at 44px tall with brand divider (1px × 32px `--rule-strong`) and brand text (two-line: Inter 600 13px application name + JetBrains Mono 10.5px uppercase mute subtitle). Falls back to local `Logo/` asset if CDN unavailable. | 30 min |
+| **TB2** | Keep current local Dell logo asset. 44px tall, locally hosted, offline-safe. Wrap with brand divider (1px × 32px `--rule-strong`) and brand text (two-line: Inter 600 13px application name + JetBrains Mono 10.5px uppercase mute subtitle "DISCOVERY CANVAS · DELL TECHNOLOGIES"). No CDN dependency. | 20 min |
 | **TB3** | Doc-meta strip in the centre column: mono 10.5px uppercase 0.06em letter-spacing, customer name + date + status + canvas version, separated by 1px × 14px vertical rules. Replaces today's pipe-delimited string. | 30 min |
 | **TB4** | Topbar actions on the right column. Keep: gear (settings), Undo button (when applicable). Verify: no Export PDF, no Share, no marketing copy. | 15 min |
 | **TB5** | Footer rework. 2px Dell-blue top border, 3-column grid (about / prepared by / classification stamp). Matches the philosophy footer pattern at lower density (no register / contact info needed for an internal workshop tool). | 30 min |
@@ -1014,31 +1016,102 @@ Brings brand-blue surface area from ~30% to ~5% of pixels.
 | **CD4** | Single primary CTA per surface in solid Dell-blue. Everything else is `.btn-ghost` (border only, ink-soft text, hover changes border + text to blue). Audit: "Save context", "Save changes", "Approve draft", "Load demo", "+ Add gap", "↻ Refresh", "✓ Apply", "Skip", etc. Identify the ONE primary per view; demote the rest. | view files |
 | **CD5** | Color-coded domain mapping baked into `core/services.js` (or a new `core/domains.js` if cleaner). Each catalog id has an optional `domain: "cyber" \| "ops" \| "data" \| null` so the chip can pick its accent automatically. Migration / deployment / training default to null. Runbook + managed → "ops". Decommissioning → "ops". Assessment → null. | `core/services.js`, `ui/views/GapsEditView.js` |
 
-### Section 4 · Detail panel restructure (DP1-DP6)
+### Section 4 · Detail panel restructure (DP1-DP10)
 
-Apply the GPLC slide-out panel internal pattern to every detail panel render, regardless of whether the panel is drawer-mode (Tab 5) or side-by-side mode (Tabs 1-4).
+Universal template applied to every detail panel across all five tabs. Same shell, body sections vary by entity. The template grounds in three cognitive-psychology principles:
+
+- **Miller's Law (~7±2 chunks in working memory)**: chunk attributes into 4-6 visual units via the tech-grid 2-col mini-cards. Sections of 5-6 lines max.
+- **Hick's Law (decision time scales with log of options)**: collapse non-essential sections by default. Sections render only when relevant data exists.
+- **Gestalt principles** (proximity, similarity, closure): hairline rules group sections without heavy borders. Repeating chip / eyebrow / link patterns aid recognition over recall.
+- **Fitts's Law**: primary CTA in sticky footer at bottom-right (canonical). Cancel left, demoted.
+
+#### Universal template (every drawer body renders this shell)
+
+```
+┌─ Sticky head ──────────────────────────────┐
+│ MONO CRUMBS · CONTEXT · LEAF          ✕   │  orientation
+│ Sentence case title (26px)                 │  what is this
+│ One-line lede (14.5px ink-soft)            │  why it matters in one breath
+└────────────────────────────────────────────┘
+┌─ Body (scrollable) ────────────────────────┐
+│ STATUS STRIP (signal chips, optional)       │  ≤3 chips, at-a-glance
+│ ───hairline─────────────────────────────── │
+│ KEY ATTRIBUTES (tech-grid 2-col × N rows)   │  Miller chunk
+│ ───hairline─────────────────────────────── │
+│ ENTITY-SPECIFIC SECTIONS (vary)             │
+│   • each with mono caps blue eyebrow        │  similarity / closure
+│   • hairline between sections               │
+│   • dash-bullet lists, chip rows, tech-grid │
+│ ───hairline─────────────────────────────── │
+│ AI ASSIST (always last, before footer)      │  predictable location
+│   [✨ Use AI ▾] (skills filtered by entity) │
+└────────────────────────────────────────────┘
+┌─ Sticky footer (actions, edit-mode only) ──┐
+│ [Cancel]  [secondary]    [Save] (primary)  │  Fitts: bottom-right
+└────────────────────────────────────────────┘
+```
+
+#### Per-entity body adaptations (shell stays, sections vary)
+
+| Entity | Where it lives | Body sections in order |
+|---|---|---|
+| **Gap** | Tab 4 click any gap card · Tab 5 Gaps Board click any gap card | STATUS STRIP / KEY ATTRIBUTES / MAPPED DELL SOLUTIONS / SERVICES NEEDED / BUSINESS CONTEXT / AFFECTED LAYERS / LINKED INSTANCES / AI ASSIST |
+| **Current tile** | Tab 2 click any tile | STATUS STRIP / KEY ATTRIBUTES / MAPPED ASSETS (Phase 16 workload mapping) / BUSINESS CONTEXT / LINKED GAPS / AI ASSIST |
+| **Desired tile** | Tab 3 click any tile | STATUS STRIP / KEY ATTRIBUTES / DELL SOLUTION FAMILY (matched, optional) / DISPOSITION + ORIGIN / BUSINESS CONTEXT / LINKED GAPS / AI ASSIST |
+| **Project** | Tab 5 Roadmap click any project card | STATUS STRIP / KEY ATTRIBUTES (env, layer, gapType, phase, urgency, gap-count) / DRIVER / CONSTITUENT GAPS (list with click-to-navigate) / DELL SOLUTIONS / SERVICES SCOPE / AI ASSIST |
+| **Service** | Tab 5 Services scope click any per-service row | KEY ATTRIBUTES (id, gap-count, project-count) / TYPICAL SCOPE (catalog hint expanded into one paragraph) / GAPS USING THIS SERVICE / PROJECTS / AI ASSIST |
+| **Driver** | Tab 1 click any driver tile | KEY ATTRIBUTES (priority, gap count, project count) / CONVERSATION STARTER (the strategic question text) / OUTCOMES (textarea) / LINKED GAPS / AI ASSIST |
+
+Five entity types, one structural template. Once a presales engineer has used one drawer they know how to navigate every other drawer.
+
+#### DP items
 
 | # | Item | Files |
 |---|---|---|
-| **DP1** | Sticky head pattern. Mono uppercase breadcrumbs (`GAP · CYBER RESILIENCE · REPLACE · DATA PROTECTION`), 26px sentence-case h3 title, 14.5px lede, 32px circular close button (only on drawer-mode panels). | all detail panel renders |
-| **DP2** | Hairline-divided sections inside the panel body. Each section has a mono uppercase eyebrow (`MAPPED DELL SOLUTIONS`, `SERVICES NEEDED`, `BUSINESS CONTEXT`, `AFFECTED LAYERS`). 1px top hairline + 22px top padding between sections (first section has no hairline). | same |
-| **DP3** | Bullet list pattern. Replace `•` and default `<ul>` styling with the GPLC dash-bullet: 6×2px Dell-blue rectangle 9px from top of each `<li>`. 13.5px Inter, ink color, 1.5 line-height. Used for solutions lists, criteria lists, recommendations. | `styles.css` (`.panel-section li::before`) |
-| **DP4** | Tech-grid pattern (2-col grid of mini-cards). 12-14px padding, soft Dell-blue-faint background, 3px Dell-blue left border, mono uppercase 10px label + 13px Inter 500 value. Used for attribute summaries (e.g., `URGENCY · High`, `PHASE · Now`, `LAYER · Data Protection`, `STATUS · Open`). | `styles.css`, view renders |
-| **DP5** | Migrate every detail panel render to the new pattern. Sites: `ui/views/GapsEditView.js renderGapDetail`, `ui/views/MatrixView.js` tile detail, `ui/views/SummaryGapsView.js renderGapDetail`, `ui/views/SummaryRoadmapView.js renderProjectDetail`. Keep functional contracts (save buttons, link rows) intact; only restructure markup + styling. | view files |
-| **DP6** | Callout integration. Inside detail panels, integrate the DS6 callout block for: "Review needed" notices (red callout), AI auto-applied notices (blue callout), recently-closed gaps (amber), and AI-suggested-driver chip (blue). Replaces today's inline `.review-needed-banner` and `.auto-driver-chip` styles. | `ui/views/GapsEditView.js`, `styles.css` |
+| **DP1** | Sticky head pattern. Mono uppercase breadcrumbs (`GAP · CYBER RESILIENCE · REPLACE · DATA PROTECTION` for a gap; `DRIVER · CYBER RESILIENCE` for a driver; etc.), 26px sentence-case h3 title, 14.5px lede (one breath of context), 32px circular close button. | all detail-panel renders |
+| **DP2** | STATUS STRIP. Up to 3 signal chips (urgency, gapType, status, priority) rendered as `.tag[data-variant="signal-r/a/g"]` or `.tag[data-variant="emphasis"]`. Sits above tech-grid; absent when no signals apply (Hick's Law: don't show empty rows). | all renders |
+| **DP3** | KEY ATTRIBUTES tech-grid (2-col × N rows). 12-14px padding per cell, soft Dell-blue-faint background, 3px Dell-blue left border, mono uppercase 10px label + 13px Inter 500 value. 4-6 cells per panel (Miller chunk). | `styles.css`, all renders |
+| **DP4** | Hairline-divided sections in the body. Each section has a mono uppercase blue eyebrow (`MAPPED DELL SOLUTIONS`, `SERVICES NEEDED`, `BUSINESS CONTEXT`, `LINKED INSTANCES`, `AI ASSIST`). 1px top hairline + 22-24px top padding between sections. First section has no hairline. | `styles.css`, all renders |
+| **DP5** | Dash-bullet list pattern. Replace `•` and default `<ul>` styling with the GPLC dash-bullet: 6×2px Dell-blue rectangle 9px from top of each `<li>`. 13.5px Inter, ink color, 1.5 line-height. Used for solutions lists, linked instances, constituent gaps. | `styles.css` (`.panel-section li::before`) |
+| **DP6** | Sticky footer for edit-heavy entity types (gap, tile, driver). Cancel left, secondary middle (e.g. "Approve draft"), primary "Save" right per Fitts. Read-only entities (project, service) have no footer; the drawer has only a close button in the head. | view renders |
+| **DP7** | Sections render only when their data exists (Hick's Law). Examples: "Affected layers" hidden when only one layer; "Linked instances" hidden when zero; "Mapped Dell solutions" shows "None mapped yet" inline rather than the section heading when empty (better than hiding, because the absence is informative for a Dell-mapping workshop). | per-entity view renders |
+| **DP8** | Callout integration. Inside drawer bodies, the DS6 callout block surfaces: red callout for "Review needed" notices on auto-drafted gaps, blue callout for AI-applied changes (cite the skill name + the count), amber callout for recently-closed gaps, blue callout for the auto-suggested-driver chip when the driver is inferred. Replaces today's inline `.review-needed-banner` and `.auto-driver-chip` styles. | view renders, `styles.css` |
+| **DP9** | First field auto-focus on drawer open for edit-heavy entities. Adding a new gap: focus the description input. Editing an existing gap: leave focus off (read mode), require user to tab into a field. Adding a new tile: focus the label input. Reduces clicks for the common workshop entry path. | drawer wiring in views |
+| **DP10** | Migrate every existing detail-panel render to the new template. Sites: `ui/views/ContextView.js` (driver detail), `ui/views/MatrixView.js` (current + desired tile detail), `ui/views/GapsEditView.js renderGapDetail`, `ui/views/SummaryGapsView.js renderGapDetail`, `ui/views/SummaryRoadmapView.js renderProjectDetail`, `ui/views/SummaryServicesView.js` (NEW per-service drawer body, see SR1). Keep functional contracts (save buttons, link navigation, AI button mounting) intact; only restructure markup + styling. | all view files |
 
-### Section 5 · Reporting drawer pattern (DR1-DR6), Tab 5 only
+### Section 5 · Drawer pattern, drawer-everywhere on Tabs 1-5 (DR1-DR9)
 
-The "wow" interaction. Click a project / gap / service on Reporting, drawer slides in from right, focused detail, click outside or Escape to dismiss.
+Universal interaction model. Click any entity card / tile / row on any tab, drawer slides in from the right at 560px width, body renders per the §4 universal template. The right panel as a fixed half-viewport disappears entirely; the left panel takes the full viewport width on every tab. Free-win extra real estate for the kanban (Tab 4), matrix grid (Tabs 2-3), context form + driver tiles (Tab 1), and reporting sub-tabs (Tab 5).
 
 | # | Item | Files |
 |---|---|---|
-| **DR1** | Drawer container module. New file `ui/components/Drawer.js` exporting `openDrawer({ crumbs, title, lede, body })` and `closeDrawer()`. Module owns the backdrop element + panel element, handles slide-in / slide-out animation, sticky head construction, body scroll, focus trap, Escape key handler. | NEW `ui/components/Drawer.js` |
-| **DR2** | Backdrop behavior. Click anywhere on backdrop → close. Escape → close. ✕ button → close. Click inside panel → no propagation. Body gets `overflow: hidden` while open to prevent background scroll. | same |
-| **DR3** | Wire `SummaryGapsView` gap card click → `openDrawer({ ... })` with the existing detail content (DP-restructured). Today's `.detail-panel` in the right pane is replaced by the drawer (the right pane shows a placeholder or the next-action hint instead). | `ui/views/SummaryGapsView.js` |
-| **DR4** | Wire `SummaryRoadmapView` project card click → `openDrawer({ ... })` with project detail content (gap list, services scope, dell solutions, drivers, phase rollup). Today's `.right-panel` project detail moves to drawer. | `ui/views/SummaryRoadmapView.js` |
-| **DR5** | Wire `SummaryServicesView` per-service-row click → `openDrawer({ ... })` with the list of gaps + projects that need that service plus a "what this typically involves" body. Adds a new affordance the v2.4.12 sub-tab did not have. | `ui/views/SummaryServicesView.js` |
-| **DR6** | Tabs 1-4 explicitly DO NOT use the drawer pattern. They keep side-by-side persistent right panel (existing layout). They DO adopt the drawer's internal structure from §4 DP1-DP4 (sticky head, mono eyebrows, hairlines, tech-grid). Visual consistency without flow disruption. | `ui/views/ContextView.js`, `ui/views/MatrixView.js`, `ui/views/GapsEditView.js` |
+| **DR1** | Drawer container module. NEW `ui/components/Drawer.js` exporting `openDrawer({ crumbs, title, lede, body, footer, kind })` and `closeDrawer()`. The module owns the backdrop element + panel element, handles slide-in / slide-out animation (300ms cubic-bezier .4 0 .2 1), sticky head construction, body scroll, focus management, Escape key handler. `kind` parameter is one of `gap / current-tile / desired-tile / project / service / driver` so the module can apply entity-specific styling hooks. | NEW `ui/components/Drawer.js` |
+| **DR2** | Close paths. Click anywhere on backdrop → close. Escape key → close. ✕ button → close. Click inside panel body or head → no propagation. Body gets `overflow: hidden` while drawer is open to prevent background scroll. Save button click on edit-mode footer triggers save then close. | same |
+| **DR3** | Tab 1 Context wiring. ContextView's left panel shows the customer identity form + driver tiles full-width. Click a driver tile → drawer opens with driver body (KEY ATTRIBUTES / CONVERSATION STARTER / OUTCOMES textarea / LINKED GAPS / AI ASSIST). The right panel as a fixed half-viewport is removed. | `ui/views/ContextView.js` |
+| **DR4** | Tabs 2 + 3 Current and Desired State wiring. MatrixView's left panel shows the matrix grid full-width (more columns visible at once, larger cells, easier scanning). Click a tile → drawer opens with tile body (STATUS STRIP / KEY ATTRIBUTES / MAPPED ASSETS or DELL SOLUTION FAMILY / BUSINESS CONTEXT / LINKED GAPS / AI ASSIST). | `ui/views/MatrixView.js` |
+| **DR5** | Tab 4 Gaps wiring. GapsEditView's left panel shows the kanban full-width (3 columns visible without compression, gap cards larger, easier triage). Click a gap card → drawer opens with gap body (full universal template). | `ui/views/GapsEditView.js` |
+| **DR6** | Tab 5 Reporting wiring. Sub-tab content takes full width. Click a gap card on Gaps Board → drawer with gap body. Click a project card on Roadmap → drawer with project body. Click a per-service row on Services scope → drawer with service body (NEW affordance the v2.4.12 sub-tab did not have). | `ui/views/SummaryGapsView.js`, `ui/views/SummaryRoadmapView.js`, `ui/views/SummaryServicesView.js` |
+| **DR7** | Content-swap on different-card-click. While drawer A is open, clicking another card transitions the drawer body in place: head crumbs + title + lede update, body sections fade-swap (160ms ease), no close-then-reopen. Edit-mode entities prompt for unsaved-changes confirmation before swap. | `ui/components/Drawer.js`, view click handlers |
+| **DR8** | Add-new-entity flow. Click "+ Add gap" / "+ Add tile" / "+ Add driver" → drawer opens with empty form, first field auto-focused (DP9). Add-mode footer has Cancel + Save (no Approve etc.). Save closes the drawer + revalidates the left-panel list. | view click handlers |
+| **DR9** | Drawer state on hard refresh. Drawer closes by default after refresh; the user returns to the left-panel list. Optional future enhancement: persist last-opened entity id to deep-link back, deferred to v2.5.1 if requested. | `state/sessionStore.js` (no change in v2.5.0; documented for v2.5.1) |
+
+### Section AI · AI assist mounting on every entity drawer (AI1-AI5)
+
+Pulled forward from v2.5.1 U4 per user direction 2026-04-26. Rationale: today's `useAiButton` only mounts inside ContextView's driver-detail right panel, a residual v2.4.0 prototype. Every entity has at least one seed skill targeting it; every drawer body should expose the affordance in the same place.
+
+Predictable location: the AI ASSIST section is always the last body section before the sticky footer (per §4 universal template). User scans any drawer top-to-bottom and finds AI in the same spot every time. Recognition over recall.
+
+| # | Item | Files |
+|---|---|---|
+| **AI1** | Mount `useAiButton("context", { ... })` in the driver drawer body (Tab 1). Replaces the current ContextView right-panel mounting which goes away with drawer-everywhere. Skill list filters to context-tab skills (`skill-driver-questions-seed`, `skill-context-driver-tuner-seed`). | `ui/views/ContextView.js` |
+| **AI2** | Mount `useAiButton("current", { ... })` in the current-tile drawer body (Tab 2). Skill list filters to current-tab skills (`skill-current-tile-tuner-seed`). | `ui/views/MatrixView.js` |
+| **AI3** | Mount `useAiButton("desired", { ... })` in the desired-tile drawer body (Tab 3). Skill list filters to desired-tab skills (`skill-desired-tile-tuner-seed`). | same |
+| **AI4** | Mount `useAiButton("gaps", { ... })` in the gap drawer body (Tab 4 + Tab 5 Gaps Board). Skill list filters to gaps-tab skills (`skill-gap-rewriter-seed`, `skill-gap-services-suggester-seed`). | `ui/views/GapsEditView.js`, `ui/views/SummaryGapsView.js` |
+| **AI5** | Mount `useAiButton("reporting", { ... })` in the project drawer body (Tab 5 Roadmap). Skill list filters to reporting-tab skills (`skill-reporting-narrator-seed`). Service drawer (Services scope) mounts the same context with the service entity passed via `getContext()` so a future service-narrator skill can target it without code change. | `ui/views/SummaryRoadmapView.js`, `ui/views/SummaryServicesView.js` |
+
+Style: AI ASSIST eyebrow renders mono caps blue per §4 DP4. Below the eyebrow, the `useAiButton` instance + a 12px Inter ink-soft hint ("Run any deployed skill targeting this {entity-type}. Manage skills via the gear icon → Skills section.") matches the philosophy's "considered, restrained" copy convention.
+
+PR2 wiring from v2.4.12 (skill-registry change bus + auto-refresh) carries forward unchanged. Adding a skill via Skill Builder while a drawer is open auto-refreshes the dropdown without close-then-reopen.
 
 ### Section 6 · Cross-tab filter system (F1-F6)
 
@@ -1090,17 +1163,22 @@ After migration, none of the From-classes appear in any rendered DOM. Suite 44 e
 | **VT2** | DS2 eyebrow utility | A test fixture with `<span class="eyebrow">label</span>` resolves to mono font, uppercase text-transform, letter-spacing >= 0.18em |
 | **VT3** | DS3 single tag primitive | Render any view with chips; assert NO element has class `.urgency-badge` / `.type-badge` / `.status-badge` / `.priority-chip` / `.chip-filter` (non-tag) / `.solutions-chip` etc. Every chip-like element has class `.tag` and a valid `data-variant`. |
 | **VT4** | TB1 white topbar | `getComputedStyle(.topbar).backgroundColor` matches `--canvas` (or `rgb(255,255,255)` equivalent). No linear-gradient on header. |
-| **VT5** | TB2 real Dell logo | `<img>` or `<svg>` in topbar with src referencing `i.dell.com` OR a local `Logo/` asset, NOT a placeholder text "D". |
+| **VT5** | TB2 local Dell logo | `<img>` or `<svg>` in topbar with src referencing the local `Logo/` asset path. NOT pulled from `i.dell.com` CDN. NOT a placeholder text "D". |
 | **VT6** | TB6 stepper leading-zero | Each step element renders text matching `/^0[1-5]\b/` (mono leading-zero) followed by sentence-case label. |
 | **VT7** | DR1-DR2 drawer module | `openDrawer({...})` adds `.panel.open` to DOM; `closeDrawer()` removes it; Escape key triggers close; backdrop click triggers close; click inside panel does NOT close. |
-| **VT8** | DR3 SummaryGapsView click → drawer | Render SummaryGapsView, click a gap card, assert `.panel.open` present and contains the gap title. |
-| **VT9** | DR4 SummaryRoadmapView click → drawer | Same shape for project click. |
-| **VT10** | F1 filter body data attributes | Setting `body[data-filter-services="migration"]` causes `.gap-card` lacking `data-services~="migration"` to receive opacity < 0.4 via the CSS rule. |
-| **VT11** | F2-F4 filter chip behaviors | Click chip → adds to `body[data-filter-*]`; re-click → removes; toggle "Match all" flips OR to AND on the dim selector. |
-| **VT12** | SR1-SR2 services-scope cards | `renderSummaryServicesView` renders >= 1 `.service-card` element with mono id, label, hint, gap-count, project-count when a session has services attached. |
-| **VT13** | DP1 sticky head | Every detail panel (gap, project, service) has a `<div class="panel-head">` with `.panel-crumbs` + `<h3>` + `.panel-lede` (lede may be empty for tabs without a lede). |
-| **VT14** | DP3 dash bullet | `.panel-section li::before` resolves to a 6×2px element with background `--dell-blue`. Asserted via getComputedStyle on a fixture. |
-| **VT15** | A1 em-dash absence | Read all source files (UI copy paths only, not test fixtures) and assert no Unicode em dash (U+2014) present. (Implemented as a build-time check; v2.5.0 enforces in test runner via `fetch('/styles.css')` text scan + a curated list of UI-copy paths.) |
+| **VT8** | DR3 Tab 1 driver tile click → drawer | Render ContextView, click a driver tile, assert `.panel.open` present and contains the driver title and CONVERSATION STARTER section eyebrow. |
+| **VT9** | DR4 Tab 2 + 3 tile click → drawer | Render MatrixView for current state, click any tile, assert drawer opens with KEY ATTRIBUTES tech-grid. Same for desired state. |
+| **VT10** | DR5 Tab 4 gap card click → drawer | Render GapsEditView, click any gap card, assert drawer opens with the gap title in the head and a SERVICES NEEDED section in the body. |
+| **VT11** | DR6 Tab 5 click paths → drawer | SummaryGapsView gap-card click + SummaryRoadmapView project-card click + SummaryServicesView per-service-row click each open the drawer with the entity's title. |
+| **VT12** | DR7 content swap on different-card-click | While drawer A is open, click another card; assert drawer remains `.panel.open` (no close-then-open) and the title text updates to the new entity. Edit-mode entities prompt unsaved-changes confirm before swap (asserted via mock confirm). |
+| **VT13** | DP1 sticky head shape | Every entity drawer body (gap / current-tile / desired-tile / project / service / driver) has a `<div class="panel-head">` with `.panel-crumbs` + `<h3>` + `.panel-lede` (lede may be empty for entities without a lede). |
+| **VT14** | DP3 KEY ATTRIBUTES tech-grid | Every drawer body for an entity that has key attributes contains a `<div class="tech-grid">` with at least 4 `.tech-item` cells (each with mono caps label + value). |
+| **VT15** | DP5 dash bullet | `.panel-section li::before` resolves to a 6×2px element with background `--dell-blue`. |
+| **VT16** | AI1-AI5 AI ASSIST mounted on every entity drawer | Every drawer body has an `AI ASSIST` eyebrow followed by a `.use-ai-wrap` element. Wired with the correct tabId per entity (driver → context, current tile → current, desired tile → desired, gap → gaps, project / service → reporting). |
+| **VT17** | F1 filter body data attributes | Setting `body[data-filter-services="migration"]` causes `.gap-card` lacking `data-services~="migration"` to receive opacity < 0.4 via the CSS rule. |
+| **VT18** | F2-F4 filter chip behaviors | Click chip → adds to `body[data-filter-*]`; re-click → removes; toggle "Match all" flips OR to AND on the dim selector. |
+| **VT19** | SR1-SR2 services-scope cards | `renderSummaryServicesView` renders >= 1 `.service-card` element with mono id, label, hint, gap-count, project-count when a session has services attached. |
+| **VT20** | A1 em-dash absence | Test runner scans every served `.js` and `.css` file plus selected `.md` paths for U+2014 em-dash. Assert zero. (Implemented via `fetch()` of file paths from a curated allow-list and string scan.) |
 
 Plus DS24 in `demoSpec.js`: every demo gap's services array has at least one entry with a known `domain` mapping (cyber / ops / data) so the layered signal color renders visibly from Load demo.
 
@@ -1112,23 +1190,31 @@ v2.5.0 must not break the v2.4.12 functional surface. Every existing test stays 
 |---|---|
 | **R1** v2.4.12 R1-R10 | All ten v2.4.12 regression guards still pass (banner persistence, skill bus, services chips, project rollup, sub-tab render, JSON round-trip, no console errors). |
 | **R2** Picker (P1) survives migration | Tab 4 gap detail "+ Add service" picker still exposes the full catalog after the chip / DS3 / DP migrations. |
-| **R3** Reporting Gaps Board click → drawer | Drawer opens in slide-in from right with services chip row visible (was inline detail panel in v2.4.12). |
-| **R4** Drawer close paths | Clicking backdrop + pressing Escape + clicking ✕ all close the drawer with reverse-slide. |
-| **R5** Filter re-render | Activating a `services: migration` filter dims non-matching gap cards on Tab 4 + Reporting Gaps Board to opacity 0.18-0.30 + grayscale(.5). Re-click clears. |
-| **R6** Topbar version chip | Reads `Canvas v2.5.0` after version bump. |
-| **R7** No emoji in critical buttons | Audit: Save buttons no longer use emoji prefixes ("Save context", "Save changes", "Approve draft" without "✓" prefix). Existing emoji elsewhere (Undo `↶`, Load demo `↺`, etc.) are flagged for v2.5.1 SVG migration but stay in v2.5.0. |
-| **R8** Real Dell logo loads | Browser network request for `i.dell.com` logo URL returns 200 (or local fallback resolves). |
-| **R9** Dell product accuracy in demo | Load demo session, navigate to Tab 3 / Tab 4 / Reporting; verify no "VxRail (VMware-based HCI)" lead positioning. Verify no "Boomi", no "Secureworks", no "Taegis". |
-| **R10** Hard refresh on every tab | No console errors. Filters preserved (F5). Drawer state cleared (closed by default after refresh). |
-| **R11** Color audit (visual) | Capture screenshots of every tab; estimate brand-blue surface area (rough visual). Should be visibly lower than v2.4.12 (target ~5%, was ~30%). |
-| **R12** Mono tabular-nums | Verify driver priority counts, gap counts, services counts, vendor mix percentages render in mono with tabular-nums (digits aligned vertically). |
+| **R3** Tab 1 driver tile click → drawer | ContextView renders driver tiles full-width on the left; clicking any tile slides the drawer in with the driver detail body. Right panel as a fixed half-viewport is gone. |
+| **R4** Tab 2 + 3 tile click → drawer | MatrixView renders the matrix grid full-width; clicking any tile opens the drawer. Add-tile flow: click "+ Add tile" → drawer opens with empty form, label field auto-focused. |
+| **R5** Tab 4 gap-card click → drawer | GapsEditView renders the kanban full-width with 3 columns visibly larger; clicking any gap card opens the drawer with the gap detail. The previous side-by-side layout is gone. |
+| **R6** Tab 5 sub-tab clicks → drawer | Reporting sub-tabs render content full-width. Gaps Board gap click + Roadmap project click + Services scope per-service row click each open the drawer with the entity-specific body. |
+| **R7** Drawer close + content-swap paths | Backdrop click + Escape + ✕ all close the drawer (reverse-slide). While drawer is open, clicking another card transitions content in place (no close-then-open); for edit-mode entities with unsaved changes, an in-app confirmation appears before swap. |
+| **R8** AI ASSIST visible in every drawer | Every entity drawer body has an AI ASSIST eyebrow + `useAiButton` instance near the bottom (just before the sticky footer for edit-heavy entities, or just before the close handle for read-only entities). |
+| **R9** Filter re-render | Activating a `services: migration` filter dims non-matching gap cards on Tab 4 + Reporting Gaps Board to opacity 0.18-0.30 + grayscale(.5). Re-click clears. Match-all toggle flips OR to AND. |
+| **R10** Topbar version chip | Reads `Canvas v2.5.0` after version bump. |
+| **R11** Local Dell logo loads | Topbar logo `<img>` src points at the local `Logo/` asset and resolves without 404. |
+| **R12** Dell product accuracy in demo | Load demo session, navigate to Tab 3 / Tab 4 / Reporting drawers; verify no "VxRail (VMware-based HCI)" lead positioning, verify no "Boomi", no "Secureworks", no "Taegis". |
+| **R13** Hard refresh on every tab | No console errors. Filters preserved (F5). Drawer closed by default after refresh. |
+| **R14** Color audit (visual) | Capture screenshots of every tab + several open drawers; estimate brand-blue surface area. Visibly lower than v2.4.12 (target ~5%, was ~30%). |
+| **R15** Mono tabular-nums | Driver priority counts, gap counts, services counts, vendor mix percentages render in mono with tabular-nums (digits aligned vertically). |
+| **R16** No emoji in critical action buttons | Save / Cancel / Approve buttons render text only, no emoji prefix. Other emoji in the app (Undo `↶`, Load demo `↺`, AI `✨`) are flagged for v2.5.1 SVG migration but stay in v2.5.0. |
+| **R17** No em dashes | Manual sweep of every drawer body, every section, every error message, every prompt, every demo gap description. Zero U+2014 characters in any user-visible text. |
+| **R18** Edit-by-default still works | Click an existing tile / gap / driver: drawer opens with form fields ready to type. No extra "Edit" click required. The user decision to keep edit-by-default (no view/edit toggle) is honored. |
 
 ### Effort estimate
 
-~3 days focused work, single tag.
-- Day 1: §0 audit + §1 design system + §2 topbar / footer + §3 color discipline.
-- Day 2: §4 detail panel restructure + §5 drawer (Reporting) + §8 tag migration.
-- Day 3: §6 filter system + §7 services scope redesign + §9 tests + §R smoke + commit + tag.
+~4 days focused work, single tag. Extra day vs the original 3-day estimate covers drawer-everywhere (was Tab 5 only) + AI mounting per tab + the expanded §4 universal template.
+
+- **Day 1**: §0 audit pass + §1 design system + §2 topbar / footer.
+- **Day 2**: §3 color discipline + §4 detail panel restructure (universal template + per-entity body adaptations).
+- **Day 3**: §5 drawer-everywhere wiring across Tabs 1-5 + §AI mounting + §8 tag migration.
+- **Day 4**: §6 filter system + §7 services scope redesign + §9 Suite 44 tests + §R smoke + commit + tag.
 
 ### Tag protocol (per locked discipline)
 
@@ -1139,17 +1225,19 @@ v2.5.0 must not break the v2.4.12 functional surface. Every existing test stays 
 5. Pause for explicit "tag it" approval.
 6. Tag, push (force-with-lease no longer needed; main is in sync), update memory + HANDOFF.
 
-### Deferred to v2.5.1 (after v2.5.0 sign-off)
+### Deferred to v2.5.1 (after v2.5.0 sign-off, scope reduced 2026-04-26)
+
+Three items were pulled forward into v2.5.0 per user direction 2026-04-26: drawer-everywhere across Tabs 1-5 (was Tab 5 only), AI button mounting on every entity drawer (U4), edit-side panel polish absorbed into §4 universal template. v2.5.1 is now lighter.
 
 | | Item | Why deferred |
 |---|---|---|
-| **U4** | "✨ Use AI" button placement on Tabs 2-5 (currently only on Tab 1 driver detail) | Touches multiple view renders; cleaner as its own slice with the SVG icon migration |
-| **VC** | Vocabulary unification across Gaps (Tab 4) and Roadmap (Tab 5.5) | Rename pass needs spec-level discussion; not a v2.5.0 visual concern |
-| **GV** | Visible Gap → Project relationship (today's silent `buildProjects` bucketing made visible) | Data-model touchpoint; needs spec discussion before code |
-| **PL** | Primary-layer semantics rework (`gap.layerId` vs `affectedLayers[]`) | Data-model change; high risk; explicit spec round needed |
-| **IC** | SVG icon system (Lucide library; replace all emoji) | Mechanical pass; cleanest as standalone slice; v2.5.0 flags every site for migration |
-| **EP** | Edit-side panel polish refinements (Tabs 1-4) beyond what §4 ships | Once §4 lands, may surface specific tweaks per tab; address in v2.5.1 |
-| **A4.1 (still open)** | Demo refresh + old-schema purge (g-001 Phase 17 violation, default-demo localStorage, per-tab demo banner audit) | v2.5.0 §0 A2 covers the Dell product accuracy slice but not the broader schema hygiene; that lives in v2.4.13 demo-refresh OR rolls into v2.5.1 demo work |
+| **VC** | Vocabulary unification across Gaps (Tab 4) and Roadmap (Tab 5.5) | Rename pass needs spec-level discussion of which terms become canonical. Not a v2.5.0 visual concern. |
+| **GV** | Visible Gap → Project relationship (today's silent `buildProjects` bucketing made visible) | Data-model touchpoint. The drawer pattern in v2.5.0 makes the ATTRIBUTE visible; the FLOW affordances ("trace this gap to its project", "show me the gaps in this project") are a v2.5.1 slice. |
+| **PL** | Primary-layer semantics rework (`gap.layerId` vs `affectedLayers[]`) | Data-model change. High risk. Explicit spec round needed. |
+| **IC** | SVG icon system (Lucide library; replace all emoji) | Mechanical pass. Cleanest as standalone slice. v2.5.0 flags every site for migration but defers the swap. |
+| **A4.1 (still open)** | Demo refresh + old-schema purge (g-001 Phase 17 violation, default-demo localStorage, per-tab demo banner audit) | v2.5.0 §0 A2 covers the Dell product accuracy slice but not the broader schema hygiene; that lives in v2.4.13 demo-refresh OR rolls into v2.5.1 demo work. |
+
+Explicitly **NOT** added to v2.5.1: view/edit-mode toggle. User decision 2026-04-26 (in light of edit-by-default working well for the workshop entry path). Locked closed.
 
 ---
 
