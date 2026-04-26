@@ -143,11 +143,10 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   position: sticky;
   top: 0;
   z-index: 40;
-  height: 72px;
+  height: 84px;
   background: var(--canvas);
-  border-bottom: 1px solid var(--rule);
-  box-shadow: 0 1px 3px rgba(11, 42, 74, 0.05);
-  backdrop-filter: saturate(180%) blur(8px);
+  border-bottom: 2px solid var(--dell-blue);
+  box-shadow: 0 2px 8px rgba(11, 42, 74, 0.08), 0 1px 2px rgba(11, 42, 74, 0.04);
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
@@ -155,55 +154,61 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   padding: 0 28px;
   flex-shrink: 0;
 }
-/* Bottom accent gradient . tapered Dell-blue rule, philosophy
-   hero::after pattern, gives the topbar a quiet brand statement
-   without making it loud. */
-#app-header::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent 0%, var(--dell-blue) 35%, var(--dell-blue) 65%, transparent 100%);
-  opacity: 0.5;
-  pointer-events: none;
-}
 .header-brand {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
 }
 .header-brand img {
   /* TB2 . local Dell logo, no inversion (logo is dark blue on white now). */
-  height: 38px !important;
+  height: 44px !important;
   width: auto;
   display: block;
   flex-shrink: 0;
   filter: none !important;
 }
-.header-brand > div {
+.header-brand-text {
   display: flex;
   flex-direction: column;
   line-height: 1.15;
-  padding-left: 16px;
+  padding-left: 18px;
   border-left: 1px solid var(--rule-strong);
 }
-.header-logo  { width: 38px; height: 38px; flex-shrink: 0; }
+.header-logo  { width: 44px; height: 44px; flex-shrink: 0; }
+.header-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--dell-blue);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.header-eyebrow::before {
+  content: "";
+  display: inline-block;
+  width: 28px;
+  height: 2px;
+  background: var(--dell-blue);
+}
 .header-title {
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--ink);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
 }
 .header-sub {
-  font-size: 10.5px;
-  color: var(--ink-mute);
-  font-family: var(--font-mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  font-family: var(--font);
+  letter-spacing: 0;
+  text-transform: none;
   margin-top: 3px;
-  font-weight: 500;
+  font-weight: 400;
 }
 
 /* Doc-meta strip in center column. Mono caps with vertical 1px rules
@@ -264,12 +269,16 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
    filling. Mono Dell-blue leading-zero number + sans sentence-case
    label per philosophy "L.01" idiom. */
 #stepper {
+  position: sticky;
+  top: 84px;
+  z-index: 35;
   display: flex;
   align-items: stretch;
   gap: 0;
   padding: 0 28px;
   background: var(--canvas-soft);
   border-bottom: 1px solid var(--rule);
+  box-shadow: 0 1px 2px rgba(11, 42, 74, 0.03);
   flex-shrink: 0;
   height: 48px;
 }
