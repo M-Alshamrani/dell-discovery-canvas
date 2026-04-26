@@ -64,7 +64,10 @@ export const FIELD_MANIFEST = {
     { path: "context.selectedGap.affectedLayers",               label: "Selected gap affected layers (array)",  kind: "array",  writable: false },
     { path: "context.selectedGap.affectedEnvironments",         label: "Selected gap affected envs (array)",    kind: "array",  writable: false },
     { path: "context.selectedGap.relatedCurrentInstanceIds",    label: "Selected gap linked current (array)",   kind: "array",  writable: false },
-    { path: "context.selectedGap.relatedDesiredInstanceIds",    label: "Selected gap linked desired (array)",   kind: "array",  writable: false }
+    { path: "context.selectedGap.relatedDesiredInstanceIds",    label: "Selected gap linked desired (array)",   kind: "array",  writable: false },
+    // v2.4.12 · gap.services multi-select. AI skills can write a comma-separated
+    // string OR a JSON array; the WRITE_RESOLVER below normalizes both shapes.
+    { path: "context.selectedGap.services",                     label: "Selected gap services (array)",         kind: "array",  writable: true  }
   ]),
   reporting: SESSION_FIELDS.concat([
     { path: "context.selectedProject.name",          label: "Selected project name",                 kind: "scalar", writable: false },

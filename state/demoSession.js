@@ -159,6 +159,8 @@ function buildAcmeFinancialServices() {
         mappedDellSolutions:"PowerProtect PPDM, DD9400, Cyber Recovery + CyberSense",
         notes:"Near-miss ransomware Q4 2025. Board priority. NIS2 deadline Q3 2026.",
         relatedCurrentInstanceIds:["i-005"], relatedDesiredInstanceIds:["d-004","d-005"],
+        // v2.4.12 · realistic services for a PPDM/DD/CR replace engagement.
+        services:["migration","deployment","training","runbook"],
         status:"open", reviewed:true
       },
       {
@@ -169,6 +171,7 @@ function buildAcmeFinancialServices() {
         mappedDellSolutions:"PowerStore mid-range",
         notes:"Storage SLA breaches. Cannot expand without refresh.",
         relatedCurrentInstanceIds:["i-003"], relatedDesiredInstanceIds:["d-002"],
+        services:["migration","deployment"],
         status:"open", reviewed:true
       },
       {
@@ -180,6 +183,7 @@ function buildAcmeFinancialServices() {
         mappedDellSolutions:"VxRail (VMware-based HCI)",
         notes:"Broadcom renewal due in 18 months.",
         relatedCurrentInstanceIds:["i-007"], relatedDesiredInstanceIds:["d-006"],
+        services:["assessment","migration","deployment","training"],
         status:"open", reviewed:true
       },
       {
@@ -195,6 +199,7 @@ function buildAcmeFinancialServices() {
         mappedDellSolutions:"PowerEdge (current gen)",
         notes:"60% servers past end of support. Consolidating PowerEdge old + HPE ProLiant onto one Dell PowerEdge fleet for support + ops simplicity.",
         relatedCurrentInstanceIds:["i-001","i-002"], relatedDesiredInstanceIds:["d-001"],
+        services:["migration","integration","knowledge_transfer","decommissioning"],
         status:"open", reviewed:true
       },
       {
@@ -211,6 +216,7 @@ function buildAcmeFinancialServices() {
         mappedDellSolutions:"APEX Cloud Platform",
         notes:"AWS spend growing 30% YoY. Repatriation candidates identified.",
         relatedCurrentInstanceIds:[], relatedDesiredInstanceIds:[],
+        services:["assessment","runbook","managed"],
         status:"open", reviewed:true
       },
       // Phase 18 multi-link: g-006 also references i-005 (Veeam) alongside g-001.
@@ -224,6 +230,7 @@ function buildAcmeFinancialServices() {
         mappedDellSolutions:"PowerProtect Data Manager",
         notes:"Strategic shift: consolidate DP under Dell for single-vendor SLA.",
         relatedCurrentInstanceIds:["i-005"], relatedDesiredInstanceIds:["d-004"],
+        services:["assessment"],
         status:"open", reviewed:true
       },
       // v2.4.8 · Phase 17 · "introduce" action gap — no current link, one
@@ -240,6 +247,7 @@ function buildAcmeFinancialServices() {
         notes:"Board-mandated GenAI pilot; no current AI workload in scope.",
         relatedCurrentInstanceIds:[],
         relatedDesiredInstanceIds:["d-009"],   // the AI/RAG desired tile
+        services:["assessment","deployment","training","custom_dev"],
         status:"open", reviewed:true
       }
     ]

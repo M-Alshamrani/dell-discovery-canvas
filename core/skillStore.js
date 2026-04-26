@@ -12,6 +12,7 @@
 // don't break.
 
 import { seedSkills as seedSkillsImpl } from "./seedSkills.js";
+import { emitSkillsChanged } from "./skillsEvents.js";
 
 const STORAGE_KEY = "ai_skills_v1";
 
@@ -114,13 +115,16 @@ function normalizeSkill(s) {
   });
 }
 
-// CRUD helpers used by the admin panel.
+// CRUD helpers used by the admin panel. v2.4.12 · PR2 · each emits a
+// skills-changed event so subscribers (per-tab AI dropdown) re-render
+// without requiring a tab switch.
 export function addSkill(props) {
   var skill = normalizeSkill(Object.assign({ id: uid(), createdAt: now(), updatedAt: now() }, props));
   if (!skill) throw new Error("addSkill: skill is invalid (need name + promptTemplate)");
   var list = loadSkills();
   list.push(skill);
   saveSkills(list);
+  emitSkillsChanged("skill-add", skill.name);
   return skill;
 }
 
@@ -132,13 +136,16 @@ export function updateSkill(id, patch) {
   if (!next) throw new Error("updateSkill: resulting skill is invalid");
   list[idx] = next;
   saveSkills(list);
+  emitSkillsChanged("skill-update", next.name);
   return next;
 }
 
 export function deleteSkill(id) {
   var list = loadSkills();
+  var hit  = list.find(function(s) { return s.id === id; });
   var next = list.filter(function(s) { return s.id !== id; });
   saveSkills(next);
+  emitSkillsChanged("skill-delete", (hit && hit.name) || id);
 }
 
 // Query helpers.

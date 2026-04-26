@@ -152,7 +152,10 @@ export function buildProjects(session, opts) {
         color:         theme.color,       // compat
         driverId:      null,
         dellSolutions: [],
-        layerIds:      []
+        layerIds:      [],
+        // v2.4.12 · services rollup. Union of constituent gap.services,
+        // deduped, in first-occurrence order across the gaps in this bucket.
+        services:      []
       };
     }
 
@@ -169,6 +172,11 @@ export function buildProjects(session, opts) {
     var layers = (gap.affectedLayers && gap.affectedLayers.length) ? gap.affectedLayers : [gap.layerId];
     layers.forEach(function(l) {
       if (proj.layerIds.indexOf(l) < 0) proj.layerIds.push(l);
+    });
+
+    // v2.4.12 · accumulate services from this gap into the project rollup.
+    (gap.services || []).forEach(function(sid) {
+      if (proj.services.indexOf(sid) < 0) proj.services.push(sid);
     });
   });
 

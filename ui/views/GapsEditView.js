@@ -11,6 +11,7 @@ import { suggestDriverId, effectiveDriverId, effectiveDriverReason, driverLabel 
 import { saveToLocalStorage } from "../../state/sessionStore.js";
 import { helpButton } from "./HelpModal.js";
 import { validateActionLinks, actionById } from "../../core/taxonomy.js";
+import { SERVICE_TYPES, suggestedFor, serviceLabel } from "../../core/services.js";
 
 // Phase 18: count how many gaps reference an instance id (in either link
 // list). Used for the "linked to N gaps" multi-link chip and for the
@@ -151,14 +152,10 @@ export function renderGapsEditView(left, right, session) {
   addBtn.addEventListener("click", function() { openAddDialog(); });
   filterRow.appendChild(addBtn);
 
-  // v2.4.11 · D2 · prominent "+ Add operational / services gap" button.
-  // Distinct from the generic + Add gap because cross-cutting service
-  // work (DR runbook, training, governance, decommissioning) is a
-  // workshop output that doesn't fit the tile-bound disposition flow.
-  var addOpsBtn = mkt("button", "btn-secondary", "+ Add operational / services gap");
-  addOpsBtn.title = "Add a cross-cutting Operational / Services gap (e.g. build DR runbook · train ops team · establish change-management · decommission program).";
-  addOpsBtn.addEventListener("click", function() { openAddDialog({ presetGapType: "ops" }); });
-  filterRow.appendChild(addOpsBtn);
+  // v2.4.12 · U1 · the v2.4.11 D2 "+ Add operational / services gap"
+  // button is removed. Services attach to any gap as a multi-chip facet
+  // (see "Services needed" section in the gap detail panel) — a dedicated
+  // ops-typed gap CTA reinforced a wrong mental model.
 
   header.appendChild(filterRow);
   left.appendChild(header);
@@ -574,6 +571,65 @@ export function renderGapsEditView(left, right, session) {
     form.appendChild(fg("Dell solutions (derived)",
       readOnlyField(solutionsText,
         "Derived from linked desired tiles with vendor = Dell. Manage the links below to change this list.")));
+
+    // v2.4.12 · Services needed — multi-chip facet attached to any gap.
+    // Picked chips are full-color (click to remove); suggested chips
+    // appear under a SUGGESTED eyebrow (greyed, click to add). Suggested
+    // is OPT-IN — never auto-applied. Suggestions re-derive on gapType
+    // change but never auto-select.
+    var servicesGroup = mk("div", "form-group services-group");
+    servicesGroup.appendChild(mkt("label", "form-label", "Services needed"));
+    var pickedServices = Array.isArray(gap.services) ? gap.services.slice() : [];
+    var suggestedRow = mk("div", "services-suggested-row");
+    var pickedRow    = mk("div", "services-picked-row");
+    pickedRow.dataset.servicesPicked = "true";   // Save handler queries this.
+
+    function paintServices() {
+      pickedRow.innerHTML = "";
+      suggestedRow.innerHTML = "";
+      // Picked chips (full color, click to remove).
+      pickedServices.forEach(function(id) {
+        var lbl = serviceLabel(id) || id;
+        var chip = mkt("button", "chip-filter services-chip-picked active", lbl + " ✕");
+        chip.type = "button";
+        chip.dataset.serviceId = id;
+        chip.title = "Click to remove '" + lbl + "'";
+        chip.addEventListener("click", function(ev) {
+          ev.preventDefault();
+          pickedServices = pickedServices.filter(function(x) { return x !== id; });
+          paintServices();
+        });
+        pickedRow.appendChild(chip);
+      });
+      if (pickedServices.length === 0) {
+        var hint = mkt("span", "services-empty-hint", "No services attached yet.");
+        pickedRow.appendChild(hint);
+      }
+      // Suggested chips (greyed, click to add). Re-derive from current
+      // gap.gapType minus already-picked.
+      var suggestions = suggestedFor(gap.gapType, pickedServices);
+      if (suggestions.length > 0) {
+        suggestedRow.appendChild(mkt("span", "services-eyebrow", "SUGGESTED"));
+        suggestions.forEach(function(id) {
+          var lbl = serviceLabel(id) || id;
+          var chip = mkt("button", "chip-filter services-chip-suggested", "+ " + lbl);
+          chip.type = "button";
+          chip.dataset.serviceId = id;
+          chip.title = "Click to add '" + lbl + "' as a service for this gap";
+          chip.addEventListener("click", function(ev) {
+            ev.preventDefault();
+            pickedServices.push(id);
+            paintServices();
+          });
+          suggestedRow.appendChild(chip);
+        });
+      }
+    }
+    paintServices();
+    servicesGroup.appendChild(suggestedRow);
+    servicesGroup.appendChild(pickedRow);
+    form.appendChild(servicesGroup);
+
     form.appendChild(fg("Notes / business context",
       ta("notes", gap.notes || "",
         "Business context, risk, regulatory drivers, assumptions, customer pain...")));
@@ -623,6 +679,16 @@ export function renderGapsEditView(left, right, session) {
       patch.affectedLayers = [primaryForLayers].concat(
         alsoLayers.filter(function(l) { return l !== primaryForLayers; })
       );
+      // v2.4.12 · collect picked services from the chip selector.
+      var pickedRowEl = form.querySelector("[data-services-picked='true']");
+      if (pickedRowEl) {
+        var pickedChips = pickedRowEl.querySelectorAll(".services-chip-picked");
+        var pickedIds = [];
+        pickedChips.forEach(function(c) {
+          if (c.dataset && c.dataset.serviceId) pickedIds.push(c.dataset.serviceId);
+        });
+        patch.services = pickedIds;   // updateGap will normalize/dedupe
+      }
       // v2.4.11 · A6 · urgency comes from the override-aware UI. If
       // gap.urgencyOverride is true, the form has a real selector; if
       // false, the form has a read-only display (no data-prop). In the

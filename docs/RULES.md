@@ -267,7 +267,10 @@ Rules without visible UI are surprises. v2.4.11 added these surfaces so users se
 | "Show closed gaps (N)" filter chip with count badge | Tab 4 → filter row | Any gap has `status: "closed"` |
 | "Reopen" button + closed-status banner on gap detail | Tab 4 → gap detail panel | Gap has `status: "closed"` |
 | "Click to open this {state}-state tile in Tab N" tooltip + cross-tab nav | Tab 4 → gap detail panel link rows | Always |
-| "+ Add operational / services gap" CTA with placeholder examples | Tab 4 → filter row | Always |
+| ~~"+ Add operational / services gap" CTA~~ — REMOVED in v2.4.12 (U1). Services attach to any gap as a multi-chip facet ("Services needed" section in detail panel); a dedicated ops-typed gap CTA reinforced a wrong mental model. | — | — |
+| "Services needed" multi-chip selector + opt-in SUGGESTED eyebrow row | Tab 4 → gap detail panel (under "Dell solutions") | Any gap is selected (NEW v2.4.12) |
+| Services chip row "SERVICES NEEDED · {chips}" | Tab 5.5 → project card (under Dell solutions) | Project has ≥1 constituent gap with services (NEW v2.4.12) |
+| "Services scope" sub-tab + summary card | Tab 5 Reporting → sub-tab bar + Overview | Always (NEW v2.4.12) |
 | "Review all →" button on auto-draft notice | Tab 4 → above filter row | Any auto-drafted unreviewed gap exists |
 | Save button states: Saving… / Saved ✓ (green) / Couldn't save (red+shake) | Tab 4 → gap detail Save button | On click |
 

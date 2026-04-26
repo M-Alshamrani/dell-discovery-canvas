@@ -150,6 +150,35 @@ var GAP_REWRITER_SKILL = {
   seed:           true
 };
 
+// v2.4.12 · Gap services suggester — exercises the new gap.services
+// multi-select facet. Asks the AI to recommend a comma-separated list of
+// service ids from the SERVICE_TYPES catalog based on gapType + notes;
+// the WRITE_RESOLVER for context.selectedGap.services normalizes the
+// result (drops unknown ids, dedupes).
+var GAP_SERVICES_SUGGESTER_SKILL = {
+  id:           "skill-gap-services-suggester-seed",
+  name:         "Suggest professional services for selected gap",
+  description:  "Recommend the professional-services scope (migration / deployment / training / runbook / …) implied by the selected gap, based on its gapType, layer, and business context.",
+  tabId:        "gaps",
+  systemPrompt: "You are a senior Dell Technologies presales engineer specialising in services scoping. Based on the selected gap, propose the minimal set of professional-services categories needed to deliver it. Choose ONLY from this fixed catalog: assessment, migration, deployment, integration, training, knowledge_transfer, runbook, managed, decommissioning, custom_dev. Return your answer as a comma-separated list (e.g. \"migration, deployment, training\"). Do not invent new categories.",
+  promptTemplate: [
+    "Customer: {{session.customer.name}} ({{session.customer.vertical}}).",
+    "Gap description: {{context.selectedGap.description}}.",
+    "Gap type: {{context.selectedGap.gapType}}.",
+    "Gap primary layer: {{context.selectedGap.layerId}}.",
+    "Gap notes: {{context.selectedGap.notes}}.",
+    "Currently selected services on this gap: {{context.selectedGap.services}}."
+  ].join("\n"),
+  responseFormat: "json-scalars",
+  applyPolicy:    "confirm-per-field",
+  outputSchema: [
+    { path: "context.selectedGap.services", label: "Gap services", kind: "array" }
+  ],
+  providerKey:    null,
+  deployed:       true,
+  seed:           true
+};
+
 // Reporting narrator — text-brief; Reporting tab has no writable
 // fields in v2.4.5 so this is a show-only narrator.
 var REPORTING_NARRATOR_SKILL = {
@@ -182,6 +211,7 @@ export function seedSkills() {
     CURRENT_TILE_TUNER_SKILL,
     DESIRED_TILE_TUNER_SKILL,
     GAP_REWRITER_SKILL,
+    GAP_SERVICES_SUGGESTER_SKILL,
     REPORTING_NARRATOR_SKILL
   ].map(function(s) {
     return Object.assign({}, s, { createdAt: t, updatedAt: t });
@@ -196,5 +226,6 @@ export var SEED_SKILL_IDS = [
   "skill-current-tile-tuner-seed",
   "skill-desired-tile-tuner-seed",
   "skill-gap-rewriter-seed",
+  "skill-gap-services-suggester-seed",
   "skill-reporting-narrator-seed"
 ];

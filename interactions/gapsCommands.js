@@ -22,6 +22,7 @@ import {
   requiresAtLeastOneCurrent,
   requiresAtLeastOneDesired
 } from "../core/taxonomy.js";
+import { normalizeServices } from "../core/services.js";
 import { confirmPhaseOnLink } from "./desiredStateSync.js";
 
 // v2.4.9 · maintain the primary-layer invariant in one place.
@@ -67,6 +68,9 @@ export function createGap(session, props) {
     notes:                     props.notes                     || "",
     relatedCurrentInstanceIds: props.relatedCurrentInstanceIds ? [...new Set(props.relatedCurrentInstanceIds)] : [],
     relatedDesiredInstanceIds: props.relatedDesiredInstanceIds  ? [...new Set(props.relatedDesiredInstanceIds)]  : [],
+    // v2.4.12 · gap.services — multi-select of professional-services types.
+    // normalizeServices() drops unknown ids and dedupes; empty array is valid.
+    services:                  normalizeServices(props.services),
     status:                    props.status                    || "open",
     // v2.1 · reviewed default: auto-drafted from a disposition (has linked desired + matches
     // buildGapFromDisposition output) passes `reviewed: false` explicitly; everything else
@@ -112,6 +116,8 @@ export function updateGap(session, gapId, patch) {
   const updated = { ...list[idx], ...patch };
   if (patch.relatedCurrentInstanceIds) updated.relatedCurrentInstanceIds = [...new Set(patch.relatedCurrentInstanceIds)];
   if (patch.relatedDesiredInstanceIds)  updated.relatedDesiredInstanceIds  = [...new Set(patch.relatedDesiredInstanceIds)];
+  // v2.4.12 · normalize services on patch: drop unknown ids, dedupe.
+  if (patch.services !== undefined) updated.services = normalizeServices(patch.services);
   // v2.1 · substantive edits flip the gap to reviewed. (Passing an explicit reviewed: false
   // in patch is respected — that's how approveGap-adjacent workflows could undo if needed.)
   // v2.4.11 · A1 · STRUCTURAL vs METADATA distinction. Only re-run

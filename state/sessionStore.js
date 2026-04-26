@@ -209,11 +209,11 @@ export function replaceSession(snapshot) {
 
 // v2.4.12 · PR1 · ContextView "Save context" handler.
 //
-// Today ContextView mutates session.customer + session.sessionMeta directly
-// from form inputs and then unconditionally flips isDemo to false whenever
-// customer.name has a non-empty value. That breaks the workshop flow: load
-// a demo session → click Save without changing anything → isDemo flips →
-// demo banner disappears on the next refresh.
+// Pre-v2.4.12 bug: ContextView mutated session.customer + session.sessionMeta
+// directly from form inputs and then unconditionally flipped isDemo to false
+// whenever customer.name had a non-empty value. That broke the workshop
+// flow: load a demo session → click Save without changing anything →
+// isDemo flipped → demo banner disappeared on the next refresh.
 //
 // Fix: only flip isDemo when the patch ACTUALLY changes a field. A no-op
 // save (clicking Save with the demo's own values intact) preserves the
@@ -222,17 +222,29 @@ export function replaceSession(snapshot) {
 //
 // patch shape: { customer: {…subset}, sessionMeta: {…subset} }
 // `customer.drivers` is excluded — it has its own save flow.
-//
-// STUB · v2.4.12 spec-and-test-first phase: this implementation mirrors
-// the v2.4.11 BUG so PR1.a fails RED. The implementation phase replaces
-// the body with the comparison logic described above.
 export function applyContextSave(patch) {
   var p = patch || {};
-  if (p.customer)    Object.assign(session.customer,    p.customer);
-  if (p.sessionMeta) Object.assign(session.sessionMeta, p.sessionMeta);
-  // BUG (v2.4.11) — unconditional flip on any non-empty name save. To be
-  // replaced in implementation phase with: flip only if a field changed.
-  if (session.customer.name && session.customer.name.trim()) {
+  var changed = false;
+  if (p.customer && typeof p.customer === "object") {
+    Object.keys(p.customer).forEach(function(k) {
+      if (k === "drivers") return;   // drivers have their own save flow
+      if (session.customer[k] !== p.customer[k]) {
+        session.customer[k] = p.customer[k];
+        changed = true;
+      }
+    });
+  }
+  if (p.sessionMeta && typeof p.sessionMeta === "object") {
+    Object.keys(p.sessionMeta).forEach(function(k) {
+      if (session.sessionMeta[k] !== p.sessionMeta[k]) {
+        session.sessionMeta[k] = p.sessionMeta[k];
+        changed = true;
+      }
+    });
+  }
+  // Only flip isDemo when the user has ACTUALLY edited a field. A no-op
+  // save preserves the demo banner across refresh.
+  if (changed && session.customer.name && session.customer.name.trim()) {
     session.isDemo = false;
   }
   saveToLocalStorage();

@@ -2,6 +2,7 @@
 
 import { LAYERS, ENVIRONMENTS } from "./config.js";
 import { GAP_TYPES } from "./taxonomy.js";
+import { SERVICE_IDS } from "./services.js";
 
 export const LayerIds       = LAYERS.map(function(l) { return l.id; });
 export const EnvironmentIds = ENVIRONMENTS.map(function(e) { return e.id; });
@@ -91,6 +92,21 @@ export function validateGap(gap) {
   if (gap.urgencyOverride !== undefined) {
     assert(typeof gap.urgencyOverride === "boolean",
       "Gap.urgencyOverride must be a boolean if set (got " + typeof gap.urgencyOverride + ")");
+  }
+
+  // v2.4.12 · gap.services is an optional multi-select of professional-services
+  // engagement-shape categories. If present, must be an array of strings, each
+  // a valid id from `core/services.js SERVICE_IDS`. Empty array is valid.
+  // Undefined/missing is valid (services are opt-in per gap).
+  if (gap.services !== undefined) {
+    assert(Array.isArray(gap.services),
+      "Gap.services must be an array if set (got " + typeof gap.services + ")");
+    gap.services.forEach(function(id) {
+      assert(typeof id === "string" && id.length > 0,
+        "Gap.services entries must be non-empty strings (got " + typeof id + ")");
+      assert(SERVICE_IDS.indexOf(id) >= 0,
+        "Gap.services contains unknown id '" + id + "' — must be one of: " + SERVICE_IDS.join(", "));
+    });
   }
 
   // NOTE: relationship rules (relatedCurrentInstanceIds, relatedDesiredInstanceIds)

@@ -20,6 +20,8 @@
 // See SPEC §12.2 for the contract. Adding a new writable field =
 // one FIELD_MANIFEST entry + one resolver here.
 
+import { normalizeServices } from "./services.js";
+
 function findDriverById(session, id) {
   var drivers = (session && session.customer && session.customer.drivers) || [];
   return drivers.find(function(d) { return d && d.id === id; });
@@ -108,6 +110,24 @@ export var WRITE_RESOLVERS = {
     var gap = findGapById(session, id);
     if (!gap) throw new Error("Gap '" + id + "' not found in session");
     gap.notes = value;
+  },
+  // v2.4.12 · gap.services multi-select. AI skills may emit either a
+  // JSON array of ids OR a comma-separated string; we normalize both
+  // shapes through normalizeServices (drops unknowns, dedupes).
+  "context.selectedGap.services": function(session, context, value) {
+    var id = context && context.selectedGap && context.selectedGap.id;
+    var gap = findGapById(session, id);
+    if (!gap) throw new Error("Gap '" + id + "' not found in session");
+    var arr;
+    if (Array.isArray(value)) {
+      arr = value;
+    } else if (typeof value === "string") {
+      // accept "migration, deployment, training" or "migration deployment training"
+      arr = value.split(/[\s,]+/).map(function(s) { return s.trim(); }).filter(Boolean);
+    } else {
+      arr = [];
+    }
+    gap.services = normalizeServices(arr);
   },
   "context.selectedGap.driverId": function(session, context, value) {
     var id = context && context.selectedGap && context.selectedGap.id;

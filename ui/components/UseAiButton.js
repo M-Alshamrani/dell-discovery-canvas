@@ -10,6 +10,7 @@ import { skillsForTab, getSkill } from "../../core/skillStore.js";
 import { runSkillById } from "../../interactions/skillCommands.js";
 import { loadAiConfig } from "../../core/aiConfig.js";
 import { applyProposal, applyAllProposals } from "../../interactions/aiCommands.js";
+import { onSkillsChanged } from "../../core/skillsEvents.js";
 
 export function useAiButton(tabId, opts) {
   opts = opts || {};
@@ -17,14 +18,9 @@ export function useAiButton(tabId, opts) {
   var getSession  = typeof opts.getSession  === "function" ? opts.getSession  : function() { return {}; };
   var getResultEl = typeof opts.getResultEl === "function" ? opts.getResultEl : function() { return null; };
 
-  var skills = skillsForTab(tabId, { onlyDeployed: true });
-  if (skills.length === 0) {
-    var span = document.createElement("span");
-    span.className = "use-ai-empty";
-    span.style.display = "none"; // truly empty — no chrome
-    return span;
-  }
-
+  // v2.4.12 · PR2 · always create the wrap (even on zero skills) so that
+  // a later add/deploy can auto-fill it via the skills-changed bus
+  // without the parent having to re-call useAiButton(...).
   var wrap = mk("span", "use-ai-wrap");
   var btn  = mkt("button", "use-ai-btn", "✨ Use AI ▾");
   btn.type = "button";
@@ -33,12 +29,19 @@ export function useAiButton(tabId, opts) {
 
   var menu = mk("div", "use-ai-menu");
   menu.style.display = "none";
-  skills.forEach(function(s) {
-    var item = mk("button", "use-ai-menu-item");
-    item.type = "button";
-    item.appendChild(mkt("div", "use-ai-menu-name", s.name));
-    if (s.description) item.appendChild(mkt("div", "use-ai-menu-desc", s.description));
-    item.addEventListener("click", async function() {
+
+  function paintMenu() {
+    var skills = skillsForTab(tabId, { onlyDeployed: true });
+    menu.innerHTML = "";
+    // Hide the whole component when no skills are deployed for this tab.
+    // Show it again the moment one is.
+    wrap.style.display = (skills.length === 0) ? "none" : "";
+    skills.forEach(function(s) {
+      var item = mk("button", "use-ai-menu-item");
+      item.type = "button";
+      item.appendChild(mkt("div", "use-ai-menu-name", s.name));
+      if (s.description) item.appendChild(mkt("div", "use-ai-menu-desc", s.description));
+      item.addEventListener("click", async function() {
       menu.style.display = "none";
       var resultEl = getResultEl();
       if (!resultEl) return;
@@ -105,8 +108,20 @@ export function useAiButton(tabId, opts) {
       resultEl.appendChild(body);
     });
     menu.appendChild(item);
-  });
+    });   // skills.forEach
+  }       // paintMenu
+  paintMenu();
   wrap.appendChild(menu);
+
+  // v2.4.12 · PR2 · auto-refresh the dropdown when the skill registry
+  // changes (Skill Builder add / update / deploy / undeploy / delete).
+  // Self-cleanup: once the wrap is detached from the DOM (tab switch
+  // re-renders the toolbar), the listener unsubscribes on the next
+  // event so we don't leak listeners across tab switches.
+  var off = onSkillsChanged(function() {
+    if (!wrap.isConnected) { off(); return; }
+    paintMenu();
+  });
 
   btn.addEventListener("click", function(e) {
     e.stopPropagation();

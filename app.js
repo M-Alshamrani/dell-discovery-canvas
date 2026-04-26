@@ -17,6 +17,7 @@ import { renderSummaryHealthView }   from "./ui/views/SummaryHealthView.js";
 import { renderSummaryGapsView }     from "./ui/views/SummaryGapsView.js";
 import { renderSummaryVendorView }   from "./ui/views/SummaryVendorView.js";
 import { renderSummaryRoadmapView }  from "./ui/views/SummaryRoadmapView.js";
+import { renderSummaryServicesView } from "./ui/views/SummaryServicesView.js";
 
 var STEPS = [
   { id: "context",   label: "1  Context"       },
@@ -27,11 +28,14 @@ var STEPS = [
 ];
 
 var REPORTING_TABS = [
-  { id: "overview", label: "Overview"    },
-  { id: "health",   label: "Heatmap"     },
-  { id: "gaps",     label: "Gaps Board"  },
-  { id: "vendor",   label: "Vendor Mix"  },
-  { id: "roadmap",  label: "Roadmap"     }
+  { id: "overview", label: "Overview"       },
+  { id: "health",   label: "Heatmap"        },
+  { id: "gaps",     label: "Gaps Board"     },
+  { id: "vendor",   label: "Vendor Mix"     },
+  // v2.4.12 · NEW · workshop deliverable for "engagement shape" — rolls
+  // up gap.services chips across the session into a project-wide table.
+  { id: "services", label: "Services scope" },
+  { id: "roadmap",  label: "Roadmap"        }
 ];
 
 var currentStep         = "context";
@@ -239,11 +243,12 @@ function renderReportingStep(left, right) {
 
 function renderReportingTab(left, right) {
   switch (currentReportingTab) {
-    case "overview": renderReportingOverview(left, right); break;
-    case "health":   renderSummaryHealthView(left, right); break;
-    case "gaps":     renderSummaryGapsView(left, right);   break;
-    case "vendor":   renderSummaryVendorView(left, right); break;
-    case "roadmap":  renderSummaryRoadmapView(left, right);break;
+    case "overview": renderReportingOverview(left, right);  break;
+    case "health":   renderSummaryHealthView(left, right);  break;
+    case "gaps":     renderSummaryGapsView(left, right);    break;
+    case "vendor":   renderSummaryVendorView(left, right);  break;
+    case "services": renderSummaryServicesView(left, right);break;
+    case "roadmap":  renderSummaryRoadmapView(left, right); break;
   }
 }
 

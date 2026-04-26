@@ -13,6 +13,7 @@ import { session as liveSession } from "../../state/sessionStore.js";
 import { buildProjects } from "../../services/roadmapService.js";
 import { groupProjectsByProgram, driverLabel as driverLabelFor } from "../../services/programsService.js";
 import { helpButton } from "./HelpModal.js";
+import { serviceLabel } from "../../core/services.js";
 
 var PHASES = [
   { id: "now",   label: "Now",   subtitle: "0-12 months"  },
@@ -213,6 +214,16 @@ function buildProjectCard(proj) {
     card.appendChild(solutionsRow);
   } else {
     card.appendChild(mkt("div", "project-card-unmapped", "No Dell solutions mapped yet — see Tab 4."));
+  }
+
+  // v2.4.12 · Services needed chip row — union of constituent gaps' services.
+  if (proj.services && proj.services.length) {
+    var servicesRow = mk("div", "project-card-services");
+    servicesRow.appendChild(mkt("span", "project-card-services-eyebrow", "SERVICES NEEDED"));
+    proj.services.forEach(function(sid) {
+      servicesRow.appendChild(mkt("span", "services-chip", serviceLabel(sid) || sid));
+    });
+    card.appendChild(servicesRow);
   }
 
   // Phase 14 · click the project card → right-panel detail (consistent with swimlane-head + vendor-row + heatmap-cell patterns).

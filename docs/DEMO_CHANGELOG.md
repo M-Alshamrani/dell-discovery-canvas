@@ -18,6 +18,42 @@ gaps, drivers, or session metadata) must, in the **same commit**:
 
 ---
 
+## v2.4.12 · 2026-04-26 · Services scope + pre-flight regression fixes
+
+**Status**: shipped (Phase 19l).
+
+### What changed for the demo surface
+
+- **NEW gap field `services: string[]`** (optional multi-select). Catalog of 10 professional-services categories in `core/services.js`: assessment, migration, deployment, integration, training, knowledge_transfer, runbook, managed, decommissioning, custom_dev. Validated by `validateGap`; normalized (drop unknowns + dedupe) by `normalizeServices` in `createGap`/`updateGap` and in the `WRITE_RESOLVERS` entry.
+- **Demo gaps refreshed** with realistic `services` arrays:
+  - `g-001` (replace · PowerProtect) → `["migration", "deployment", "training", "runbook"]`
+  - `g-002` (replace · PowerStore) → `["migration", "deployment"]`
+  - `g-003` (replace · VxRail) → `["assessment", "migration", "deployment", "training"]`
+  - `g-004` (consolidate) → `["migration", "integration", "knowledge_transfer", "decommissioning"]`
+  - `g-005` (ops · cloud governance) → `["assessment", "runbook", "managed"]`
+  - `g-006` (enhance · DP convergence) → `["assessment"]`
+  - `g-007` (introduce · AI/RAG) → `["assessment", "deployment", "training", "custom_dev"]`
+- **NEW seed skill `skill-gap-services-suggester-seed`** — Tab 4 / json-scalars. Asks the AI to recommend the services scope from the fixed catalog based on gapType + notes; the WRITE_RESOLVER for `context.selectedGap.services` accepts comma-separated strings OR JSON arrays and normalizes through `normalizeServices`.
+- **NEW `FIELD_MANIFEST` entry** `context.selectedGap.services` (writable, kind `array`) and matching `WRITE_RESOLVERS` entry.
+- **demoSpec DS23** asserts every demo gap with `gapType ∈ {replace, consolidate, introduce}` has `services.length ≥ 1` so the chip UI is exercisable from Load demo.
+
+### Removed from the human surface
+
+- **`+ Add operational / services gap` CTA** (the v2.4.11 D2 button) is gone (Section U1). Services attach to any gap as a multi-chip facet — a dedicated ops-typed gap entry-point reinforced a wrong mental model.
+
+### Pre-flight regression fixes (bundled into the same release)
+
+- **PR1** `state/sessionStore.js applyContextSave(patch)` — new pure helper that compares each patch field to the current session value and only flips `isDemo: false` when something actually changed. ContextView "Save context" now calls this helper instead of mutating `session` directly. **Fixes** the v2.4.11 latent bug where any Save click flipped `isDemo` and the demo banner disappeared on refresh (validated live 2026-04-26 before fix).
+- **PR2** NEW `core/skillsEvents.js` (mirrors `core/sessionEvents.js`). `skillStore.addSkill / updateSkill / deleteSkill` now emit `skills-changed`. `UseAiButton.js` subscribes via `onSkillsChanged` with a self-cleanup pattern (`wrap.isConnected`-guard) so the per-tab AI dropdown auto-refreshes when skills are added / deployed / reassigned, without requiring a tab switch. Skill Builder admin panel + per-skill provider override controls are unaffected.
+
+### Why this matters for the demo surface
+
+The "engagement shape" question is the workshop deliverable v2.4.11 didn't capture. Customers ask "ok, how do we actually do this" and the presales engineer needed something more structured than free-text notes. v2.4.12 closes that gap with a single optional facet + a Reporting roll-up sub-tab.
+
+PR1 and PR2 are bundled because both surfaced during the v2.4.12 attempt that was rolled back 2026-04-26. The new spec-and-test-first discipline (and the explicit Section R regression-guard smoke checklist in `docs/CHANGELOG_PLAN.md § v2.4.12`) ensures bugs caught in browser smoke don't ship.
+
+---
+
 ## v2.4.11 · 2026-04-25 · Rules hardening + relationships polish
 
 **Status**: shipped (Phase 19k).

@@ -932,7 +932,7 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
-## v2.4.12 · Services scope + Pre-flight regression fixes · RE-SCOPED + LOCKED 2026-04-26 (execute after v2.4.11)
+## v2.4.12 · Services scope + Pre-flight regression fixes · IMPLEMENTED 2026-04-26
 
 **History**: v2.4.12 was attempted 2026-04-25 then rolled back per user direction; the rolled-back attempt's services UI (chip selector on each gap) was kept, but two add-on choices proved wrong:
 1. The v2.4.12 attempt **kept** the v2.4.11 D2 `+ Add operational / services gap` CTA — re-evaluated on 2026-04-26: services are a *facet* of any gap, not a standalone gap type, so the dedicated CTA is redundant. Removed in this re-scope.

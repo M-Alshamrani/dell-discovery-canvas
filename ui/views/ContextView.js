@@ -14,7 +14,7 @@
 
 import { BUSINESS_DRIVERS, CUSTOMER_VERTICALS } from "../../core/config.js";
 import { useAiButton }             from "../components/UseAiButton.js";
-import { saveToLocalStorage, resetToDemo, isFreshSession } from "../../state/sessionStore.js";
+import { saveToLocalStorage, resetToDemo, isFreshSession, applyContextSave } from "../../state/sessionStore.js";
 import { helpButton } from "./HelpModal.js";
 
 export function renderContextView(left, right, session) {
@@ -60,13 +60,19 @@ export function renderContextView(left, right, session) {
   saveIdBtn.textContent = "Save context";
   saveIdBtn.style.marginTop = "8px";
   saveIdBtn.addEventListener("click", function() {
+    // v2.4.12 · PR1 · build a patch from the form, hand it to applyContextSave.
+    // applyContextSave compares each field to current session values and only
+    // flips isDemo when something actually changed. Fixes the v2.4.11 bug
+    // where any Save click flipped isDemo and the demo banner vanished on
+    // refresh.
+    var patch = { customer: {}, sessionMeta: {} };
     form.querySelectorAll("[data-field]").forEach(function(input) {
       var path = input.getAttribute("data-field").split(".");
-      if (path.length === 2) session[path[0]][path[1]] = input.value;
-      else                   session[path[0]]          = input.value;
+      if (path.length === 2 && (path[0] === "customer" || path[0] === "sessionMeta")) {
+        patch[path[0]][path[1]] = input.value;
+      }
     });
-    if (session.customer.name && session.customer.name.trim()) session.isDemo = false;
-    saveToLocalStorage();
+    applyContextSave(patch);
     saveIdBtn.textContent = "Saved";
     setTimeout(function() { saveIdBtn.textContent = "Save context"; }, 1500);
     var hdr = document.getElementById("sessionMetaHeader");
