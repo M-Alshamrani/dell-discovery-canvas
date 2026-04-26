@@ -932,11 +932,19 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
-## v2.4.12 · Services scope · QUEUED + LOCKED 2026-04-25 (execute after v2.4.11)
+## v2.4.12 · Services scope + Pre-flight regression fixes · RE-SCOPED + LOCKED 2026-04-26 (execute after v2.4.11)
+
+**History**: v2.4.12 was attempted 2026-04-25 then rolled back per user direction; the rolled-back attempt's services UI (chip selector on each gap) was kept, but two add-on choices proved wrong:
+1. The v2.4.12 attempt **kept** the v2.4.11 D2 `+ Add operational / services gap` CTA — re-evaluated on 2026-04-26: services are a *facet* of any gap, not a standalone gap type, so the dedicated CTA is redundant. Removed in this re-scope.
+2. The v2.4.12 attempt **surfaced** a latent v2.4.11 ContextView Save bug (`isDemo` flips to false on no-op save → demo banner disappears on refresh) but didn't fix it. Bundled into this re-scope as PR1.
+
+A separate session-during bug (AI dropdown didn't auto-refresh on skill add/deploy/reassign) is also bundled as PR2 per user direction. Validation 2026-04-26: PR1 confirmed live (`isDemoBefore: true` → click Save context with no changes → `isDemoAfter: false`).
 
 **Theme**: surface professional-services scope on every gap. Services aren't a separate gap type — they're a **facet of nearly every gap** (a Replace gap implies migration + deployment; Consolidate implies migration + integration; Introduce implies deployment + training; Retire implies decommissioning; Operational gaps usually ARE services). Without this, the workshop deliverable is incomplete: customers ask "ok how do we actually do this" and the presales engineer doesn't have it captured.
 
-### Data model addition (one new field)
+### Section S · Services scope (data + UI)
+
+#### Data model addition (one new field)
 
 ```js
 gap.services = ["migration", "deployment", "training"]   // optional; multi-select
@@ -945,10 +953,10 @@ gap.services = ["migration", "deployment", "training"]   // optional; multi-sele
 Two-surface treatment per `feedback_foundational_testing.md`:
 - Demo session refresh: a few demo gaps get appropriate `services` arrays (e.g., g-001 PowerProtect replace gets `["migration", "deployment", "training"]`).
 - Seed skill update: at least one seed skill writable to `context.selectedGap.services` (multi-value writes need a small `bindingResolver` extension).
-- demoSpec assertion: SS-DS22 — "every demo gap with `gapType: replace|consolidate|introduce|retire` has a `services` array (may be empty if user explicitly cleared)".
+- demoSpec assertion: DS22 — "every demo gap with `gapType: replace|consolidate|introduce|retire` has a `services` array (may be empty if user explicitly cleared)".
 - DEMO_CHANGELOG entry.
 
-### NEW `core/services.js` — catalog (mirrors `BUSINESS_DRIVERS` shape)
+#### NEW `core/services.js` — catalog (mirrors `BUSINESS_DRIVERS` shape)
 
 ```js
 export const SERVICE_TYPES = [
@@ -979,7 +987,7 @@ export const SUGGESTED_SERVICES_BY_GAP_TYPE = {
 };
 ```
 
-### UI surfaces
+#### UI surfaces (additive only — no rearrangement of existing layout)
 
 1. **Gap detail panel** (Tab 4 right side, GapsEditView):
    - New "Services needed" section under "Mapped Dell solutions"
@@ -994,29 +1002,85 @@ export const SUGGESTED_SERVICES_BY_GAP_TYPE = {
    - At the top: a "Services scope summary" sentence: "Across N projects: X migrations · Y deployments · Z trainings · W runbooks"
    - This is the workshop deliverable for "engagement shape"
 
-### Tests — Suite 43 · SVC1-SVC10
+### Section PR · Pre-flight regression fixes
 
+| # | Item | File(s) | Effort |
+|---|---|---|---|
+| **PR1** | ContextView "Save context" must not touch `session.isDemo` when the saved context is unchanged from the loaded value (or when the only change is `customer.name` matching the existing value). Today, every Save unconditionally re-derives `isDemo: false` because the persisted shape no longer matches the demo template byte-for-byte. Fix: compare the persisted context payload against the *current* in-memory pre-save state; if no semantic field changed, treat as no-op and skip the `isDemo` flip. Validated live 2026-04-26: bug confirmed in v2.4.11 rolled-back state. | `state/sessionStore.js saveContextDraft` (or wherever ContextView's Save handler routes) | 20 min |
+| **PR2** | AI dropdown (per-tab `<select>` populated from skill registry) must subscribe to a `skills-changed` event so adding / deploying / reassigning a skill re-renders the dropdown without requiring a tab switch. Today the dropdown only re-derives on tab activation. Fix: emit `skills-changed` from `state/skillsStore.js` on add/update/delete/deploy/undeploy; the dropdown's render function subscribes via the existing `sessionEvents.js` bus pattern (or a new `skillsEvents.js` if cleaner). Note: be specifically careful not to break the Skill Builder admin panel re-render or the per-skill provider override controls — both already share state with the dropdown. | `state/skillsStore.js`; new `state/skillsEvents.js` (or extend `sessionEvents.js`); `interactions/aiCommands.js` (or wherever `<select>` is rendered) | 30 min |
+
+### Section U · UI subtractions
+
+| # | Item | File(s) | Effort |
+|---|---|---|---|
+| **U1** | Remove the v2.4.11 D2 `+ Add operational / services gap` button on Tab 4. Services now attach to any gap as a multi-chip facet — a dedicated ops-gap entry-point is redundant and reinforces a wrong mental model. The generic `+ Add gap` button stays. Update RULES.md §D entry to reflect the removal. | `ui/views/GapsEditView.js`; `docs/RULES.md` §D | 10 min |
+
+### Section T · Tests — Suite 43 · SVC + PR + U
+
+#### Services (SVC1-SVC10)
 - SVC1 · `SERVICE_TYPES` is a 10-entry array with id+label+hint shape
-- SVC2 · gap.services persists round-trip through createGap + updateGap
-- SVC3 · gap.services dedupes on createGap (same id twice → one)
+- SVC2 · `gap.services` persists round-trip through `createGap` + `updateGap`
+- SVC3 · `gap.services` dedupes on `createGap` (same id twice → one)
 - SVC4 · `SUGGESTED_SERVICES_BY_GAP_TYPE` returns the right chips per gapType
 - SVC5 · changing `gap.gapType` does NOT auto-mutate `gap.services` (opt-in confirmed)
 - SVC6 · empty array is a valid services value (not undefined)
-- SVC7 · invalid id in services array (e.g., "foo") drops on normalizeGap or fails validateGap (decide which during impl)
+- SVC7 · invalid id in services array (e.g., "foo") drops on `normalizeGap` or fails `validateGap` (decide which during impl)
 - SVC8 · Roadmap project services chip = union of constituent gap services, deduped
 - SVC9 · "Services scope" sub-tab renders one row per service that has ≥1 gap
 - SVC10 · `.canvas` file save/open round-trips `gap.services` (sessionFile envelope already passes through unknown fields)
 
-Plus DS22 in demoSpec for the demo refresh.
+#### Pre-flight (PR1-PR2)
+- PR1.a · After loading demo session, calling `saveContextDraft` with the unchanged context payload leaves `session.isDemo === true`
+- PR1.b · After loading demo session, calling `saveContextDraft` with a changed `customer.name` flips `session.isDemo` to `false` (the original intent — only changes mean "user has taken over")
+- PR2.a · `state/skillsStore.js add(skill)` emits `skills-changed`
+- PR2.b · `state/skillsStore.js deploy/undeploy/remove` emit `skills-changed`
+- PR2.c · The per-tab AI dropdown's render function is registered as a subscriber and re-renders when the event fires (without requiring a tab switch)
 
-### What you'll see post-v2.4.12
+#### UI subtraction (U1)
+- U1 · Tab 4 contains exactly ONE add-gap CTA labelled `+ Add gap`. The string `+ Add operational / services gap` does NOT appear anywhere in the Tab 4 DOM. Any pre-existing test in Suite 42 that asserts the dedicated CTA must be deleted in the same commit.
 
-- Click any gap in Tab 4 → "Services needed" section appears with greyed "Suggested" chips you can click-to-add
-- Click a Replace gap → suggested chips show "Migration" and "Deployment" greyed; one click each adds them
-- Tab 5.5 Roadmap → each project card shows its services scope in a chip row
-- New "Services scope" sub-tab in Reporting → a clean roll-up of every service type and which projects need it
+#### Demo refresh (DS22)
+- DS22 · Demo gaps `g-001` (replace · PowerProtect) gets `services: ["migration", "deployment", "training"]`; `g-002`, `g-003`, etc. get appropriate arrays per `SUGGESTED_SERVICES_BY_GAP_TYPE`. Assertion: every demo gap with `gapType ∈ {replace, consolidate, introduce}` has `services.length >= 1`.
 
-### Effort: ~3-4 hr · single tag
+### Section R · Hard regression guards (smoke checklist)
+
+These specifically guard against the failure modes from the rolled-back attempt:
+
+| Guard | Check |
+|---|---|
+| **R1** | Tab 1: load demo → click "Save context" without changing anything → hard-refresh page → demo banner still visible (PR1 effective) |
+| **R2** | Tab 1: load demo → change customer name → Save → hard-refresh → demo banner gone, customer name preserved (PR1 didn't break the legitimate flip) |
+| **R3** | Skill Builder: add a new skill while parked on Tab 4 with the AI panel open → dropdown shows the new skill without a tab switch (PR2 effective) |
+| **R4** | Skill Builder: deploy a skill to a different tab → that tab's dropdown updates immediately (PR2 effective on the deploy path) |
+| **R5** | Tab 4: gap detail "Services needed" chips persist across hard refresh |
+| **R6** | Tab 5.5: project card services chip row updates when a constituent gap's services change |
+| **R7** | Tab 4: there is no `+ Add operational / services gap` button (U1 effective) |
+| **R8** | NEW Reporting sub-tab "Services scope" renders without console errors |
+| **R9** | `.canvas` file save → re-open → `gap.services` survives the round-trip |
+| **R10** | Page hard-refresh on Tab 4 with services-populated demo session → no console errors, no missing fields, no banner disappearing |
+
+### What you'll see post-v2.4.12 (verification spec)
+
+- **Tab 4 gap detail** → "Services needed" section appears with a greyed "SUGGESTED" eyebrow row (click-to-add) and full-color selected chips (click-to-remove)
+- **Tab 4** → no more "+ Add operational / services gap" button (only the generic "+ Add gap" remains)
+- **Tab 5.5 Roadmap** → each project card shows its services scope in a chip row beneath the Dell-solutions chips
+- **New "Services scope" sub-tab in Reporting** → a clean roll-up of every service type and which projects need it, with a "Across N projects: X migrations · …" summary sentence
+- **Tab 1 Save context (no-op)** → demo banner survives a hard refresh (the v2.4.11 latent bug is fixed)
+- **AI skill add / deploy / reassign** → the per-tab dropdown updates without requiring a tab switch
+- **Demo session** → g-001 + others have realistic `services` arrays as per the demo refresh
+- **`.canvas` file save/open** → services round-trip cleanly
+
+### Effort: ~5 hr · single tag (Section S ~3-4 hr; PR + U + R guards ~1-1.5 hr)
+
+### Tag protocol (per the locked discipline)
+
+1. Spec committed (this entry rewrite) — gates everything else.
+2. Tests committed (Suite 43 + DS22 + U1 deletion + PR1/PR2 cases) — fail RED at first.
+3. Code execution — single coherent pass, all sections (S + PR + U + demo refresh).
+4. Tests go GREEN; full suite still 509+ passing.
+5. **Browser smoke** against Section R guards (R1-R10) — every box checked, results reported back.
+6. **Pause for explicit "tag it" approval.** No tag without it.
+7. Tag, force-push (`git push --force-with-lease` per Q3 decision 2026-04-26), update memory + HANDOFF.
 
 ---
 
