@@ -382,6 +382,26 @@ export function registerDemoSuite(api) {
   });
 
   // ──────────────────────────────────────────────────────────────
+  // Suite 35d · v2.4.12 · services scope coverage in demo
+  // (DS23 — every actionable demo gap exposes the new services field)
+  // ──────────────────────────────────────────────────────────────
+  describe("35d · Phase 19l · demo session · services array exercised", function() {
+
+    it("DS23 · every demo gap with gapType in {replace, consolidate, introduce} has services.length ≥ 1", function() {
+      var s = createDemoSession();
+      var actionable = s.gaps.filter(function(g) {
+        return ["replace", "consolidate", "introduce"].indexOf(g.gapType) >= 0;
+      });
+      assert(actionable.length >= 1,
+        "demo must include ≥1 actionable gap (replace/consolidate/introduce) so the services chips are exercisable from Load demo");
+      actionable.forEach(function(g) {
+        assert(Array.isArray(g.services) && g.services.length >= 1,
+          "demo gap " + g.id + " (gapType: " + g.gapType + ") must have services.length ≥ 1 to exercise the new chip UI from Load demo");
+      });
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────
   // Suite 35 · session-changed bus wiring
   // ──────────────────────────────────────────────────────────────
   describe("35 · Phase 19e · session-changed bus · apply & undo emit", function() {

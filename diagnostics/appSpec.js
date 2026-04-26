@@ -46,8 +46,26 @@ import {
 import {
   session, createEmptySession, resetSession,
   saveToLocalStorage, loadFromLocalStorage,
-  migrateLegacySession
+  migrateLegacySession,
+  // v2.4.12 · PR1 · context-save helper (RED-stub mirrors v2.4.11 bug)
+  applyContextSave
+  // Note: `replaceSession` is imported separately lower in the file
+  // (line ~4469); my new tests reuse that import.
 } from "../state/sessionStore.js";
+
+// v2.4.12 · Section S · services catalog + opt-in suggested chips
+import {
+  SERVICE_TYPES, SUGGESTED_SERVICES_BY_GAP_TYPE
+} from "../core/services.js";
+
+// v2.4.12 · PR2 · skill-registry change bus (so the per-tab AI dropdown
+// auto-refreshes when skills are added/updated/deployed/deleted).
+// Note: addSkill / updateSkill / deleteSkill are already imported lower
+// in the file (Suite 26 Skill Builder section); we re-use those.
+import {
+  onSkillsChanged,
+  _resetForTests as _resetSkillsEventsForTests
+} from "../core/skillsEvents.js";
 
 import {
   addInstance, updateInstance,
@@ -5987,6 +6005,265 @@ describe("42 · Phase 19k · v2.4.11 rules hardening + relationships polish", ()
     });
     throws(() => unlinkCurrentInstance(s, gap.id, "c1"),
       "ops gap unlinking last current must throw — keep+retire actions need 1 current");
+  });
+
+});
+
+// ============================================================================
+// SUITE 43 — Phase 19l · v2.4.12 · services scope + pre-flight regression fixes
+// ============================================================================
+// Section S  (SVC1–SVC10) · gap.services[] field + 10-entry catalog
+// Section PR (PR1.a/b · PR2.a/b/c) · regression fixes bundled with the release
+// Section U  (U1) · removal of the v2.4.11 D2 "+ Add operational / services gap"
+//
+// Tests are RED at the spec-and-test-first commit (stubs in
+// `core/services.js`, `core/skillsEvents.js`, and `applyContextSave`
+// inside `state/sessionStore.js` make imports resolve but content fail).
+// Implementation phase replaces the stubs with the real catalog, the real
+// PR1 comparison logic, and the emit calls inside skillStore CRUD.
+// ============================================================================
+describe("43 · Phase 19l · v2.4.12 services scope + pre-flight regression fixes", () => {
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section S · Services scope · SVC1–SVC10
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("SVC1 · SERVICE_TYPES is a 10-entry array with id+label+hint shape", () => {
+    assert(Array.isArray(SERVICE_TYPES), "SERVICE_TYPES must be an array");
+    assertEqual(SERVICE_TYPES.length, 10, "SERVICE_TYPES must have exactly 10 entries");
+    SERVICE_TYPES.forEach((s, i) => {
+      assert(typeof s.id    === "string" && s.id.length    > 0, "entry " + i + " missing id");
+      assert(typeof s.label === "string" && s.label.length > 0, "entry " + i + " missing label");
+      assert(typeof s.hint  === "string" && s.hint.length  > 0, "entry " + i + " missing hint");
+    });
+    var ids = SERVICE_TYPES.map(s => s.id);
+    ["assessment","migration","deployment","integration","training",
+     "knowledge_transfer","runbook","managed","decommissioning","custom_dev"
+    ].forEach(id => {
+      assert(ids.indexOf(id) >= 0, "SERVICE_TYPES must include id '" + id + "'");
+    });
+  });
+
+  it("SVC2 · gap.services persists round-trip through createGap + updateGap", () => {
+    var s = createEmptySession();
+    var g = createGap(s, {
+      description: "Service-bearing gap", layerId: "compute",
+      services: ["migration", "deployment"]
+    });
+    assert(Array.isArray(g.services), "createGap must preserve services as an array");
+    assertEqual(g.services.length, 2, "createGap must keep both services");
+    assertEqual(g.services[0], "migration", "first service preserved");
+    var u = updateGap(s, g.id, { services: ["migration", "deployment", "training"] });
+    assertEqual(u.services.length, 3, "updateGap must accept services patch");
+    assert(u.services.indexOf("training") >= 0, "added service appears");
+  });
+
+  it("SVC3 · gap.services dedupes on createGap (same id twice → one)", () => {
+    var s = createEmptySession();
+    var g = createGap(s, {
+      description: "Dup probe", layerId: "compute",
+      services: ["migration", "migration", "deployment"]
+    });
+    assertEqual((g.services || []).length, 2, "duplicate ids must be deduped to 2");
+  });
+
+  it("SVC4 · SUGGESTED_SERVICES_BY_GAP_TYPE returns the right chips per gapType", () => {
+    var rep = SUGGESTED_SERVICES_BY_GAP_TYPE.replace || [];
+    assert(rep.indexOf("migration")  >= 0, "replace suggests migration (got: " + rep + ")");
+    assert(rep.indexOf("deployment") >= 0, "replace suggests deployment (got: " + rep + ")");
+    var con = SUGGESTED_SERVICES_BY_GAP_TYPE.consolidate || [];
+    assert(con.indexOf("migration")          >= 0, "consolidate suggests migration");
+    assert(con.indexOf("integration")        >= 0, "consolidate suggests integration");
+    assert(con.indexOf("knowledge_transfer") >= 0, "consolidate suggests knowledge_transfer");
+    var intro = SUGGESTED_SERVICES_BY_GAP_TYPE.introduce || [];
+    assert(intro.indexOf("deployment") >= 0, "introduce suggests deployment");
+    assert(intro.indexOf("training")   >= 0, "introduce suggests training");
+    var ops = SUGGESTED_SERVICES_BY_GAP_TYPE.ops || [];
+    assert(ops.indexOf("runbook") >= 0, "ops suggests runbook");
+  });
+
+  it("SVC5 · changing gap.gapType does NOT auto-mutate gap.services (opt-in)", () => {
+    var s = createEmptySession();
+    var g = createGap(s, {
+      description: "Type-change probe", layerId: "compute", gapType: "replace",
+      relatedCurrentInstanceIds: ["c-x"], relatedDesiredInstanceIds: ["d-x"],
+      services: ["migration"]
+    });
+    var u = updateGap(s, g.id, { gapType: "consolidate",
+      relatedCurrentInstanceIds: ["c-x", "c-y"], relatedDesiredInstanceIds: ["d-x"] });
+    assert(Array.isArray(u.services), "services must remain an array after gapType change");
+    assertEqual(u.services.length, 1, "user's prior pick preserved (no auto-replacement)");
+    assertEqual(u.services[0], "migration", "the prior service id is intact");
+  });
+
+  it("SVC6 · empty array is a valid services value (not undefined)", () => {
+    var s = createEmptySession();
+    var g = createGap(s, { description: "Empty services", layerId: "compute", services: [] });
+    assert(Array.isArray(g.services), "services must be an array even when empty");
+    assertEqual(g.services.length, 0, "empty array preserved");
+    doesNotThrow(() => validateGap(g), "empty services array passes validateGap");
+  });
+
+  it("SVC7 · invalid id in services array is rejected by validateGap", () => {
+    var bad = Object.assign({}, validGap(), { services: ["migration", "totally-not-a-service"] });
+    throws(() => validateGap(bad), "validateGap must reject unknown service ids");
+  });
+
+  it("SVC8 · roadmap project services chip = union of constituent gap services, deduped", () => {
+    var s = createEmptySession();
+    var cur1 = addInstance(s, { state: "current", layerId: "storage", environmentId: "coreDc",
+      label: "Old A", vendorGroup: "dell", criticality: "Medium" });
+    var cur2 = addInstance(s, { state: "current", layerId: "storage", environmentId: "coreDc",
+      label: "Old B", vendorGroup: "dell", criticality: "Medium" });
+    var des1 = addInstance(s, { state: "desired", layerId: "storage", environmentId: "coreDc",
+      label: "New A", vendorGroup: "dell", disposition: "replace", priority: "Now", originId: cur1.id });
+    var des2 = addInstance(s, { state: "desired", layerId: "storage", environmentId: "coreDc",
+      label: "New B", vendorGroup: "dell", disposition: "replace", priority: "Now", originId: cur2.id });
+    createGap(s, { description: "g-svc8-1", layerId: "storage", gapType: "replace",
+      relatedCurrentInstanceIds: [cur1.id], relatedDesiredInstanceIds: [des1.id],
+      services: ["migration", "deployment"] });
+    createGap(s, { description: "g-svc8-2", layerId: "storage", gapType: "replace",
+      relatedCurrentInstanceIds: [cur2.id], relatedDesiredInstanceIds: [des2.id],
+      services: ["migration", "training"] });
+    var projects = buildProjects(s, {}).projects;
+    var proj = projects.find(p => p.envId === "coreDc" && p.layerId === "storage" && p.gapType === "replace");
+    assert(proj, "matching project must be built (envId: coreDc, layer: storage, replace)");
+    assert(Array.isArray(proj.services), "project must expose a services union (Array)");
+    assertEqual(proj.services.length, 3, "deduped union must contain migration+deployment+training");
+    ["migration", "deployment", "training"].forEach(id =>
+      assert(proj.services.indexOf(id) >= 0, "union must include '" + id + "'"));
+  });
+
+  it("SVC9 · 'Services scope' sub-tab appears in the Reporting view DOM", () => {
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderReportingOverview(l, r);
+    assert(/services scope/i.test(l.textContent || ""),
+      "Reporting view must surface the 'Services scope' sub-tab entry");
+  });
+
+  it("SVC10 · gap.services round-trips through JSON (.canvas envelope)", () => {
+    var s = createEmptySession();
+    var g = createGap(s, {
+      description: "Round-trip probe", layerId: "compute",
+      services: ["migration", "deployment"]
+    });
+    var json = JSON.stringify(s);
+    var back = JSON.parse(json);
+    var rg = back.gaps.find(x => x.id === g.id);
+    assert(rg, "gap must survive JSON round-trip");
+    assert(Array.isArray(rg.services), "services must remain an array post-JSON");
+    assertEqual(rg.services.length, 2, "services length preserved");
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section PR · Pre-flight regression fixes (PR1 + PR2)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("PR1.a · ContextView no-op Save preserves session.isDemo", () => {
+    replaceSession({
+      sessionId: "sess-pr1a", isDemo: true,
+      customer: { name: "Acme Financial Services", vertical: "Financial Services",
+                  segment: "", industry: "", region: "EMEA", drivers: [] },
+      sessionMeta: { date: "2026-04-26", presalesOwner: "", status: "Draft", version: "2.0" },
+      instances: [], gaps: []
+    });
+    applyContextSave({
+      customer: { name: "Acme Financial Services", vertical: "Financial Services", region: "EMEA" },
+      sessionMeta: { presalesOwner: "" }
+    });
+    assertEqual(session.isDemo, true,
+      "no-op save (no field changed) must NOT flip isDemo to false — demo banner must survive refresh");
+  });
+
+  it("PR1.b · ContextView Save with name change DOES flip isDemo to false", () => {
+    replaceSession({
+      sessionId: "sess-pr1b", isDemo: true,
+      customer: { name: "Acme Financial Services", vertical: "Financial Services",
+                  segment: "", industry: "", region: "EMEA", drivers: [] },
+      sessionMeta: { date: "2026-04-26", presalesOwner: "", status: "Draft", version: "2.0" },
+      instances: [], gaps: []
+    });
+    applyContextSave({
+      customer: { name: "Different Customer Co", vertical: "Financial Services", region: "EMEA" },
+      sessionMeta: { presalesOwner: "" }
+    });
+    assertEqual(session.isDemo, false,
+      "real name change must flip isDemo to false (legitimate path preserved)");
+    assertEqual(session.customer.name, "Different Customer Co", "name patch was applied");
+  });
+
+  // PR2 helpers — each test isolates its own ai_skills_v1 storage so it
+  // never sees skills from other tests or the user's real localStorage.
+  function withIsolatedSkillsStorage(fn) {
+    var savedBlob;
+    try { savedBlob = window.localStorage.getItem("ai_skills_v1"); }
+    catch (e) { savedBlob = null; }
+    try {
+      try { window.localStorage.removeItem("ai_skills_v1"); } catch (e) {}
+      _resetSkillsEventsForTests();
+      fn();
+    } finally {
+      try {
+        if (savedBlob === null) window.localStorage.removeItem("ai_skills_v1");
+        else                    window.localStorage.setItem("ai_skills_v1", savedBlob);
+      } catch (e) {}
+      _resetSkillsEventsForTests();
+    }
+  }
+
+  it("PR2.a · addSkill emits skills-changed", () => {
+    withIsolatedSkillsStorage(function() {
+      var seen = [];
+      var off = onSkillsChanged(function(evt) { seen.push(evt.reason); });
+      try {
+        addSkill({ name: "PR2.a probe", tabId: "context", promptTemplate: "x" });
+        assert(seen.length >= 1,
+          "addSkill must emit a skills-changed event so the per-tab dropdown re-renders without a tab switch (saw " + seen.length + ")");
+      } finally { off(); }
+    });
+  });
+
+  it("PR2.b · updateSkill emits skills-changed (deploy/undeploy/reassign all fire)", () => {
+    withIsolatedSkillsStorage(function() {
+      var skill = addSkill({ name: "PR2.b probe", tabId: "context", promptTemplate: "x" });
+      var seen = [];
+      var off = onSkillsChanged(function(evt) { seen.push(evt.reason); });
+      try {
+        updateSkill(skill.id, { deployed: false });   // undeploy
+        assert(seen.length >= 1,
+          "updateSkill (toggling deployed) must emit skills-changed (saw " + seen.length + ")");
+      } finally { off(); }
+    });
+  });
+
+  it("PR2.c · deleteSkill emits skills-changed", () => {
+    withIsolatedSkillsStorage(function() {
+      var skill = addSkill({ name: "PR2.c probe", tabId: "context", promptTemplate: "x" });
+      var seen = [];
+      var off = onSkillsChanged(function(evt) { seen.push(evt.reason); });
+      try {
+        deleteSkill(skill.id);
+        assert(seen.length >= 1,
+          "deleteSkill must emit skills-changed so the dropdown drops the deleted skill (saw " + seen.length + ")");
+      } finally { off(); }
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section U · UI subtractions (U1)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("U1 · Tab 4 has no '+ Add operational / services gap' button (services attach to regular gaps)", () => {
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderGapsEditView(l, r, freshSession());
+    var btnTexts = Array.from(l.querySelectorAll("button"))
+      .map(b => (b.textContent || "").trim());
+    var hasAddGap = btnTexts.some(t => /^\+\s*add gap\b/i.test(t));
+    var hasOpsGap = btnTexts.some(t => /operational.*\/?\s*services?\s+gap/i.test(t));
+    assert(hasAddGap,
+      "Tab 4 must still have the generic '+ Add gap' button");
+    assert(!hasOpsGap,
+      "v2.4.12 U1 — '+ Add operational / services gap' CTA must be REMOVED (services attach to regular gaps; dedicated CTA is redundant). Found buttons: " + JSON.stringify(btnTexts));
   });
 
 });

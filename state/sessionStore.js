@@ -207,6 +207,38 @@ export function replaceSession(snapshot) {
   Object.assign(session, snapshot);
 }
 
+// v2.4.12 · PR1 · ContextView "Save context" handler.
+//
+// Today ContextView mutates session.customer + session.sessionMeta directly
+// from form inputs and then unconditionally flips isDemo to false whenever
+// customer.name has a non-empty value. That breaks the workshop flow: load
+// a demo session → click Save without changing anything → isDemo flips →
+// demo banner disappears on the next refresh.
+//
+// Fix: only flip isDemo when the patch ACTUALLY changes a field. A no-op
+// save (clicking Save with the demo's own values intact) preserves the
+// demo banner across refresh. The original semantic — "user has taken
+// over the session" — is preserved for the legitimate edit path.
+//
+// patch shape: { customer: {…subset}, sessionMeta: {…subset} }
+// `customer.drivers` is excluded — it has its own save flow.
+//
+// STUB · v2.4.12 spec-and-test-first phase: this implementation mirrors
+// the v2.4.11 BUG so PR1.a fails RED. The implementation phase replaces
+// the body with the comparison logic described above.
+export function applyContextSave(patch) {
+  var p = patch || {};
+  if (p.customer)    Object.assign(session.customer,    p.customer);
+  if (p.sessionMeta) Object.assign(session.sessionMeta, p.sessionMeta);
+  // BUG (v2.4.11) — unconditional flip on any non-empty name save. To be
+  // replaced in implementation phase with: flip only if a field changed.
+  if (session.customer.name && session.customer.name.trim()) {
+    session.isDemo = false;
+  }
+  saveToLocalStorage();
+  return session;
+}
+
 export function saveToLocalStorage() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
