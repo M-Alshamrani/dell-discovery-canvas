@@ -22,10 +22,11 @@
 
   <header id="app-header">
     <div class="header-brand">
+      <!-- v2.5.0 TB2: local Dell logo (offline-safe, no CDN dependency).
+           Dell-blue logo on white topbar; the inverted-white treatment from
+           the v2.2.x blue gradient era is gone. -->
       <img src="./Logo/delltech-logo-stk-blue-rgb.avif"
-           alt="Dell Technologies"
-           style="height:36px;width:auto;filter:brightness(0) invert(1);"
-           onerror="this.onerror=null;this.src='https://i.dell.com/is/image/DellContent/content/dam/images/logos/dell-technologies/stacked/digital/delltech-logo-stk-blue-rgb.png?wid=1346&amp;hei=710&amp;fit=fit';" />
+           alt="Dell Technologies" />
       <div>
         <div class="header-title">Discovery Canvas</div>
         <div class="header-sub">IT / Enterprise Architecture · Dell Technologies</div>
@@ -33,7 +34,7 @@
     </div>
     <div class="header-right">
       <div class="header-meta" id="sessionMetaHeader">No session loaded</div>
-      <div class="header-app-version" id="appVersionChip" title="Dell Discovery Canvas build version (separate from session schema version)">Canvas v—</div>
+      <div class="header-app-version" id="appVersionChip" title="Dell Discovery Canvas build version (separate from session schema version)">Canvas v.</div>
       <button id="undoBtn" class="undo-chip" type="button" aria-label="Undo last AI change" style="display:none;">
         ↶ Undo last AI change
         <span id="undoCountBadge" class="undo-count-badge" aria-hidden="true"></span>

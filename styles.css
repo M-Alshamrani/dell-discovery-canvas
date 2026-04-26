@@ -133,61 +133,134 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   color: var(--text-1);
 }
 
-/* ── Header ─────────────────────────────────────────────────── */
+/* ── Header (v2.5.0 TB1 white topbar) ───────────────────────────
+   Replaced the v2.2.x blue gradient with the philosophy's white +
+   bottom hairline pattern. Sticky-ready (position:sticky in caller),
+   72px tall with a backdrop-filter blur for a polished feel.
+   Brand-blue surface area drops materially (was the largest single
+   blue surface in the app). */
 #app-header {
-  height: 52px;
-  /* Dell brand gradient: deep -> blue -> highlight, ink-grounded. */
-  background: linear-gradient(135deg, #00447C 0%, #0063AE 50%, #0076CE 100%);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  height: 72px;
+  background: var(--canvas);
+  border-bottom: 1px solid var(--rule);
+  backdrop-filter: saturate(180%) blur(8px);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
+  padding: 0 24px;
   flex-shrink: 0;
 }
-.header-brand { display: flex; align-items: center; gap: 10px; }
-.header-logo  { width: 32px; height: 32px; flex-shrink: 0; }
-.header-title { font-size: 14px; font-weight: 700; color: #fff; letter-spacing: -0.01em; }
-.header-sub   { font-size: 10px; color: rgba(255,255,255,0.7); margin-top: 1px; }
-.header-meta  { font-size: 11px; color: rgba(255,255,255,0.85); font-weight: 400; }
-/* v2.4.6 · L4 · app-version chip. Distinct from session.sessionMeta.version
-   (the session-schema version); this is the running build. */
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.header-brand img {
+  /* TB2 . local Dell logo, no inversion (logo is dark blue on white now). */
+  height: 36px !important;
+  width: auto;
+  display: block;
+  flex-shrink: 0;
+  filter: none !important;
+}
+.header-brand > div {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  padding-left: 14px;
+  border-left: 1px solid var(--rule-strong);
+}
+.header-logo  { width: 36px; height: 36px; flex-shrink: 0; }
+.header-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+}
+.header-sub {
+  font-size: 10.5px;
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+.header-meta {
+  font-size: 10.5px;
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+/* v2.5.0 . app-version chip on white topbar. Mono caps subdued. */
 .header-app-version {
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
-  font-size: 10px; font-weight: 600;
-  padding: 2px 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 3px 10px;
   border-radius: 999px;
-  background: rgba(255,255,255,0.12);
-  border: 1px solid rgba(255,255,255,0.25);
-  color: rgba(255,255,255,0.92);
-  letter-spacing: 0.02em;
+  background: var(--canvas-soft);
+  border: 1px solid var(--rule-strong);
+  color: var(--ink-soft);
+  letter-spacing: 0.04em;
 }
 
-/* ── Stepper ────────────────────────────────────────────────── */
+/* ── Stepper (v2.5.0 TB6 leading-zero mono pattern) ─────────────
+   Replaces the v2.2.x rounded-pill stepper with the philosophy's
+   leading-zero idiom: mono Dell-blue "01" + sentence-case label,
+   active state shown by a 2px Dell-blue bottom rule (not a filled
+   background). Reduces brand-blue surface area and aligns with the
+   "L.01" numeric-id style elsewhere. */
 #stepper {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 8px 20px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  gap: 28px;
+  padding: 0 24px;
+  background: var(--canvas);
+  border-bottom: 1px solid var(--rule);
   flex-shrink: 0;
   height: 44px;
 }
 .step {
-  padding: 4px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 14px 0 12px;
+  border-bottom: 2px solid transparent;
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-2);
   white-space: nowrap;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease;
   user-select: none;
+  background: transparent;
+  border-radius: 0;
 }
-.step:hover         { border-color: var(--brand); color: var(--brand); }
-.step.active        { background: var(--brand); color: #fff; border-color: var(--brand); }
+.step .step-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-mute);
+  letter-spacing: 0.04em;
+}
+.step .step-label {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+.step:hover {
+  border-bottom-color: var(--rule-strong);
+}
+.step:hover .step-num   { color: var(--dell-blue); }
+.step:hover .step-label { color: var(--ink); }
+.step.active {
+  border-bottom-color: var(--dell-blue);
+}
+.step.active .step-num   { color: var(--dell-blue); font-weight: 700; }
+.step.active .step-label { color: var(--ink); font-weight: 600; }
 
 /* ── Main layout ────────────────────────────────────────────── */
 #main {
@@ -1844,34 +1917,42 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   font-size: 11px; font-weight: 600;
   padding: 5px 12px;
   border-radius: 999px;
-  background: rgba(255,255,255,0.15);
-  border: 1px solid rgba(255,255,255,0.35);
-  color: #fff;
+  background: var(--canvas-soft);
+  border: 1px solid var(--rule-strong);
+  color: var(--ink-soft);
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
   white-space: nowrap;
 }
-.undo-chip:hover { background: rgba(255,255,255,0.28); border-color: #fff; }
+.undo-chip:hover {
+  background: var(--canvas);
+  border-color: var(--dell-blue);
+  color: var(--dell-blue);
+}
 
-/* v2.4.5 · depth badge + undo-all chip. */
+/* v2.4.5 . depth badge + undo-all chip. White topbar variant. */
 .undo-count-badge {
   display: inline-block;
   min-width: 16px;
   margin-left: 6px; padding: 1px 6px;
   border-radius: 999px;
-  background: rgba(255,255,255,0.35);
-  color: #fff;
+  background: var(--dell-blue);
+  color: var(--canvas);
   font-size: 10px; font-weight: 700;
   text-align: center; vertical-align: baseline;
 }
 .undo-count-badge:empty { display: none; }
 .undo-chip-all {
   margin-left: 6px;
-  background: rgba(255,255,255,0.10);
-  border-color: rgba(255,255,255,0.30);
+  background: var(--canvas);
+  border-color: var(--rule-strong);
   opacity: 0.95;
 }
-.undo-chip-all:hover { background: rgba(255,255,255,0.22); }
+.undo-chip-all:hover {
+  background: var(--canvas-soft);
+  border-color: var(--dell-blue);
+  color: var(--dell-blue);
+}
 
 .ai-skill-result.has-proposals { background: var(--brand-faint); }
 
@@ -2082,15 +2163,19 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .gear-btn {
   width: 30px; height: 30px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: rgba(255, 255, 255, 0.10);
-  border: 1px solid rgba(255, 255, 255, 0.20);
-  color: #fff;
+  background: var(--canvas);
+  border: 1px solid var(--rule-strong);
+  color: var(--ink-soft);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
   padding: 0;
 }
-.gear-btn:hover { background: rgba(255, 255, 255, 0.20); border-color: rgba(255, 255, 255, 0.40); }
+.gear-btn:hover {
+  background: var(--canvas-soft);
+  border-color: var(--dell-blue);
+  color: var(--dell-blue);
+}
 .gear-btn svg   { display: block; }
 
 .settings-overlay { z-index: 100; }

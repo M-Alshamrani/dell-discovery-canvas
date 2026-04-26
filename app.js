@@ -19,12 +19,16 @@ import { renderSummaryVendorView }   from "./ui/views/SummaryVendorView.js";
 import { renderSummaryRoadmapView }  from "./ui/views/SummaryRoadmapView.js";
 import { renderSummaryServicesView } from "./ui/views/SummaryServicesView.js";
 
+// v2.5.0 TB6: stepper steps render with mono leading-zero pattern
+// (01 Context, 02 Current State, ...). The label is just the readable
+// name; renderStepper builds two-span markup so the leading number can
+// be styled mono Dell-blue independently of the sentence-case label.
 var STEPS = [
-  { id: "context",   label: "1  Context"       },
-  { id: "current",   label: "2  Current State"  },
-  { id: "desired",   label: "3  Desired State"  },
-  { id: "gaps",      label: "4  Gaps"           },
-  { id: "reporting", label: "5  Reporting"      }
+  { id: "context",   num: "01", label: "Context"       },
+  { id: "current",   num: "02", label: "Current State" },
+  { id: "desired",   num: "03", label: "Desired State" },
+  { id: "gaps",      num: "04", label: "Gaps"          },
+  { id: "reporting", num: "05", label: "Reporting"     }
 ];
 
 var REPORTING_TABS = [
@@ -187,7 +191,15 @@ function renderStepper() {
   STEPS.forEach(function(step) {
     var div = document.createElement("div");
     div.className = "step" + (step.id === currentStep ? " active" : "");
-    div.textContent = step.label;
+    // v2.5.0 TB6: mono leading-zero number + sans sentence-case label.
+    var num = document.createElement("span");
+    num.className = "step-num";
+    num.textContent = step.num;
+    var lbl = document.createElement("span");
+    lbl.className = "step-label";
+    lbl.textContent = step.label;
+    div.appendChild(num);
+    div.appendChild(lbl);
     div.addEventListener("click", function() {
       saveToLocalStorage();
       currentStep = step.id;
