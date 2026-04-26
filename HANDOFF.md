@@ -91,17 +91,33 @@ Ordered for logical progression. Each bucket has locked scope in memory or SPEC.
 - **A4.1. v2.4.13 Demo refresh + old-schema purge + per-tab demo banner audit — DEFERRED from v2.4.12 attempt 2026-04-26.** Three items the user chose to defer: (a) demo `g-001` Phase 17 violation (`gapType: replace` with 2 desireds; same shape that was retyped on `g-004` in v2.4.11), (b) localStorage-pollution causing app to default to demo on initial open in user's browser (clean colleagues see fresh-start UX correctly), (c) per-tab demo banner audit — Tab 1 has `.demo-mode-banner` element; Tabs 2-5 do NOT. User did not catch (c) on v2.4.11 so it's gentle; (a) and (b) need a concerted demo refresh that purges any localStorage demo data created under older schemas and rebuilds demos against the v2.4.12+ data model. Opportunity to re-validate every demo gap against current taxonomy + invariants. Effort: ~3 hr.
 - **A5. v2.6.0 Action-command skills** — runtime for `json-commands` response format. Was originally v2.4.6; deferred so UX + crown-jewel land first.
 
-### Bucket B — Crown-jewel UX rework (v2.5.0)
-Locked spec in `project_deferred_design_review.md` §§ 1-5. Single big release, best done in a fresh session with full context.
-- **B1.** Gaps ↔ Roadmap vocabulary unification.
-- **B2.** Visible Gap → Project relationship (today's silent `buildProjects` bucketing made visible).
-- **B3.** "Primary layer" semantics rework — `gap.layerId` vs `affectedLayers[]`.
-- **B4.** "✨ Use AI" button placement across Tabs 2-5.
-- **B5.** Whitespace + density + real SVG icon system + tag vocabulary unification + side-panel-as-drawer IA (per the GPLC sample comparison).
-- **B6.** NEW (from v2.4.12 user smoke 2026-04-26) · Reporting → "Services scope" sub-tab visual redesign per GPLC sample. Today: plain `<table>` with default styles, jammed text, no chip pills. Target: chip-pill table cells, segment-style category groups, summary card with proper hierarchy.
-- **B7.** NEW (from v2.4.12 user smoke 2026-04-26) · Detail-panel-as-drawer redesign per GPLC sample. When the user clicks a gap card / desired tile / project, the side panel opens with a visually structured card (sections, animation, chip vocabularies, timeline strip) instead of today's stack of plain divs. Applies to: Tab 4 gap detail, Tab 5 Gaps-Board detail, Tab 5 Roadmap project detail.
-- **B8.** NEW (from v2.4.12 user smoke 2026-04-26) · Cross-tab filter system on Tab 4 + Tab 5 Gaps Board: layer (already), gapType (already?), **services** (NEW), **environment** (NEW), **driver** (NEW). Multi-chip selectors with "match any/all" toggle.
-- **B9.** NEW · Design system (chip pill spec, typography rhythm, spacing tokens, color discipline) per `project_crown_jewel_design.md`. Prerequisite that lets B6-B8 deliver consistent UX.
+### Bucket B, Crown-jewel UI rework (v2.5.0 + v2.5.1)
+
+Joint spec in `docs/CHANGELOG_PLAN.md § v2.5.0` (LOCKED 2026-04-26) plus the philosophy alignment from the Dell Advisory Design System document the user provided 2026-04-26 plus the GPLC reference HTML at `C:/Users/Mahmo/Downloads/GPLC Digital Unified Platform v1.0.html`. Carried forward decisions from `project_crown_jewel_design.md` and `project_deferred_design_review.md`.
+
+**v2.5.0, LOCKED 2026-04-26** (next session, ~3 days, single tag):
+- **§0** Pre-flight audit pass: em-dash sweep, Dell product accuracy (g-003 VxRail, no Boomi, no Secureworks/Taegis post-2025, SmartFabric Director → Manager, CloudIQ under APEX AIOps), heading case (Title → sentence), default classification, topbar action audit, anti-pattern sweep on `styles.css`.
+- **§1** Design system foundation (DS1-DS8): tokens, eyebrow utility, ONE `.tag` primitive with `data-variant`, hairline section, card pattern, callout block (red / blue / green / amber 3px-left-border), shared band, mono tabular-nums.
+- **§2** Topbar + footer (TB1-TB6): white topbar replacing blue gradient; real Dell logo from `i.dell.com`; mono uppercase doc-meta strip; no Export PDF / Share; footer 2px Dell-blue top border with 3-col grid; stepper restyle to `01 02 03 04 05` mono leading-zero.
+- **§3** Color discipline (CD1-CD5): brand-blue surface area target ~5% (was ~30%); layered signal mapping (urgency level as chip color, domain as left-bar accent); single primary CTA per surface; everything else ghost / neutral.
+- **§4** Detail panel restructure (DP1-DP6): sticky head with mono crumbs + sentence-case h3 + lede + circular close; hairline-divided sections with mono caps eyebrows; 6×2px Dell-blue dash bullets; 2-col tech-grid for attribute summaries; callout integration for review-needed and AI-applied notices.
+- **§5** Reporting drawer pattern (DR1-DR6, Tab 5 only): NEW `ui/components/Drawer.js` module; click gap / project / service on Reporting → drawer slides in from right at 560px width; backdrop + Escape + ✕ close paths; Tabs 1-4 keep side-by-side persistent panel and adopt the drawer's INTERNAL structure only.
+- **§6** Cross-tab filter system (F1-F6): body data-attribute pattern; multi-chip selectors on Tab 4 + Reporting Gaps Board for layer / gapType / services / environment / driver; non-matching items dim to opacity 0.18-0.30 + grayscale(.5); match-mode toggle (default OR); persistence to `localStorage`.
+- **§7** Services scope sub-tab redesign (SR1-SR4): replace primitive table with hero summary card + per-service grid cards + DR5 click-to-drawer + concentration-risk callouts.
+- **§8** Tag vocabulary migration (TV1-TV9): all 11+ chip / badge / pill classes consolidated to `.tag[data-variant=...]`.
+- **§9** Tests (Suite 44 VT1-VT15 + DS24): token presence, eyebrow utility, single tag primitive, drawer module, filter behaviors, dash bullet, em-dash absence, services-scope cards.
+- **§R** Regression guards: v2.4.12 R1-R10 stay green; new R1-R12 cover the visual rework + Dell product accuracy + drawer paths + color audit.
+- **Hard rules baked in**: no em dashes anywhere; sentence case headings; real Dell logo; hover-only shadows; ONE `.tag` primitive; drawer scope is Tab 5 only (hybrid pattern); layered signal colors.
+
+**v2.5.1, queued after v2.5.0 sign-off** (~2 days, separate tag):
+- **U4** "✨ Use AI" button placement on Tabs 2-5 (currently only Tab 1 driver detail).
+- **VC** Vocabulary unification across Gaps (Tab 4) and Roadmap (Tab 5.5).
+- **GV** Visible Gap → Project relationship affordances.
+- **PL** Primary-layer semantics rework (`gap.layerId` vs `affectedLayers[]`). Data model touchpoint, explicit spec round before code.
+- **IC** SVG icon system (Lucide library); replace all emoji with stroke icons at uniform 16/20/24px sizes.
+- **EP** Edit-side panel polish refinements once v2.5.0 §4 patterns land.
+
+**v2.4.9 remains the pre-crown-jewel rollback anchor**. v2.4.12 is now the safe state; if v2.5.0 sideways, roll to v2.4.12.
 
 ### Bucket C — Was user-gated, now done
 - ✅ C1. Phase 17 Taxonomy unification — shipped as v2.4.8 (2026-04-24, sign-off in hand).

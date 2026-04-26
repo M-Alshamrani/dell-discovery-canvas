@@ -932,6 +932,227 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
+## v2.5.0 · Crown-jewel UI rework · LOCKED 2026-04-26 (next major release after v2.4.12)
+
+### Theme
+
+Discovery Canvas at v2.4.12 has the right tokens (Inter, JetBrains Mono, Dell palette, radii 4/6/10) but the wrong structure. Phase 15.3 swapped values; v2.5.0 swaps the visual language and information architecture. The goal is to take the same data the app already manages (drivers, gaps, projects, services) and make it read as an executive-grade artifact: scannable on the surface, complete on demand, restrained in chrome, considered in detail.
+
+### Sources of design truth (single canonical reference set)
+
+1. The Dell Advisory Design System philosophy document (provided by the user 2026-04-26). Five principles: ONE signature color, whitespace as a design element, typography does heavy lifting, details compound into perceived quality, interactivity must serve the story. Anti-pattern list and writing rules treated as hard constraints.
+2. The GPLC Digital Unified Platform v1.0 reference HTML (`C:/Users/Mahmo/Downloads/GPLC Digital Unified Platform v1.0.html`). The component vocabulary patterns adopted verbatim where they fit (eyebrow, slide-out panel, tag, callout, shared band) and rejected where they conflict with the workshop tool's interaction model (chapter TOC, document-width column, hero per page).
+3. Memory `project_crown_jewel_design.md` (the previous-session ranking and split decisions). Stays load-bearing.
+
+### Locked decisions (do not re-litigate during implementation)
+
+| Decision | Why |
+|---|---|
+| **Hybrid drawer pattern**: drawer (slide-in modal) on Tab 5 Reporting only. Tabs 1-4 keep side-by-side persistent right panel. Tabs 1-4 adopt the drawer's INTERNAL structure (sticky head, mono caps eyebrows, hairline-divided sections, tech-grid summaries) but no slide animation. | Reporting is consumption mode; drawer focus works. Tabs 1-4 are edit mode where the user clicks back and forth between list and detail while typing; modal would break flow. |
+| **Layered signal colors**: urgency level (High / Medium / Low) renders red / amber / green respectively as chip color. Domain (cyber resilience driver, ops gap type, data-protection layer, etc.) renders red / green / amber as a left-bar accent or icon background. Blue is reserved for Dell-mapped solutions and the single primary CTA per surface. Two layers do not collide because they apply to different visual roles (chip color vs accent line vs icon background). | Honors "ONE signature color" while still using the philosophy's signal palette where it carries real meaning. |
+| **No em dashes anywhere**: UI copy, comments, docs, demo session text, seed-skill prompts. Use commas, periods, parentheses, colons. | Philosophy hard rule. Em dashes read AI-generated and the user catches them. |
+| **Sentence case for headings**, Title Case reserved for proper nouns. | Philosophy rule. |
+| **Real Dell logo from `i.dell.com` CDN**. No "D" placeholder. | Philosophy rule. |
+| **Hover-only shadows** (default state has none). | Philosophy + GPLC pattern. |
+| **One `.tag` primitive** with `data-variant` attribute, replacing all 11+ existing chip / badge / pill classes. | Vocabulary unification. Lower CSS surface area, clearer mental model. |
+| **Drawer scope (Tab 5)** uses 560px width, translateX slide, 300ms cubic-bezier ease, backdrop blur 2px + 32% ink-blue dim, sticky head with crumbs + close, scrollable body, hairline-divided sections, mono uppercase eyebrow per section. | GPLC sample exactly. |
+| **Filter implementation** uses body data attributes (`body[data-filter-services="migration deployment"]`). Non-matching items dim to opacity 0.18-0.30 with grayscale(.5). Re-clicking active filter clears it. Default match mode is OR (any chip in selection matches); a small toggle exposes AND for power users. | Philosophy + GPLC pattern. |
+| **No "Export PDF" or "Share" buttons** in the topbar by default. | Philosophy anti-pattern. |
+| **No emoji as functional icons**. Replace `↶ ↶↶ ✨ + ↺ ✕ ★ ↳` etc. with a single SVG icon library (Lucide, deferred to v2.5.1). v2.5.0 keeps existing emoji in place but flags every site for v2.5.1 replacement. | Philosophy anti-pattern; SVG migration is a mechanical pass that warrants its own slice. |
+
+### Section 0 · Pre-flight audit pass (audit + fix in same pass; mechanical)
+
+Each item is a grep, a read, a small fix. No structural risk. Done first to reset the project to the philosophy baseline before structural work lands on top.
+
+| # | Audit | Fix |
+|---|---|---|
+| **A1** | Em-dash sweep across `app.js`, `core/`, `state/`, `interactions/`, `services/`, `ui/`, `diagnostics/`, `docs/`, `index.html`, `styles.css`. | Replace with commas, periods, parens, colons. UI copy first; comments + docs second. |
+| **A2** | Dell product accuracy in demo session + seed-skill prompts. Specifically: `g-003` says "VxRail (VMware-based HCI)"; reposition to lead with **Dell Private Cloud on PowerFlex via Dell Automation Platform** with VxRail as a still-supported alternative if customer is committed to VMware. Verify no Boomi (sold 2021), no Secureworks/Taegis (sold to Sophos 2025), SmartFabric Director referenced as SmartFabric Manager, CloudIQ referenced under APEX AIOps, VMware framed as a partner not a Dell brand. | Update `state/demoSession.js` strings; update any seed-skill `systemPrompt` or `promptTemplate` that names a sold or renamed product. |
+| **A3** | Heading case audit. Anything in Title Case that is not a proper noun becomes sentence case. Examples to check: "Discovery context", "Strategic Drivers" (the brand-name "Strategic Drivers" stays per customer convention), "Mapped Dell solutions", "Services scope", view titles in Reporting sub-tabs. | One-by-one review; flag ambiguous cases for user. |
+| **A4** | Default classification text. Session status default is currently "Draft"; verify it reads "Draft" or "Initial Arc. Draft" everywhere it surfaces. Confirm "Client Confidential" appears nowhere. | Adjust copy if any drift. |
+| **A5** | Topbar action audit. List every button / link / chip currently rendered in the topbar (`renderHeaderMeta`, the gear icon, etc.). Confirm there is no Export PDF, no Share, no marketing copy. | Remove offenders. Keep gear (settings), Undo, version chip. |
+| **A6** | Real Dell logo verification. Check `index.html` and `app.js renderHeaderMeta` for the brand mark. If absent or placeholder, plan inclusion of `i.dell.com` CDN URL (TB2 in §2). | Lookup canonical CDN URL during implementation; fall back to a local SVG asset only if CDN unavailable. |
+| **A7** | Anti-pattern sweep on `styles.css`: drop shadows on default states (move to `:hover` only); bold colored backgrounds for layers / sections (replace with hairline + soft tint); decorative gradients (kill except for the hero-strip and shared-band patterns). | Mechanical CSS edit. Tests catch breakage. |
+
+### Section 1 · Design system foundation (DS1-DS8)
+
+Foundation that everything else builds on. Pure CSS plus a tiny utility class set.
+
+| # | Item | Effort |
+|---|---|---|
+| **DS1** | CSS token layer in `styles.css`. 4-tier ink (`--ink`, `--ink-soft`, `--ink-mute`, `--ink-faint`). 3-tier surface (`--canvas`, `--canvas-soft`, `--canvas-alt`). Hairline scale (`--rule` light, `--rule-strong` dividers). Signal palette (`--red / --red-soft`, `--green / --green-soft`, `--amber / --amber-soft`). Hover-only shadow scale (`--shadow-sm`, `--shadow-md`, `--shadow-lg`). Brand: `--dell-blue`, `--dell-blue-deep`, `--dell-blue-dark`, `--dell-blue-ink`, `--dell-blue-soft`, `--dell-blue-faint`. Verify against the philosophy doc verbatim. | 30 min |
+| **DS2** | Eyebrow utility. CSS class `.eyebrow` (mono 10.5px, uppercase, 0.18-0.22em letter-spacing, color `--ink-mute` by default, `--dell-blue` variant via `.eyebrow-blue`, optional 36-60px blue accent line via `::before` on `.eyebrow-rule`). | 20 min |
+| **DS3** | ONE `.tag` primitive with `data-variant`. Variants: `neutral` (default, `--ink-mute` border + text), `emphasis` (Dell blue border + ink text), `filled` (Dell-blue-soft fill + Dell-blue-deep text), `state` (dashed border, lower opacity, used for closed gaps), `signal-r` / `signal-a` / `signal-g` (red / amber / green border + matching color text + soft-fill background). All variants share: mono 9.5-10.5px, uppercase, 0.12em letter-spacing, 2px radius, 2px×6px padding. | 30 min |
+| **DS4** | Hairline section pattern. CSS class `.section` with optional eyebrow above + 1px hairline rule + 22-24px top padding. First-child `.section` has no rule. Replaces most "card-in-card" nesting. | 20 min |
+| **DS5** | Card primitive aligned to GPLC. White background, 1px `--rule` border, 5px radius (`--radius-md`), generous padding. Hover: 1px lift via `translateY(-1px)`, border switches to `--dell-blue` (or signal color via `data-pillar`), `--shadow-md`, optional 3px Dell-blue left bar via `::before` opacity transition. Cursor pointer only when card is clickable. | 30 min |
+| **DS6** | Callout block pattern. Four variants (red / blue / green / amber), each 3px colored left border, 1px hairline border, soft-tint background, mono caps label inside, body copy. Used to highlight critical notes inside detail panels. | 20 min |
+| **DS7** | Shared band pattern. Full-width band, 2px Dell-blue top border, soft Dell-blue-faint gradient background, floating mono caps label on the top edge. Used for "Demo mode" announcement and "Auto-drafted gaps need review" notice (replacing today's `.demo-mode-banner` and `.auto-gap-notice`). | 30 min |
+| **DS8** | Mono tabular-nums on every numeric surface. Driver priorities, gap counts, vendor mix percentages, urgency badges, services scope counts. CSS rule `font-variant-numeric: tabular-nums` applied to a `.metric` utility class plus inline on the relevant render sites. | 15 min |
+
+### Section 2 · Topbar and footer rework (TB1-TB6)
+
+Header is the most visible "this is the new design" surface. Get this right and the rest signals correctly.
+
+| # | Item | Effort |
+|---|---|---|
+| **TB1** | White topbar with bottom hairline, replacing the blue-gradient `.app-header`. Sticky, 72px tall, `backdrop-filter: saturate(180%) blur(8px)`. | 30 min |
+| **TB2** | Real Dell logo from `i.dell.com` CDN at 44px tall with brand divider (1px × 32px `--rule-strong`) and brand text (two-line: Inter 600 13px application name + JetBrains Mono 10.5px uppercase mute subtitle). Falls back to local `Logo/` asset if CDN unavailable. | 30 min |
+| **TB3** | Doc-meta strip in the centre column: mono 10.5px uppercase 0.06em letter-spacing, customer name + date + status + canvas version, separated by 1px × 14px vertical rules. Replaces today's pipe-delimited string. | 30 min |
+| **TB4** | Topbar actions on the right column. Keep: gear (settings), Undo button (when applicable). Verify: no Export PDF, no Share, no marketing copy. | 15 min |
+| **TB5** | Footer rework. 2px Dell-blue top border, 3-column grid (about / prepared by / classification stamp). Matches the philosophy footer pattern at lower density (no register / contact info needed for an internal workshop tool). | 30 min |
+| **TB6** | Stepper restyle to match the philosophy "L.01 leading-digit-blue" idiom. Each step renders mono `01` `02` `03` `04` `05` (leading zero, blue) followed by sentence-case label in Inter 500. Active step gets a Dell-blue 2px bottom rule, not a filled background. | 30 min |
+
+### Section 3 · Color discipline pass (CD1-CD5)
+
+Brings brand-blue surface area from ~30% to ~5% of pixels.
+
+| # | Item | Files |
+|---|---|---|
+| **CD1** | Audit + replace blue chrome. Active tab background, button fills, chip borders, kanban-column accents, summary tab active state. Replace with neutral defaults; reserve blue for accent rules, hover, active border-only states, single-CTA fills. | `styles.css`, all `ui/views/*` |
+| **CD2** | Active states use blue accent only (border or 2px bottom rule), not filled background, except for the single primary CTA per surface. | same |
+| **CD3** | Layered signal mapping. Urgency level renders as chip color (`.tag[data-variant="signal-{r,a,g}"]`). Domain accents render as left-bar (`.card[data-domain="cyber"]::before` etc.) or icon background (`.card-icon[data-domain="ops"]`). Both layers can apply to the same card without color collision. | `styles.css`, `ui/views/GapsEditView.js`, `ui/views/SummaryGapsView.js`, `ui/views/SummaryRoadmapView.js` |
+| **CD4** | Single primary CTA per surface in solid Dell-blue. Everything else is `.btn-ghost` (border only, ink-soft text, hover changes border + text to blue). Audit: "Save context", "Save changes", "Approve draft", "Load demo", "+ Add gap", "↻ Refresh", "✓ Apply", "Skip", etc. Identify the ONE primary per view; demote the rest. | view files |
+| **CD5** | Color-coded domain mapping baked into `core/services.js` (or a new `core/domains.js` if cleaner). Each catalog id has an optional `domain: "cyber" \| "ops" \| "data" \| null` so the chip can pick its accent automatically. Migration / deployment / training default to null. Runbook + managed → "ops". Decommissioning → "ops". Assessment → null. | `core/services.js`, `ui/views/GapsEditView.js` |
+
+### Section 4 · Detail panel restructure (DP1-DP6)
+
+Apply the GPLC slide-out panel internal pattern to every detail panel render, regardless of whether the panel is drawer-mode (Tab 5) or side-by-side mode (Tabs 1-4).
+
+| # | Item | Files |
+|---|---|---|
+| **DP1** | Sticky head pattern. Mono uppercase breadcrumbs (`GAP · CYBER RESILIENCE · REPLACE · DATA PROTECTION`), 26px sentence-case h3 title, 14.5px lede, 32px circular close button (only on drawer-mode panels). | all detail panel renders |
+| **DP2** | Hairline-divided sections inside the panel body. Each section has a mono uppercase eyebrow (`MAPPED DELL SOLUTIONS`, `SERVICES NEEDED`, `BUSINESS CONTEXT`, `AFFECTED LAYERS`). 1px top hairline + 22px top padding between sections (first section has no hairline). | same |
+| **DP3** | Bullet list pattern. Replace `•` and default `<ul>` styling with the GPLC dash-bullet: 6×2px Dell-blue rectangle 9px from top of each `<li>`. 13.5px Inter, ink color, 1.5 line-height. Used for solutions lists, criteria lists, recommendations. | `styles.css` (`.panel-section li::before`) |
+| **DP4** | Tech-grid pattern (2-col grid of mini-cards). 12-14px padding, soft Dell-blue-faint background, 3px Dell-blue left border, mono uppercase 10px label + 13px Inter 500 value. Used for attribute summaries (e.g., `URGENCY · High`, `PHASE · Now`, `LAYER · Data Protection`, `STATUS · Open`). | `styles.css`, view renders |
+| **DP5** | Migrate every detail panel render to the new pattern. Sites: `ui/views/GapsEditView.js renderGapDetail`, `ui/views/MatrixView.js` tile detail, `ui/views/SummaryGapsView.js renderGapDetail`, `ui/views/SummaryRoadmapView.js renderProjectDetail`. Keep functional contracts (save buttons, link rows) intact; only restructure markup + styling. | view files |
+| **DP6** | Callout integration. Inside detail panels, integrate the DS6 callout block for: "Review needed" notices (red callout), AI auto-applied notices (blue callout), recently-closed gaps (amber), and AI-suggested-driver chip (blue). Replaces today's inline `.review-needed-banner` and `.auto-driver-chip` styles. | `ui/views/GapsEditView.js`, `styles.css` |
+
+### Section 5 · Reporting drawer pattern (DR1-DR6), Tab 5 only
+
+The "wow" interaction. Click a project / gap / service on Reporting, drawer slides in from right, focused detail, click outside or Escape to dismiss.
+
+| # | Item | Files |
+|---|---|---|
+| **DR1** | Drawer container module. New file `ui/components/Drawer.js` exporting `openDrawer({ crumbs, title, lede, body })` and `closeDrawer()`. Module owns the backdrop element + panel element, handles slide-in / slide-out animation, sticky head construction, body scroll, focus trap, Escape key handler. | NEW `ui/components/Drawer.js` |
+| **DR2** | Backdrop behavior. Click anywhere on backdrop → close. Escape → close. ✕ button → close. Click inside panel → no propagation. Body gets `overflow: hidden` while open to prevent background scroll. | same |
+| **DR3** | Wire `SummaryGapsView` gap card click → `openDrawer({ ... })` with the existing detail content (DP-restructured). Today's `.detail-panel` in the right pane is replaced by the drawer (the right pane shows a placeholder or the next-action hint instead). | `ui/views/SummaryGapsView.js` |
+| **DR4** | Wire `SummaryRoadmapView` project card click → `openDrawer({ ... })` with project detail content (gap list, services scope, dell solutions, drivers, phase rollup). Today's `.right-panel` project detail moves to drawer. | `ui/views/SummaryRoadmapView.js` |
+| **DR5** | Wire `SummaryServicesView` per-service-row click → `openDrawer({ ... })` with the list of gaps + projects that need that service plus a "what this typically involves" body. Adds a new affordance the v2.4.12 sub-tab did not have. | `ui/views/SummaryServicesView.js` |
+| **DR6** | Tabs 1-4 explicitly DO NOT use the drawer pattern. They keep side-by-side persistent right panel (existing layout). They DO adopt the drawer's internal structure from §4 DP1-DP4 (sticky head, mono eyebrows, hairlines, tech-grid). Visual consistency without flow disruption. | `ui/views/ContextView.js`, `ui/views/MatrixView.js`, `ui/views/GapsEditView.js` |
+
+### Section 6 · Cross-tab filter system (F1-F6)
+
+Multi-dimensional filtering pattern lifted from the philosophy.
+
+| # | Item | Files |
+|---|---|---|
+| **F1** | Filter state lives on body element as data attributes. `body[data-filter-layer="compute storage"]`, `body[data-filter-services="migration training"]`, `body[data-filter-environment="coreDc"]`, `body[data-filter-driver="cyber_resilience"]`, `body[data-filter-gap-type="replace consolidate"]`. Multi-value via space-separated tokens. | NEW `state/filterState.js` (or extend an existing module) |
+| **F2** | Filter chip row on Tab 4 (Gaps) and Reporting Gaps Board (Tab 5 → Gaps Board). Five dimensions: layer, gapType, services, environment, driver. Chips render via `.tag[data-variant="neutral"]` with `.active` state on click. Re-click clears that chip. | `ui/views/GapsEditView.js`, `ui/views/SummaryGapsView.js` |
+| **F3** | Match-mode toggle (default OR, optional AND). Single toggle button "Match all chips" (off = OR, on = AND). | same |
+| **F4** | Visual dim pattern. Non-matching gap cards drop to opacity 0.18-0.30 + grayscale(.5) via CSS rules keyed on `body[data-filter-*]`. Cards stay in DOM (no reflow churn). | `styles.css` |
+| **F5** | Filter persistence. Save active filter state to `localStorage` under `dd_filter_state_v1` so a refresh preserves the user's view. Cleared by the existing "Clear all data" button. | `state/filterState.js`, `state/sessionStore.js` (clear hook) |
+| **F6** | Filter visibility on Tab 5 Roadmap is OUT OF SCOPE for v2.5.0 (project cards are an aggregation, not a list of items to filter). May be revisited in v2.5.1 if user requests. | n/a |
+
+### Section 7 · Services scope sub-tab redesign (SR1-SR4)
+
+Replace the v2.4.12 placeholder table with the philosophy's grid + card pattern.
+
+| # | Item | Files |
+|---|---|---|
+| **SR1** | Hero summary card at top of sub-tab. Eyebrow "SERVICES SCOPE", 26px sentence-case h3 title ("Engagement shape"), one-line lede ("Across N projects, M services drive workshop scope. Click any service for the full list of gaps and projects it touches."). | `ui/views/SummaryServicesView.js` |
+| **SR2** | Per-service cards in a `.grid-2` (2-column) layout, each card shaped per DS5 (white, hairline, hover state). Card content: 32px Dell-blue-soft icon square (icon TBD; emoji acceptable in v2.5.0, SVG in v2.5.1), mono caps service id (e.g., `MIG.01`), 14px Inter 600 label, 12px ink-soft hint, footer chip row showing `N gaps`, `M projects` as tabular-num metrics. Click → opens drawer (DR5) with the gap + project list. | same |
+| **SR3** | Empty-state card (when no gap has any services attached): centred message + CTA "Open Tab 4 → click a gap → Services needed". Uses DS6 amber callout. | same |
+| **SR4** | Below the grid: per-service overlay alerts (DS6 callouts) when a service appears on >= 5 gaps (signals concentration risk worth flagging) or zero projects (signals an orphan service). | same |
+
+### Section 8 · Tag vocabulary migration (TV1-TV9)
+
+Mechanical migration. Find every existing chip / badge / pill class, replace with `.tag[data-variant=...]`, delete the old class. Tests catch any miss.
+
+| # | From (existing class) | To (`.tag[data-variant=...]`) | Site |
+|---|---|---|---|
+| **TV1** | `.urgency-badge`, `.urg-high`, `.urg-med`, `.urg-low` | `.tag[data-variant="signal-r/a/g"]` | gap card, gap detail, summary gaps |
+| **TV2** | `.type-badge` | `.tag[data-variant="emphasis"]` | gap card, gap detail |
+| **TV3** | `.status-badge`, `.status-closed-pill` | `.tag[data-variant="state"]` | gap card, gap detail, summary gaps |
+| **TV4** | `.services-chip`, `.services-chip-picked`, `.services-chip-suggested` | `.tag[data-variant="filled"]` (picked), `.tag[data-variant="neutral"]` (suggested), with `.is-active` modifier | gap detail, project card, summary gaps |
+| **TV5** | `.solutions-chip` | `.tag[data-variant="filled"]` with `.is-dell` modifier (small Dell prefix dot) | project card, gap detail derived list |
+| **TV6** | `.chip-filter`, `.chip-filter.active` | `.tag[data-variant="neutral"]`, `.tag.is-active` | filter rows, also-affects layers |
+| **TV7** | `.priority-chip`, `.priority-high`, `.priority-medium`, `.priority-low` | `.tag[data-variant="signal-r/a/g"]` | reporting drivers, exec strip |
+| **TV8** | `.dell-tag` | `.tag[data-variant="emphasis"]` with prefix slot | scattered |
+| **TV9** | `.env-also-chip`, `.also-affects-chip` | `.tag[data-variant="neutral"]` | gap detail "Affected environments" + "Also affects" rows |
+
+After migration, none of the From-classes appear in any rendered DOM. Suite 44 enforces this.
+
+### Section 9 · Tests (Suite 44)
+
+| # | Test | Asserts |
+|---|---|---|
+| **VT1** | DS1 token presence | `getComputedStyle(document.body)` resolves all named CSS variables (--ink, --canvas, --rule, --dell-blue, --shadow-sm, …) |
+| **VT2** | DS2 eyebrow utility | A test fixture with `<span class="eyebrow">label</span>` resolves to mono font, uppercase text-transform, letter-spacing >= 0.18em |
+| **VT3** | DS3 single tag primitive | Render any view with chips; assert NO element has class `.urgency-badge` / `.type-badge` / `.status-badge` / `.priority-chip` / `.chip-filter` (non-tag) / `.solutions-chip` etc. Every chip-like element has class `.tag` and a valid `data-variant`. |
+| **VT4** | TB1 white topbar | `getComputedStyle(.topbar).backgroundColor` matches `--canvas` (or `rgb(255,255,255)` equivalent). No linear-gradient on header. |
+| **VT5** | TB2 real Dell logo | `<img>` or `<svg>` in topbar with src referencing `i.dell.com` OR a local `Logo/` asset, NOT a placeholder text "D". |
+| **VT6** | TB6 stepper leading-zero | Each step element renders text matching `/^0[1-5]\b/` (mono leading-zero) followed by sentence-case label. |
+| **VT7** | DR1-DR2 drawer module | `openDrawer({...})` adds `.panel.open` to DOM; `closeDrawer()` removes it; Escape key triggers close; backdrop click triggers close; click inside panel does NOT close. |
+| **VT8** | DR3 SummaryGapsView click → drawer | Render SummaryGapsView, click a gap card, assert `.panel.open` present and contains the gap title. |
+| **VT9** | DR4 SummaryRoadmapView click → drawer | Same shape for project click. |
+| **VT10** | F1 filter body data attributes | Setting `body[data-filter-services="migration"]` causes `.gap-card` lacking `data-services~="migration"` to receive opacity < 0.4 via the CSS rule. |
+| **VT11** | F2-F4 filter chip behaviors | Click chip → adds to `body[data-filter-*]`; re-click → removes; toggle "Match all" flips OR to AND on the dim selector. |
+| **VT12** | SR1-SR2 services-scope cards | `renderSummaryServicesView` renders >= 1 `.service-card` element with mono id, label, hint, gap-count, project-count when a session has services attached. |
+| **VT13** | DP1 sticky head | Every detail panel (gap, project, service) has a `<div class="panel-head">` with `.panel-crumbs` + `<h3>` + `.panel-lede` (lede may be empty for tabs without a lede). |
+| **VT14** | DP3 dash bullet | `.panel-section li::before` resolves to a 6×2px element with background `--dell-blue`. Asserted via getComputedStyle on a fixture. |
+| **VT15** | A1 em-dash absence | Read all source files (UI copy paths only, not test fixtures) and assert no Unicode em dash (U+2014) present. (Implemented as a build-time check; v2.5.0 enforces in test runner via `fetch('/styles.css')` text scan + a curated list of UI-copy paths.) |
+
+Plus DS24 in `demoSpec.js`: every demo gap's services array has at least one entry with a known `domain` mapping (cyber / ops / data) so the layered signal color renders visibly from Load demo.
+
+### Section R · Regression guards (smoke checklist)
+
+v2.5.0 must not break the v2.4.12 functional surface. Every existing test stays green. Plus the following live-app behaviors verified by hand:
+
+| Guard | Check |
+|---|---|
+| **R1** v2.4.12 R1-R10 | All ten v2.4.12 regression guards still pass (banner persistence, skill bus, services chips, project rollup, sub-tab render, JSON round-trip, no console errors). |
+| **R2** Picker (P1) survives migration | Tab 4 gap detail "+ Add service" picker still exposes the full catalog after the chip / DS3 / DP migrations. |
+| **R3** Reporting Gaps Board click → drawer | Drawer opens in slide-in from right with services chip row visible (was inline detail panel in v2.4.12). |
+| **R4** Drawer close paths | Clicking backdrop + pressing Escape + clicking ✕ all close the drawer with reverse-slide. |
+| **R5** Filter re-render | Activating a `services: migration` filter dims non-matching gap cards on Tab 4 + Reporting Gaps Board to opacity 0.18-0.30 + grayscale(.5). Re-click clears. |
+| **R6** Topbar version chip | Reads `Canvas v2.5.0` after version bump. |
+| **R7** No emoji in critical buttons | Audit: Save buttons no longer use emoji prefixes ("Save context", "Save changes", "Approve draft" without "✓" prefix). Existing emoji elsewhere (Undo `↶`, Load demo `↺`, etc.) are flagged for v2.5.1 SVG migration but stay in v2.5.0. |
+| **R8** Real Dell logo loads | Browser network request for `i.dell.com` logo URL returns 200 (or local fallback resolves). |
+| **R9** Dell product accuracy in demo | Load demo session, navigate to Tab 3 / Tab 4 / Reporting; verify no "VxRail (VMware-based HCI)" lead positioning. Verify no "Boomi", no "Secureworks", no "Taegis". |
+| **R10** Hard refresh on every tab | No console errors. Filters preserved (F5). Drawer state cleared (closed by default after refresh). |
+| **R11** Color audit (visual) | Capture screenshots of every tab; estimate brand-blue surface area (rough visual). Should be visibly lower than v2.4.12 (target ~5%, was ~30%). |
+| **R12** Mono tabular-nums | Verify driver priority counts, gap counts, services counts, vendor mix percentages render in mono with tabular-nums (digits aligned vertically). |
+
+### Effort estimate
+
+~3 days focused work, single tag.
+- Day 1: §0 audit + §1 design system + §2 topbar / footer + §3 color discipline.
+- Day 2: §4 detail panel restructure + §5 drawer (Reporting) + §8 tag migration.
+- Day 3: §6 filter system + §7 services scope redesign + §9 tests + §R smoke + commit + tag.
+
+### Tag protocol (per locked discipline)
+
+1. Spec committed (this entry). Wait for user "spec looks right" sign-off.
+2. Tests committed (Suite 44 + DS24). Fail RED at first.
+3. Code execution: §0 audit first (resets baseline), then §1-§8 in order. §9 tests go GREEN as each section lands.
+4. Browser smoke against §R guards. Report results.
+5. Pause for explicit "tag it" approval.
+6. Tag, push (force-with-lease no longer needed; main is in sync), update memory + HANDOFF.
+
+### Deferred to v2.5.1 (after v2.5.0 sign-off)
+
+| | Item | Why deferred |
+|---|---|---|
+| **U4** | "✨ Use AI" button placement on Tabs 2-5 (currently only on Tab 1 driver detail) | Touches multiple view renders; cleaner as its own slice with the SVG icon migration |
+| **VC** | Vocabulary unification across Gaps (Tab 4) and Roadmap (Tab 5.5) | Rename pass needs spec-level discussion; not a v2.5.0 visual concern |
+| **GV** | Visible Gap → Project relationship (today's silent `buildProjects` bucketing made visible) | Data-model touchpoint; needs spec discussion before code |
+| **PL** | Primary-layer semantics rework (`gap.layerId` vs `affectedLayers[]`) | Data-model change; high risk; explicit spec round needed |
+| **IC** | SVG icon system (Lucide library; replace all emoji) | Mechanical pass; cleanest as standalone slice; v2.5.0 flags every site for migration |
+| **EP** | Edit-side panel polish refinements (Tabs 1-4) beyond what §4 ships | Once §4 lands, may surface specific tweaks per tab; address in v2.5.1 |
+| **A4.1 (still open)** | Demo refresh + old-schema purge (g-001 Phase 17 violation, default-demo localStorage, per-tab demo banner audit) | v2.5.0 §0 A2 covers the Dell product accuracy slice but not the broader schema hygiene; that lives in v2.4.13 demo-refresh OR rolls into v2.5.1 demo work |
+
+---
+
 ## v2.4.12 · Services scope + Pre-flight regression fixes + hot-patches · IMPLEMENTED 2026-04-26 (P1-P3 folded in pre-tag)
 
 ### Hot-patch addendum (caught in user smoke before tag)
