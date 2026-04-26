@@ -1,14 +1,14 @@
 # Dell Discovery Canvas — Session Handoff
 
-**Last session end**: 2026-04-25, after shipping `v2.4.11` Rules Hardening (review-time enforcement + closed-vs-deleted gaps + visible auto-behaviour + Operational/Services clarity + 3 in-flight bug fixes caught by browser smoke).
+**Last session end**: 2026-04-26, after shipping `v2.4.12` Services Scope + Pre-flight regression fixes + post-smoke hot-patches (gap.services multi-select catalog + opt-in suggested chips + "+ Add service" picker for full catalog reach + Reporting "Services scope" sub-tab + ContextView no-op-Save isDemo fix + skillStore→AI-dropdown auto-refresh bus + Reporting Gaps Board side-panel services + Roadmap project-card chip CSS + 22 new tests).
 **File purpose**: anyone (human or a fresh Claude Code session) opening this folder should read this file first to know exactly where work stopped, what's shipped, what's queued, and how to pick up.
 
 ---
 
 ## 1 · Where you are
 
-- `git log --oneline main` → HEAD = `v2.4.11`.
-- `git tag --list 'v2.*' | sort -V` → 22 tags: `v2.1.1` through `v2.4.11`.
+- `git log --oneline main` → HEAD = `v2.4.12` (commit `4084a69`).
+- `git tag --list 'v2.*' | sort -V` → 23 tags: `v2.1.1` through `v2.4.12` (plus the `v2.4.11.d01` + `v2.4.11.d02` hygiene-pass records on origin only).
 - Working tree: clean. Everything that was built is tagged and pushed to `origin/main`.
 - GitHub: https://github.com/M-Alshamrani/dell-discovery-canvas (private).
 
@@ -32,9 +32,17 @@ Full chronology and commit refs live in `.claude/projects/.../memory/project_cur
 | v2.4.3 | 19d.1 Prompt guards | text-brief footer + Refine-to-CARE + save gate |
 | v2.4.4 | 19d Unified AI platform | SPEC §12 + responseFormat/applyPolicy + writable resolvers + undo + per-skill provider |
 | v2.4.5 | 19e Foundations Refresh | session-changed bus + persistent undo + demoSession module + 6 seed skills + demoSpec (DS1-DS17) + DEMO_CHANGELOG |
-| **v2.4.5.1** | **19f AI reliability** | **Anthropic browser-direct header + retry-with-backoff on 429/5xx + per-provider fallback-model chain (Suite 36 RB1-RB7)** |
+| v2.4.5.1 | 19f AI reliability | Anthropic browser-direct header + retry-with-backoff on 429/5xx + per-provider fallback-model chain (Suite 36 RB1-RB7) |
+| v2.4.6 | 19g UX quick-wins | app version surface + per-tab skill chip + save gate + banner auto-dismiss |
+| v2.4.7 | 19h Fresh-start UX | empty-canvas default + welcome card with Load-demo CTA |
+| v2.4.8 | 17 Phase 17 | 7-term Action taxonomy + link rules + rationalize coercion |
+| v2.4.9 | 19i Primary-layer + projectId | invariant + explicit Gap→Project relationship (pre-crown-jewel rollback anchor) |
+| v2.4.10 | 19j Save/open file | user-owned `.canvas` workbook + PWA file_handlers + Clear-all hardening |
+| v2.4.10.1 | 19j.1 HOTFIX | test-runner localStorage isolation (fixes "Bus Co" pollution) |
+| v2.4.11 | 19k Rules hardening | review-time enforcement + closed-vs-deleted + visible auto-behaviour + Operational/Services clarity + 3 in-flight bug fixes caught by browser smoke |
+| **v2.4.12** | **19l Services scope + PR/U + post-smoke hot-patches** | **`gap.services[]` field + 10-entry `SERVICE_TYPES` catalog + Tab 4 multi-chip selector with "+ Add service" picker (full catalog) + Tab 5.5 project-card chip row + NEW Reporting "Services scope" sub-tab + PR1 ContextView no-op Save preserves `isDemo` + PR2 skillsEvents bus → AI dropdown auto-refresh + U1 removal of D2 ops-gap CTA + M11 migrator backfill + closed-gap rollup exclusion + Reporting Gaps Board side-panel services + Roadmap chip pill CSS. Suite 43 SVC1-15 + DS23 (22 new tests). Total 531/531.** |
 
-**Test count**: 440 assertions across 36 suites in `diagnostics/appSpec.js` + `diagnostics/demoSpec.js`, all green.
+**Test count**: 531 assertions across 44 suites in `diagnostics/appSpec.js` + `diagnostics/demoSpec.js`, all green.
 
 ## 3 · What closed in v2.4.5 + v2.4.5.1
 
