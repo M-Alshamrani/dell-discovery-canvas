@@ -13,7 +13,6 @@
 //   3. No session-level businessOutcomes or primaryDriver , those moved under drivers[].
 
 import { BUSINESS_DRIVERS, CUSTOMER_VERTICALS } from "../../core/config.js";
-import { useAiButton }             from "../components/UseAiButton.js";
 import { saveToLocalStorage, resetToDemo, isFreshSession, applyContextSave } from "../../state/sessionStore.js";
 import { helpButton } from "./HelpModal.js";
 
@@ -300,33 +299,10 @@ function renderDriverDetail(right, session, driver, onPriorityChange) {
 
   right.appendChild(formCard);
 
-  // Phase 19b / v2.4.1 , generic "Use AI" button driven by deployed
-  // skills from the Skills admin panel. Replaces the hardcoded v2.4.0
-  // demo card; the seeded driver-question skill is pre-deployed on
-  // first run so this panel still works out of the box.
-  var aiCard = mk("div", "card ai-skill-card");
-  aiCard.style.marginTop = "12px";
-  var aiHead = mk("div", "card-title-row");
-  aiHead.appendChild(mkt("div", "ai-skill-title", "✨ AI assistance"));
-  var resultBox = mk("div", "ai-skill-result");
-  resultBox.style.display = "none";
-  aiHead.appendChild(useAiButton("context", {
-    getSession:   function() { return session; },
-    getContext:   function() {
-      return {
-        selectedDriver: Object.assign({}, driver, {
-          label:     meta ? meta.label     : driver.id,
-          shortHint: meta ? meta.shortHint : ""
-        })
-      };
-    },
-    getResultEl:  function() { return resultBox; }
-  }));
-  aiCard.appendChild(aiHead);
-  aiCard.appendChild(mkt("div", "card-hint",
-    "Run any deployed skill for this tab. Manage skills via the gear icon → Skills section."));
-  aiCard.appendChild(resultBox);
-  right.appendChild(aiCard);
+  // v2.4.13 S4E . per-driver inline AI mount removed. AI Assist is now
+  // globally accessible from the topbar #topbarAiBtn; clicking it opens
+  // the AI Assist overlay with skills scoped to the current tab. Removes
+  // the right-panel ai-skill-card that previously lived here.
 }
 
 function renderWelcomePanel(right) {

@@ -3951,30 +3951,10 @@ describe("25 · Phase 19 · AI foundations — config + provider request shapes 
     assert(btn.querySelector("svg") !== null, "settingsBtn must contain an SVG glyph");
   });
 
-  it("AI9 · ContextView driver detail renders the AI skill card with a Use-AI surface", () => {
-    // Phase 19b (v2.4.1) replaced the hardcoded .ai-skill-btn with the
-    // generic .use-ai-btn dropdown driven by deployed skills. SB8 covers
-    // the full dropdown contract; AI9 simply pins that the AI card and
-    // *some* interactive entry point still render on Tab 1.
-    const s = createEmptySession();
-    s.customer = s.customer || {};
-    s.customer.drivers = [{ id: "ai_data", priority: "High", outcomes: "" }];
-    const l = document.createElement("div");
-    const r = document.createElement("div");
-    renderContextView(l, r, s);
-    const tile = l.querySelector(".driver-tile");
-    assert(tile, "expected at least one driver tile rendered");
-    tile.click();
-    // re-mount to materialise the right panel (click rebuilds on some views)
-    const l2 = document.createElement("div"); const r2 = document.createElement("div");
-    renderContextView(l2, r2, s); l2.querySelector(".driver-tile")?.click();
-    const l3 = document.createElement("div"); const r3 = document.createElement("div");
-    renderContextView(l3, r3, s); l3.querySelector(".driver-tile")?.click();
-    const card = r3.querySelector(".ai-skill-card");
-    assert(card, "expected an .ai-skill-card in the driver detail panel");
-    const useAi = card.querySelector(".use-ai-btn, .ai-skill-btn");
-    assert(useAi, "expected a .use-ai-btn (v2.4.1) or .ai-skill-btn (pre-2.4.1) inside the AI skill card");
-  });
+  // v2.4.13 S4E . AI9 dropped. Original test asserted the per-driver
+  // .ai-skill-card mounted in ContextView's right panel. AI is now a
+  // global topbar gateway (Suite 45 VT23 + VT25 cover the new contract);
+  // per-driver inline mounting is removed.
 
 });
 
@@ -4099,28 +4079,11 @@ describe("26 · Phase 19b · Skill Builder — store, engine, admin UI", () => {
     clearSkills();
   });
 
-  it("SB8 · ContextView driver detail renders the generic Use-AI dropdown (wired to deployed skills)", () => {
-    clearSkills();
-    loadSkills(); // seed is pre-deployed on context
-    const s = createEmptySession();
-    s.customer = s.customer || {};
-    s.customer.drivers = [{ id: "ai_data", priority: "High", outcomes: "" }];
-    const l = document.createElement("div");
-    const r = document.createElement("div");
-    renderContextView(l, r, s);
-    l.querySelector(".driver-tile")?.click();
-    // re-mount + click so the right panel is materialised
-    const l2 = document.createElement("div"); const r2 = document.createElement("div");
-    renderContextView(l2, r2, s);
-    l2.querySelector(".driver-tile")?.click();
-    const l3 = document.createElement("div"); const r3 = document.createElement("div");
-    renderContextView(l3, r3, s);
-    l3.querySelector(".driver-tile")?.click();
-    const btn = r3.querySelector(".use-ai-btn");
-    assert(btn, "Use AI dropdown button must render in driver detail panel");
-    assert(/use\s*ai/i.test(btn.textContent), "button label must say 'Use AI' (got: " + btn.textContent + ")");
-    clearSkills();
-  });
+  // v2.4.13 S4E . SB8 dropped. Original test asserted the per-driver
+  // .use-ai-btn dropdown in ContextView's right panel. Replaced by the
+  // global AI Assist topbar gateway (Suite 45 VT23 + VT25); the
+  // skillStore CRUD + skillsEvents bus contract that SB8 indirectly
+  // depended on is still covered by the rest of Suite 26.
 
 });
 

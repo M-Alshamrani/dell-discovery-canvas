@@ -18,6 +18,7 @@ import { renderSummaryHealthView }   from "./ui/views/SummaryHealthView.js";
 import { renderSummaryGapsView }     from "./ui/views/SummaryGapsView.js";
 import { renderSummaryVendorView }   from "./ui/views/SummaryVendorView.js";
 import { renderSummaryRoadmapView }  from "./ui/views/SummaryRoadmapView.js";
+import { openAiOverlay }             from "./ui/views/AiAssistOverlay.js";
 
 // v2.5.0 TB6: stepper steps render with mono leading-zero pattern
 // (01 Context, 02 Current State, ...). The label is just the readable
@@ -125,22 +126,14 @@ function wireSettingsBtn() {
   if (btn) btn.addEventListener("click", openSettingsModal);
 }
 
-// v2.4.13 S2 . global AI Assist button click handler. The actual
-// AI overlay (tile grid + skill scope toggle + element-pick transparency)
-// lives in ui/views/AiAssistOverlay.js. We import dynamically so the
-// module is fetched lazily on first click; this also means the topbar
-// stays free of overlay-specific dependencies until the user opts in.
+// v2.4.13 S2 + S4 . global AI Assist button click handler. Statically
+// imported so the click opens the overlay synchronously (VT25 contract).
+// Overlay implementation lives in ui/views/AiAssistOverlay.js.
 function wireTopbarAiBtn() {
   var btn = document.getElementById("topbarAiBtn");
   if (!btn) return;
   btn.addEventListener("click", function() {
-    import("./ui/views/AiAssistOverlay.js").then(function(mod) {
-      if (mod && typeof mod.openAiOverlay === "function") {
-        mod.openAiOverlay({ tabId: currentStep, context: {} });
-      }
-    }).catch(function(e) {
-      console.warn("[AI Assist] overlay module not available yet:", e);
-    });
+    openAiOverlay({ tabId: currentStep, context: {} });
   });
 }
 
