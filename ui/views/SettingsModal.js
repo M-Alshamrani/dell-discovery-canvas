@@ -48,29 +48,63 @@ var PROVIDER_HINTS = {
 export function openSettingsModal(opts) {
   var initialSection = (opts && opts.section) || "providers";
 
-  var body = buildSettingsBody(initialSection);
+  var body   = buildSettingsBody(initialSection);
   var footer = buildSettingsFooter(initialSection);
 
   openOverlay({
-    title:   initialSection === "skills" ? "Skills builder" : "Settings",
-    lede:    initialSection === "skills"
-               ? "Author, edit, and deploy AI skills. Each skill targets one tab and runs against the live session."
-               : "Configure where AI skills run + manage the deployed skill library.",
+    title:   "Settings",
+    lede:    "Configure where AI skills run + manage the deployed skill library.",
     body:    body,
     footer:  footer,
-    kind:    initialSection === "skills" ? "settings-skills" : "settings-providers",
+    kind:    "settings",
     size:    "wide",
     persist: false,
     transparent: false
   });
 
-  // Section-pill toggle injected into the head extras slot so the user
-  // can flip between Providers and Skills without closing + reopening.
   injectSectionPills(initialSection);
 }
 
+// v2.4.13 polish iter-4 . swap body + footer + head-extras IN PLACE so
+// switching between the Providers and Skills sections doesn't close +
+// reopen the overlay (which caused the prior "violent blink" the user
+// flagged). The overlay panel stays mounted; only its inner regions
+// rebuild.
+function swapSection(nextSection) {
+  var panel = document.querySelector(".overlay.open[data-kind='settings']");
+  if (!panel) return;
+
+  var oldBody   = panel.querySelector(".overlay-body");
+  var oldFooter = panel.querySelector(".overlay-footer");
+
+  var newBody   = buildSettingsBody(nextSection);
+  newBody.classList.add("overlay-body");
+
+  if (oldBody) {
+    // Cross-fade: dim the old body, swap, fade in the new.
+    oldBody.classList.add("settings-body-leaving");
+    setTimeout(function() {
+      if (oldBody.parentNode) oldBody.parentNode.replaceChild(newBody, oldBody);
+      requestAnimationFrame(function() {
+        newBody.classList.add("settings-body-entering");
+      });
+    }, 90);
+  } else {
+    panel.appendChild(newBody);
+  }
+
+  // Footer rebuilds on every section change since the CTAs differ.
+  var newFooterContent = buildSettingsFooter(nextSection);
+  if (oldFooter) {
+    oldFooter.innerHTML = "";
+    oldFooter.appendChild(newFooterContent);
+  }
+
+  injectSectionPills(nextSection);
+}
+
 function injectSectionPills(activeSection) {
-  var slot = document.querySelector(".overlay[data-kind^='settings-'] .overlay-head-extras");
+  var slot = document.querySelector(".overlay[data-kind='settings'] .overlay-head-extras");
   if (!slot) return;
   slot.innerHTML = "";
 
@@ -88,8 +122,7 @@ function injectSectionPills(activeSection) {
     btn.textContent = opt.label;
     btn.addEventListener("click", function() {
       if (activeSection === opt.val) return;
-      closeOverlay();
-      openSettingsModal({ section: opt.val });
+      swapSection(opt.val);
     });
     seg.appendChild(btn);
   });
@@ -125,8 +158,9 @@ function buildSettingsBody(section) {
     pill.addEventListener("click", function() {
       config.activeProvider = pkey;
       saveAiConfig(config);
-      closeOverlay();
-      openSettingsModal({ section: "providers" });
+      // Swap in place rather than close+reopen, so the overlay
+      // doesn't blink when the user picks a different provider.
+      swapSection("providers");
     });
     sel.appendChild(pill);
   });
@@ -184,14 +218,19 @@ function buildSettingsBody(section) {
     "Stored in browser localStorage. Visible in DevTools. Acceptable for personal use; v3 multi-user moves keys server-side."));
   form.appendChild(keyGroup);
 
-  // Test-connection probe
+  // Test-connection probe. Renders an animated indeterminate progress
+  // bar while the upstream call is in flight; fills + flips to a check
+  // icon on success, or to an X on failure. Reads more lively than the
+  // prior "Probing..." text.
   var probeRow = mk("div", "settings-probe-row");
   var probeBtn = mkt("button", "btn-secondary", "Test connection");
   probeBtn.type = "button";
   var probeOut = mk("div", "settings-probe-out");
   probeBtn.addEventListener("click", async function() {
-    probeOut.textContent = "Probing...";
     probeOut.className = "settings-probe-out probing";
+    probeOut.innerHTML =
+      '<div class="probe-bar"><div class="probe-bar-fill"></div></div>' +
+      '<div class="probe-msg">Reaching ' + activeKey + '...</div>';
     var result = await testConnection({
       providerKey:    activeKey,
       baseUrl:        urlInput.value.trim(),
@@ -203,10 +242,16 @@ function buildSettingsBody(section) {
       probeOut.className = "settings-probe-out ok";
       var usedNote = result.modelUsed && result.modelUsed !== modelInput.value.trim()
         ? " (fell back to " + result.modelUsed + ")" : "";
-      probeOut.textContent = "OK" + usedNote + " , sample reply: " + (result.sample || "(empty)");
+      probeOut.innerHTML =
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" ' +
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3 3 7-7"/></svg>' +
+        '<span class="probe-msg">OK' + escapeHtml(usedNote) + ' . sample: ' + escapeHtml(result.sample || "(empty)") + '</span>';
     } else {
       probeOut.className = "settings-probe-out err";
-      probeOut.textContent = "Failed: " + (result.error || "Unknown error");
+      probeOut.innerHTML =
+        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" ' +
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l8 8 M12 4l-8 8"/></svg>' +
+        '<span class="probe-msg">Failed: ' + escapeHtml(result.error || "Unknown error") + '</span>';
     }
   });
   probeRow.appendChild(probeBtn);
@@ -239,7 +284,7 @@ function buildSettingsFooter(section) {
   var saveBtn = mkt("button", "btn-primary", "Save");
   saveBtn.type = "button";
   saveBtn.addEventListener("click", function() {
-    var body = document.querySelector(".overlay[data-kind='settings-providers'] .overlay-body");
+    var body = document.querySelector(".overlay[data-kind='settings'] .overlay-body");
     var refs = body && body._settings;
     if (!refs) return;
     refs.config.providers[refs.activeKey].baseUrl        = refs.urlInput.value.trim();
@@ -277,4 +322,13 @@ function mkField(labelText) {
   var f = mk("div", "settings-field");
   f.appendChild(mkt("label", "settings-label", labelText));
   return f;
+}
+function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }

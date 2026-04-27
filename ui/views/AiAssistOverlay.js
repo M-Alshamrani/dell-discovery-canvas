@@ -383,7 +383,23 @@ async function runTile(body, tile, skill) {
   result.style.display = "block";
   result.className = "ai-skill-result-panel running";
   var providerLabel = skill.providerKey || loadAiConfig().activeProvider || "AI";
-  result.textContent = "Running '" + skill.name + "' via " + providerLabel + "...";
+  // v2.4.13 polish iter-4 . dynamic motion while the upstream call is
+  // pending: a pulsing Dell-blue orb + thinking dots, plus a thin
+  // shimmer track sweeping across the panel. Beats the prior static
+  // "Running..." text for "AI is awake" feedback.
+  result.innerHTML =
+    '<div class="ai-thinking">' +
+      '<div class="ai-thinking-orb" aria-hidden="true"></div>' +
+      '<div class="ai-thinking-line">' +
+        '<span class="ai-thinking-verb">Running</span> ' +
+        '<span class="ai-thinking-skill"></span>' +
+        '<span class="ai-thinking-via"> via ' + escapeText(providerLabel) + '</span>' +
+        '<span class="ai-thinking-dots"><span></span><span></span><span></span></span>' +
+      '</div>' +
+      '<div class="ai-thinking-shimmer" aria-hidden="true"></div>' +
+    '</div>';
+  var skillNameSpan = result.querySelector(".ai-thinking-skill");
+  if (skillNameSpan) skillNameSpan.textContent = "'" + skill.name + "'";
 
   var res;
   try {
@@ -455,6 +471,16 @@ function cleanup() {
     document.removeEventListener("dell-canvas:entity-click", state.pickListener);
     state.pickListener = null;
   }
+}
+
+function escapeText(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 export { isOpen as isAiOverlayOpen };

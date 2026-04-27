@@ -268,21 +268,21 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   margin-top: 2px;
 }
 
-/* v2.4.13 polish iter-2 . session strip is a single horizontal line:
-   icon . name . | divider . dot . save indicator. Reads cleaner than
-   the prior 3-row stack; no redundant eyebrow word. */
+/* v2.4.13 polish iter-4 . session strip moved out of the topbar center
+   column into the right-side actions group, just before the AI Assist
+   button. Reads as "context next to actions" rather than floating in
+   the middle of the band. The center column is now a flexible spacer. */
 .session-strip-wrap {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 7px 14px;
+  padding: 6px 12px;
   border-radius: 999px;
   border: 1px solid var(--dell-blue-soft);
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 1px 2px rgba(11, 42, 74, 0.04);
   min-width: 0;
-  max-width: 540px;
-  margin: 0 auto;
+  max-width: 360px;
   transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
 }
 .session-strip-wrap:hover {
@@ -354,8 +354,19 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
 
 .topbar-actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
+  flex-wrap: nowrap;
+}
+/* v2.4.13 polish iter-4 . vertical divider between the session strip
+   and the AI Assist button. Pairs the right-side context (session
+   strip) with the right-side actions (AI Assist + undo + gear)
+   visually so they read as one related cluster. */
+.topbar-actions-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--rule-strong);
+  flex-shrink: 0;
 }
 
 /* v2.4.13 polish iter-3 . AI Assist button refined: brighter Dell-blue
@@ -389,31 +400,50 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
     inset 0 -1px 0 rgba(0, 50, 95, 0.30),
     0 1px 0 rgba(0, 50, 95, 0.18),
     0 3px 10px rgba(0, 118, 206, 0.22);
-  animation: topbar-ai-glow 8s ease-in-out infinite;
+  animation: topbar-ai-glow 12s cubic-bezier(0.45, 0, 0.55, 1) infinite;
   transition:
     transform 0.12s cubic-bezier(0.2, 0.8, 0.2, 1),
     box-shadow 0.18s ease,
     background 0.18s ease,
     border-color 0.18s ease;
 }
-/* Slow Dell-blue glow breathe. Box-shadow grows once per 8s cycle (one
-   ~1.5s swell at the 50% mark, the rest is rest at the resting shadow).
-   Reads as "alive but calm" rather than the prior constant gold shimmer. */
+/* Luxurious slow Dell-blue breathe. 12s cycle with a long ramp-up +
+   ramp-down (S-curve), so the glow swells gracefully then recedes
+   without a sudden pulse. Resting state is soft Dell-blue ambient
+   shadow; peak (around the 50% mark) adds a wider Dell-blue halo
+   that reads as "considered presence" rather than "look at me." */
 @keyframes topbar-ai-glow {
-  0%, 38%, 65%, 100% {
+  0%, 100% {
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.32),
       inset 0 -1px 0 rgba(0, 50, 95, 0.30),
       0 1px 0 rgba(0, 50, 95, 0.18),
-      0 3px 10px rgba(0, 118, 206, 0.22);
+      0 3px 10px rgba(0, 118, 206, 0.20);
+  }
+  25% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.34),
+      inset 0 -1px 0 rgba(0, 50, 95, 0.30),
+      0 1px 0 rgba(0, 50, 95, 0.18),
+      0 4px 14px rgba(0, 118, 206, 0.30),
+      0 0 0 1px rgba(0, 133, 224, 0.08);
   }
   50% {
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.40),
+      inset 0 1px 0 rgba(255, 255, 255, 0.38),
+      inset 0 -1px 0 rgba(0, 50, 95, 0.30),
+      0 2px 0 rgba(0, 50, 95, 0.18),
+      0 8px 26px rgba(0, 133, 224, 0.42),
+      0 0 0 2px rgba(0, 133, 224, 0.14),
+      0 0 22px rgba(0, 133, 224, 0.20);
+  }
+  75% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.34),
       inset 0 -1px 0 rgba(0, 50, 95, 0.30),
       0 1px 0 rgba(0, 50, 95, 0.18),
-      0 6px 22px rgba(0, 133, 224, 0.55),
-      0 0 14px rgba(0, 133, 224, 0.32);
+      0 4px 14px rgba(0, 118, 206, 0.30),
+      0 0 0 1px rgba(0, 133, 224, 0.08);
   }
 }
 .topbar-ai-btn:hover {
@@ -515,9 +545,9 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   user-select: none;
   background: transparent;
 }
-/* Subtle right-edge separator between adjacent inactive steps so the
-   bounding boxes are perceivable. Hidden when the next step is hovered
-   or active (cleaner read). */
+/* Persistent 1px right-edge separator between every step (hairline
+   `|` bar). Stays visible even on hover/active so the row reads as a
+   row of discrete tabs at a glance. */
 .step:not(:last-child)::after {
   content: "";
   position: absolute;
@@ -525,14 +555,8 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   top: 14px;
   bottom: 14px;
   width: 1px;
-  background: var(--rule);
+  background: var(--rule-strong);
   pointer-events: none;
-}
-.step:hover + .step::after,
-.step.active + .step::after,
-.step:hover::after,
-.step.active::after {
-  background: transparent;
 }
 .step .step-num {
   font-family: var(--font-mono);
@@ -2702,18 +2726,53 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 }
 .settings-probe-out {
   flex: 1; min-width: 200px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font);
+  font-size: 11.5px;
+  padding: 6px 10px;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--text-3);
-  white-space: pre-wrap;
   word-break: break-word;
+  border: 1px solid transparent;
 }
-.settings-probe-out.probing { color: var(--brand-dark); background: var(--brand-faint); }
-.settings-probe-out.ok      { color: #15803D;          background: #F0FDF4; border: 1px solid #BBF7D0; }
-.settings-probe-out.err     { color: #B91C1C;          background: #FEF2F2; border: 1px solid #FECACA; }
+.settings-probe-out.probing {
+  color: var(--dell-blue-deep);
+  background: var(--dell-blue-faint);
+  border-color: var(--dell-blue-soft);
+}
+.settings-probe-out.ok  { color: #15803D; background: #F0FDF4; border-color: #BBF7D0; }
+.settings-probe-out.err { color: #B91C1C; background: #FEF2F2; border-color: #FECACA; }
+.settings-probe-out svg { flex-shrink: 0; }
+.settings-probe-out .probe-msg { flex: 1; min-width: 0; }
+
+/* v2.4.13 polish iter-4 . animated probe progress bar. While the
+   upstream connection test is in flight, a thin Dell-blue gradient
+   fill sweeps left-to-right inside a track. On success/failure the
+   bar disappears and a checkmark or X icon takes its place. */
+.probe-bar {
+  position: relative;
+  flex: 0 0 80px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--dell-blue-soft);
+  overflow: hidden;
+}
+.probe-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 36%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent 0%, var(--dell-blue) 50%, transparent 100%);
+  animation: probe-bar-sweep 1.4s ease-in-out infinite;
+}
+@keyframes probe-bar-sweep {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(360%); }
+}
 
 /* v2.4.13 polish iter-3 . Settings overlay rebuilt on the Overlay.js
    component so it shares the AI Assist visual language (centered modal,
@@ -2723,10 +2782,30 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
    Section toggle (AI Providers / Skills builder) sits in the overlay
    head extras as a segmented control matching the AI Assist scope
    toggle pattern. */
-.overlay[data-kind="settings-providers"],
-.overlay[data-kind="settings-skills"] {
+.overlay[data-kind="settings"] {
   width: min(1080px, 95vw);
   max-height: min(760px, 90vh);
+}
+
+/* v2.4.13 polish iter-4 . cross-fade between Providers + Skills builder
+   sections. The body element is replaced in place; .settings-body-
+   leaving fades out + slides up 4px, .settings-body-entering fades in
+   from translate(0, 6px) so the transition reads as graceful, not
+   blink. */
+.settings-body {
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.settings-body-leaving {
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+}
+.settings-body-entering {
+  animation: settings-body-fade-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+@keyframes settings-body-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 .settings-section-seg {
   display: inline-flex;
@@ -3219,17 +3298,23 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   width: min(720px, 90vw);
   max-height: min(800px, 90vh);
 }
-/* v2.4.13 polish iter-2 . pick-mode overlay drops to barely-visible.
-   User wants the overlay to all-but-disappear so they can see and
-   click the page underneath. We drop opacity to 0.10 + remove the
-   shadow so the overlay reads as a faint hint, not a competing
-   surface. The floating .pick-mode-pill (added separately) is the
-   visible "you're in pick mode" indicator. */
+/* v2.4.13 polish iter-4 . pick-mode overlay stays visible enough that
+   the user knows the page is waiting on them, but ducks out of the
+   way of the click target. Earlier iter-3 dropped to 0.10 which was
+   "almost disappeared" and confused the user (they didn't know what
+   to do). Now the overlay breathes between 0.85 and 0.55 on a slow
+   3.5s cycle so it reads as a deliberate "pick something" affordance
+   rather than a vanished modal. Pointer-events stay off so clicks
+   pass through to the page underneath. */
 .overlay.is-transparent {
-  opacity: 0.10;
   pointer-events: none;
-  box-shadow: none;
-  filter: blur(1px);
+  box-shadow: var(--shadow-md);
+  filter: saturate(0.6);
+  animation: overlay-pick-breathe 3.5s ease-in-out infinite;
+}
+@keyframes overlay-pick-breathe {
+  0%, 100% { opacity: 0.85; }
+  50%      { opacity: 0.55; }
 }
 .overlay.is-transparent .overlay-body,
 .overlay.is-transparent .overlay-head,
@@ -3431,7 +3516,86 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   color: var(--ink);
   line-height: 1.5;
 }
-.ai-skill-result-panel.running { color: var(--ink-mute); font-style: italic; }
+.ai-skill-result-panel.running { color: var(--ink-soft); padding: 0; overflow: hidden; }
+
+/* v2.4.13 polish iter-4 . AI "thinking" motion. While the upstream
+   skill call is in flight, the result panel shows a pulsing Dell-blue
+   orb + the verb / skill / provider line with three breathing dots,
+   plus a thin Dell-blue shimmer that sweeps across the bottom edge.
+   Beats a static "Running..." string for "the AI is awake and working"
+   feedback. */
+.ai-thinking {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, var(--dell-blue-faint) 0%, rgba(255, 255, 255, 0) 80%);
+}
+.ai-thinking-orb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #6BB7F0 0%, var(--dell-blue) 60%, var(--dell-blue-deep) 100%);
+  box-shadow: 0 0 0 2px rgba(0, 118, 206, 0.20), 0 0 14px rgba(0, 133, 224, 0.55);
+  animation: ai-thinking-orb-pulse 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes ai-thinking-orb-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 2px rgba(0, 118, 206, 0.20), 0 0 10px rgba(0, 133, 224, 0.45);
+  }
+  50% {
+    transform: scale(1.12);
+    box-shadow: 0 0 0 4px rgba(0, 118, 206, 0.18), 0 0 20px rgba(0, 133, 224, 0.65);
+  }
+}
+.ai-thinking-line {
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--ink);
+  flex: 1;
+  min-width: 0;
+}
+.ai-thinking-verb { font-weight: 600; color: var(--dell-blue-deep); }
+.ai-thinking-skill { font-weight: 600; color: var(--ink); }
+.ai-thinking-via   { color: var(--ink-mute); font-size: 12px; }
+.ai-thinking-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 4px;
+  vertical-align: 1px;
+}
+.ai-thinking-dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--dell-blue);
+  display: inline-block;
+  animation: ai-thinking-dots-bounce 1.2s ease-in-out infinite;
+}
+.ai-thinking-dots span:nth-child(2) { animation-delay: 0.18s; }
+.ai-thinking-dots span:nth-child(3) { animation-delay: 0.36s; }
+@keyframes ai-thinking-dots-bounce {
+  0%, 80%, 100% { opacity: 0.30; transform: translateY(0); }
+  40%           { opacity: 1.00; transform: translateY(-3px); }
+}
+.ai-thinking-shimmer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0%, var(--dell-blue) 50%, transparent 100%);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: ai-thinking-shimmer-sweep 2.4s ease-in-out infinite;
+}
+@keyframes ai-thinking-shimmer-sweep {
+  0%   { background-position: -40% 0; }
+  100% { background-position: 140% 0; }
+}
 .ai-skill-result-panel.err     { background: var(--red-soft); color: var(--red); border-color: var(--red); }
 .ai-skill-result-panel.ok      { background: var(--canvas); }
 .ai-skill-result-summary { font-weight: 600; margin-bottom: 6px; }
