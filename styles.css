@@ -370,10 +370,11 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   height: 48px;
 }
 .step {
+  position: relative;
   display: inline-flex;
   align-items: baseline;
   gap: 10px;
-  padding: 16px 18px 13px;
+  padding: 14px 22px 11px;
   border-bottom: 3px solid transparent;
   cursor: pointer;
   white-space: nowrap;
@@ -384,29 +385,56 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
 }
 .step .step-num {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--ink-mute);
   letter-spacing: 0.05em;
+  transition: color 0.12s ease;
 }
 .step .step-label {
   font-family: var(--font);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--ink-soft);
+  transition: color 0.12s ease, font-weight 0.12s ease;
 }
+/* v2.4.13 S6 . hover affordance: canvas (white) tint against the
+   canvas-soft band, plus a Dell-blue rule on the bottom edge so the
+   cursor signals "this will activate." Numbers turn Dell-blue, label
+   weight bumps to medium ink. */
 .step:hover {
   background: var(--canvas);
-  border-bottom-color: var(--rule-strong);
+  border-bottom-color: var(--dell-blue-soft);
 }
 .step:hover .step-num   { color: var(--dell-blue); }
-.step:hover .step-label { color: var(--ink); }
+.step:hover .step-label { color: var(--ink); font-weight: 600; }
+.step:focus-visible {
+  outline: 2px solid var(--dell-blue);
+  outline-offset: -2px;
+}
+
+/* v2.4.13 S6 . active "you are here" state: dell-blue-faint background
+   + 3px Dell-blue bottom rule + bumped weights + a 3px Dell-blue LEFT
+   bar so the active step reads as a deliberate marker, not just a
+   color shift. The left bar is a pseudo-element so the markup stays
+   clean. */
 .step.active {
   background: var(--dell-blue-faint);
   border-bottom-color: var(--dell-blue);
 }
+.step.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  background: var(--dell-blue);
+  border-radius: 0 2px 2px 0;
+}
 .step.active .step-num   { color: var(--dell-blue); font-weight: 700; }
-.step.active .step-label { color: var(--ink); font-weight: 600; }
+.step.active .step-label { color: var(--ink); font-weight: 700; }
+.step.active:hover { background: var(--dell-blue-faint); }
 
 /* ── Main layout ────────────────────────────────────────────── */
 /* v2.4.13 fix: removed the stale `height: calc(100vh - 52px - 44px - 40px)`
