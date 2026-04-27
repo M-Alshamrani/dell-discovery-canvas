@@ -158,31 +158,39 @@ var PICK_SELECTORS = "[data-instance-id], [data-gap-id], [data-driver-id], [data
 
 function engagePickMode(body, label) {
   setTransparent(true);
-  var status = body.querySelector(".ai-pick-status");
-  if (status) {
-    status.style.display = "";
-    status.textContent = "Pick a " + (label || "target") + " on the page. Press Escape to cancel.";
-  }
 
-  // Cancel-on-Escape: while transparent, pressing Escape exits pick
-  // mode WITHOUT closing the overlay. Overlay.js's keydown handler
-  // closes the whole overlay on Escape; we intercept at capture phase
-  // and stop propagation so the overlay's listener never sees it.
+  // Inline status row inside the overlay is suppressed during pick
+  // mode (the overlay itself is barely visible at 10% opacity);
+  // a separate floating .pick-mode-pill is the persistent indicator.
+  var status = body.querySelector(".ai-pick-status");
+  if (status) status.style.display = "none";
+
+  // Floating pill at top-center of the viewport. Persists until the
+  // user picks an entity or presses Escape.
+  var existing = document.querySelector(".pick-mode-pill");
+  if (existing) existing.remove();
+  var pill = document.createElement("div");
+  pill.className = "pick-mode-pill";
+  pill.innerHTML =
+    '<svg class="pick-mode-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" ' +
+    'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M3 3l4.2 11 1.5-4.5 4.5-1.5L3 3z"/>' +
+    '</svg>' +
+    '<span>Pick ' + (label || "a target") + ' on the page</span>' +
+    '<span class="pick-mode-kbd">Esc</span>';
+  document.body.appendChild(pill);
+
   var cancelOnEsc = function(e) {
     if (e.key !== "Escape" && e.keyCode !== 27) return;
     e.stopPropagation();
     teardown();
   };
 
-  // Page-click interceptor. While transparent, any click on a pickable
-  // element fires dell-canvas:entity-click with what we can derive.
-  // The default action (e.g. opening a drawer or selecting a row) is
-  // suppressed via preventDefault + stopPropagation so the click
-  // counts as "pick" not "open."
   var clickInterceptor = function(e) {
     var panel = document.querySelector(".overlay.open.is-transparent");
-    if (!panel) return; // not transparent any more, stand down
-    if (panel.contains(e.target)) return; // click was inside the overlay (head/footer); ignore
+    if (!panel) return;
+    if (panel.contains(e.target)) return;
+    if (pill && pill.contains(e.target)) return;
     var hit = e.target.closest(PICK_SELECTORS);
     if (!hit) return;
     e.preventDefault();
@@ -207,7 +215,7 @@ function engagePickMode(body, label) {
   function teardown() {
     document.removeEventListener("keydown", cancelOnEsc, true);
     document.removeEventListener("click", clickInterceptor, true);
-    if (status) status.style.display = "none";
+    if (pill && pill.parentNode) pill.parentNode.removeChild(pill);
     setTransparent(false);
   }
 
@@ -273,7 +281,7 @@ function injectScopeToggle() {
   pickBtn.addEventListener("click", function() {
     var body = document.querySelector(".overlay[data-kind='ai-assist'] .overlay-body");
     if (!body) return;
-    engagePickMode(body, "entity");
+    engagePickMode(body, "an entity");
   });
   slot.appendChild(pickBtn);
 

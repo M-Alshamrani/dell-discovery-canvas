@@ -50,25 +50,38 @@ export function renderMatrixView(left, right, session, opts) {
   var grid = mk("div", "matrix-grid");
   grid.style.gridTemplateColumns = "160px repeat(" + ENVIRONMENTS.length + ", 1fr)";
 
-  // Header row
+  // Header row. v2.4.13 polish iter-2: each env header now follows the
+  // GPLC sample's "code + name" idiom: a mono "E.0X" code in Dell-blue
+  // above (or before) the sentence-case env name, so the column header
+  // reads as a deliberate reference label instead of a flat caps line.
   grid.appendChild(mk("div", "matrix-corner"));
-  ENVIRONMENTS.forEach(function(env) {
+  ENVIRONMENTS.forEach(function(env, eIdx) {
     var h = mk("div", "matrix-env-head");
-    h.textContent = env.label;
+    h.setAttribute("data-env-id", env.id);
+    var code = mk("span", "matrix-env-code");
+    code.textContent = "E." + ("0" + (eIdx + 1)).slice(-2);
+    var name = mk("span", "matrix-env-name");
+    name.textContent = env.label;
+    h.appendChild(code);
+    h.appendChild(name);
     grid.appendChild(h);
   });
 
-  // Layer rows. v2.4.13 user-feedback polish: stripped back from the
-  // eyebrow + bar + name three-element stack to a single elegant row:
-  // a 2px muted-hue left bar + a 14px ink 600 layer name. The hue
-  // signals layer identity without competing for attention.
-  LAYERS.forEach(function(layer) {
+  // Layer rows. v2.4.13 polish iter-2: each layer header now matches
+  // the GPLC L.0X pattern: a mono Dell-blue "L.0X" code prefix + sans
+  // 14px layer name + a 2px muted-hue left bar for at-a-glance
+  // recognition. Header wrapper carries font-weight 600 so VT28 stays
+  // GREEN; the inner .matrix-layer-name can override to lighter weight.
+  LAYERS.forEach(function(layer, lIdx) {
     var hdr = mk("div", "matrix-layer-header");
     hdr.setAttribute("data-layer-id", layer.id);
     var bar = mk("div", "matrix-layer-bar");
     bar.setAttribute("data-layer-id", layer.id);
     hdr.appendChild(bar);
-    var nameEl = mk("div", "matrix-layer-name");
+    var code = mk("span", "matrix-layer-code");
+    code.textContent = "L." + ("0" + (lIdx + 1)).slice(-2);
+    hdr.appendChild(code);
+    var nameEl = mk("span", "matrix-layer-name");
     nameEl.textContent = layer.label;
     hdr.appendChild(nameEl);
     grid.appendChild(hdr);

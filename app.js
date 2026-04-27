@@ -188,13 +188,12 @@ function wireUndoBtn() {
 }
 
 function renderHeaderMeta() {
-  // v2.4.13 user-feedback polish . session strip framed as a deliberate
-  // UI primitive (icon + name + status pill) rather than floating text.
-  // Three rows in the wrap:
-  //   eyebrow  "Workshop"  (mono caps, ties the strip to a label)
-  //   row      [icon] [customer name]
-  //   status   [dot] [save indicator text]
-  // The wrap carries data-empty so styling demotes it on a fresh canvas.
+  // v2.4.13 polish iter-2 . session strip rebuilt as a single
+  // horizontal line with a vertical divider between primary identity
+  // and save status. Drops the redundant "Workshop" eyebrow word; the
+  // icon + name + divider + status reads cleanly without needing a
+  // label. Layout:
+  //   [icon] [customer name]  |  [dot] Saved 2m ago
   var el = document.getElementById("sessionMetaHeader");
   if (!el) {
     var verEl = document.getElementById("appVersionChip");
@@ -208,14 +207,7 @@ function renderHeaderMeta() {
   el.innerHTML = "";
   el.setAttribute("data-empty", hasName || isDemo ? "false" : "true");
 
-  var eyebrow = document.createElement("div");
-  eyebrow.className = "session-strip-eyebrow";
-  eyebrow.textContent = "Workshop";
-  el.appendChild(eyebrow);
-
-  var row = document.createElement("div");
-  row.className = "session-strip-row";
-
+  // Icon (briefcase / workshop glyph)
   var iconNS = "http://www.w3.org/2000/svg";
   var icon = document.createElementNS(iconNS, "svg");
   icon.setAttribute("class", "session-strip-icon");
@@ -234,17 +226,24 @@ function renderHeaderMeta() {
   p2.setAttribute("d", "M5.5 5.5V4a1.5 1.5 0 0 1 1.5-1.5h2A1.5 1.5 0 0 1 10.5 4v1.5");
   icon.appendChild(p1);
   icon.appendChild(p2);
-  row.appendChild(icon);
+  el.appendChild(icon);
 
-  var nameLine = document.createElement("div");
-  nameLine.className = "session-strip-name";
-  nameLine.textContent = hasName
+  // Name
+  var nameEl = document.createElement("span");
+  nameEl.className = "session-strip-name";
+  nameEl.textContent = hasName
     ? customerName
     : (isDemo ? "Demo session" : "New session");
-  row.appendChild(nameLine);
-  el.appendChild(row);
+  el.appendChild(nameEl);
 
-  var statusLine = document.createElement("div");
+  // Vertical divider
+  var divider = document.createElement("span");
+  divider.className = "session-strip-divider";
+  divider.setAttribute("aria-hidden", "true");
+  el.appendChild(divider);
+
+  // Status (dot + text inline)
+  var statusLine = document.createElement("span");
   statusLine.className = "session-strip-status";
   var dot = document.createElement("span");
   dot.className = "session-strip-dot";

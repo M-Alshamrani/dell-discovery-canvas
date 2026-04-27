@@ -58,17 +58,40 @@ export function renderSummaryHealthView(left, right) {
   var grid = mk("div", "heatmap-grid");
   grid.style.gridTemplateColumns = "160px repeat(" + ENVIRONMENTS.length + ", 1fr)";
 
-  // Header row - dark background with white text
+  // Header row. v2.4.13 polish iter-2: env headers match the GPLC E.0X
+  // code + sans name idiom used in MatrixView so the heatmap and the
+  // matrix read as one consistent visual language across tabs.
   grid.appendChild(mk("div", "hm-corner"));
-  ENVIRONMENTS.forEach(function(env) {
-    grid.appendChild(mkt("div", "hm-env-header", env.label));
+  ENVIRONMENTS.forEach(function(env, eIdx) {
+    var h = mk("div", "hm-env-header matrix-env-head");
+    h.setAttribute("data-env-id", env.id);
+    var code = mk("span", "matrix-env-code");
+    code.textContent = "E." + ("0" + (eIdx + 1)).slice(-2);
+    var name = mk("span", "matrix-env-name");
+    name.textContent = env.label;
+    h.appendChild(code);
+    h.appendChild(name);
+    grid.appendChild(h);
   });
 
   var selectedLayer = null;
   var selectedEnv   = null;
 
-  LAYERS.forEach(function(layer) {
-    grid.appendChild(mkt("div", "hm-layer-label", layer.label));
+  // v2.4.13 polish iter-2: layer labels in the heatmap match the
+  // MatrixView treatment (L.0X mono code + name + 2px hue bar).
+  LAYERS.forEach(function(layer, lIdx) {
+    var hdrCell = mk("div", "hm-layer-label matrix-layer-header");
+    hdrCell.setAttribute("data-layer-id", layer.id);
+    var bar = mk("div", "matrix-layer-bar");
+    bar.setAttribute("data-layer-id", layer.id);
+    hdrCell.appendChild(bar);
+    var code = mk("span", "matrix-layer-code");
+    code.textContent = "L." + ("0" + (lIdx + 1)).slice(-2);
+    hdrCell.appendChild(code);
+    var name = mk("span", "matrix-layer-name");
+    name.textContent = layer.label;
+    hdrCell.appendChild(name);
+    grid.appendChild(hdrCell);
     ENVIRONMENTS.forEach(function(env) {
       var m = computeBucketMetrics(layer.id, env.id, session);
       var cell = mk("div", "hm-cell " + scoreToClass(m.totalScore, m.hasData));
