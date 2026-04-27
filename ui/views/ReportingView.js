@@ -8,7 +8,6 @@ import { generateExecutiveSummary, generateSessionBrief, buildProjects,
 import { getHealthSummary } from "../../services/healthMetrics.js";
 import { LAYERS, ENVIRONMENTS, BUSINESS_DRIVERS } from "../../core/config.js";
 import { helpButton } from "./HelpModal.js";
-import { SERVICE_TYPES, serviceLabel } from "../../core/services.js";
 
 export function renderReportingOverview(left, right) {
   var coverage = computeDiscoveryCoverage(session);
@@ -150,43 +149,6 @@ export function renderReportingOverview(left, right) {
     pipeCard.appendChild(pipeRow);
   }
   left.appendChild(pipeCard);
-
-  // ---- v2.4.12 · Services scope preview card ----
-  // Surfaces the "engagement shape" rollup on the overview itself so the
-  // workshop deliverable is visible before the user clicks into the
-  // "Services scope" sub-tab. Aggregates gap.services across all open
-  // gaps; shows a one-sentence summary + a hint pointing to the sub-tab.
-  var allServiceGaps = (session.gaps || []).filter(function(g) {
-    return g.status !== "closed" && Array.isArray(g.services) && g.services.length > 0;
-  });
-  // Always render the card , even on an empty session , so the "Services
-  // scope" sub-tab is discoverable from the overview, and so the test
-  // contract (SVC9: "'Services scope' appears in the Reporting view DOM")
-  // remains stable across session shapes.
-  var servicesCard = mk("div", "card services-scope-preview");
-  servicesCard.appendChild(mkt("div", "card-title", "Services scope"));
-
-  // Build per-service counts to compose a summary sentence.
-  var serviceCounts = {};
-  allServiceGaps.forEach(function(g) {
-    g.services.forEach(function(sid) {
-      serviceCounts[sid] = (serviceCounts[sid] || 0) + 1;
-    });
-  });
-  var bits = SERVICE_TYPES
-    .filter(function(svc) { return serviceCounts[svc.id]; })
-    .map(function(svc) {
-      var compact = svc.label.replace(/\s*\/\s*.*$/, "");
-      return serviceCounts[svc.id] + " " + compact.toLowerCase();
-    });
-  var summary = (bits.length === 0)
-    ? "No services attached to any gap yet , open a gap on Tab 4 → 'Services needed' to add chips. The Services scope sub-tab will populate as soon as you do."
-    : "Across " + projects.length + " project" + (projects.length === 1 ? "" : "s") +
-      ": " + bits.join(" · ") + ".";
-  servicesCard.appendChild(mkt("div", "card-hint", summary));
-  servicesCard.appendChild(mkt("div", "services-scope-cta",
-    "→ Open the 'Services scope' sub-tab above for the full breakdown table."));
-  left.appendChild(servicesCard);
 
   // ---- Right panel: Executive Summary (Phase 13) ----
   // Narrative belongs on the right; dashboards belong on the left. This closes

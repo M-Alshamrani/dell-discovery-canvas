@@ -6134,12 +6134,11 @@ describe("43 · Phase 19l · v2.4.12 services scope + pre-flight regression fixe
       assert(proj.services.indexOf(id) >= 0, "union must include '" + id + "'"));
   });
 
-  it("SVC9 · 'Services scope' sub-tab appears in the Reporting view DOM", () => {
-    var l = document.createElement("div"); var r = document.createElement("div");
-    renderReportingOverview(l, r);
-    assert(/services scope/i.test(l.textContent || ""),
-      "Reporting view must surface the 'Services scope' sub-tab entry");
-  });
+  // v2.4.13 S0 · SVC9 dropped. Original test asserted the "Services scope"
+  // sub-tab appeared in the Reporting view DOM. The sub-tab itself is
+  // removed (Suite 45 VT21 asserts the removal). Per-gap and per-project
+  // services info still surfaces on gap/project drawer bodies (covered by
+  // SVC11/SVC15 + the v2.5.0 detail-panel template).
 
   it("SVC10 · gap.services round-trips through JSON (.canvas envelope)", () => {
     var s = createEmptySession();
@@ -6887,7 +6886,6 @@ describe("44 · Phase 19m · v2.5.0 crown-jewel UI rework", () => {
       "/ui/views/GapsEditView.js",
       "/ui/views/SummaryGapsView.js",
       "/ui/views/SummaryRoadmapView.js",
-      "/ui/views/SummaryServicesView.js",
       "/ui/views/ReportingView.js",
       "/ui/components/UseAiButton.js",
       "/ui/components/Drawer.js",

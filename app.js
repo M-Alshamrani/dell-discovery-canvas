@@ -17,7 +17,6 @@ import { renderSummaryHealthView }   from "./ui/views/SummaryHealthView.js";
 import { renderSummaryGapsView }     from "./ui/views/SummaryGapsView.js";
 import { renderSummaryVendorView }   from "./ui/views/SummaryVendorView.js";
 import { renderSummaryRoadmapView }  from "./ui/views/SummaryRoadmapView.js";
-import { renderSummaryServicesView } from "./ui/views/SummaryServicesView.js";
 
 // v2.5.0 TB6: stepper steps render with mono leading-zero pattern
 // (01 Context, 02 Current State, ...). The label is just the readable
@@ -31,15 +30,16 @@ var STEPS = [
   { id: "reporting", num: "05", label: "Reporting"     }
 ];
 
+// v2.4.13 S0: dropped the "Services scope" sub-tab. Per-gap and per-project
+// services info already lives on the gap drawer body, the Roadmap project-
+// card chip row, and the Tab 4 multi-chip selector. The standalone sub-tab
+// added a navigation step without earning value.
 var REPORTING_TABS = [
-  { id: "overview", label: "Overview"       },
-  { id: "health",   label: "Heatmap"        },
-  { id: "gaps",     label: "Gaps Board"     },
-  { id: "vendor",   label: "Vendor Mix"     },
-  // v2.4.12 · NEW · workshop deliverable for "engagement shape" , rolls
-  // up gap.services chips across the session into a project-wide table.
-  { id: "services", label: "Services scope" },
-  { id: "roadmap",  label: "Roadmap"        }
+  { id: "overview", label: "Overview"   },
+  { id: "health",   label: "Heatmap"    },
+  { id: "gaps",     label: "Gaps Board" },
+  { id: "vendor",   label: "Vendor Mix" },
+  { id: "roadmap",  label: "Roadmap"    }
 ];
 
 var currentStep         = "context";
@@ -278,7 +278,6 @@ function renderReportingTab(left, right) {
     case "health":   renderSummaryHealthView(left, right);  break;
     case "gaps":     renderSummaryGapsView(left, right);    break;
     case "vendor":   renderSummaryVendorView(left, right);  break;
-    case "services": renderSummaryServicesView(left, right);break;
     case "roadmap":  renderSummaryRoadmapView(left, right); break;
   }
 }
