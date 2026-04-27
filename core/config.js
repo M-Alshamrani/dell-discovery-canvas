@@ -21,6 +21,17 @@ export const ENVIRONMENTS = [
   { id: "edge",        label: "Edge / Remote" }
 ];
 
+// v2.4.14 . per-session environment aliases. Returns the customer-
+// supplied alias (e.g. "Riyadh DC") if the session has one for the
+// given env id; otherwise falls back to the canonical ENVIRONMENTS
+// label. Renders consume this everywhere they used `env.label`.
+export function getEnvLabel(envId, session) {
+  var alias = session && session.environmentAliases && session.environmentAliases[envId];
+  if (typeof alias === "string" && alias.trim().length > 0) return alias.trim();
+  var entry = ENVIRONMENTS.find(function(e) { return e.id === envId; });
+  return entry ? entry.label : envId;
+}
+
 // Catalog — each entry may carry an optional `environments` whitelist.
 // Absence = valid in all environments (software that runs anywhere, SaaS tools, etc.).
 // Presence = palette only shows this entry when the current cell's environmentId matches.

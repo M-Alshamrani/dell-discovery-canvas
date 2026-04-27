@@ -14,7 +14,7 @@ export function renderSummaryVendorView(left, right) {
 
   const overview = mk("div", "card");
   overview.innerHTML = `
-    <div class="card-title-row"><div class="card-title">Vendor &amp; Platform Mix</div></div>
+    <div class="card-title-row"><div class="card-title">Vendor and platform mix</div></div>
     <div class="card-hint">Understand where Dell, non-Dell, and custom platforms are concentrated — and how the target architecture shifts that balance.</div>
     <div class="filter-row">
       <span class="filter-label">View:</span>

@@ -719,14 +719,14 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 }
 .btn-primary:active { transform: translateY(1px); }
 .btn-primary:focus-visible { outline: 2px solid var(--dell-blue-soft); outline-offset: 2px; }
-.btn-secondary{ background: var(--surface); color: var(--brand); border: 1px solid var(--brand); padding: 5px 14px; }
-.btn-secondary:hover { background: var(--brand-faint); }
+.btn-secondary{ background: var(--surface); color: var(--dell-blue); border: 1px solid var(--dell-blue); padding: 5px 14px; }
+.btn-secondary:hover { background: var(--dell-blue-faint); }
 .btn-danger   { background: var(--surface); color: var(--high); border: 1px solid var(--high-border); padding: 5px 14px; }
 .btn-danger:hover { background: var(--high-bg); }
 /* Footer uses a light surface, so these two variants need dark text.
    (Previously styled for a dark header and went white-on-white in the footer.) */
 .btn-outline  { background: transparent; color: var(--text-2); border: 1px solid var(--border-mid); padding: 4px 12px; }
-.btn-outline:hover { background: var(--surface-2); color: var(--text-1); border-color: var(--brand); }
+.btn-outline:hover { background: var(--surface-2); color: var(--text-1); border-color: var(--dell-blue); }
 .btn-ghost    { background: transparent; color: var(--text-3); border: 1px solid transparent; padding: 4px 12px; }
 .btn-ghost:hover { color: var(--text-1); background: var(--surface-2); border-color: var(--border); }
 
@@ -960,7 +960,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   font-size: 11px; font-weight: 500; color: var(--dell-blue-deep);
 }
 .chip-stat.chip-danger { background: var(--high-bg); border-color: var(--high-border); color: var(--high); }
-.chip-stat.chip-dell   { background: var(--brand-light); border-color: #93C5FD; color: var(--brand-dark); }
+.chip-stat.chip-dell   { background: var(--dell-blue-soft); border-color: #93C5FD; color: var(--dell-blue-deep); }
 .chip-filter {
   padding: 2px 10px; border-radius: 999px;
   border: 1px solid var(--border); background: var(--surface-2);
@@ -1026,7 +1026,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   transition: border-color 0.15s;
 }
 .form-input:focus, .form-select:focus, .form-textarea:focus, .inline-sel:focus {
-  border-color: var(--brand);
+  border-color: var(--dell-blue);
   box-shadow: 0 0 0 3px rgba(0,125,184,0.1);
 }
 .form-textarea { resize: vertical; min-height: 70px; }
@@ -1041,8 +1041,8 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   background: var(--surface-2); color: var(--text-2); font-size: 11px; font-weight: 500;
 }
 .seg-btn:last-child { border-right: none; }
-.seg-btn.active  { background: var(--brand); color: #fff; }
-.seg-btn:hover:not(.active) { background: var(--brand-faint); color: var(--brand); }
+.seg-btn.active  { background: var(--dell-blue); color: #fff; }
+.seg-btn:hover:not(.active) { background: var(--dell-blue-faint); color: var(--dell-blue); }
 
 /* ── Urgency badges ─────────────────────────────────────────── */
 .urgency-badge {
@@ -1062,7 +1062,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 /* ── Misc badges ────────────────────────────────────────────── */
 .solutions-badge {
   display: inline-block; padding: 1px 8px; border-radius: 999px;
-  background: var(--brand-faint); color: var(--brand-dark);
+  background: var(--dell-blue-faint); color: var(--dell-blue-deep);
   border: 1px solid #BFDBF7; font-size: 10px; font-weight: 500;
   max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -1077,7 +1077,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   font-size: 10px; font-weight: 500;
 }
 .vg-badge { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; }
-.vg-dell    { background: var(--brand-light); color: var(--brand-dark); }
+.vg-dell    { background: var(--dell-blue-soft); color: var(--dell-blue-deep); }
 .vg-nonDell { background: #F3F4F6; color: #374151; }
 .vg-custom  { background: #FFFBEB; color: #92400E; }
 
@@ -1089,7 +1089,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .dot-low     { background: #86EFAC; border: 1px solid var(--low); }
 .dot-empty   { background: #E5E7EB; border: 1px solid #D1D5DB; }
 .legend-swatch { display: inline-block; width: 12px; height: 10px; border-radius: 2px; }
-.swatch-dell    { background: var(--brand); }
+.swatch-dell    { background: var(--dell-blue); }
 .swatch-nondell { background: var(--nondell-strip); }
 .swatch-custom  { background: var(--custom-strip); }
 
@@ -1111,11 +1111,11 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .detail-row-label{ flex: 1; color: var(--text-1); font-weight: 500; min-width: 120px; }
 .detail-note     { font-size: 11px; color: var(--text-2); width: 100%; line-height: 1.5; margin-top: 2px; }
 .detail-note.muted { color: var(--text-3); font-style: italic; }
-.detail-solutions{ font-size: 11px; color: var(--brand-dark); font-weight: 500; width: 100%; }
+.detail-solutions{ font-size: 11px; color: var(--dell-blue-deep); font-weight: 500; width: 100%; }
 .detail-text     { font-size: 12px; color: var(--text-2); line-height: 1.6; }
 .gap-row         { flex-direction: column; }
 .tile-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
-.tile-dot.dell    { background: var(--brand); }
+.tile-dot.dell    { background: var(--dell-blue); }
 .tile-dot.nonDell { background: var(--nondell-strip); }
 .tile-dot.custom  { background: var(--custom-strip); }
 
@@ -1146,7 +1146,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   min-height: 64px; display: flex; flex-direction: column; gap: 2px;
 }
 .hm-cell:hover    { filter: brightness(0.96); }
-.hm-cell.selected { border-color: var(--brand) !important; box-shadow: inset 0 0 0 1px var(--brand); }
+.hm-cell.selected { border-color: var(--dell-blue) !important; box-shadow: inset 0 0 0 1px var(--dell-blue); }
 .bucket-empty { background: #FAFAFA; }
 .bucket-low   { background: #F0FDF4; }
 .bucket-med   { background: #FFFBEB; }
@@ -1290,7 +1290,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .instance-tile.vg-dell    { border-left-color: var(--dell-strip); }
 .instance-tile.vg-nonDell { border-left-color: var(--nondell-strip); }
 .instance-tile.vg-custom  { border-left-color: var(--custom-strip); }
-.instance-tile:hover, .instance-tile.selected { background: var(--brand-faint); border-color: var(--brand); border-left-color: var(--brand) !important; }
+.instance-tile:hover, .instance-tile.selected { background: var(--dell-blue-faint); border-color: var(--dell-blue); border-left-color: var(--dell-blue) !important; }
 .tile-label  { font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
 .tile-crit-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--high); flex-shrink: 0; }
 .tile-del {
@@ -1306,7 +1306,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   color: var(--text-3); font-size: 10px; cursor: pointer; text-align: center;
   margin-top: 3px; transition: all 0.12s;
 }
-.add-tile-btn:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-faint); }
+.add-tile-btn:hover { border-color: var(--dell-blue); color: var(--dell-blue); background: var(--dell-blue-faint); }
 
 /* ── Catalog popover ────────────────────────────────────────── */
 .catalog-pop {
@@ -1324,17 +1324,17 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   margin-bottom: 6px; outline: none;
 }
-.catalog-search:focus { border-color: var(--brand); }
+.catalog-search:focus { border-color: var(--dell-blue); }
 .catalog-list { overflow-y: auto; flex: 1; }
 .catalog-item {
   display: flex; justify-content: space-between; align-items: center;
   padding: 6px 8px; border-radius: var(--radius-sm); cursor: pointer;
   font-size: 12px; transition: background 0.1s;
 }
-.catalog-item:hover { background: var(--brand-faint); }
+.catalog-item:hover { background: var(--dell-blue-faint); }
 .catalog-item-name   { font-weight: 500; color: var(--text-1); }
 .catalog-item-vendor { font-size: 10px; color: var(--text-3); }
-.catalog-item-custom { border-top: 1px solid var(--border); margin-top: 4px; color: var(--brand); }
+.catalog-item-custom { border-top: 1px solid var(--border); margin-top: 4px; color: var(--dell-blue); }
 
 /* ── Kanban board ───────────────────────────────────────────── */
 .kanban { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -1361,8 +1361,8 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   cursor: pointer; transition: all 0.12s;
   display: flex; flex-direction: column; gap: 4px;
 }
-.gap-card:hover  { border-color: var(--brand); box-shadow: var(--shadow-sm); }
-.gap-card.selected { border-color: var(--brand); background: var(--brand-faint); }
+.gap-card:hover  { border-color: var(--dell-blue); box-shadow: var(--shadow-sm); }
+.gap-card.selected { border-color: var(--dell-blue); background: var(--dell-blue-faint); }
 .gap-card-title  { font-size: 12px; font-weight: 600; color: var(--text-1); line-height: 1.3; }
 .gap-card-meta   { font-size: 10px; color: var(--text-3); }
 .gap-card-badges { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -1389,7 +1389,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .urgency-card-high   { border-left-color: var(--high); }
 .urgency-card-medium { border-left-color: var(--med); }
 .urgency-card-low    { border-left-color: var(--low); }
-.initiative-card:hover, .initiative-card.selected { border-color: var(--brand); background: var(--brand-faint); border-left-color: var(--brand) !important; }
+.initiative-card:hover, .initiative-card.selected { border-color: var(--dell-blue); background: var(--dell-blue-faint); border-left-color: var(--dell-blue) !important; }
 .init-title  { font-size: 12px; font-weight: 600; color: var(--text-1); line-height: 1.3; }
 .init-meta   { font-size: 10px; color: var(--text-3); }
 .init-badges { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -1413,7 +1413,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .bar-group   { margin-bottom: 12px; }
 .bar-label   { font-size: 11px; font-weight: 600; color: var(--text-2); margin-bottom: 4px; }
 .bar-track   { height: 16px; background: var(--border); border-radius: 999px; overflow: hidden; display: flex; }
-.bar-dell    { background: var(--brand); height: 100%; transition: width 0.3s; }
+.bar-dell    { background: var(--dell-blue); height: 100%; transition: width 0.3s; }
 .bar-nondell { background: #9CA3AF; height: 100%; }
 .bar-custom  { background: var(--custom-strip); height: 100%; }
 .bar-meta    { font-size: 10px; color: var(--text-3); margin-top: 3px; }
@@ -1421,11 +1421,11 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .vendor-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .vendor-table th, .vendor-table td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border); }
 .vendor-table th { font-size: 10px; font-weight: 700; color: var(--text-3); background: var(--surface-2); text-transform: uppercase; letter-spacing: 0.04em; position: sticky; top: 0; }
-.vendor-table tr:hover td { background: var(--brand-faint); }
+.vendor-table tr:hover td { background: var(--dell-blue-faint); }
 
 /* ── Context view ───────────────────────────────────────────── */
 .coaching-card { background: linear-gradient(135deg, #EFF8FF 0%, #E0F2FC 100%); border: 1px solid #BFDBF7; }
-.coaching-title { font-size: 12px; font-weight: 700; color: var(--brand-dark); margin-bottom: 8px; }
+.coaching-title { font-size: 12px; font-weight: 700; color: var(--dell-blue-deep); margin-bottom: 8px; }
 .coaching-text  { font-size: 12px; color: #1D4E72; line-height: 1.7; font-style: italic; }
 .tips-card { background: var(--surface); }
 .tips-list  { padding-left: 18px; font-size: 12px; color: var(--text-2); line-height: 1.9; }
@@ -1496,9 +1496,9 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   padding: 9px 10px; border-radius: var(--radius-sm);
   cursor: pointer; transition: background 0.1s;
 }
-.cmd-item:hover, .cmd-item.active { background: var(--brand-faint); }
+.cmd-item:hover, .cmd-item.active { background: var(--dell-blue-faint); }
 .cmd-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.cmd-dot-dell    { background: var(--brand); }
+.cmd-dot-dell    { background: var(--dell-blue); }
 .cmd-dot-nonDell { background: var(--nondell-strip); }
 .cmd-dot-custom  { background: var(--custom-strip); }
 .cmd-item-name   { flex: 1; font-size: 13px; font-weight: 500; color: var(--text-1); }
@@ -1540,7 +1540,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   cursor: pointer; transition: all 0.12s;
   display: flex; flex-direction: column; gap: 2px;
 }
-.disposition-btn:hover  { border-color: var(--brand); background: var(--brand-faint); }
+.disposition-btn:hover  { border-color: var(--dell-blue); background: var(--dell-blue-faint); }
 .disposition-btn strong { font-size: 12px; color: var(--text-1); }
 .disposition-btn span   { font-size: 10px; color: var(--text-3); line-height: 1.4; }
 
@@ -1554,9 +1554,9 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 
 /* ---- Gap offer banner (in detail panel) ---- */
 .gap-offer {
-  background: var(--brand-faint); border: 1px solid #BFDBFE;
+  background: var(--dell-blue-faint); border: 1px solid #BFDBFE;
   border-radius: var(--radius-sm); padding: 10px 12px;
-  font-size: 12px; color: var(--brand-dark);
+  font-size: 12px; color: var(--dell-blue-deep);
   display: flex; flex-direction: column; gap: 6px; margin-top: 8px;
 }
 
@@ -1588,7 +1588,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .exec-summary-text {
   font-size: 13px; line-height: 1.8; color: var(--text-2);
   background: var(--surface-2); border-radius: var(--radius-sm);
-  padding: 14px 16px; border-left: 3px solid var(--brand);
+  padding: 14px 16px; border-left: 3px solid var(--dell-blue);
 }
 
 /* ---- Pipeline ---- */
@@ -1605,8 +1605,8 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   border-radius: var(--radius-sm); overflow: hidden;
   cursor: pointer; transition: all 0.12s; margin-bottom: 6px;
 }
-.project-card:hover   { border-color: var(--brand); box-shadow: var(--shadow-sm); }
-.project-card.selected{ border-color: var(--brand); background: var(--brand-faint); }
+.project-card:hover   { border-color: var(--dell-blue); box-shadow: var(--shadow-sm); }
+.project-card.selected{ border-color: var(--dell-blue); background: var(--dell-blue-faint); }
 .proj-color-bar       { height: 4px; }
 .proj-card-content    { padding: 10px 12px; }
 .proj-card-header     { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px; }
@@ -1619,32 +1619,32 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 /* Project color bars */
 .proj-red    { background: #EF4444; }
 .proj-purple { background: #8B5CF6; }
-.proj-blue   { background: var(--brand); }
+.proj-blue   { background: var(--dell-blue); }
 .proj-amber  { background: var(--med); }
 .proj-gray   { background: #9CA3AF; }
 
 /* Pipeline chips match project colors */
 .pipeline-project-chip.proj-red    { background: #FEE2E2; color: #991B1B; }
 .pipeline-project-chip.proj-purple { background: #F5F3FF; color: #5B21B6; }
-.pipeline-project-chip.proj-blue   { background: var(--brand-light); color: var(--brand-dark); }
+.pipeline-project-chip.proj-blue   { background: var(--dell-blue-soft); color: var(--dell-blue-deep); }
 .pipeline-project-chip.proj-amber  { background: #FEF3C7; color: #92400E; }
 .pipeline-project-chip.proj-gray   { background: #F3F4F6; color: #374151; }
 
 /* ---- Gaps edit upgrades ---- */
 .gap-card-auto   { border-left: 3px solid #8B5CF6 !important; }
 .auto-badge      { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 9px; font-weight: 700; background: #F5F3FF; color: #5B21B6; border: 1px solid #DDD6FE; }
-.link-badge      { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 9px; font-weight: 600; background: #EFF6FF; color: var(--brand-dark); border: 1px solid #BFDBFE; }
+.link-badge      { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 9px; font-weight: 600; background: #EFF6FF; color: var(--dell-blue-deep); border: 1px solid #BFDBFE; }
 .link-badge-desired { background: #F0FDF4; color: #15803D; border-color: #86EFAC; }
 .gap-status-row  { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
 
 /* Drag and drop */
-.kanban-col-body.drop-hover { background: var(--brand-faint); border: 2px dashed var(--brand); border-radius: var(--radius-sm); }
+.kanban-col-body.drop-hover { background: var(--dell-blue-faint); border: 2px dashed var(--dell-blue); border-radius: var(--radius-sm); }
 .gap-card.dragging          { opacity: 0.5; transform: rotate(1deg); }
 
 /* Environment checkbox row */
 .env-check-row  { display: flex; flex-wrap: wrap; gap: 10px; }
 .env-check-label{ display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; color: var(--text-2); }
-.env-checkbox   { accent-color: var(--brand); }
+.env-checkbox   { accent-color: var(--dell-blue); }
 
 /* Linked instances section */
 .link-section       { margin-top: 8px; }
@@ -1660,14 +1660,14 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 /* Link picker dialog */
 .link-picker-list { display: flex; flex-direction: column; gap: 2px; max-height: 280px; overflow-y: auto; margin: 8px 0; }
 .link-picker-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--radius-sm); cursor: pointer; }
-.link-picker-item:hover { background: var(--brand-faint); }
+.link-picker-item:hover { background: var(--dell-blue-faint); }
 
 /* Ghost / small buttons */
 .btn-ghost-sm {
-  background: transparent; color: var(--brand); border: 1px dashed var(--brand);
+  background: transparent; color: var(--dell-blue); border: 1px dashed var(--dell-blue);
   padding: 3px 10px; border-radius: 999px; font-size: 11px; cursor: pointer;
 }
-.btn-ghost-sm:hover { background: var(--brand-faint); }
+.btn-ghost-sm:hover { background: var(--dell-blue-faint); }
 
 /* Auto-gap notice */
 .auto-gap-notice {
@@ -1713,7 +1713,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .fresh-start-card {
   margin-bottom: 12px;
   padding: 16px 20px;
-  border-left: 4px solid var(--brand);
+  border-left: 4px solid var(--dell-blue);
   background: linear-gradient(135deg, var(--brand-faint, #EFF6FF), #FFFFFF);
 }
 .fresh-start-eyebrow {
@@ -1768,7 +1768,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   border-style: dashed !important;
   border-width: 1px !important;
 }
-.ghost-tile:hover { opacity: 1; background: var(--brand-faint) !important; }
+.ghost-tile:hover { opacity: 1; background: var(--dell-blue-faint) !important; }
 
 /* ============================================================
    HEATMAP REDESIGN v1.3
@@ -1804,7 +1804,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   position: relative;
 }
 .hm-cell:hover  { filter: brightness(0.94); }
-.hm-cell.selected { border-color: var(--brand) !important; box-shadow: inset 0 0 0 2px rgba(0,125,184,0.3); }
+.hm-cell.selected { border-color: var(--dell-blue) !important; box-shadow: inset 0 0 0 2px rgba(0,125,184,0.3); }
 
 /* Risk colour classes - bold, readable at a glance */
 .bucket-empty { background: #F3F4F6; }
@@ -1899,7 +1899,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 
 /* Tile dot for detail panel */
 .tile-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
-.tile-dot.dell    { background: var(--brand); }
+.tile-dot.dell    { background: var(--dell-blue); }
 .tile-dot.nonDell { background: var(--nondell-strip); }
 .tile-dot.custom  { background: var(--custom-strip); }
 
@@ -1955,17 +1955,17 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   min-height: 72px;
   padding: 10px 34px 10px 12px;
   border: 1px solid var(--border);
-  border-left: 4px solid var(--brand);
+  border-left: 4px solid var(--dell-blue);
   border-radius: var(--radius-sm);
   background: var(--surface);
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
 }
-.driver-tile:hover { background: var(--brand-faint); border-color: var(--brand); }
+.driver-tile:hover { background: var(--dell-blue-faint); border-color: var(--dell-blue); }
 .driver-tile.selected {
-  background: var(--brand-faint);
-  border-color: var(--brand);
-  box-shadow: 0 0 0 2px var(--brand-light);
+  background: var(--dell-blue-faint);
+  border-color: var(--dell-blue);
+  box-shadow: 0 0 0 2px var(--dell-blue-soft);
 }
 .driver-tile-label { font-size: 13px; font-weight: 700; color: var(--text-1); line-height: 1.25; margin-bottom: 3px; }
 .driver-tile-hint  { font-size: 11px; color: var(--text-2); line-height: 1.4; }
@@ -2013,9 +2013,9 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   transition: all 0.12s;
 }
 .driver-add-btn:hover {
-  border-color: var(--brand);
-  color: var(--brand);
-  background: var(--brand-faint);
+  border-color: var(--dell-blue);
+  color: var(--dell-blue);
+  background: var(--dell-blue-faint);
 }
 
 /* Command palette empty-state */
@@ -2045,9 +2045,9 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   display: inline-block;
   padding: 1px 8px;
   border-radius: 999px;
-  background: var(--brand-faint);
-  border: 1px solid var(--brand-light);
-  color: var(--brand-dark);
+  background: var(--dell-blue-faint);
+  border: 1px solid var(--dell-blue-soft);
+  color: var(--dell-blue-deep);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -2088,21 +2088,21 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   width: 24px;
   height: 24px;
   padding: 0;
-  border: 1.5px solid var(--brand);
+  border: 1.5px solid var(--dell-blue);
   border-radius: 50%;
-  background: var(--brand-faint);
-  color: var(--brand);
+  background: var(--dell-blue-faint);
+  color: var(--dell-blue);
   cursor: pointer;
   transition: transform 0.12s ease, background 0.12s, color 0.12s;
   flex-shrink: 0;
 }
 .help-icon-btn:hover {
   color: #fff;
-  background: var(--brand);
+  background: var(--dell-blue);
   transform: scale(1.08);
 }
 .help-icon-btn:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--dell-blue);
   outline-offset: 2px;
 }
 
@@ -2158,7 +2158,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   content: "•";
   position: absolute;
   left: 0;
-  color: var(--brand);
+  color: var(--dell-blue);
   font-weight: 700;
 }
 
@@ -2195,15 +2195,15 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 
 /* Phase 14 · project card is clickable (unifies with swimlane + vendor row patterns) */
 .project-card { cursor: pointer; transition: box-shadow 0.12s, border-color 0.12s; }
-.project-card:hover { border-color: var(--brand); box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
+.project-card:hover { border-color: var(--dell-blue); box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
 
 /* Phase 13 · clickable affordances for right-panel drill-downs */
 .vm-row { cursor: pointer; transition: background 0.12s; }
-.vm-row:hover { background: var(--brand-faint); }
+.vm-row:hover { background: var(--dell-blue-faint); }
 
 .swimlane-clickable { cursor: pointer; transition: background 0.12s; }
-.swimlane-clickable:hover { background: var(--brand-faint); }
-.swimlane-clickable:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.swimlane-clickable:hover { background: var(--dell-blue-faint); }
+.swimlane-clickable:focus-visible { outline: 2px solid var(--dell-blue); outline-offset: -2px; }
 
 /* ── v2.1 · Gap review dot + Approve button ─────────────── */
 .gap-card.gap-needs-review { position: relative; }
@@ -2264,7 +2264,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 }
 .coverage-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--brand) 0%, var(--brand-dark) 100%);
+  background: linear-gradient(90deg, var(--dell-blue) 0%, var(--dell-blue-deep) 100%);
   transition: width 0.3s ease;
 }
 .coverage-hint-list, .risk-hint-list {
@@ -2310,10 +2310,10 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   cursor: pointer;
   letter-spacing: -0.01em;
 }
-.settings-section-pill:hover { color: var(--brand); background: var(--brand-faint); }
+.settings-section-pill:hover { color: var(--dell-blue); background: var(--dell-blue-faint); }
 .settings-section-pill.active {
-  color: var(--brand-dark); background: var(--brand-faint);
-  border-color: var(--brand-light);
+  color: var(--dell-blue-deep); background: var(--dell-blue-faint);
+  border-color: var(--dell-blue-soft);
 }
 
 /* Skills admin panel */
@@ -2341,7 +2341,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   border-left: 3px solid var(--border-mid);
   border-radius: var(--radius-sm);
 }
-.skill-row.deployed { border-left-color: var(--brand); }
+.skill-row.deployed { border-left-color: var(--dell-blue); }
 .skill-row-name-col { flex: 1; min-width: 0; }
 .skill-row-name     { font-size: 13px; font-weight: 600; color: var(--text-1); letter-spacing: -0.01em; }
 .skill-row-desc     { font-size: 11px; color: var(--text-2); margin-top: 2px; line-height: 1.4; }
@@ -2350,7 +2350,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
   padding: 2px 7px; border-radius: 999px;
 }
-.skill-row-tab  { background: var(--brand-faint); color: var(--brand-dark); border: 1px solid var(--brand-light); }
+.skill-row-tab  { background: var(--dell-blue-faint); color: var(--dell-blue-deep); border: 1px solid var(--dell-blue-soft); }
 .skill-row-mode   { background: var(--surface-2); color: var(--text-3); border: 1px solid var(--border); }
 /* v2.4.6 · L5 · responseFormat + applyPolicy chips. Keep the neutral look
    of the old `mode` chip; small gap so they visually read as a pair. */
@@ -2407,14 +2407,14 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   font-family: var(--font-mono);
   font-size: 10px; font-weight: 500;
   padding: 3px 8px; border-radius: 999px;
-  background: var(--brand-faint);
-  border: 1px solid var(--brand-light);
-  color: var(--brand-dark);
+  background: var(--dell-blue-faint);
+  border: 1px solid var(--dell-blue-soft);
+  color: var(--dell-blue-deep);
   cursor: pointer;
   letter-spacing: 0;
   white-space: nowrap;
 }
-.field-chip:hover  { background: var(--brand-light); border-color: var(--brand); }
+.field-chip:hover  { background: var(--dell-blue-soft); border-color: var(--dell-blue); }
 .field-chip.is-array {
   background: #FBF3E0; border-color: #FCD34D; color: #92400E;
 }
@@ -2439,8 +2439,8 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   word-break: break-word;
 }
 .pill-editor:focus {
-  border-color: var(--brand);
-  box-shadow: 0 0 0 2px var(--brand-faint);
+  border-color: var(--dell-blue);
+  box-shadow: 0 0 0 2px var(--dell-blue-faint);
 }
 .pill-editor:empty::before {
   content: attr(aria-label);
@@ -2464,9 +2464,9 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   vertical-align: baseline;
 }
 .binding-pill.is-scalar {
-  background: var(--brand-faint);
-  color: var(--brand-dark);
-  border: 1px solid var(--brand-light);
+  background: var(--dell-blue-faint);
+  color: var(--dell-blue-deep);
+  border: 1px solid var(--dell-blue-soft);
 }
 .binding-pill.is-array {
   background: #FBF3E0;
@@ -2525,7 +2525,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   color: var(--dell-blue);
 }
 
-.ai-skill-result.has-proposals { background: var(--brand-faint); }
+.ai-skill-result.has-proposals { background: var(--dell-blue-faint); }
 
 .proposals-panel {
   display: flex; flex-direction: column; gap: 8px;
@@ -2533,7 +2533,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .proposals-head {
   font-size: 10px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.05em;
-  color: var(--brand-dark);
+  color: var(--dell-blue-deep);
   margin-bottom: 2px;
 }
 .proposals-list  { display: flex; flex-direction: column; gap: 6px; }
@@ -2547,7 +2547,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   align-items: center;
   padding: 8px 10px;
   background: var(--surface);
-  border: 1px solid var(--brand-light);
+  border: 1px solid var(--dell-blue-soft);
   border-radius: var(--radius-sm);
 }
 .proposal-path {
@@ -2563,8 +2563,8 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   grid-column: 1;
 }
 .proposal-before { color: var(--text-3); text-decoration: line-through; text-decoration-thickness: 1px; }
-.proposal-arrow  { color: var(--brand); font-weight: 700; }
-.proposal-after  { color: var(--brand-dark); font-weight: 500; background: var(--brand-faint); padding: 1px 6px; border-radius: 3px; }
+.proposal-arrow  { color: var(--dell-blue); font-weight: 700; }
+.proposal-after  { color: var(--dell-blue-deep); font-weight: 500; background: var(--dell-blue-faint); padding: 1px 6px; border-radius: 3px; }
 .proposal-actions {
   display: flex; gap: 6px;
   grid-column: 2;
@@ -2583,19 +2583,19 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 
 .output-schema-chips { max-height: 100px; }
 .field-chip.output-schema-chip.selected {
-  background: var(--brand);
+  background: var(--dell-blue);
   color: #fff;
-  border-color: var(--brand);
+  border-color: var(--dell-blue);
 }
-.field-chip.output-schema-chip.selected:hover { background: var(--brand-dark); }
+.field-chip.output-schema-chip.selected:hover { background: var(--dell-blue-deep); }
 
 /* Phase 19d.1 · Refine-to-CARE UI + test-before-save gate */
 .skill-form-footer-hint {
-  font-size: 10px; color: var(--brand-dark);
-  background: var(--brand-faint);
+  font-size: 10px; color: var(--dell-blue-deep);
+  background: var(--dell-blue-faint);
   padding: 4px 8px; margin: 4px 0 10px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--brand-light);
+  border: 1px solid var(--dell-blue-soft);
   line-height: 1.4;
 }
 
@@ -2609,12 +2609,12 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   margin: 8px 0 14px;
   padding: 12px;
   background: var(--surface-2);
-  border: 1px solid var(--brand-light);
+  border: 1px solid var(--dell-blue-soft);
   border-radius: var(--radius-sm);
 }
 .refine-diff-title {
   font-size: 11px; font-weight: 700;
-  color: var(--brand-dark);
+  color: var(--dell-blue-deep);
   text-transform: uppercase; letter-spacing: 0.05em;
   margin-bottom: 8px;
 }
@@ -2643,7 +2643,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   color: var(--text-1);
 }
 .refine-side-edit { resize: vertical; outline: none; }
-.refine-side-edit:focus { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-faint); }
+.refine-side-edit:focus { border-color: var(--dell-blue); box-shadow: 0 0 0 2px var(--dell-blue-faint); }
 
 .save-gate-hint {
   font-size: 11px; color: var(--text-3); font-style: italic;
@@ -2694,13 +2694,13 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   font-family: var(--font);
   font-size: 11px; font-weight: 600;
   padding: 5px 12px; border-radius: 999px;
-  background: var(--brand-faint);
-  border: 1px solid var(--brand-light);
-  color: var(--brand-dark);
+  background: var(--dell-blue-faint);
+  border: 1px solid var(--dell-blue-soft);
+  color: var(--dell-blue-deep);
   cursor: pointer;
   letter-spacing: -0.005em;
 }
-.use-ai-btn:hover { background: var(--brand-light); border-color: var(--brand); }
+.use-ai-btn:hover { background: var(--dell-blue-soft); border-color: var(--dell-blue); }
 .use-ai-menu {
   position: absolute; top: calc(100% + 4px); right: 0;
   min-width: 260px; max-width: 360px;
@@ -2721,7 +2721,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   cursor: pointer;
   font-family: var(--font);
 }
-.use-ai-menu-item:hover { background: var(--brand-faint); }
+.use-ai-menu-item:hover { background: var(--dell-blue-faint); }
 .use-ai-menu-name { font-size: 12px; font-weight: 600; color: var(--text-1); letter-spacing: -0.01em; }
 .use-ai-menu-desc { font-size: 10px; color: var(--text-3); margin-top: 2px; line-height: 1.4; }
 
@@ -2769,11 +2769,11 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   color: var(--text-2);
   cursor: pointer;
 }
-.settings-provider-pill:hover { border-color: var(--brand); color: var(--brand); }
+.settings-provider-pill:hover { border-color: var(--dell-blue); color: var(--dell-blue); }
 .settings-provider-pill.active {
-  background: var(--brand);
+  background: var(--dell-blue);
   color: #fff;
-  border-color: var(--brand);
+  border-color: var(--dell-blue);
 }
 .settings-form { display: flex; flex-direction: column; gap: 12px; }
 .settings-field { display: flex; flex-direction: column; gap: 4px; }
@@ -2791,7 +2791,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   color: var(--text-1);
   background: var(--surface);
 }
-.settings-input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-faint); }
+.settings-input:focus { outline: none; border-color: var(--dell-blue); box-shadow: 0 0 0 2px var(--dell-blue-faint); }
 .settings-input[readonly] { background: var(--surface-2); color: var(--text-3); }
 .settings-help-inline {
   font-size: 10px; color: var(--text-3); line-height: 1.4;
@@ -2929,8 +2929,8 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 }
 
 /* Phase 19 , AI skill card on Tab 1 driver detail panel. */
-.ai-skill-card  { border-left: 3px solid var(--brand); }
-.ai-skill-title { font-size: 13px; font-weight: 700; color: var(--brand-dark); margin-bottom: 4px; letter-spacing: -0.01em; }
+.ai-skill-card  { border-left: 3px solid var(--dell-blue); }
+.ai-skill-title { font-size: 13px; font-weight: 700; color: var(--dell-blue-deep); margin-bottom: 4px; letter-spacing: -0.01em; }
 .ai-skill-btn   { margin-top: 8px; }
 .ai-skill-result {
   margin-top: 10px;
@@ -2940,7 +2940,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   background: var(--surface-2);
   color: var(--text-2);
 }
-.ai-skill-result.running { background: var(--brand-faint); color: var(--brand-dark); font-style: italic; }
+.ai-skill-result.running { background: var(--dell-blue-faint); color: var(--dell-blue-deep); font-style: italic; }
 .ai-skill-result.ok      { background: #F0FDF4; border: 1px solid #BBF7D0; color: var(--text-1); }
 .ai-skill-result.err     { background: #FEF2F2; border: 1px solid #FECACA; color: #B91C1C; }
 .ai-skill-result-head    { font-size: 10px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
@@ -3003,11 +3003,11 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 
 .mapped-asset-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .propagate-btn {
-  border-color: var(--brand) !important;
-  color: var(--brand) !important;
+  border-color: var(--dell-blue) !important;
+  color: var(--dell-blue) !important;
 }
 .propagate-btn:hover {
-  background: var(--brand-faint) !important;
+  background: var(--dell-blue-faint) !important;
 }
 
 /* Phase 18 · Linked-technologies inline panel + double-link cues
@@ -3166,9 +3166,9 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   display: inline-block;
   padding: 1px 6px;
   font-size: 10px;
-  background: var(--brand-faint);
-  border: 1px solid var(--brand-light);
-  color: var(--brand-dark);
+  background: var(--dell-blue-faint);
+  border: 1px solid var(--dell-blue-soft);
+  color: var(--dell-blue-deep);
   border-radius: 999px;
 }
 /* v2.4.12 · P3 · Services-scope chip pills. Distinct from solutions-chip
@@ -3220,7 +3220,7 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   margin-top: 6px;
   background: none;
   border: none;
-  color: var(--brand);
+  color: var(--dell-blue);
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
@@ -3259,12 +3259,12 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .reporting-drivers-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .reporting-driver-chip {
   display: inline-flex; align-items: center; gap: 6px;
-  background: var(--brand-faint);
-  border: 1px solid var(--brand-light);
+  background: var(--dell-blue-faint);
+  border: 1px solid var(--dell-blue-soft);
   border-radius: 999px;
   padding: 3px 10px;
   font-size: 12px;
-  color: var(--brand-dark);
+  color: var(--dell-blue-deep);
 }
 .reporting-driver-name { font-weight: 600; }
 
@@ -3813,3 +3813,40 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 
 .ai-assist-footer { display: flex; align-items: center; justify-content: space-between; flex: 1; gap: 8px; }
 .ai-assist-foot-spacer { flex: 1; }
+
+/* ── v2.4.14 polish bundle ──────────────────────────────────────
+   DS8 .metric utility: tabular-nums for any numeric surface so digits
+   align vertically (gap counts, vendor mix percentages, project
+   counts, priority counts, urgency badges). Apply via class. */
+.metric {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.health-stat-num,
+.coverage-percent,
+.hm-score,
+.urgency-badge,
+.priority-chip {
+  font-variant-numeric: tabular-nums;
+}
+
+/* CD3 . gap-card domain hue bar. Mirrors the matrix-layer hue bar
+   pattern: a 2px muted-color left bar so each gap card carries its
+   domain identity at a glance. Bar color keys off data-domain
+   attribute set by GapsEditView at render time. */
+.gap-card { position: relative; }
+.gap-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: transparent;
+  border-radius: 2px 0 0 2px;
+  transition: background 0.12s ease;
+}
+.gap-card[data-domain="cyber"]::before { background: #E08896; }
+.gap-card[data-domain="ops"]::before   { background: #6FB988; }
+.gap-card[data-domain="data"]::before  { background: #E5B560; }
+.gap-card:hover::before { filter: saturate(1.1) brightness(0.92); }

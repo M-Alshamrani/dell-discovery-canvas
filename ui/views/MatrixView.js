@@ -1,6 +1,6 @@
 // ui/views/MatrixView.js -- current / desired state matrix (fixed disposition workflow)
 
-import { LAYERS, ENVIRONMENTS, CATALOG } from "../../core/config.js";
+import { LAYERS, ENVIRONMENTS, CATALOG, getEnvLabel } from "../../core/config.js";
 import { addInstance, updateInstance, deleteInstance,
          mapAsset, unmapAsset, proposeCriticalityUpgrades } from "../../interactions/matrixCommands.js";
 import { createGap } from "../../interactions/gapsCommands.js";
@@ -24,7 +24,7 @@ export function renderMatrixView(left, right, session, opts) {
   var header = mk("div", "card");
   var titleRow = mk("div", "card-title-row");
   var titleEl = mk("div", "card-title");
-  titleEl.textContent = (stateFilter === "current" ? "Current State" : "Desired State") + " -- Architecture Matrix";
+  titleEl.textContent = (stateFilter === "current" ? "Current state" : "Desired state") + " . architecture matrix";
   titleRow.appendChild(titleEl);
   titleRow.appendChild(helpButton(stateFilter === "current" ? "current" : "desired"));
   header.appendChild(titleRow);
@@ -61,7 +61,7 @@ export function renderMatrixView(left, right, session, opts) {
     var code = mk("span", "matrix-env-code");
     code.textContent = "E." + ("0" + (eIdx + 1)).slice(-2);
     var name = mk("span", "matrix-env-name");
-    name.textContent = env.label;
+    name.textContent = getEnvLabel(env.id, session);
     h.appendChild(code);
     h.appendChild(name);
     grid.appendChild(h);

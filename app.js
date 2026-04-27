@@ -26,8 +26,8 @@ import { openAiOverlay }             from "./ui/views/AiAssistOverlay.js";
 // be styled mono Dell-blue independently of the sentence-case label.
 var STEPS = [
   { id: "context",   num: "01", label: "Context"       },
-  { id: "current",   num: "02", label: "Current State" },
-  { id: "desired",   num: "03", label: "Desired State" },
+  { id: "current",   num: "02", label: "Current state" },
+  { id: "desired",   num: "03", label: "Desired state" },
   { id: "gaps",      num: "04", label: "Gaps"          },
   { id: "reporting", num: "05", label: "Reporting"     }
 ];
@@ -39,8 +39,8 @@ var STEPS = [
 var REPORTING_TABS = [
   { id: "overview", label: "Overview"   },
   { id: "health",   label: "Heatmap"    },
-  { id: "gaps",     label: "Gaps Board" },
-  { id: "vendor",   label: "Vendor Mix" },
+  { id: "gaps",     label: "Gaps board" },
+  { id: "vendor",   label: "Vendor mix" },
   { id: "roadmap",  label: "Roadmap"    }
 ];
 
@@ -61,7 +61,9 @@ document.addEventListener("DOMContentLoaded", function() {
   // bus emits, so "Saving..." -> "Saved just now" without a full
   // re-render. Tick a 30s interval so "Saved 2m ago" keeps incrementing.
   onSaveStatusChange(renderSessionStripStatus);
+  onSaveStatusChange(updateTabTitle);
   setInterval(renderSessionStripStatus, 30 * 1000);
+  updateTabTitle();
   // v2.4.5 · every AI apply/undo + session reset routes through the
   // session-changed bus. The app shell re-renders header + current
   // tab so views pick up the live data (fixes the v2.4.4
@@ -128,11 +130,21 @@ function wireSettingsBtn() {
 
 // v2.4.13 S2 + S4 . global AI Assist button click handler. Statically
 // imported so the click opens the overlay synchronously (VT25 contract).
-// Overlay implementation lives in ui/views/AiAssistOverlay.js.
+// v2.4.14 . also responds to Cmd+K / Ctrl+K keyboard shortcut anywhere
+// in the app (industry-standard "command palette" pattern).
 function wireTopbarAiBtn() {
   var btn = document.getElementById("topbarAiBtn");
   if (!btn) return;
   btn.addEventListener("click", function() {
+    openAiOverlay({ tabId: currentStep, context: {} });
+  });
+  document.addEventListener("keydown", function(e) {
+    var isMod = e.metaKey || e.ctrlKey;
+    if (!isMod || e.key !== "k" && e.key !== "K") return;
+    // Don't fire if the user is mid-typing in an input + the OS shortcut
+    // would otherwise navigate (forms still get Cmd+K behaviour because
+    // browsers don't bind it natively, but we're polite anyway).
+    e.preventDefault();
     openAiOverlay({ tabId: currentStep, context: {} });
   });
 }
@@ -301,6 +313,21 @@ function renderSessionStripStatus() {
 
   dot.setAttribute("data-state", state);
   text.textContent = label;
+}
+
+// v2.4.14 . browser tab title carries a `•` prefix while the canvas is
+// in an unsaved/saving state, reverting to the plain title on saved.
+// Pairs with the topbar session strip so users juggling browser tabs
+// can spot which canvas needs attention.
+function updateTabTitle() {
+  var snap = getSaveStatus();
+  var base = "Dell Discovery Canvas";
+  var prefix = "";
+  if (snap.status === "saving") prefix = "• ";
+  else if (snap.status === "idle" && session.customer && session.customer.name && session.customer.name.trim()) {
+    prefix = "• ";
+  }
+  document.title = prefix + base;
 }
 
 function relativeSavedAgo(ts) {

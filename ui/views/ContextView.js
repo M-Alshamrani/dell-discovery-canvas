@@ -12,7 +12,7 @@
 //      Remove control on each tile: silent if outcomes empty, confirms otherwise.
 //   3. No session-level businessOutcomes or primaryDriver , those moved under drivers[].
 
-import { BUSINESS_DRIVERS, CUSTOMER_VERTICALS } from "../../core/config.js";
+import { BUSINESS_DRIVERS, CUSTOMER_VERTICALS, ENVIRONMENTS, getEnvLabel } from "../../core/config.js";
 import { saveToLocalStorage, resetToDemo, isFreshSession, applyContextSave } from "../../state/sessionStore.js";
 import { helpButton } from "./HelpModal.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
@@ -97,6 +97,40 @@ export function renderContextView(left, right, session) {
   left.appendChild(driversCard);
 
   paintDriverTiles(driversRow, session, right);
+
+  // v2.4.14 . Environments card. Lets the user alias each environment
+  // (Core DC -> "Riyadh DC", DR / Secondary DC -> "Jeddah DR", etc.).
+  // Aliases live on session.environmentAliases and surface across every
+  // matrix / heatmap / gap render via getEnvLabel().
+  var envCard = mk("div", "card");
+  envCard.style.marginTop = "12px";
+  envCard.appendChild(mkt("div", "card-title", "Environments"));
+  envCard.appendChild(mkt("div", "card-hint",
+    "Give each environment a customer-friendly name (e.g. \"Riyadh DC\"). Aliases show up in matrices, the heatmap, and the report. Leave blank to use the default."));
+  var envForm = mk("div", "context-form");
+  ENVIRONMENTS.forEach(function(env) {
+    var grp = mk("div", "form-group");
+    var lbl = mkt("label", "form-label", env.label);
+    var input = mk("input", "form-input");
+    input.type = "text";
+    input.value = (session.environmentAliases && session.environmentAliases[env.id]) || "";
+    input.placeholder = env.label;
+    input.addEventListener("input", function() {
+      if (!session.environmentAliases || typeof session.environmentAliases !== "object") {
+        session.environmentAliases = {};
+      }
+      var v = (input.value || "").trim();
+      if (v.length === 0) delete session.environmentAliases[env.id];
+      else session.environmentAliases[env.id] = v;
+      saveToLocalStorage();
+    });
+    grp.appendChild(lbl);
+    grp.appendChild(input);
+    envForm.appendChild(grp);
+  });
+  envCard.appendChild(envForm);
+  left.appendChild(envCard);
+
   renderWelcomePanel(right);
 }
 

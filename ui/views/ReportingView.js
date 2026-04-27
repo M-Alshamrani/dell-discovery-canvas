@@ -24,7 +24,7 @@ export function renderReportingOverview(left, right) {
   // ---- Overview header with help icon ----
   var overviewHeader = mk("div", "card");
   var headTitleRow = mk("div", "card-title-row");
-  headTitleRow.appendChild(mkt("div", "card-title", "Reporting , Overview"));
+  headTitleRow.appendChild(mkt("div", "card-title", "Reporting overview"));
   headTitleRow.appendChild(helpButton("reporting_overview"));
   overviewHeader.appendChild(headTitleRow);
   overviewHeader.appendChild(mkt("div", "card-hint",

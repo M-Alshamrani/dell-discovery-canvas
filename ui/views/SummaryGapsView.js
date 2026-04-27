@@ -5,8 +5,21 @@ import { getFilteredGaps, getGapsByPhase } from "../../services/gapsService.js";
 import { helpButton } from "./HelpModal.js";
 import { effectiveDellSolutions } from "../../services/programsService.js";
 import { session as liveSession } from "../../state/sessionStore.js";
-import { serviceLabel } from "../../core/services.js";
+import { serviceLabel, serviceDomain } from "../../core/services.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
+
+// v2.4.14 CD3 . dominant domain across a gap's services for the hue bar.
+function pickGapDomain(gap) {
+  if (!gap || !Array.isArray(gap.services) || gap.services.length === 0) return null;
+  const counts = {};
+  for (const sid of gap.services) {
+    const d = serviceDomain(sid);
+    if (d) counts[d] = (counts[d] || 0) + 1;
+  }
+  let best = null, bestCount = 0;
+  for (const k of Object.keys(counts)) if (counts[k] > bestCount) { best = k; bestCount = counts[k]; }
+  return best;
+}
 
 export function renderSummaryGapsView(left, right) {
   let activeLayerIds = new Set(LAYERS.map(l => l.id));
@@ -18,7 +31,7 @@ export function renderSummaryGapsView(left, right) {
   // ── header card ──────────────────────────────────────────────────────────
   const header = mk("div", "card");
   header.innerHTML = `
-    <div class="card-title-row"><div class="card-title">Gaps &amp; Initiatives Board</div></div>
+    <div class="card-title-row"><div class="card-title">Gaps and initiatives board</div></div>
     <div class="card-hint">Read-only view. Use the Gaps step to create or edit initiatives.</div>
     <div class="chips-row" id="sg-chips"></div>`;
   header.querySelector(".card-title-row").appendChild(helpButton("reporting_gaps"));
@@ -99,6 +112,8 @@ export function renderSummaryGapsView(left, right) {
 
   function buildCard(gap) {
     const card = mk("div", `gap-card${gap.id === selectedGapId ? " selected" : ""}`);
+    const domain = pickGapDomain(gap);
+    if (domain) card.setAttribute("data-domain", domain);
     const layerLabel = LAYERS.find(l => l.id === gap.layerId)?.label || gap.layerId;
     // v2.1 · derive Dell solutions chip from linked Dell desired tiles.
     const solutions = effectiveDellSolutions(gap, liveSession);

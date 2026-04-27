@@ -1,6 +1,6 @@
 // ui/views/GapsEditView.js -- fully wired gaps & initiatives board
 
-import { LAYERS, ENVIRONMENTS, BUSINESS_DRIVERS } from "../../core/config.js";
+import { LAYERS, ENVIRONMENTS, BUSINESS_DRIVERS, getEnvLabel } from "../../core/config.js";
 import { LayerIds, EnvironmentIds } from "../../core/models.js";
 import { createGap, updateGap, deleteGap, setGapDriverId, approveGap,
          linkCurrentInstance, linkDesiredInstance,
@@ -11,8 +11,26 @@ import { suggestDriverId, effectiveDriverId, effectiveDriverReason, driverLabel 
 import { saveToLocalStorage } from "../../state/sessionStore.js";
 import { helpButton } from "./HelpModal.js";
 import { validateActionLinks, actionById } from "../../core/taxonomy.js";
-import { SERVICE_TYPES, SUGGESTED_SERVICES_BY_GAP_TYPE, suggestedFor, serviceLabel } from "../../core/services.js";
+import { SERVICE_TYPES, SUGGESTED_SERVICES_BY_GAP_TYPE, suggestedFor, serviceLabel, serviceDomain } from "../../core/services.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
+
+// v2.4.14 CD3 . pick the dominant domain across a gap's services (cyber /
+// ops / data / null). When multiple services map to multiple domains we
+// take the most-frequent; ties resolve by the SERVICE_TYPES catalog order.
+// Returns null when the gap has no services or none have a domain.
+function pickGapDomain(gap) {
+  if (!gap || !Array.isArray(gap.services) || gap.services.length === 0) return null;
+  var counts = {};
+  for (var i = 0; i < gap.services.length; i++) {
+    var d = serviceDomain(gap.services[i]);
+    if (d) counts[d] = (counts[d] || 0) + 1;
+  }
+  var best = null, bestCount = 0;
+  Object.keys(counts).forEach(function(k) {
+    if (counts[k] > bestCount) { best = k; bestCount = counts[k]; }
+  });
+  return best;
+}
 
 // Phase 18: count how many gaps reference an instance id (in either link
 // list). Used for the "linked to N gaps" multi-link chip and for the
@@ -54,7 +72,7 @@ export function renderGapsEditView(left, right, session) {
   // ---- Header ----
   var header = mk("div", "card");
   var titleRow = mk("div", "card-title-row");
-  titleRow.appendChild(mkt("div", "card-title", "Gaps & Initiatives"));
+  titleRow.appendChild(mkt("div", "card-title", "Gaps and initiatives"));
   titleRow.appendChild(helpButton("gaps"));
   header.appendChild(titleRow);
   header.appendChild(mkt("div", "card-hint",
@@ -110,7 +128,7 @@ export function renderGapsEditView(left, right, session) {
   var allOpt = document.createElement("option"); allOpt.value = "all"; allOpt.textContent = "All environments";
   envSel.appendChild(allOpt);
   ENVIRONMENTS.forEach(function(env) {
-    var opt = document.createElement("option"); opt.value = env.id; opt.textContent = env.label;
+    var opt = document.createElement("option"); opt.value = env.id; opt.textContent = getEnvLabel(env.id, session);
     envSel.appendChild(opt);
   });
   envSel.addEventListener("change", function(e) { activeEnvId = e.target.value; renderAll(); });
@@ -280,6 +298,11 @@ export function renderGapsEditView(left, right, session) {
     if (gap.urgency) cls += " crit-" + gap.urgency.toLowerCase();
     var card = mk("div", cls);
     card.draggable = true;
+    // v2.4.14 CD3 . carry the gap's domain (derived from its services'
+    // dominant domain) on a data attribute so .gap-card::before paints
+    // the muted-hue left bar via CSS.
+    var domain = pickGapDomain(gap);
+    if (domain) card.setAttribute("data-domain", domain);
 
     // v2.1 · pulsing review dot for unreviewed auto-drafts.
     if (needsReview) {
@@ -560,7 +583,7 @@ export function renderGapsEditView(left, right, session) {
       cb.className = "env-checkbox";
       cb.checked = (gap.affectedEnvironments || []).indexOf(env.id) >= 0;
       lbl.appendChild(cb);
-      lbl.appendChild(document.createTextNode(" " + env.label));
+      lbl.appendChild(document.createTextNode(" " + getEnvLabel(env.id, session)));
       envCheckRow.appendChild(lbl);
     });
     envGroup.appendChild(envCheckRow);

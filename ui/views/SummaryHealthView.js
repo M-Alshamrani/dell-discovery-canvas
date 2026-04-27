@@ -1,6 +1,6 @@
 // ui/views/SummaryHealthView.js -- bold heatmap redesign
 
-import { LAYERS, ENVIRONMENTS } from "../../core/config.js";
+import { LAYERS, ENVIRONMENTS, getEnvLabel } from "../../core/config.js";
 import { session }              from "../../state/sessionStore.js";
 import { getHealthSummary, computeBucketMetrics, scoreToRiskLabel, scoreToClass } from "../../services/healthMetrics.js";
 import { helpButton } from "./HelpModal.js";
@@ -13,7 +13,7 @@ export function renderSummaryHealthView(left, right) {
   // Overview chips
   var overview = mk("div", "card");
   var titleRow = mk("div", "card-title-row");
-  titleRow.appendChild(mkt("div", "card-title", "Architecture Heatmap"));
+  titleRow.appendChild(mkt("div", "card-title", "Architecture heatmap"));
   titleRow.appendChild(helpButton("reporting_health"));
   overview.appendChild(titleRow);
   overview.appendChild(mkt("div", "card-hint",
@@ -68,7 +68,7 @@ export function renderSummaryHealthView(left, right) {
     var code = mk("span", "matrix-env-code");
     code.textContent = "E." + ("0" + (eIdx + 1)).slice(-2);
     var name = mk("span", "matrix-env-name");
-    name.textContent = env.label;
+    name.textContent = getEnvLabel(env.id, session);
     h.appendChild(code);
     h.appendChild(name);
     grid.appendChild(h);
@@ -169,7 +169,7 @@ function renderDetail(right, layerId, envId) {
 
   // Header with risk badge
   panel.appendChild(mkt("div", "detail-title", (layer && layer.label) || layerId));
-  panel.appendChild(mkt("div", "detail-sub",   (env   && env.label)   || envId));
+  panel.appendChild(mkt("div", "detail-sub",   getEnvLabel(envId, session)));
 
   if (m.hasData) {
     var riskBadge = mk("span", "urgency-badge " + riskBadgeClass(m.totalScore));

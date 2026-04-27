@@ -34,6 +34,11 @@ export function createEmptySession() {
       status:        "Draft",
       version:       "2.0"
     },
+    // v2.4.14 . per-session aliases for environments. Keys are
+    // ENVIRONMENTS[].id (coreDc, drDc, publicCloud, edge); values are
+    // the customer-friendly name (e.g. "Riyadh DC", "Jeddah DR").
+    // Empty string or missing key falls back to the canonical label.
+    environmentAliases: {},
     instances:  [],
     gaps:       []
   };
@@ -82,6 +87,10 @@ export function migrateLegacySession(raw) {
 
   if (!Array.isArray(s.instances)) s.instances = [];
   if (!Array.isArray(s.gaps))      s.gaps      = [];
+  // v2.4.14 . backfill environmentAliases on legacy sessions.
+  if (!s.environmentAliases || typeof s.environmentAliases !== "object") {
+    s.environmentAliases = {};
+  }
 
   // v2.1 rule 6: default `reviewed` on any gap missing it.
   //   auto-drafted (has linked desired tiles) → reviewed: false (surfaces the dot)
