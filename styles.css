@@ -1121,13 +1121,20 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 
 /* ── Heatmap ────────────────────────────────────────────────── */
 .matrix-scroll-wrap { overflow-x: auto; border-radius: var(--radius-sm); }
+/* v2.4.13 polish iter-6 . heatmap row-band rhythm. Row-gap reveals
+   the canvas-alt page-bg tint between layer rows so each row reads
+   as its own breathing band; cells stay white. Column-gap keeps a
+   thin 1px hairline between env columns (those need to read as a
+   table). The 2px muted-hue left bar on .matrix-layer-header anchors
+   each row as "this layer's territory." */
 .heatmap-grid {
   display: grid;
-  gap: 2px;
-  background: var(--border);
-  border: 1px solid var(--border);
+  column-gap: 1px;
+  row-gap: 6px;
+  background: var(--canvas-alt);
+  padding: 1px;
+  border: 1px solid var(--rule);
   border-radius: var(--radius-sm);
-  overflow: hidden;
   min-width: 540px;
 }
 .hm-corner     { background: var(--surface-2); }
@@ -1149,13 +1156,23 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .hm-counts{ font-size: 9px; color: var(--text-3); margin-top: 2px; }
 
 /* ── Architecture matrix ────────────────────────────────────── */
+/* v2.4.13 polish iter-6 . row-band rhythm (Option B from the layer-
+   spacing review). Was: gap:1px exposed the --border color uniformly
+   between every cell, producing a "uniform sheet" look that felt
+   cramped. Now: column-gap stays at 1px for clean column separation,
+   but row-gap is 6px and the grid background is --canvas-alt (the
+   page-bg Dell-blue tint) so the gaps between rows read as
+   breathing space, not a divider line. Each layer row is one
+   horizontal white band anchored by its 2px muted-hue left bar.
+   Premium without bloat; works identically on the heatmap above. */
 .matrix-grid {
   display: grid;
-  gap: 1px;
-  background: var(--border);
-  border: 1px solid var(--border);
+  column-gap: 1px;
+  row-gap: 6px;
+  background: var(--canvas-alt);
+  padding: 1px;
+  border: 1px solid var(--rule);
   border-radius: var(--radius-sm);
-  overflow: hidden;
   min-width: 600px;
 }
 .matrix-corner   { background: var(--surface-2); }
@@ -1758,13 +1775,18 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
    "Metro map" style - bold tiles, pre-attentive color, numbers
    ============================================================ */
 
+/* v2.4.13 polish iter-6 . heatmap row-band rhythm (Option B). Mirrors
+   the matrix-grid treatment so the two views read with one visual
+   language. Overrides the earlier .heatmap-grid rule above; later
+   declaration wins per cascade. */
 .heatmap-grid {
   display: grid;
-  gap: 3px;
-  background: var(--border);
-  border: 1px solid var(--border);
+  column-gap: 1px;
+  row-gap: 6px;
+  background: var(--canvas-alt);
+  padding: 1px;
+  border: 1px solid var(--rule);
   border-radius: var(--radius-sm);
-  overflow: hidden;
   min-width: 540px;
 }
 
