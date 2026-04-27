@@ -872,10 +872,53 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 }
 .matrix-corner   { background: var(--surface-2); }
 .matrix-env-head { background: var(--surface-2); padding: 7px 8px; font-size: 10px; font-weight: 700; color: var(--text-2); text-align: center; }
-.matrix-layer-label {
-  background: var(--surface-2); padding: 10px;
-  font-size: 10px; font-weight: 600; color: var(--text-2);
-  display: flex; align-items: flex-start; line-height: 1.4;
+/* v2.4.13 S7 . layer-name visual treatment in MatrixView (Tabs 2 + 3).
+   Replaces the previous 10px ink-mute label-only cell with a structured
+   header: 4px color-coded left bar (signal palette per layer) + a stack
+   of mono-caps eyebrow + 14px ink 600 layer name. The bar is always
+   visible; the eyebrow + name reads as a deliberate row marker rather
+   than a tucked-away grid label. */
+.matrix-layer-header {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  padding: 10px 12px 10px 0;
+  background: var(--canvas-soft);
+  border-right: 1px solid var(--rule);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.matrix-layer-bar {
+  width: 4px;
+  flex-shrink: 0;
+  background: var(--rule-strong);
+  border-radius: 0 2px 2px 0;
+}
+.matrix-layer-bar[data-layer-id="workload"]       { background: var(--rule-strong); }
+.matrix-layer-bar[data-layer-id="compute"]        { background: var(--amber); }
+.matrix-layer-bar[data-layer-id="storage"]        { background: var(--amber); }
+.matrix-layer-bar[data-layer-id="dataProtection"] { background: var(--red); }
+.matrix-layer-bar[data-layer-id="virtualization"] { background: var(--dell-blue); }
+.matrix-layer-bar[data-layer-id="infrastructure"] { background: var(--green); }
+.matrix-layer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.matrix-layer-eyebrow {
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+  margin-bottom: 1px;
+}
+.matrix-layer-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.25;
+  letter-spacing: -0.005em;
 }
 .matrix-cell {
   background: var(--surface); padding: 6px;
