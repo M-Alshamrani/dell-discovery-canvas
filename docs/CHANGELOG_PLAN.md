@@ -932,9 +932,27 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
+## v2.4.14 · Hygiene + polish + filter system + Lucide + env aliases · IMPLEMENTED 2026-04-27 (tagged + pushed)
+
+**Status:** drawer-everywhere parked per user direction; the v2.5.0-residual polish that doesn't depend on drawers shipped here, plus three additive features (env aliases, filter system, Lucide migration). Test surface flipped from yellow `545/12/557` to fully green `547/0/547` by deleting 10 obsolete tests + landing the filter system. Tag `v2.4.14` at `9c9e5eb`.
+
+**Highlights:**
+- Test cleanup: deleted 10 Suite 44 RED tests (drawer + per-entity AI + tag-primitive migration) + Drawer.js stub.
+- Heading case sweep (A3): sentence-case across views; "Strategic Drivers" retained as customer brand convention.
+- Brand-alias sweep (CD1): 147 mechanical replacements `var(--brand)` → `var(--dell-blue)`.
+- Gap-card domain hue bars (CD3): 2px muted-hue left bar via `data-domain` attribute.
+- Tabular-nums utility (DS8): `.metric` class + inline application on counts.
+- Cmd+K shortcut for AI Assist.
+- Browser tab title unsaved indicator.
+- Environment aliases (NEW): `session.environmentAliases` + Tab 1 Environments card + `getEnvLabel(envId, session)` helper.
+- Filter system (F1-F6 services dimension): `state/filterState.js` + 10-chip strip on Tab 4 + body-attribute-driven CSS dim.
+- Lucide SVG icons: undo / undo-all chips + footer Save/Open/Demo/New/Clear.
+
+---
+
 ## v2.4.13 · Intermediate UX/UI patches · IMPLEMENTED 2026-04-27 (tagged + pushed)
 
-**Status:** all 8 spec sections (S0-S8 + S2A) shipped. Six user-feedback polish iterations folded in (P1-P8, Q1-Q6, R1-R4, F1-F6, G1-G2, iter-6 row-band rhythm). Test surface 545 GREEN / 12 RED / 557 total; remaining RED is the v2.5.0-deferred Suite 44 set. Tag `v2.4.13` at `ff09f32`. Browser smoke against R1-R12 verified before tag.
+**Status:** all 8 spec sections (S0-S8 + S2A) shipped. Six user-feedback polish iterations folded in (P1-P8, Q1-Q6, R1-R4, F1-F6, G1-G2, iter-6 row-band rhythm). Test surface 545 GREEN / 12 RED / 557 total; remaining RED was the v2.5.0-deferred Suite 44 set (later cleaned up in v2.4.14). Tag `v2.4.13` at `ff09f32`. Browser smoke against R1-R12 verified before tag.
 
 
 

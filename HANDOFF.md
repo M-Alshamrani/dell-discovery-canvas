@@ -1,6 +1,6 @@
 # Dell Discovery Canvas , Session Handoff
 
-**Last session end**: 2026-04-27. **v2.4.13 SHIPPED** (intermediate UX/UI patches: services-scope sub-tab dropped + AI Assist global gateway + Overlay.js + topbar session strip + demo banner all-tabs + stepper + matrix layer treatment + 6 user-feedback polish iterations). 545/12/557 tests; only the 12 v2.5.0-deferred Suite 44 RED tests remain. Next session picks up at v2.5.0 (drawer-everywhere + universal detail panel + filters).
+**Last session end**: 2026-04-27. **v2.4.14 SHIPPED** (hygiene + polish + filter system + Lucide icons + env aliases + obsolete-test cleanup). 547 GREEN / 0 RED / 547 total — banner now reads "All 547 tests passed" on every load. Drawer-everywhere parked per user direction; v2.4.15 next up: continuous-page printable report deliverable for Dell exec audiences.
 
 **File purpose**: anyone (human or a fresh Claude Code session) opening this folder should read this file first to know exactly where work stopped, what's shipped, what's queued, and how to pick up.
 
@@ -8,9 +8,9 @@
 
 ## 1 · Where you are
 
-- `git log --oneline main` , HEAD on `ff09f32` (v2.4.13 . APP_VERSION bump).
-- `git tag --list 'v2.*' | sort -V` , 24 tags: `v2.1.1` through `v2.4.13` (plus the `v2.4.11.d01` + `v2.4.11.d02` hygiene-pass records on origin only).
-- Working tree: clean. Everything built is on `origin/main`. v2.4.13 is the latest tag.
+- `git log --oneline main` , HEAD on `9c9e5eb` (v2.4.14 . APP_VERSION bump).
+- `git tag --list 'v2.*' | sort -V` , 25 tags: `v2.1.1` through `v2.4.14` (plus `v2.4.11.d01` + `v2.4.11.d02` hygiene-pass records on origin only).
+- Working tree: clean. Everything built is on `origin/main`. v2.4.14 is the latest tag.
 - GitHub: https://github.com/M-Alshamrani/dell-discovery-canvas (private).
 - Local in sync with origin.
 
@@ -43,9 +43,10 @@ Full chronology and commit refs live in `.claude/projects/.../memory/project_cur
 | v2.4.10.1 | 19j.1 HOTFIX | test-runner localStorage isolation (fixes "Bus Co" pollution) |
 | v2.4.11 | 19k Rules hardening | review-time enforcement + closed-vs-deleted + visible auto-behaviour + Operational/Services clarity + 3 in-flight bug fixes caught by browser smoke |
 | v2.4.12 | 19l Services scope + PR/U + post-smoke hot-patches | `gap.services[]` field + 10-entry `SERVICE_TYPES` catalog + Tab 4 multi-chip selector with "+ Add service" picker (full catalog) + Tab 5.5 project-card chip row + NEW Reporting "Services scope" sub-tab + PR1 ContextView no-op Save preserves `isDemo` + PR2 skillsEvents bus + AI dropdown auto-refresh + U1 removal of D2 ops-gap CTA + M11 migrator backfill + closed-gap rollup exclusion + Reporting Gaps Board side-panel services + Roadmap chip pill CSS. Suite 43 SVC1-15 + DS23 (22 new tests). Total 531/531. |
-| **v2.4.13** | **19m Intermediate UX/UI patches** | **(1) Phase 19m foundation (chunks 1-3): DS1 design tokens (4-tier ink, 3-tier surface, hairline scale, signal palette, full Dell-blue family) + DS2 .eyebrow utility + DS5 dash-bullet pattern + A1 em-dash sweep + A2 Dell product accuracy on g-003 + d-006 + CD5 services `domain` field + DS24 demo gap domain coverage + GPLC-pattern topbar foundation + leading-zero stepper + local Dell logo. (2) Spec sections S0-S8 + S2A: services-scope sub-tab dropped (S0); app-version chip moved from topbar to footer pill (S1); NEW global AI Assist top-right button with Dell-blue luxury "polished glass with quiet glint" pulse (S2); NEW topbar session strip with workshop name + colored save indicator (S2A); NEW `ui/components/Overlay.js` centered modal with persist + transparent modes (S3); NEW `ui/views/AiAssistOverlay.js` tile-grid skill picker with in-place section swap, segmented scope toggle, pick-from-page transparency (S4); NEW `ui/components/DemoBanner.js` shared helper mounted on every left-panel view (S5); stepper steps as Chrome-style discrete tab cards with persistent right-edge separator bars (S6); MatrixView + SummaryHealthView layer headers standardized on GPLC L.0X / E.0X mono code-then-name idiom (S7); brand-blue ratio calibrated to ~8-10% with Dell-blue-tinted page bg (S8). (3) User-feedback polish: AI Assist 8s cubic-bezier luxury glow with rest cycles + glint reflection; settings + skills builder rebuilt on Overlay.js with in-place section swap; AI Assist pick mode breathes 0.85-0.55 with floating Dell-blue pill; test-connection probe bar; AI thinking orb + bouncing dots + shimmer; Dell Sales Chat as 4th provider; matrix + heatmap row-band rhythm (6px row-gap of canvas-alt page-bg between layer rows). Suite 45 VT21-VT26 + VT28 GREEN; VT29 layout watchdog GREEN; obsolete AI9, SB8, SVC9 deleted. Total 545/12/557.** |
+| v2.4.13 | 19m Intermediate UX/UI patches | DS1 tokens + DS2 eyebrow + DS5 dash-bullet + A1 em-dash sweep + A2 Dell product accuracy + CD5 services domain + DS24 demo coverage + GPLC topbar foundation + leading-zero stepper + local Dell logo. S0-S8 + S2A: services-scope sub-tab dropped, app-version chip to footer pill, global AI Assist top-right button with Dell-blue "polished glass with quiet glint" pulse, topbar session strip with workshop name + colored save indicator, NEW Overlay.js centered modal with persist + transparent modes, AiAssistOverlay tile-grid skill picker, DemoBanner shared helper on every view, Chrome-style discrete tab-card stepper, MatrixView + SummaryHealthView L.0X / E.0X corner-code headers, brand-blue ratio ~8-10%, Dell-blue-tinted page bg. Six polish iterations: AI Assist luxury glow, settings+Skills overlay match with in-place section swap, pick-mode breathe with floating Dell-blue pill, test-connection probe bar, AI thinking orb, Dell Sales Chat as 4th provider, matrix + heatmap row-band rhythm. Total 545/12/557. |
+| **v2.4.14** | **19m Hygiene + polish + filter system + Lucide + env aliases** | **(1) Test cleanup: deleted 10 obsolete Suite 44 RED tests (drawer module + per-entity AI mount + tag-primitive migration) + Drawer.js stub since drawer-everywhere is parked. (2) Heading case sweep (A3): Architecture Heatmap → Architecture heatmap, etc. Strategic Drivers retained as customer brand convention. (3) Brand-alias sweep (CD1): 147 mechanical replacements var(--brand) → var(--dell-blue) in styles.css, visual outcome unchanged. (4) Gap-card domain hue bars (CD3): pickGapDomain helper + 2px muted-hue ::before on .gap-card[data-domain] mirrors the matrix-layer-bar pattern. (5) Tabular-nums utility (DS8): .metric class + inline on count surfaces. (6) Cmd+K / Ctrl+K shortcut for AI Assist. (7) Browser tab title unsaved indicator: "• Dell Discovery Canvas" while saving. (8) Environment aliases (NEW per user direction): session.environmentAliases + getEnvLabel(envId, session) helper + Tab 1 Environments card with 4 inputs. Every site that rendered env.label now uses the helper (MatrixView + SummaryHealthView + GapsEditView). (9) Filter system (F1-F6 services dimension): NEW state/filterState.js pub/sub with localStorage persistence; chip strip on Tab 4 with 10 services chips; CSS dim rule body[data-filter-services] .gap-card:not(.filter-match-services) → opacity 0.22 grayscale. VT17 + VT18 GREEN. (10) Lucide SVG icon migration: ui/icons.js extended with undo/undoAll/refresh/download/upload/plus/trash/x; index.html undo chips + footer Save/Open/Demo/New/Clear all use inline SVG instead of emoji glyphs. Total 547/0/547 (banner now auto-dismisses on every load).** |
 
-**Test count**: 545 assertions GREEN, 12 RED across 45 suites in `diagnostics/appSpec.js` + `diagnostics/demoSpec.js`. The 12 RED are intentionally deferred to v2.5.0 (Suite 44 VT3 + VT7-VT14 + VT16-VT18: drawer module + per-tab drawer wiring + universal detail-panel template + filter system + tag-vocabulary migration).
+**Test count**: 547 assertions GREEN, 0 RED across 45 suites in `diagnostics/appSpec.js` + `diagnostics/demoSpec.js`. Banner auto-dismisses after 5s on every page load.
 
 ## 3 · What closed in v2.4.5 + v2.4.5.1
 
@@ -94,11 +95,33 @@ Ordered for logical progression. Each bucket has locked scope in memory or SPEC.
 - **A4.1. v2.4.13 Demo refresh + old-schema purge + per-tab demo banner audit — DEFERRED from v2.4.12 attempt 2026-04-26.** Three items the user chose to defer: (a) demo `g-001` Phase 17 violation (`gapType: replace` with 2 desireds; same shape that was retyped on `g-004` in v2.4.11), (b) localStorage-pollution causing app to default to demo on initial open in user's browser (clean colleagues see fresh-start UX correctly), (c) per-tab demo banner audit — Tab 1 has `.demo-mode-banner` element; Tabs 2-5 do NOT. User did not catch (c) on v2.4.11 so it's gentle; (a) and (b) need a concerted demo refresh that purges any localStorage demo data created under older schemas and rebuilds demos against the v2.4.12+ data model. Opportunity to re-validate every demo gap against current taxonomy + invariants. Effort: ~3 hr.
 - **A5. v2.6.0 Action-command skills** — runtime for `json-commands` response format. Was originally v2.4.6; deferred so UX + crown-jewel land first.
 
-### NEW Bucket B0 · v2.4.13 intermediate UX/UI patches · SHIPPED 2026-04-27
+### NEW Bucket B0 · v2.4.13 + v2.4.14 intermediate UX/UI patches · SHIPPED 2026-04-27
 
-v2.4.13 tagged + pushed. Eight spec sections (S0-S8) + S2A topbar session strip + six user-feedback polish iterations (iter-1 through iter-6) all landed. Test surface 545/12/557. The 12 remaining RED tests are intentionally deferred to v2.5.0 (drawer + filter + universal detail panel + tag vocab migration).
+v2.4.13 tagged + pushed (eight spec sections + six polish iterations). v2.4.14 tagged + pushed (hygiene + polish + filter system + Lucide + env aliases). Test surface 547/0/547. Drawer-everywhere parked per user direction; v2.5.0 reduced scope folded into v2.4.14 wherever it didn't depend on drawers.
 
-Full spec retained in `docs/CHANGELOG_PLAN.md § v2.4.13` for archival reference; section R smoke checklist GREEN before tag.
+### Bucket B1 · v2.4.15 NEXT UP · printable workshop report
+
+Locked direction 2026-04-27 per user: a continuous-page printable HTML/PDF deliverable for Dell exec audiences. Click "Generate workshop report" in the footer → opens a NEW report view (separate route or window) that:
+
+- Strips chrome (topbar, stepper, footer)
+- Lays the workshop out as ONE continuous flowing page (no A4 page breaks; print-trim cleanly)
+- Sections in order: cover (customer + Dell logo + workshop date), drivers strip, architecture matrix (current + desired side-by-side or stacked), pipeline at a glance (Now/Next/Later), per-project deep dive with mapped Dell solutions + services, executive summary
+- Visual language matches the canvas (eyebrows, hue bars, tech-grids, dash bullets)
+- Browser print → PDF with `@media print` stylesheet so the deliverable can be saved as PDF directly
+
+Effort estimate: 6-8 hours focused work. Single tag.
+
+### Bucket B2 · v2.4.16 demo refresh · QUEUED after v2.4.15
+
+Per user direction 2026-04-27: build a demo that "wows Dell executives" without sounding salesy or naive. Real Dell product names (no system-generated dash-jargon for gaps), realistic but tangible coverage, drivers→pain→Dell-tech mapping. Demo refresh sequenced AFTER v2.4.15 so the showcase can demonstrate the report deliverable + env aliases (Riyadh DC etc.) + filter chips + Cmd+K all together. Effort: ~3 hours.
+
+### Bucket B3 · v2.4.17 Dell Sales Chat backend · QUEUED
+
+User will provide Dell Sales Chat API endpoint URL + auth model in coming weeks. Until then: provider entry shipped in v2.4.13 with user-pastes-URL pattern (works fine). When credentials arrive, wire `/api/llm/dell-sales-chat` proxy via nginx config and update SettingsModal hint copy.
+
+### v2.5.0 (parked indefinitely)
+
+Drawer-everywhere + universal detail panel + remaining tag-vocab migration parked per user 2026-04-27. The right-panel detail model stays. May revisit if a real friction surfaces.
 
 **Locked decisions** (do NOT re-litigate during implementation):
 
@@ -195,13 +218,12 @@ The browser smoke is non-negotiable: v2.4.11's three pre-tag bug fixes (urgency 
 
 Paste this verbatim (or adapt) as your first message in the new session:
 
-> Resume work on the Dell Discovery Canvas project at `C:\Users\Mahmo\Projects\dell-discovery\`. Read, in order: `HANDOFF.md`, then the memory files listed in its § 6 (especially `feedback_no_push_without_approval.md`, `feedback_browser_smoke_required.md`, `feedback_spec_and_test_first.md`, `project_current_state.md`), then `docs/CHANGELOG_PLAN.md § v2.5.0` for the next-release spec. v2.4.13 shipped (tag at HEAD); next up is v2.5.0 reduced-scope crown-jewel rework (drawer module + universal detail-panel template + cross-tab filters + tag vocabulary migration + "+ Add" overlay flows). Before proposing anything, confirm back:
-> 1. Current HEAD tag (should be `v2.4.13`).
-> 2. v2.5.0 reduced scope sections retained.
-> 3. The 12 still-RED tests in Suite 44 (VT3 + VT7-VT14 + VT16-VT18) gating v2.5.0.
-> 4. Whether `docker compose up -d --build` still serves 545/12/557 with the green banner.
+> Resume work on the Dell Discovery Canvas project at `C:\Users\Mahmo\Projects\dell-discovery\`. Read, in order: `HANDOFF.md`, then the memory files listed in its § 6 (especially `feedback_no_push_without_approval.md`, `feedback_browser_smoke_required.md`, `feedback_spec_and_test_first.md`, `project_current_state.md`), then take a look at `docs/CHANGELOG_PLAN.md` for tag history. v2.4.14 shipped (tag at HEAD, 547/0/547 fully green banner). Next up is v2.4.15: a continuous-page printable workshop report deliverable for Dell exec audiences. Drawer-everywhere is parked. Before proposing anything, confirm back:
+> 1. Current HEAD tag (should be `v2.4.14`).
+> 2. The v2.4.15 report intent + the design constraints user already locked: continuous flow on one trimmed page (NOT A4-paginated), Dell exec audience, sections in order cover → drivers → architecture matrix → pipeline → per-project → exec summary, browser-print-to-PDF via @media print, visual language matches the canvas (eyebrows, hue bars, dash bullets).
+> 3. Whether `docker compose up -d --build` still serves 547/0/547 with the green banner that auto-dismisses after 5s.
 >
-> Then wait for direction. Default next work: v2.5.0 §5 Drawer pattern (DR1-DR9) since drawer-everywhere is the foundation for §4 detail-panel template + §+Add overlay flows + §AI per-entity mounting.
+> Then wait for direction. Default next work: spec the v2.4.15 report (its own §v2.4.15 entry in CHANGELOG_PLAN.md) before any code lands.
 
 ## 8 · Process rule for every session going forward
 
