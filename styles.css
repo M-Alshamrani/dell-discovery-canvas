@@ -3896,3 +3896,25 @@ body[data-filter-services] .gap-card.filter-match-services {
   filter: none;
   transition: opacity 0.15s ease, filter 0.15s ease;
 }
+
+/* ── v2.4.14 / Lucide icon migration ─────────────────────────────
+   Footer + topbar buttons now use inline Lucide-style stroke SVG
+   icons instead of emoji glyphs (↶ ↶↶ ↺ ↓ ↑ + emoji rendering
+   was OS-dependent and visually inconsistent). Icons are 13-14px
+   stroke 1.6 currentColor so they inherit button text color. */
+.footer-btn-icon,
+.undo-chip-icon {
+  flex-shrink: 0;
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+.footer-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.undo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

@@ -55,3 +55,75 @@ export function starOutlineIcon() {
     '<polygon points="8,1.5 9.8,6 14.5,6.2 10.9,9.3 12.2,14 8,11.5 3.8,14 5.1,9.3 1.5,6.2 6.2,6"/>'
   );
 }
+
+// v2.4.14 . Lucide-style stroke icons replacing emoji glyphs in the
+// topbar undo chips + the footer action buttons. Each helper returns a
+// fresh SVG sized 14px at currentColor stroke so it inherits button text.
+
+/** Counter-clockwise rotate (Undo last). Lucide rotate-ccw. */
+export function undoIcon() {
+  return makeSvg(
+    '<path d="M2 6V2.5h3.5"/>' +
+    '<path d="M2 6a6 6 0 1 0 1.8-4.2"/>'
+  );
+}
+
+/** Counter-clockwise rotate with a small repeat tick (Undo all). */
+export function undoAllIcon() {
+  return makeSvg(
+    '<path d="M2 6V2.5h3.5"/>' +
+    '<path d="M2 6a6 6 0 1 0 1.8-4.2"/>' +
+    '<path d="M11 11.5l1 1 1.5-1.5"/>'
+  );
+}
+
+/** Refresh / load demo (clockwise rotate). Lucide rotate-cw. */
+export function refreshIcon() {
+  return makeSvg(
+    '<path d="M14 6V2.5h-3.5"/>' +
+    '<path d="M14 6a6 6 0 1 1-1.8-4.2"/>'
+  );
+}
+
+/** Download / save to file. Lucide download. */
+export function downloadIcon() {
+  return makeSvg(
+    '<path d="M8 1.5v9"/>' +
+    '<path d="M4.5 7L8 10.5 11.5 7"/>' +
+    '<path d="M2 13h12"/>'
+  );
+}
+
+/** Upload / open file. Lucide upload. */
+export function uploadIcon() {
+  return makeSvg(
+    '<path d="M8 10.5v-9"/>' +
+    '<path d="M4.5 5L8 1.5 11.5 5"/>' +
+    '<path d="M2 13h12"/>'
+  );
+}
+
+/** Plus (add). Lucide plus. */
+export function plusIcon() {
+  return makeSvg(
+    '<path d="M8 3v10"/>' +
+    '<path d="M3 8h10"/>'
+  );
+}
+
+/** Trash / clear. Lucide trash-2. */
+export function trashIcon() {
+  return makeSvg(
+    '<path d="M3 4h10"/>' +
+    '<path d="M5 4V3a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 11 3v1"/>' +
+    '<path d="M4 4l1 9.2a1.5 1.5 0 0 0 1.5 1.3h3a1.5 1.5 0 0 0 1.5-1.3L12 4"/>'
+  );
+}
+
+/** X close. Lucide x. */
+export function xIcon() {
+  return makeSvg(
+    '<path d="M3.5 3.5l9 9"/>' +
+    '<path d="M12.5 3.5l-9 9"/>'
+  );
+}
