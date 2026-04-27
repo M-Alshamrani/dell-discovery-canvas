@@ -146,14 +146,17 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
    comes from the structured brand block (logo + 1px vertical divider
    + two-line stack), the centred mono-caps doc-meta strip, and the
    ghost-button actions, NOT from heavy color or thick borders. */
+/* v2.4.13 . dropped position:sticky after recurring overlap bug. The
+   topbar scrolls naturally with the page. Trade-off accepted: when the
+   user scrolls down, the topbar leaves the viewport. This was the
+   v2.4.x behavior; it's preferable to the "topbar covers the stepper"
+   alternative that sticky produces. */
 #app-header,
 .topbar {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 40;
   background: var(--canvas);
   border-bottom: 1px solid var(--rule);
-  backdrop-filter: saturate(180%) blur(8px);
   flex-shrink: 0;
 }
 .topbar-inner {
