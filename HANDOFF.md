@@ -1,6 +1,6 @@
 # Dell Discovery Canvas , Session Handoff
 
-**Last session end**: 2026-04-27. **v2.4.14 SHIPPED** (hygiene + polish + filter system + Lucide icons + env aliases + obsolete-test cleanup). 547 GREEN / 0 RED / 547 total — banner now reads "All 547 tests passed" on every load. Drawer-everywhere parked per user direction; v2.4.15 next up: continuous-page printable report deliverable for Dell exec audiences.
+**Last session end**: 2026-04-27. **v2.4.14 SHIPPED** (hygiene + polish + filter system + Lucide icons + env aliases + obsolete-test cleanup). 547 GREEN / 0 RED / 547 total. **v2.4.15 spec LOCKED locally** but implementation not started: dynamic environments + UX polish bundle (vendor mix segmented bar, modern filter bar, session capsule polish, footer + matrix tweaks). User redirected v2.5.0 (drawer-everywhere) -> parked indefinitely. Awaiting user sign-off on 6 spec decisions before Suite 46 RED tests + code land.
 
 **File purpose**: anyone (human or a fresh Claude Code session) opening this folder should read this file first to know exactly where work stopped, what's shipped, what's queued, and how to pick up.
 
@@ -8,11 +8,11 @@
 
 ## 1 · Where you are
 
-- `git log --oneline main` , HEAD on `9c9e5eb` (v2.4.14 . APP_VERSION bump).
-- `git tag --list 'v2.*' | sort -V` , 25 tags: `v2.1.1` through `v2.4.14` (plus `v2.4.11.d01` + `v2.4.11.d02` hygiene-pass records on origin only).
-- Working tree: clean. Everything built is on `origin/main`. v2.4.14 is the latest tag.
+- `git log --oneline main` , HEAD on `c0c6d77` (Spec . v2.4.15 . LOCKED 2026-04-27 . dynamic envs + UX polish bundle). **This commit is LOCAL ONLY**, ahead of `origin/main` by 1. Per `feedback_no_push_without_approval.md` the spec stays local until user explicitly says "push."
+- `origin/main` HEAD on `dd6974b` (v2.4.14 . post-tag handoff updates).
+- `git tag --list 'v2.*' | sort -V` , 25 tags: `v2.1.1` through `v2.4.14` (plus `v2.4.11.d01` + `v2.4.11.d02` hygiene-pass records on origin only). v2.4.14 is the latest tag.
+- Working tree: clean.
 - GitHub: https://github.com/M-Alshamrani/dell-discovery-canvas (private).
-- Local in sync with origin.
 
 ## 2 · What is shipped
 
@@ -99,25 +99,41 @@ Ordered for logical progression. Each bucket has locked scope in memory or SPEC.
 
 v2.4.13 tagged + pushed (eight spec sections + six polish iterations). v2.4.14 tagged + pushed (hygiene + polish + filter system + Lucide + env aliases). Test surface 547/0/547. Drawer-everywhere parked per user direction; v2.5.0 reduced scope folded into v2.4.14 wherever it didn't depend on drawers.
 
-### Bucket B1 · v2.4.15 NEXT UP · printable workshop report
+### Bucket B1 · v2.4.15 NEXT UP · dynamic envs + UX polish bundle (spec LOCKED locally, awaiting sign-off)
 
-Locked direction 2026-04-27 per user: a continuous-page printable HTML/PDF deliverable for Dell exec audiences. Click "Generate workshop report" in the footer → opens a NEW report view (separate route or window) that:
+User reviewed v2.4.14 ship + raised 9 follow-up items (env model + vendor bar + filter UI + 4 polish tweaks). I scoped them into a single v2.4.15 release because the env model is foundational + the polish items touch the same render surfaces. Full spec committed locally at `c0c6d77` in `docs/CHANGELOG_PLAN.md § v2.4.15` (NOT pushed; per the no-push-without-approval rule).
 
-- Strips chrome (topbar, stepper, footer)
-- Lays the workshop out as ONE continuous flowing page (no A4 page breaks; print-trim cleanly)
-- Sections in order: cover (customer + Dell logo + workshop date), drivers strip, architecture matrix (current + desired side-by-side or stacked), pipeline at a glance (Now/Next/Later), per-project deep dive with mapped Dell solutions + services, executive summary
-- Visual language matches the canvas (eyebrows, hue bars, tech-grids, dash bullets)
-- Browser print → PDF with `@media print` stylesheet so the deliverable can be saved as PDF directly
+**Sections:**
+- §1 Dynamic environment model (DE1-DE9): catalog of 8 env types (Main / DR / Vault NEW / Public / Edge / Co-lo NEW / Hosted MSP NEW / Sovereign NEW), `session.environments[]` schema with per-env metadata (alias, location, sizeKw, sqm, tier, notes), migrator drains v2.4.14 `environmentAliases`, Tab 1 Environments card rebuilt as managed list, every render-site swap from `ENVIRONMENTS` constant to `getActiveEnvironments(session)`.
+- §2 Vendor mix segmented bar (VB1-VB3): one horizontal stacked bar per dimension; replaces multi-card SummaryVendorView.
+- §3 Modern collapsible filter bar (FB1-FB6): NEW `ui/components/FilterBar.js`; "Filters . N active" button + collapsible panel + active-pill strip above kanban.
+- §4 Session capsule polish (SC1-SC2): `building-2` icon (was briefcase / shopping-bag); "Updated HH:MM" timestamp segment.
+- §5 Footer alignment (FT1): right-align hint with `\|` divider before version capsule.
+- §6 Matrix tweaks (MT1-MT3): 3px column-gap, invisible corner cell, Load demo icon -> `play-circle`.
 
-Effort estimate: 6-8 hours focused work. Single tag.
+**Tests:** Suite 46 with DE1-DE10 + VB1-VB3 + FB1-FB6 (RED first per spec-and-test-first protocol).
 
-### Bucket B2 · v2.4.16 demo refresh · QUEUED after v2.4.15
+**6 open decisions awaiting user sign-off** (asked at end of last session; user paused for handoff before answering):
+1. **Catalog list** , 8 entries OK as-is, or drop / add types? My picks: Main, Secondary/DR, Vault/3rd site (NEW), Public Cloud, Edge/Remote, Co-location (NEW), Hosted/MSP (NEW), Sovereign Cloud (NEW). Possible additions user might want: "Workplace / VDI" or "Network edge / 5G MEC."
+2. **Default-enabled set** , the original 4 (Main / DR / Public / Edge). Existing sessions auto-enable whatever envs their data references. OK?
+3. **Per-env metadata fields** , alias / location / sizeKw / sqm / tier / notes. Drop / add anything?
+4. **Removing an env that has instances** , my plan: warn user "5 instances tied to this env; removing hides them but keeps them in the saved file." Confirm = remove. OK approach, or hard block?
+5. **Demo metadata** , Riyadh DC . 5 MW . Tier III, Jeddah DR . 2 MW . Tier II, AWS me-south-1, Branch sites x14. Different cities / specs / vertical mix?
+6. **Filter dimensions for v2.4.15 FilterBar** , only services dimension wired through to body data attribute + CSS dim rule (matches v2.4.14). Layer/Domain/Urgency render in panel but don't dim cards yet. OK to ship that way, or wire all 4 now?
 
-Per user direction 2026-04-27: build a demo that "wows Dell executives" without sounding salesy or naive. Real Dell product names (no system-generated dash-jargon for gaps), realistic but tangible coverage, drivers→pain→Dell-tech mapping. Demo refresh sequenced AFTER v2.4.15 so the showcase can demonstrate the report deliverable + env aliases (Riyadh DC etc.) + filter chips + Cmd+K all together. Effort: ~3 hours.
+Effort: ~14 hours, single tag, ~2 focused days.
 
-### Bucket B3 · v2.4.17 Dell Sales Chat backend · QUEUED
+### Bucket B2 · v2.4.16 printable workshop report · QUEUED after v2.4.15
 
-User will provide Dell Sales Chat API endpoint URL + auth model in coming weeks. Until then: provider entry shipped in v2.4.13 with user-pastes-URL pattern (works fine). When credentials arrive, wire `/api/llm/dell-sales-chat` proxy via nginx config and update SettingsModal hint copy.
+Continuous-page HTML/PDF deliverable for Dell exec audiences. Was originally v2.4.15 in the previous session's plan; reordered because the env model needs to land first so the report can show city-named DCs + metadata ("Riyadh DC . 5 MW . Tier III"). Browser-print-to-PDF via `@media print`. Sections: cover -> drivers -> matrix -> pipeline -> per-project -> exec summary. Visual language matches canvas. Effort: 6-8 hours.
+
+### Bucket B3 · v2.4.17 demo refresh · QUEUED after v2.4.16
+
+Per user direction 2026-04-27: demo content that wows Dell executives without sounding salesy or naive. Real Dell product names, drivers->pain->Dell-tech mapping, realistic-but-tangible coverage. Sequenced AFTER report so the showcase can demo report + env metadata + filters + Cmd+K together. ~3 hours.
+
+### Bucket B4 · v2.4.18 Dell Sales Chat backend · QUEUED for when API info arrives
+
+User to provide Dell Sales Chat API endpoint URL + auth model in coming weeks. Until then: provider entry shipped in v2.4.13 (user-pastes-URL pattern). When credentials arrive, wire `/api/llm/dell-sales-chat` proxy via nginx + update SettingsModal hint copy. ~1 hour.
 
 ### v2.5.0 (parked indefinitely)
 
@@ -218,12 +234,26 @@ The browser smoke is non-negotiable: v2.4.11's three pre-tag bug fixes (urgency 
 
 Paste this verbatim (or adapt) as your first message in the new session:
 
-> Resume work on the Dell Discovery Canvas project at `C:\Users\Mahmo\Projects\dell-discovery\`. Read, in order: `HANDOFF.md`, then the memory files listed in its § 6 (especially `feedback_no_push_without_approval.md`, `feedback_browser_smoke_required.md`, `feedback_spec_and_test_first.md`, `project_current_state.md`), then take a look at `docs/CHANGELOG_PLAN.md` for tag history. v2.4.14 shipped (tag at HEAD, 547/0/547 fully green banner). Next up is v2.4.15: a continuous-page printable workshop report deliverable for Dell exec audiences. Drawer-everywhere is parked. Before proposing anything, confirm back:
-> 1. Current HEAD tag (should be `v2.4.14`).
-> 2. The v2.4.15 report intent + the design constraints user already locked: continuous flow on one trimmed page (NOT A4-paginated), Dell exec audience, sections in order cover → drivers → architecture matrix → pipeline → per-project → exec summary, browser-print-to-PDF via @media print, visual language matches the canvas (eyebrows, hue bars, dash bullets).
-> 3. Whether `docker compose up -d --build` still serves 547/0/547 with the green banner that auto-dismisses after 5s.
+> Resume work on the Dell Discovery Canvas project at `C:\Users\Mahmo\Projects\dell-discovery\`. Read, in this exact order, before proposing anything:
 >
-> Then wait for direction. Default next work: spec the v2.4.15 report (its own §v2.4.15 entry in CHANGELOG_PLAN.md) before any code lands.
+> 1. `HANDOFF.md` (this folder).
+> 2. The memory index `.claude/projects/.../memory/MEMORY.md` , then specifically `feedback_no_push_without_approval.md`, `feedback_browser_smoke_required.md`, `feedback_spec_and_test_first.md`, `feedback_foundational_testing.md`, `project_current_state.md`.
+> 3. `docs/CHANGELOG_PLAN.md § v2.4.15` (the spec entry that's already drafted + locked).
+>
+> Quick state on resume:
+> - **Latest tag**: `v2.4.14` on `origin/main` (547 GREEN, 0 RED, 547 total).
+> - **Local-only commit** ahead of origin: `c0c6d77` (Spec . v2.4.15 . LOCKED). Do NOT push it on your own; user holds the push trigger per the no-push-without-approval rule.
+> - **v2.4.15 spec is locked but implementation has not started** , awaiting user sign-off on 6 spec decisions (catalog list, default-enabled set, metadata fields, env-removal behaviour, demo metadata, filter dimensions wired in this release). The 6 questions are listed verbatim in HANDOFF.md § Bucket B1.
+> - **Drawer-everywhere is parked** indefinitely. Right-panel detail model stays.
+>
+> Before doing any work, confirm back:
+> 1. Current HEAD (should be `c0c6d77` local; `dd6974b` on origin) and that the local-only spec commit is intact.
+> 2. The 6 open spec decisions awaiting sign-off (read them out so user can answer in order).
+> 3. Whether `docker compose up -d --build` still serves 547/0/547 with the auto-dismissing green banner.
+>
+> Then wait for the user's answers to the 6 questions before writing any tests or code. Once they answer, follow the locked tag protocol: Suite 46 RED tests committed first, then code execution §1 -> §6, then browser smoke against §R guards, then pause for explicit "tag it" approval.
+>
+> If the user wants to redirect away from v2.4.15 (e.g., do the report first, or split the bundle), they'll say so. Don't assume.
 
 ## 8 · Process rule for every session going forward
 
