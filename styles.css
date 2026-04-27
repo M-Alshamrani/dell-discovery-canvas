@@ -3850,3 +3850,49 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .gap-card[data-domain="ops"]::before   { background: #6FB988; }
 .gap-card[data-domain="data"]::before  { background: #E5B560; }
 .gap-card:hover::before { filter: saturate(1.1) brightness(0.92); }
+
+/* ── v2.4.14 / Filter system (F1-F6) ─────────────────────────────
+   Filter chip row sits inside the gaps-board header. Click toggles a
+   single value at a time per dimension (services dimension shipped
+   in v2.4.14; layer/gapType/environment/driver reserved for later).
+
+   Active filter writes body[data-filter-<dim>]; non-matching gap
+   cards drop to opacity 0.22 + grayscale 0.55. Matching cards carry
+   the .filter-match-* class which suppresses the dim. */
+.filter-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--canvas-soft);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+}
+.filter-chip-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  margin-right: 4px;
+}
+.filter-chip-row .chip-filter {
+  border-radius: 999px;
+}
+
+/* When body has a services filter active, every gap-card without the
+   match class dims; matching cards stay full opacity. Same idea
+   carries forward to other dimensions when they ship. */
+body[data-filter-services] .gap-card:not(.filter-match-services) {
+  opacity: 0.22;
+  filter: grayscale(0.55);
+  transition: opacity 0.15s ease, filter 0.15s ease;
+}
+body[data-filter-services] .gap-card.filter-match-services {
+  opacity: 1;
+  filter: none;
+  transition: opacity 0.15s ease, filter 0.15s ease;
+}
