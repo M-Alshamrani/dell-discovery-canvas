@@ -26,9 +26,10 @@
 //     for the `fallbackModels` field.
 
 const PROVIDER_FROM_KEY = {
-  local:     "openai-compatible",
-  anthropic: "anthropic",
-  gemini:    "gemini"
+  local:         "openai-compatible",
+  anthropic:     "anthropic",
+  gemini:        "gemini",
+  dellSalesChat: "openai-compatible"
 };
 
 // Retry tuning — exported for tests so suites can drive the loop

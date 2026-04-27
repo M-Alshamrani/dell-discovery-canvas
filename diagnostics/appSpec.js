@@ -5517,9 +5517,10 @@ describe("41 · Phase 19j · v2.4.10 save/open file (.canvas round-trip)", () =>
       providerConfig: {
         activeProvider: "gemini",
         providers: {
-          local:     { label: "Local",     baseUrl: "/api/llm/local/v1", model: "code-llm",          apiKey: "",        fallbackModels: [] },
-          anthropic: { label: "Anthropic", baseUrl: "/api/llm/anthropic", model: "claude-haiku-4-5",  apiKey: "SECRET1", fallbackModels: [] },
-          gemini:    { label: "Gemini",    baseUrl: "/api/llm/gemini",    model: "gemini-2.5-flash",  apiKey: "SECRET2", fallbackModels: ["gemini-2.0-flash"] }
+          local:         { label: "Local",          baseUrl: "/api/llm/local/v1", model: "code-llm",          apiKey: "",        fallbackModels: [] },
+          anthropic:     { label: "Anthropic",      baseUrl: "/api/llm/anthropic", model: "claude-haiku-4-5",  apiKey: "SECRET1", fallbackModels: [] },
+          gemini:        { label: "Gemini",         baseUrl: "/api/llm/gemini",    model: "gemini-2.5-flash",  apiKey: "SECRET2", fallbackModels: ["gemini-2.0-flash"] },
+          dellSalesChat: { label: "Dell Sales Chat", baseUrl: "",                  model: "",                  apiKey: "SECRET3", fallbackModels: [] }
         }
       }
     };
@@ -5528,7 +5529,7 @@ describe("41 · Phase 19j · v2.4.10 save/open file (.canvas round-trip)", () =>
   it("SF1 · buildSaveEnvelope STRIPS API keys by default (security default)", () => {
     const env = buildSaveEnvelope(demoBundle());
     const providers = env.providerConfig.providers;
-    ["local", "anthropic", "gemini"].forEach(k => {
+    ["local", "anthropic", "gemini", "dellSalesChat"].forEach(k => {
       assert(!("apiKey" in providers[k]),
         "provider '" + k + "' must have NO apiKey field when includeApiKeys is false");
     });

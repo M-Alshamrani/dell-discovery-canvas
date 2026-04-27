@@ -7,7 +7,12 @@
 
 const STORAGE_KEY = "ai_config_v1";
 
-export const PROVIDERS = ["local", "anthropic", "gemini"];
+// v2.4.13 polish iter-3 . dellSalesChat added per user direction. Same
+// connection shape as the other providers (url + model + apiKey + fallback
+// chain). Defaults model the local-LLM pattern (user-editable URL) since
+// the actual proxy backend isn't wired yet; the user will paste their
+// Dell Sales Chat endpoint directly.
+export const PROVIDERS = ["local", "anthropic", "gemini", "dellSalesChat"];
 
 // Defaults — every field is overridable via the Settings modal at runtime.
 // Local URL is relative (uses our container's nginx proxy by default; the
@@ -43,6 +48,13 @@ export const DEFAULT_AI_CONFIG = {
       // Default fallback chain prefers still-fast models before dropping
       // to the stable 1.5 family.
       fallbackModels: ["gemini-2.0-flash", "gemini-1.5-flash"]
+    },
+    dellSalesChat: {
+      label:          "Dell Sales Chat",
+      baseUrl:        "",                     // user pastes their endpoint
+      model:          "",                     // user supplies model id
+      apiKey:         "",
+      fallbackModels: []
     }
   }
 };

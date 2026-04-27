@@ -1,155 +1,196 @@
-// ui/views/SettingsModal.js — Phase 19 / v2.4.0
+// ui/views/SettingsModal.js , Phase 19 / v2.4.0 (rebuilt v2.4.13 polish iter-3)
 //
-// Gear-icon-opened modal for AI provider configuration. Three tabs:
-// Local LLM (self-hosted on the deployment host), Anthropic Claude,
-// Google Gemini. Each tab exposes endpoint URL + model + API key
-// (where applicable) + a "Test connection" probe that fires a tiny
-// "Reply OK" prompt to verify wiring before any real skill runs.
+// Gear-icon-opened settings panel. Now consumes the v2.4.13 Overlay.js
+// component so the visual language matches AI Assist (centered modal,
+// sticky head + scrollable body + sticky footer, backdrop blur, Escape
+// + backdrop close). Two top-level sections: AI Providers + Skills.
+// Skills section runs the SkillAdmin builder inside the wider overlay
+// so there's room to author + edit comfortably.
 
 import { loadAiConfig, saveAiConfig, PROVIDERS } from "../../core/aiConfig.js";
 import { testConnection } from "../../services/aiService.js";
 import { renderSkillAdmin } from "./SkillAdmin.js";
+import { openOverlay, closeOverlay } from "../components/Overlay.js";
+
+// Provider hint copy. Drives the placeholder + helper text per provider
+// so the user knows what shape goes in each field.
+var PROVIDER_HINTS = {
+  local: {
+    urlReadOnly:  false,
+    urlHelp:      "Default '/api/llm/local/v1' uses the container proxy (LLM_HOST env var). Paste an absolute URL like 'http://<host-ip>:8000/v1' to call the inference host directly (upstream CORS must permit it).",
+    keyPlaceholder: "(blank for local vLLM)",
+    keyLabel:     "API key (optional , vLLM is unauth'd)",
+    fbPlaceholder: "(optional)"
+  },
+  anthropic: {
+    urlReadOnly:  true,
+    urlHelp:      "Routed through the container's nginx proxy. Read-only because direct browser calls would be blocked by CORS.",
+    keyPlaceholder: "sk-ant-...",
+    keyLabel:     "API key",
+    fbPlaceholder: "claude-sonnet-4-5"
+  },
+  gemini: {
+    urlReadOnly:  true,
+    urlHelp:      "Routed through the container's nginx proxy. Read-only because direct browser calls would be blocked by CORS.",
+    keyPlaceholder: "AIza...",
+    keyLabel:     "API key",
+    fbPlaceholder: "gemini-2.0-flash, gemini-1.5-flash"
+  },
+  dellSalesChat: {
+    urlReadOnly:  false,
+    urlHelp:      "Paste your Dell Sales Chat endpoint URL. OpenAI-compatible shape; the same chatCompletion path that drives the local LLM dispatches the call.",
+    keyPlaceholder: "Dell Sales Chat token",
+    keyLabel:     "API key",
+    fbPlaceholder: "(optional)"
+  }
+};
 
 export function openSettingsModal(opts) {
-  document.getElementById("settings-modal")?.remove();
   var initialSection = (opts && opts.section) || "providers";
 
-  var overlay = mk("div", "dialog-overlay settings-overlay");
-  overlay.id = "settings-modal";
+  var body = buildSettingsBody(initialSection);
+  var footer = buildSettingsFooter(initialSection);
 
-  var box = mk("div", "dialog-box settings-box");
-  box.appendChild(mkt("div", "dialog-title", "Settings"));
-
-  // Top-level section selector: Providers vs Skills.
-  var sectionRow = mk("div", "settings-section-row");
-  var providersPill = mkt("button", "settings-section-pill" + (initialSection === "providers" ? " active" : ""), "AI Providers");
-  providersPill.type = "button";
-  var skillsPill    = mkt("button", "settings-section-pill" + (initialSection === "skills"    ? " active" : ""), "Skills");
-  skillsPill.type   = "button";
-  providersPill.addEventListener("click", function() {
-    overlay.remove(); openSettingsModal({ section: "providers" });
+  openOverlay({
+    title:   initialSection === "skills" ? "Skills builder" : "Settings",
+    lede:    initialSection === "skills"
+               ? "Author, edit, and deploy AI skills. Each skill targets one tab and runs against the live session."
+               : "Configure where AI skills run + manage the deployed skill library.",
+    body:    body,
+    footer:  footer,
+    kind:    initialSection === "skills" ? "settings-skills" : "settings-providers",
+    size:    "wide",
+    persist: false,
+    transparent: false
   });
-  skillsPill.addEventListener("click", function() {
-    overlay.remove(); openSettingsModal({ section: "skills" });
+
+  // Section-pill toggle injected into the head extras slot so the user
+  // can flip between Providers and Skills without closing + reopening.
+  injectSectionPills(initialSection);
+}
+
+function injectSectionPills(activeSection) {
+  var slot = document.querySelector(".overlay[data-kind^='settings-'] .overlay-head-extras");
+  if (!slot) return;
+  slot.innerHTML = "";
+
+  var seg = document.createElement("div");
+  seg.className = "settings-section-seg";
+
+  [
+    { val: "providers", label: "AI Providers" },
+    { val: "skills",    label: "Skills builder" }
+  ].forEach(function(opt) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "settings-section-seg-btn" + (activeSection === opt.val ? " is-active" : "");
+    btn.setAttribute("aria-pressed", activeSection === opt.val ? "true" : "false");
+    btn.textContent = opt.label;
+    btn.addEventListener("click", function() {
+      if (activeSection === opt.val) return;
+      closeOverlay();
+      openSettingsModal({ section: opt.val });
+    });
+    seg.appendChild(btn);
   });
-  sectionRow.appendChild(providersPill);
-  sectionRow.appendChild(skillsPill);
-  box.appendChild(sectionRow);
+  slot.appendChild(seg);
+}
 
-  // Body container swaps between the two sections.
-  var body = mk("div", "settings-body");
-  box.appendChild(body);
+function buildSettingsBody(section) {
+  var body = document.createElement("div");
+  body.className = "settings-body settings-body-" + section;
 
-  if (initialSection === "skills") {
+  if (section === "skills") {
     renderSkillAdmin(body);
-    var foot = mk("div", "form-actions");
-    var closeBtn = mkt("button", "btn-secondary", "Close");
-    closeBtn.addEventListener("click", function() { overlay.remove(); });
-    foot.appendChild(closeBtn);
-    box.appendChild(foot);
-
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-    overlay.addEventListener("click", function(e) { if (e.target === overlay) overlay.remove(); });
-    return;
+    return body;
   }
 
-  // ── Providers section (default) ──
-  body.appendChild(mkt("div", "settings-help",
-    "Configure where AI skills run. The active provider is used by every " +
-    "skill you've built and deployed via the Skills tab."));
+  // Providers section
+  var help = document.createElement("div");
+  help.className = "settings-help";
+  help.textContent = "Configure where AI skills run. The active provider is used by every skill you've built and deployed via the Skills tab.";
+  body.appendChild(help);
 
   var config = loadAiConfig();
 
-  // Provider selector — radio-style list across the top.
-  var sel = mk("div", "settings-provider-row");
+  // Provider selector pills
+  var sel = document.createElement("div");
+  sel.className = "settings-provider-row";
   PROVIDERS.forEach(function(pkey) {
     var p = config.providers[pkey];
-    var pill = mk("button", "settings-provider-pill" + (config.activeProvider === pkey ? " active" : ""));
+    var pill = document.createElement("button");
     pill.type = "button";
+    pill.className = "settings-provider-pill" + (config.activeProvider === pkey ? " active" : "");
     pill.textContent = p.label;
     pill.addEventListener("click", function() {
       config.activeProvider = pkey;
       saveAiConfig(config);
-      overlay.remove();
-      openSettingsModal({ section: "providers" }); // re-render with new active section
+      closeOverlay();
+      openSettingsModal({ section: "providers" });
     });
     sel.appendChild(pill);
   });
   body.appendChild(sel);
 
-  // Provider-specific fields for the ACTIVE provider.
   var activeKey = config.activeProvider;
   var active    = config.providers[activeKey];
+  var hint      = PROVIDER_HINTS[activeKey] || PROVIDER_HINTS.local;
 
-  var form = mk("div", "settings-form");
+  // Form
+  var form = document.createElement("div");
+  form.className = "settings-form";
   body.appendChild(form);
 
-  var urlGroup = mk("div", "settings-field");
-  urlGroup.appendChild(mkt("label", "settings-label", "Endpoint URL"));
+  // URL field
+  var urlGroup = mkField("Endpoint URL");
   var urlInput = mk("input", "settings-input");
   urlInput.type = "text";
   urlInput.value = active.baseUrl;
-  // Public providers go through our nginx proxy at fixed paths — locking
-  // the URL avoids a misconfiguration that 404s every call.
-  if (activeKey === "anthropic" || activeKey === "gemini") {
+  if (hint.urlReadOnly) {
     urlInput.readOnly = true;
-    urlInput.title = "Locked — public providers are reached via the container's nginx reverse-proxy (avoids CORS).";
-    urlGroup.appendChild(mkt("div", "settings-help-inline",
-      "Routed through the container's nginx proxy. Read-only because direct browser calls would be blocked by CORS."));
-  } else {
-    urlGroup.appendChild(mkt("div", "settings-help-inline",
-      "Default '/api/llm/local/v1' uses the container proxy (LLM_HOST env var). " +
-      "Paste an absolute URL like 'http://<host-ip>:8000/v1' to call the inference host directly (upstream CORS must permit it)."));
+    urlInput.title = "Locked , routed through nginx proxy.";
   }
+  urlGroup.appendChild(mkt("div", "settings-help-inline", hint.urlHelp));
   urlGroup.appendChild(urlInput);
   form.appendChild(urlGroup);
 
-  var modelGroup = mk("div", "settings-field");
-  modelGroup.appendChild(mkt("label", "settings-label", "Model"));
+  // Model
+  var modelGroup = mkField("Model");
   var modelInput = mk("input", "settings-input");
   modelInput.type = "text";
   modelInput.value = active.model;
   modelGroup.appendChild(modelInput);
   form.appendChild(modelGroup);
 
-  // v2.4.5.1 · Fallback-models chain. Comma-separated; empty = no
-  // fallback. Tried in order after the primary model exhausts its
-  // retry budget on a transient upstream error (429 / 5xx).
-  var fbGroup = mk("div", "settings-field");
-  fbGroup.appendChild(mkt("label", "settings-label", "Fallback models (comma-separated)"));
+  // Fallback chain
+  var fbGroup = mkField("Fallback models (comma-separated)");
   var fbInput = mk("input", "settings-input");
   fbInput.type = "text";
   fbInput.value = (active.fallbackModels || []).join(", ");
-  fbInput.placeholder = activeKey === "gemini"    ? "gemini-2.0-flash, gemini-1.5-flash"
-                      : activeKey === "anthropic" ? "claude-sonnet-4-5"
-                      :                              "(optional)";
+  fbInput.placeholder = hint.fbPlaceholder;
   fbGroup.appendChild(fbInput);
   fbGroup.appendChild(mkt("div", "settings-help-inline",
     "Tried in order if the primary 429/503s after retries. Leave empty to disable."));
   form.appendChild(fbGroup);
 
-  var keyGroup = mk("div", "settings-field");
-  keyGroup.appendChild(mkt("label", "settings-label",
-    "API key" + (activeKey === "local" ? " (optional — vLLM is unauth'd)" : "")));
+  // API key
+  var keyGroup = mkField(hint.keyLabel);
   var keyInput = mk("input", "settings-input");
   keyInput.type = "password";
   keyInput.value = active.apiKey;
-  keyInput.placeholder = activeKey === "anthropic" ? "sk-ant-..."
-                       : activeKey === "gemini"    ? "AIza..."
-                       :                              "(blank for local vLLM)";
+  keyInput.placeholder = hint.keyPlaceholder;
   keyGroup.appendChild(keyInput);
   keyGroup.appendChild(mkt("div", "settings-help-inline",
-    "Stored in browser localStorage. Visible in DevTools → Application → Local Storage. " +
-    "Acceptable for personal use; v3 multi-user will move keys server-side."));
+    "Stored in browser localStorage. Visible in DevTools. Acceptable for personal use; v3 multi-user moves keys server-side."));
   form.appendChild(keyGroup);
 
-  // Test-connection probe.
+  // Test-connection probe
   var probeRow = mk("div", "settings-probe-row");
   var probeBtn = mkt("button", "btn-secondary", "Test connection");
+  probeBtn.type = "button";
   var probeOut = mk("div", "settings-probe-out");
   probeBtn.addEventListener("click", async function() {
-    probeOut.textContent = "Probing…";
+    probeOut.textContent = "Probing...";
     probeOut.className = "settings-probe-out probing";
     var result = await testConnection({
       providerKey:    activeKey,
@@ -162,41 +203,61 @@ export function openSettingsModal(opts) {
       probeOut.className = "settings-probe-out ok";
       var usedNote = result.modelUsed && result.modelUsed !== modelInput.value.trim()
         ? " (fell back to " + result.modelUsed + ")" : "";
-      probeOut.textContent = "✓ OK" + usedNote + " — sample reply: " + (result.sample || "(empty)");
+      probeOut.textContent = "OK" + usedNote + " , sample reply: " + (result.sample || "(empty)");
     } else {
       probeOut.className = "settings-probe-out err";
-      probeOut.textContent = "✗ " + (result.error || "Unknown error");
+      probeOut.textContent = "Failed: " + (result.error || "Unknown error");
     }
   });
   probeRow.appendChild(probeBtn);
   probeRow.appendChild(probeOut);
   body.appendChild(probeRow);
 
-  // Footer — Save + Close.
-  var foot = mk("div", "form-actions");
+  // Stash refs on the body so the footer's Save handler can read them.
+  body._settings = { config: config, activeKey: activeKey, urlInput: urlInput, modelInput: modelInput, fbInput: fbInput, keyInput: keyInput };
+
+  return body;
+}
+
+function buildSettingsFooter(section) {
+  var foot = document.createElement("div");
+  foot.className = "settings-footer";
+
+  if (section === "skills") {
+    var doneBtn = mkt("button", "btn-primary", "Done");
+    doneBtn.type = "button";
+    doneBtn.addEventListener("click", function() { closeOverlay(); });
+    foot.appendChild(doneBtn);
+    return foot;
+  }
+
+  // Providers section
   var cancelBtn = mkt("button", "btn-secondary", "Close");
-  cancelBtn.addEventListener("click", function() { overlay.remove(); });
+  cancelBtn.type = "button";
+  cancelBtn.addEventListener("click", function() { closeOverlay(); });
+
   var saveBtn = mkt("button", "btn-primary", "Save");
+  saveBtn.type = "button";
   saveBtn.addEventListener("click", function() {
-    config.providers[activeKey].baseUrl        = urlInput.value.trim();
-    config.providers[activeKey].model          = modelInput.value.trim();
-    config.providers[activeKey].apiKey         = keyInput.value;
-    config.providers[activeKey].fallbackModels = parseFallbackModels(fbInput.value);
-    saveAiConfig(config);
+    var body = document.querySelector(".overlay[data-kind='settings-providers'] .overlay-body");
+    var refs = body && body._settings;
+    if (!refs) return;
+    refs.config.providers[refs.activeKey].baseUrl        = refs.urlInput.value.trim();
+    refs.config.providers[refs.activeKey].model          = refs.modelInput.value.trim();
+    refs.config.providers[refs.activeKey].apiKey         = refs.keyInput.value;
+    refs.config.providers[refs.activeKey].fallbackModels = parseFallbackModels(refs.fbInput.value);
+    saveAiConfig(refs.config);
     saveBtn.textContent = "Saved";
     setTimeout(function() { saveBtn.textContent = "Save"; }, 800);
   });
+
   foot.appendChild(cancelBtn);
   foot.appendChild(saveBtn);
-  box.appendChild(foot);
-
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
-  overlay.addEventListener("click", function(e) { if (e.target === overlay) overlay.remove(); });
+  return foot;
 }
 
-// v2.4.5.1 — parse a comma-separated fallback-model string into a
-// trimmed, deduped array. Exported for tests.
+// Parse a comma-separated fallback-model string into a trimmed, deduped
+// array. Exported for tests.
 export function parseFallbackModels(s) {
   if (typeof s !== "string") return [];
   var seen = {};
@@ -209,7 +270,11 @@ export function parseFallbackModels(s) {
     });
 }
 
-// Helpers — DOM tag shorthands. We don't import the project's `mk` from
-// app.js (would create a circular import); inline them here.
+// Helpers
 function mk(tag, cls)        { var el = document.createElement(tag); if (cls) el.className = cls; return el; }
 function mkt(tag, cls, txt)  { var el = mk(tag, cls); if (txt != null) el.textContent = txt; return el; }
+function mkField(labelText) {
+  var f = mk("div", "settings-field");
+  f.appendChild(mkt("label", "settings-label", labelText));
+  return f;
+}
