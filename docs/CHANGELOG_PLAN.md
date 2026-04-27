@@ -932,7 +932,11 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
-## v2.4.13 · Intermediate UX/UI patches · LOCKED 2026-04-27 (sits between v2.4.12 and v2.5.0)
+## v2.4.13 · Intermediate UX/UI patches · IMPLEMENTED 2026-04-27 (tagged + pushed)
+
+**Status:** all 8 spec sections (S0-S8 + S2A) shipped. Six user-feedback polish iterations folded in (P1-P8, Q1-Q6, R1-R4, F1-F6, G1-G2, iter-6 row-band rhythm). Test surface 545 GREEN / 12 RED / 557 total; remaining RED is the v2.5.0-deferred Suite 44 set. Tag `v2.4.13` at `ff09f32`. Browser smoke against R1-R12 verified before tag.
+
+
 
 ### Theme
 
