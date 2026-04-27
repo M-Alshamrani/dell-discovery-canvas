@@ -112,15 +112,37 @@
 /* ── Reset ──────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
+
+/* App-shell layout (v2.4.13 structural fix). Body is a flex column
+   that exactly fills the viewport. Header + stepper + footer are
+   fixed-height (no shrink), so they're always visible. Main is
+   flex:1 and scrolls internally when its content exceeds the
+   remaining space. The page itself never scrolls; this prevents the
+   topbar from sliding off-screen as the user reads down a long view. */
 body {
   font-family: var(--font);
   background: var(--bg);
   color: var(--text-1);
   font-size: 13px;
   line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-height: 100vh;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+#app-header,
+.topbar,
+#stepper,
+#app-footer {
+  flex: 0 0 auto;
+}
+#main {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 /* Phase 15.3 , global heading hardening. Inter at 700-800 with negative
@@ -308,11 +330,18 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
 .step.active .step-label { color: var(--ink); font-weight: 600; }
 
 /* ── Main layout ────────────────────────────────────────────── */
+/* v2.4.13 fix: removed the stale `height: calc(100vh - 52px - 44px - 40px)`
+   that hardcoded the OLD header (52px) + OLD stepper (44px) + footer (40px)
+   heights. After chunk-3 rework header is 72px + stepper is 48px so the
+   calc was wrong by 24px, causing body overflow that scrolled the topbar
+   off-screen. Flex-column app-shell layout (in the body rule above)
+   handles sizing now: #main is flex:1 + min-height:0 + overflow:auto so
+   it takes whatever vertical space remains and scrolls internally if
+   content exceeds. NEVER hardcode pixel heights of sibling elements;
+   let flex compute. */
 #main {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
-  height: calc(100vh - 52px - 44px - 40px);
-  overflow: hidden;
 }
 #main-left {
   overflow-y: auto;

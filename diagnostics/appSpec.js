@@ -7125,6 +7125,54 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
   // Section 7 . layer-name visual treatment in MatrixView (VT28)
   // ──────────────────────────────────────────────────────────────────────
 
+  it("VT29 · App-shell layout correctness (no hardcoded heights, no page scroll, all chrome elements aligned)", () => {
+    // Layout invariants the user expects to always hold:
+    //   1. At scrollY=0, header.top === 0 (topbar visible at top of viewport)
+    //   2. stepper.top === header.bottom (no gap, no overlap)
+    //   3. main.top === stepper.bottom (no gap, no overlap)
+    //   4. footer.top + footer.height <= viewport (footer visible)
+    //   5. document.documentElement.scrollHeight <= window.innerHeight (page does NOT scroll;
+    //      content overflow is handled internally by #main, not by the page)
+    //   6. body computed display === "flex" (app-shell layout, not block)
+    //
+    // VT29 fails RED whenever any sibling element has a hardcoded height
+    // that drifts out of sync with its actual rendered height. Catches the
+    // class of bug that broke chunks 2.x + 3 (calc(100vh - 52px - 44px -
+    // 40px) became wrong when the header height changed to 72px).
+    window.scrollTo(0, 0);
+    var h = document.getElementById("app-header");
+    var s = document.getElementById("stepper");
+    var m = document.getElementById("main");
+    var f = document.getElementById("app-footer");
+    assert(h && s && m && f, "VT29 needs header + stepper + main + footer in DOM");
+    var hRect = h.getBoundingClientRect();
+    var sRect = s.getBoundingClientRect();
+    var mRect = m.getBoundingClientRect();
+    var fRect = f.getBoundingClientRect();
+    var vh = window.innerHeight;
+    var bodyDisplay = getComputedStyle(document.body).display;
+
+    // 1. Header at top
+    assert(Math.abs(hRect.top - 0) < 1.5,
+      "VT29.1 . header.top must be 0 at scrollY=0 (got " + hRect.top + ")");
+    // 2. Stepper abuts header
+    assert(Math.abs(sRect.top - hRect.bottom) < 1.5,
+      "VT29.2 . stepper.top must equal header.bottom (got stepper.top=" + sRect.top + ", header.bottom=" + hRect.bottom + ", delta=" + (sRect.top - hRect.bottom) + ")");
+    // 3. Main abuts stepper
+    assert(Math.abs(mRect.top - sRect.bottom) < 1.5,
+      "VT29.3 . main.top must equal stepper.bottom (got main.top=" + mRect.top + ", stepper.bottom=" + sRect.bottom + ", delta=" + (mRect.top - sRect.bottom) + ")");
+    // 4. Footer visible within viewport
+    assert(fRect.bottom <= vh + 1,
+      "VT29.4 . footer must be visible within viewport (footer.bottom=" + fRect.bottom + " <= viewport=" + vh + ")");
+    // 5. Page does not scroll (content overflow handled by #main internally)
+    var docScroll = document.documentElement.scrollHeight;
+    assert(docScroll <= vh + 1.5,
+      "VT29.5 . page must NOT have scrollable overflow (documentElement.scrollHeight=" + docScroll + " must be <= viewport=" + vh + "; if greater, the topbar will scroll off-screen). This usually means a sibling element has a stale hardcoded height.");
+    // 6. Body uses flex column app-shell
+    assertEqual(bodyDisplay, "flex",
+      "VT29.6 . body computed display must be 'flex' (app-shell layout). Got '" + bodyDisplay + "'.");
+  });
+
   it("VT28 · MatrixView layer headers render with bumped typography (>=14px ink 600) + a color-coded left bar", () => {
     var s = createEmptySession();
     addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
