@@ -30,6 +30,10 @@ import { applyProposal, applyAllProposals } from "../../interactions/aiCommands.
 import { onSkillsChanged } from "../../core/skillsEvents.js";
 import { session } from "../../state/sessionStore.js";
 
+// Display labels for the AI Assist body. The first entry is what the
+// user sees on the tab strip; we deliberately use a different word in
+// the overlay eyebrow (ACTIVE TAB) so the overlay's "Context" tab name
+// doesn't collide with the meaning of "context" as a concept.
 var TAB_LABEL = {
   context:   "Tab 1 . Context",
   current:   "Tab 2 . Current State",
@@ -80,34 +84,44 @@ export function openAiOverlay(opts) {
     paintTiles(body);
   });
 
-  // Element-pick listener. Views can dispatch dell-canvas:entity-click
-  // when in pick mode; v2.4.13 ships the wiring without view emits.
+  // Element-pick listener. Views dispatch dell-canvas:entity-click on
+  // every interactive element click; while transparent we intercept
+  // the event, store the picked entity in context, and drop
+  // transparency. While NOT transparent we ignore the event so normal
+  // clicks aren't hijacked.
   if (state.pickListener) document.removeEventListener("dell-canvas:entity-click", state.pickListener);
   state.pickListener = function(ev) {
+    if (!isOpen()) return;
+    var panel = document.querySelector(".overlay.open.is-transparent");
+    if (!panel) return;   // not in pick mode
     var d = ev && ev.detail || {};
     state.context.picked = d;
-    setTransparent(false);
-    var status = body.querySelector(".ai-pick-status");
-    if (status) status.textContent = "Picked: " + (d.label || d.id || "entity");
+    exitPickMode(body, d);
   };
   document.addEventListener("dell-canvas:entity-click", state.pickListener);
 }
+
+/* Public API to enter pick mode from outside the overlay. Currently
+   unused by v2.4.13 callers but exposed so tile click handlers can
+   invoke it when a skill is flagged as needing entity selection. */
+export { engagePickMode };
 
 function buildBody() {
   var body = document.createElement("div");
   body.className = "ai-assist-body";
 
-  // Context strip
+  // Active-tab strip. Eyebrow says ACTIVE TAB (not CONTEXT) so the
+  // word doesn't collide with the Tab 1 name "Context."
   var ctx = document.createElement("div");
   ctx.className = "ai-assist-context";
   var eyebrow = document.createElement("div");
   eyebrow.className = "eyebrow eyebrow-blue";
-  eyebrow.textContent = "Context";
+  eyebrow.textContent = "Active tab";
   ctx.appendChild(eyebrow);
   var ctxText = document.createElement("div");
   ctxText.className = "ai-assist-context-text";
-  ctxText.textContent = "Working on " + (TAB_LABEL[state.tabId] || state.tabId) +
-    ". Skills below are scoped to this tab. Toggle the chip above to widen the scope to all deployed skills.";
+  ctxText.textContent = "You're on " + (TAB_LABEL[state.tabId] || state.tabId) +
+    ". Skills below run against this tab's data. Use the segmented toggle to widen scope to every deployed skill.";
   ctx.appendChild(ctxText);
   body.appendChild(ctx);
 
@@ -131,6 +145,91 @@ function buildBody() {
 
   paintTiles(body);
   return body;
+}
+
+// v2.4.13 user-feedback polish . engage transparency mode so the user
+// can click a target on the page underneath. Shows a status row "Pick
+// a [entity] on the page..." inside the overlay; installs a global
+// capture-phase click interceptor that dispatches dell-canvas:entity-
+// click for any element carrying data-instance-id / data-gap-id /
+// data-driver-id / data-project-id. The pickListener inside openAi-
+// Overlay catches that event and drops transparency.
+var PICK_SELECTORS = "[data-instance-id], [data-gap-id], [data-driver-id], [data-project-id], .driver-tile, .instance-tile, .gap-card";
+
+function engagePickMode(body, label) {
+  setTransparent(true);
+  var status = body.querySelector(".ai-pick-status");
+  if (status) {
+    status.style.display = "";
+    status.textContent = "Pick a " + (label || "target") + " on the page. Press Escape to cancel.";
+  }
+
+  // Cancel-on-Escape: while transparent, pressing Escape exits pick
+  // mode WITHOUT closing the overlay. Overlay.js's keydown handler
+  // closes the whole overlay on Escape; we intercept at capture phase
+  // and stop propagation so the overlay's listener never sees it.
+  var cancelOnEsc = function(e) {
+    if (e.key !== "Escape" && e.keyCode !== 27) return;
+    e.stopPropagation();
+    teardown();
+  };
+
+  // Page-click interceptor. While transparent, any click on a pickable
+  // element fires dell-canvas:entity-click with what we can derive.
+  // The default action (e.g. opening a drawer or selecting a row) is
+  // suppressed via preventDefault + stopPropagation so the click
+  // counts as "pick" not "open."
+  var clickInterceptor = function(e) {
+    var panel = document.querySelector(".overlay.open.is-transparent");
+    if (!panel) return; // not transparent any more, stand down
+    if (panel.contains(e.target)) return; // click was inside the overlay (head/footer); ignore
+    var hit = e.target.closest(PICK_SELECTORS);
+    if (!hit) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var detail = {
+      id:    hit.getAttribute("data-instance-id")
+          || hit.getAttribute("data-gap-id")
+          || hit.getAttribute("data-driver-id")
+          || hit.getAttribute("data-project-id")
+          || null,
+      kind:  hit.getAttribute("data-instance-id") ? "instance"
+          : hit.getAttribute("data-gap-id")      ? "gap"
+          : hit.getAttribute("data-driver-id")   ? "driver"
+          : hit.getAttribute("data-project-id")  ? "project"
+          : "entity",
+      label: (hit.textContent || "").trim().slice(0, 60)
+    };
+    teardown();
+    document.dispatchEvent(new CustomEvent("dell-canvas:entity-click", { detail: detail }));
+  };
+
+  function teardown() {
+    document.removeEventListener("keydown", cancelOnEsc, true);
+    document.removeEventListener("click", clickInterceptor, true);
+    if (status) status.style.display = "none";
+    setTransparent(false);
+  }
+
+  document.addEventListener("keydown", cancelOnEsc, true);
+  document.addEventListener("click", clickInterceptor, true);
+}
+
+// v2.4.13 user-feedback polish . called when the entity-click event
+// fires (or when a click on the underlying page picks an entity).
+// Drops transparency, updates the status row, and is otherwise a no-op
+// (caller decides whether to re-run a skill with the new context).
+function exitPickMode(body, picked) {
+  setTransparent(false);
+  var status = body.querySelector(".ai-pick-status");
+  if (!status) return;
+  if (picked && (picked.label || picked.id)) {
+    status.textContent = "Picked: " + (picked.label || picked.id);
+    status.style.display = "";
+    setTimeout(function() { if (status) status.style.display = "none"; }, 2000);
+  } else {
+    status.style.display = "none";
+  }
 }
 
 function buildFooter() {
@@ -158,20 +257,60 @@ function injectScopeToggle() {
   if (!slot) return;
   slot.innerHTML = "";
 
-  var chip = document.createElement("button");
-  chip.type = "button";
-  chip.className = "ai-scope-chip";
-  chip.setAttribute("data-scope", state.scope);
-  chip.textContent = state.scope === "current" ? "Current tab" : "All tabs";
-  chip.title = "Toggle skill scope between current tab and all tabs";
-  chip.addEventListener("click", function() {
-    state.scope = state.scope === "current" ? "all" : "current";
-    chip.setAttribute("data-scope", state.scope);
-    chip.textContent = state.scope === "current" ? "Current tab" : "All tabs";
+  // Pick-from-page button. Engages transparency mode so the user can
+  // click a tile / driver / gap on the page underneath. The picked
+  // entity is stored in state.context.picked and the transparency
+  // drops automatically.
+  var pickBtn = document.createElement("button");
+  pickBtn.type = "button";
+  pickBtn.className = "ai-pick-btn";
+  pickBtn.title = "Click an entity on the page to pass it to the next skill run";
+  pickBtn.innerHTML =
+    '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" ' +
+    'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M3 3l4.2 11 1.5-4.5 4.5-1.5L3 3z"/>' +
+    '</svg> <span>Pick from page</span>';
+  pickBtn.addEventListener("click", function() {
+    var body = document.querySelector(".overlay[data-kind='ai-assist'] .overlay-body");
+    if (!body) return;
+    engagePickMode(body, "entity");
+  });
+  slot.appendChild(pickBtn);
+
+  // Segmented control with both options visible; one is highlighted as
+  // active. Click the inactive option to switch. Removes the toggle-
+  // ambiguity of the prior single-chip ("Did the label show the
+  // current state or the action?").
+  var seg = document.createElement("div");
+  seg.className = "ai-scope-seg";
+
+  var setScope = function(next) {
+    state.scope = next;
+    seg.querySelectorAll(".ai-scope-seg-btn").forEach(function(b) {
+      b.classList.toggle("is-active", b.getAttribute("data-val") === next);
+      b.setAttribute("aria-pressed", b.getAttribute("data-val") === next ? "true" : "false");
+    });
     var body = document.querySelector(".overlay[data-kind='ai-assist'] .overlay-body");
     if (body) paintTiles(body);
+  };
+
+  var options = [
+    { val: "current", label: "Current tab", title: "Show only skills for the active tab" },
+    { val: "all",     label: "All tabs",    title: "Show every deployed skill in your library" }
+  ];
+  options.forEach(function(opt) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ai-scope-seg-btn" + (state.scope === opt.val ? " is-active" : "");
+    btn.setAttribute("data-val", opt.val);
+    btn.setAttribute("aria-pressed", state.scope === opt.val ? "true" : "false");
+    btn.title = opt.title;
+    btn.textContent = opt.label;
+    btn.addEventListener("click", function() { setScope(opt.val); });
+    seg.appendChild(btn);
   });
-  slot.appendChild(chip);
+
+  slot.appendChild(seg);
 }
 
 function paintTiles(body) {

@@ -58,23 +58,19 @@ export function renderMatrixView(left, right, session, opts) {
     grid.appendChild(h);
   });
 
-  // Layer rows. v2.4.13 S7: header cell carries an eyebrow + a color-
-  // coded left bar + a 14px ink 600 layer name, replacing the prior
-  // 10px ink-mute label-only treatment.
+  // Layer rows. v2.4.13 user-feedback polish: stripped back from the
+  // eyebrow + bar + name three-element stack to a single elegant row:
+  // a 2px muted-hue left bar + a 14px ink 600 layer name. The hue
+  // signals layer identity without competing for attention.
   LAYERS.forEach(function(layer) {
     var hdr = mk("div", "matrix-layer-header");
     hdr.setAttribute("data-layer-id", layer.id);
     var bar = mk("div", "matrix-layer-bar");
     bar.setAttribute("data-layer-id", layer.id);
     hdr.appendChild(bar);
-    var stack = mk("div", "matrix-layer-stack");
-    var eyebrow = mk("div", "eyebrow matrix-layer-eyebrow");
-    eyebrow.textContent = "Layer . " + layer.id.toUpperCase();
-    stack.appendChild(eyebrow);
     var nameEl = mk("div", "matrix-layer-name");
     nameEl.textContent = layer.label;
-    stack.appendChild(nameEl);
-    hdr.appendChild(stack);
+    hdr.appendChild(nameEl);
     grid.appendChild(hdr);
     ENVIRONMENTS.forEach(function(env) {
       var cell = mk("div", "matrix-cell");

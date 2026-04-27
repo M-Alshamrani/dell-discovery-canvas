@@ -6504,16 +6504,35 @@ describe("44 · Phase 19m · v2.5.0 crown-jewel UI rework", () => {
   // Section 2, topbar (VT4-VT6)
   // ──────────────────────────────────────────────────────────────────────
 
-  it("VT4 · TB1 topbar is white (no linear-gradient background)", () => {
+  it("VT4 · TB1 topbar carries a Dell-blue cue (hue tint or accent stripe) without flooding the band", () => {
+    // v2.4.13 user-feedback update (2026-04-27): the original v2.5.0 spec
+    // committed to a fully white topbar with a 1px hairline rule. User
+    // feedback after the v2.4.13 polish pass: "the top banner needs a
+    // hue of Dell blue to give it authority and stance and contrast."
+    // VT4 now asserts the topbar reads as Dell-branded (any of: a Dell-
+    // blue tinted background, a gradient that includes Dell-blue, or
+    // a Dell-blue bottom rule >= 2px) without going so far as a fully
+    // saturated Dell-blue floor that would compete with primary CTAs.
     var header = document.querySelector("header") || document.querySelector(".topbar");
     assert(header, "Topbar must exist in the document");
     var cs = getComputedStyle(header);
-    assertEqual(cs.backgroundImage, "none",
-      "TB1 topbar must NOT have a background-image / linear-gradient. Got: " + cs.backgroundImage);
-    var bgc = cs.backgroundColor;
-    var ok = /rgb\(255,\s*255,\s*255\)|rgba\(255,\s*255,\s*255/.test(bgc) ||
-             /rgb\(250,\s*251,\s*252\)/.test(bgc);
-    assert(ok, "TB1 topbar background must be canvas white or canvas-soft (got " + bgc + ")");
+    var bgi = cs.backgroundImage || "none";
+    var bgc = cs.backgroundColor || "";
+    var bb  = cs.borderBottomColor || "";
+    var bbw = parseFloat(cs.borderBottomWidth || "0");
+    // Dell-blue family hue presence (any of: gradient, solid bg, border).
+    var DELL_RX = /rgb\(0,\s*118,\s*206\)|rgb\(0,\s*99,\s*174\)|rgb\(0,\s*68,\s*124\)|rgb\(232,\s*242,\s*251\)|rgb\(245,\s*249,\s*253\)/;
+    var hasDellInBgImage = bgi !== "none" && DELL_RX.test(bgi);
+    var hasDellInBgColor = DELL_RX.test(bgc);
+    var hasDellInBorder  = bbw >= 2 && DELL_RX.test(bb);
+    assert(hasDellInBgImage || hasDellInBgColor || hasDellInBorder,
+      "TB1 topbar must carry a Dell-blue cue (gradient, tinted background, or >= 2px Dell-blue bottom rule). " +
+      "Got bg-image=" + bgi + ", bg-color=" + bgc + ", border-bottom=" + bbw + "px " + bb);
+    // Don't let the topbar flood with full Dell-blue (saturated bg).
+    var FLOOD_RX = /rgb\(0,\s*118,\s*206\)/;
+    if (FLOOD_RX.test(bgc)) {
+      assert(false, "TB1 topbar must NOT use saturated Dell-blue as its solid background colour (would compete with primary CTAs). Got bg-color " + bgc);
+    }
   });
 
   it("VT5 · TB2 topbar logo is local (./Logo/, not i.dell.com CDN at default)", () => {

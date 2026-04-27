@@ -26,17 +26,21 @@
   --dell-blue-soft:  #E8F2FB;
   --dell-blue-faint: #F5F9FD;
 
-  /* Surfaces. Philosophy 3-tier (canvas / canvas-soft / canvas-alt). */
-  --bg:           #F4F6F9;
+  /* Surfaces. Philosophy 3-tier (canvas / canvas-soft / canvas-alt).
+     v2.4.13 polish: shifted toward a faint Dell-blue tint (a degree
+     or two cooler than pure neutral gray) so the page reads with
+     Dell brand cohesion + a hair more contrast against #FFFFFF cards
+     without sacrificing readability. Was #F4F6F9 / #FAFBFC. */
+  --bg:           #ECF1F7;
   --surface:      #FFFFFF;
-  --surface-2:    #FAFBFC;
-  --border:       #E4E8EE;
-  --border-mid:   #CBD2DC;
+  --surface-2:    #F2F6FB;
+  --border:       #DCE3EC;
+  --border-mid:   #C4CDDA;
   --canvas:       #FFFFFF;
-  --canvas-soft:  #FAFBFC;
-  --canvas-alt:   #F4F6F9;
-  --rule:         #E4E8EE;
-  --rule-strong:  #CBD2DC;
+  --canvas-soft:  #F4F8FC;
+  --canvas-alt:   #ECF1F7;
+  --rule:         #DCE3EC;
+  --rule-strong:  #C4CDDA;
 
   /* Ink scale. Philosophy 4-tier (ink / ink-soft / ink-mute / ink-faint).
      `--ink` is never pure black per the philosophy; uses navy ink #0B2A4A. */
@@ -177,8 +181,14 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
 .topbar {
   position: relative;
   z-index: 40;
-  background: var(--canvas);
-  border-bottom: 1px solid var(--rule);
+  /* v2.4.13 polish . subtle Dell-blue tint for topbar authority. Was
+     pure --canvas (#FFFFFF) with a 1px hairline. Now a soft vertical
+     gradient from dell-blue-faint into canvas plus a 3px Dell-blue
+     bottom rule. Reads as "this is the brand band" without filling
+     the topbar with saturated color. */
+  background: linear-gradient(to bottom, var(--dell-blue-faint) 0%, var(--canvas) 100%);
+  border-bottom: 2px solid var(--dell-blue);
+  box-shadow: 0 1px 0 var(--dell-blue-soft);
   flex-shrink: 0;
 }
 .topbar-inner {
@@ -213,44 +223,77 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   flex-direction: column;
   line-height: 1.15;
 }
+/* v2.4.13 polish . brand title bumped so "Discovery Canvas" reads as
+   the prominent app name and the subtitle gives context without
+   echoing the Dell Technologies word the logo already carries. */
 .brand-text .t1 {
-  font-weight: 600;
-  font-size: 13px;
-  letter-spacing: -0.005em;
+  font-weight: 700;
+  font-size: 16.5px;
+  letter-spacing: -0.012em;
   color: var(--ink);
+  line-height: 1.15;
 }
 .brand-text .t2 {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--ink-mute);
-  font-family: var(--font-mono);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  margin-top: 1px;
+  font-family: var(--font);
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  margin-top: 2px;
 }
 
-/* v2.4.13 S2A . session strip in topbar center column. Replaces the
-   prior .doc-meta CUSTOMER . DATE . STATUS mono-caps strip with a
-   functional two-line stack:
-     line 1 (.session-strip-name) workshop / customer name in Inter ink
-     line 2 (.session-strip-status) save indicator with leading dot
-   Topbar = interactive things; metadata moves elsewhere. */
-.session-strip {
-  display: flex;
+/* v2.4.13 user-feedback polish . session strip framed as a soft card
+   so it reads as a deliberate UI primitive ("this is the workshop
+   you're working on") rather than floating text in the topbar. The
+   wrap is a 1px Dell-blue-soft rounded rectangle on canvas, with a
+   mono-caps eyebrow + name row + status row stacked. */
+.session-strip-wrap {
+  display: inline-flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   gap: 2px;
-  text-align: center;
+  padding: 6px 14px 7px;
+  border-radius: 10px;
+  border: 1px solid var(--dell-blue-soft);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 1px 2px rgba(11, 42, 74, 0.04);
   min-width: 0;
+  max-width: 420px;
+  margin: 0 auto;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.session-strip-wrap:hover {
+  border-color: var(--dell-blue);
+  background: rgba(255, 255, 255, 1);
+}
+.session-strip-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--dell-blue-deep);
+  line-height: 1;
+}
+.session-strip-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.session-strip-icon {
+  flex-shrink: 0;
+  color: var(--dell-blue);
 }
 .session-strip-name {
   font-family: var(--font);
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--ink);
-  letter-spacing: -0.005em;
+  letter-spacing: -0.003em;
   line-height: 1.2;
-  max-width: 480px;
+  max-width: 320px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -258,9 +301,9 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
 .session-strip-status {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 9.5px;
   color: var(--ink-mute);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -279,11 +322,19 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
 .session-strip-dot[data-state="saved"]  { background: var(--green); }
 .session-strip-dot[data-state="demo"]   { background: var(--dell-blue); }
 
-/* When the canvas is fresh (no session), demote both lines a half tier
-   so the topbar reads as "intentionally blank" rather than empty. */
-.session-strip[data-empty="true"] .session-strip-name {
+/* When the canvas is fresh (no session, no demo), demote the wrap so
+   it reads as "intentionally blank" rather than competing for attention. */
+.session-strip-wrap[data-empty="true"] {
+  background: rgba(255, 255, 255, 0.55);
+  border-color: var(--rule);
+}
+.session-strip-wrap[data-empty="true"] .session-strip-name {
   color: var(--ink-mute);
   font-weight: 500;
+}
+.session-strip-wrap[data-empty="true"] .session-strip-icon,
+.session-strip-wrap[data-empty="true"] .session-strip-eyebrow {
+  color: var(--ink-mute);
 }
 
 .topbar-actions {
@@ -292,46 +343,84 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   align-items: center;
 }
 
-/* v2.4.13 S2 . global AI Assist button. Solid Dell-blue, single most
-   prominent action in the topbar. Click opens the AI Assist overlay
-   (S4). Hover deepens the blue; focus shows a subtle outline ring. */
+/* v2.4.13 user-feedback polish . AI Assist button now reads as a
+   layered, premium primary action instead of a flat colored block.
+   Layers: linear gradient body (dell-blue -> dell-blue-deep) for
+   richness + a subtle 1px highlight at the top edge (inset white
+   shadow) + a soft outer dell-blue glow + slight letter-spacing.
+   Hover lifts the button (translateY -1px) + deepens the gradient +
+   softens the glow into a stronger drop shadow. Active resets to
+   pressed-tactile feedback. The sparkle ornament gets a slow opacity
+   pulse so the button reads as alive without being distracting. */
 .topbar-ai-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border-radius: 6px;
-  background: var(--dell-blue);
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: 7px;
+  /* Solid color set explicitly so VT23 (and getComputedStyle in any
+     audit tool) resolves to Dell-blue; the gradient sits on top via
+     background-image. */
+  background-color: var(--dell-blue);
+  background-image: linear-gradient(180deg, var(--dell-blue) 0%, var(--dell-blue-deep) 100%);
   color: #FFFFFF;
-  border: 1px solid var(--dell-blue);
+  border: 1px solid var(--dell-blue-deep);
   font-family: var(--font);
   font-size: 12.5px;
   font-weight: 600;
-  letter-spacing: 0.005em;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.20),
+    0 1px 0 rgba(0, 68, 124, 0.35),
+    0 4px 12px rgba(0, 118, 206, 0.25);
+  transition:
+    transform 0.12s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease;
 }
 .topbar-ai-btn:hover {
-  background: var(--dell-blue-deep);
-  border-color: var(--dell-blue-deep);
-  box-shadow: var(--shadow-sm);
+  background-color: #0080DC;
+  background-image: linear-gradient(180deg, #0080DC 0%, var(--dell-blue) 100%);
+  border-color: var(--dell-blue-dark);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 2px 0 rgba(0, 68, 124, 0.45),
+    0 8px 22px rgba(0, 118, 206, 0.42);
+  transform: translateY(-1px);
 }
 .topbar-ai-btn:active {
-  transform: translateY(1px);
+  transform: translateY(0);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 68, 124, 0.25),
+    0 1px 0 rgba(0, 68, 124, 0.35);
 }
 .topbar-ai-btn:focus-visible {
-  outline: 2px solid var(--dell-blue-soft);
+  outline: 2px solid #FFFFFF;
   outline-offset: 2px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.20),
+    0 0 0 4px var(--dell-blue-soft),
+    0 4px 12px rgba(0, 118, 206, 0.35);
+}
+@keyframes topbar-ai-spark-pulse {
+  0%, 100% { opacity: 0.70; transform: scale(1); }
+  50%      { opacity: 1.00; transform: scale(1.10); }
 }
 .topbar-ai-spark {
   display: inline-block;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1;
-  filter: brightness(1.4) saturate(0.4);
+  filter: brightness(1.6) saturate(0.3);
+  animation: topbar-ai-spark-pulse 2.4s ease-in-out infinite;
+  transform-origin: center;
 }
 .topbar-ai-label {
   font-weight: 600;
   white-space: nowrap;
+  text-shadow: 0 1px 0 rgba(0, 68, 124, 0.18);
 }
 
 /* v2.4.13 S1 . app-version capsule moved from topbar to footer. Top bar
@@ -926,17 +1015,17 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 }
 .matrix-corner   { background: var(--surface-2); }
 .matrix-env-head { background: var(--surface-2); padding: 7px 8px; font-size: 10px; font-weight: 700; color: var(--text-2); text-align: center; }
-/* v2.4.13 S7 . layer-name visual treatment in MatrixView (Tabs 2 + 3).
-   Replaces the previous 10px ink-mute label-only cell with a structured
-   header: 4px color-coded left bar (signal palette per layer) + a stack
-   of mono-caps eyebrow + 14px ink 600 layer name. The bar is always
-   visible; the eyebrow + name reads as a deliberate row marker rather
-   than a tucked-away grid label. */
+/* v2.4.13 user-feedback polish . layer-name treatment stripped back
+   from the verbose eyebrow + bar + 14px name stack to a single elegant
+   row: a 2px muted-hue left bar + the 14px ink 600 layer name. Same
+   color recognition as the v2.5.0 spec but quieter; the muted-hue
+   tokens (--*-soft / --rule-strong) carry the signal at a saturation
+   the eye can scan without it shouting. */
 .matrix-layer-header {
   display: flex;
-  align-items: stretch;
-  gap: 10px;
-  padding: 10px 12px 10px 0;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 14px 14px 0;
   background: var(--canvas-soft);
   border-right: 1px solid var(--rule);
   font-size: 14px;
@@ -944,35 +1033,31 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   color: var(--ink);
 }
 .matrix-layer-bar {
-  width: 4px;
+  width: 2px;
   flex-shrink: 0;
+  align-self: stretch;
   background: var(--rule-strong);
   border-radius: 0 2px 2px 0;
 }
+/* Muted hues per layer. The signal-palette --amber / --red / --green /
+   --dell-blue tokens are too saturated for an ambient marker, so the
+   bar uses the corresponding soft tokens at a slightly deeper mix
+   (named --*-bar variables would be cleaner; for now we hand-pick
+   values that read as "tinted" not "shouting"). */
 .matrix-layer-bar[data-layer-id="workload"]       { background: var(--rule-strong); }
-.matrix-layer-bar[data-layer-id="compute"]        { background: var(--amber); }
-.matrix-layer-bar[data-layer-id="storage"]        { background: var(--amber); }
-.matrix-layer-bar[data-layer-id="dataProtection"] { background: var(--red); }
-.matrix-layer-bar[data-layer-id="virtualization"] { background: var(--dell-blue); }
-.matrix-layer-bar[data-layer-id="infrastructure"] { background: var(--green); }
-.matrix-layer-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.matrix-layer-eyebrow {
-  font-size: 9.5px;
-  letter-spacing: 0.08em;
-  color: var(--ink-mute);
-  margin-bottom: 1px;
-}
+.matrix-layer-bar[data-layer-id="compute"]        { background: #E5B560; }
+.matrix-layer-bar[data-layer-id="storage"]        { background: #D4A86A; }
+.matrix-layer-bar[data-layer-id="dataProtection"] { background: #E08896; }
+.matrix-layer-bar[data-layer-id="virtualization"] { background: #6BA3D8; }
+.matrix-layer-bar[data-layer-id="infrastructure"] { background: #6FB988; }
 .matrix-layer-name {
   font-size: 14px;
   font-weight: 600;
   color: var(--ink);
   line-height: 1.25;
   letter-spacing: -0.005em;
+  flex: 1;
+  min-width: 0;
 }
 .matrix-cell {
   background: var(--surface); padding: 6px;
@@ -3188,38 +3273,82 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .ai-skill-result-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
 .ai-skill-result-text { white-space: pre-wrap; word-break: break-word; }
 
-.ai-pick-status {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ink-mute);
-  text-align: center;
-  padding: 6px;
-}
+/* v2.4.13 user-feedback polish . pick-status moved below to a more
+   readable amber callout (see later rule). */
 
-.ai-scope-chip {
+/* v2.4.13 user-feedback polish . scope toggle reworked from a single
+   chip (ambiguous: did the label show current state or action?) into
+   a 2-segment control where both options are visible. Click an
+   inactive segment to switch; the active one is highlighted in
+   Dell-blue-soft. */
+.ai-scope-seg {
+  display: inline-flex;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  padding: 2px;
+  background: var(--canvas-soft);
+}
+.ai-scope-seg-btn {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
+  padding: 3px 12px;
+  border: none;
+  background: transparent;
   border-radius: 999px;
-  border: 1px solid var(--rule-strong);
-  background: var(--canvas-soft);
-  color: var(--ink-soft);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
+  color: var(--ink-mute);
+  font-family: var(--font);
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: 0.005em;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease;
 }
-.ai-scope-chip[data-scope="all"] {
-  background: var(--dell-blue-soft);
-  border-color: var(--dell-blue);
+.ai-scope-seg-btn:hover { color: var(--dell-blue-deep); }
+.ai-scope-seg-btn.is-active {
+  background: var(--dell-blue);
+  color: #FFFFFF;
+  box-shadow: 0 1px 2px rgba(0, 68, 124, 0.18);
+}
+.ai-scope-seg-btn.is-active:hover { color: #FFFFFF; }
+
+/* v2.4.13 user-feedback polish . pick-from-page button. Sits next to
+   the segmented scope control; click engages transparency mode + a
+   global click interceptor that watches for the user picking an
+   entity on the page. */
+.ai-pick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  background: var(--canvas);
+  color: var(--ink-soft);
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.ai-pick-btn:hover {
+  background: var(--dell-blue-faint);
   color: var(--dell-blue-deep);
+  border-color: var(--dell-blue);
 }
-.ai-scope-chip:hover { border-color: var(--dell-blue); color: var(--dell-blue-deep); }
+.ai-pick-btn svg { color: var(--dell-blue); flex-shrink: 0; }
+.ai-pick-status {
+  background: var(--amber-soft);
+  border: 1px solid var(--amber);
+  color: #6B4500;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  letter-spacing: 0;
+  text-transform: none;
+  font-family: var(--font);
+}
 
 .ai-assist-footer { display: flex; align-items: center; justify-content: space-between; flex: 1; gap: 8px; }
 .ai-assist-foot-spacer { flex: 1; }

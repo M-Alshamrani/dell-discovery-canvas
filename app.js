@@ -188,11 +188,13 @@ function wireUndoBtn() {
 }
 
 function renderHeaderMeta() {
-  // v2.4.13 S2A . session strip in topbar center column. Two-line stack:
-  //   line 1: workshop / customer name (Inter 600 14px ink)
-  //   line 2: save indicator (mono caps, leading colored dot)
-  // Replaces the v2.5.0 GPLC doc-meta strip; date and status now live
-  // only on the session.sessionMeta object and surface in Tab 1.
+  // v2.4.13 user-feedback polish . session strip framed as a deliberate
+  // UI primitive (icon + name + status pill) rather than floating text.
+  // Three rows in the wrap:
+  //   eyebrow  "Workshop"  (mono caps, ties the strip to a label)
+  //   row      [icon] [customer name]
+  //   status   [dot] [save indicator text]
+  // The wrap carries data-empty so styling demotes it on a fresh canvas.
   var el = document.getElementById("sessionMetaHeader");
   if (!el) {
     var verEl = document.getElementById("appVersionChip");
@@ -206,12 +208,41 @@ function renderHeaderMeta() {
   el.innerHTML = "";
   el.setAttribute("data-empty", hasName || isDemo ? "false" : "true");
 
+  var eyebrow = document.createElement("div");
+  eyebrow.className = "session-strip-eyebrow";
+  eyebrow.textContent = "Workshop";
+  el.appendChild(eyebrow);
+
+  var row = document.createElement("div");
+  row.className = "session-strip-row";
+
+  var iconNS = "http://www.w3.org/2000/svg";
+  var icon = document.createElementNS(iconNS, "svg");
+  icon.setAttribute("class", "session-strip-icon");
+  icon.setAttribute("width", "14");
+  icon.setAttribute("height", "14");
+  icon.setAttribute("viewBox", "0 0 16 16");
+  icon.setAttribute("fill", "none");
+  icon.setAttribute("stroke", "currentColor");
+  icon.setAttribute("stroke-width", "1.5");
+  icon.setAttribute("stroke-linecap", "round");
+  icon.setAttribute("stroke-linejoin", "round");
+  icon.setAttribute("aria-hidden", "true");
+  var p1 = document.createElementNS(iconNS, "path");
+  p1.setAttribute("d", "M2.5 5.5h11l-.5 7.5a1.5 1.5 0 0 1-1.5 1.4H4.5A1.5 1.5 0 0 1 3 13L2.5 5.5z");
+  var p2 = document.createElementNS(iconNS, "path");
+  p2.setAttribute("d", "M5.5 5.5V4a1.5 1.5 0 0 1 1.5-1.5h2A1.5 1.5 0 0 1 10.5 4v1.5");
+  icon.appendChild(p1);
+  icon.appendChild(p2);
+  row.appendChild(icon);
+
   var nameLine = document.createElement("div");
   nameLine.className = "session-strip-name";
   nameLine.textContent = hasName
     ? customerName
     : (isDemo ? "Demo session" : "New session");
-  el.appendChild(nameLine);
+  row.appendChild(nameLine);
+  el.appendChild(row);
 
   var statusLine = document.createElement("div");
   statusLine.className = "session-strip-status";
