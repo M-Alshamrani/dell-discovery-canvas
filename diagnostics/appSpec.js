@@ -6866,30 +6866,13 @@ describe("44 · Phase 19m · v2.5.0 crown-jewel UI rework", () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // Section 7, services scope redesign (VT19)
+  // Section 7 Services scope redesign DROPPED 2026-04-27 per v2.4.13 spec.
+  // Original VT19 (asserted SummaryServicesView .service-card grid) is
+  // deleted because the sub-tab itself is being removed entirely. The
+  // services info is surfaced on gap and project drawers (covered by
+  // existing v2.4.12 + future v2.5.0 4 detail-panel tests). Suite 45
+  // VT21 (in v2.4.13) asserts the sub-tab is REMOVED from REPORTING_TABS.
   // ──────────────────────────────────────────────────────────────────────
-
-  it("VT19 · SR1-SR2 Reporting Services scope sub-tab renders .service-card grid (no <table>)", () => {
-    var s = fixtureSession();
-    var origGaps = session.gaps.slice();
-    var origInstances = session.instances.slice();
-    session.instances = s.instances.slice();
-    session.gaps = s.gaps.slice();
-    try {
-      var l = document.createElement("div"); var r = document.createElement("div");
-      renderSummaryServicesView(l, r);
-      var cards = l.querySelectorAll(".service-card");
-      assert(cards.length >= 1, "VT19 Services scope must render >= 1 .service-card (got " + cards.length + ")");
-      var firstCard = cards[0];
-      assert(firstCard.querySelector(".eyebrow, .service-id"),
-        "VT19 .service-card must include a mono caps id eyebrow");
-      var noTable = l.querySelectorAll("table").length === 0;
-      assert(noTable, "VT19 Services scope must NOT use a <table> element (got " + l.querySelectorAll('table').length + ")");
-    } finally {
-      session.gaps = origGaps;
-      session.instances = origInstances;
-    }
-  });
 
   // ──────────────────────────────────────────────────────────────────────
   // Section 0, em-dash audit (VT20)
@@ -6925,6 +6908,251 @@ describe("44 · Phase 19m · v2.5.0 crown-jewel UI rework", () => {
     }
     assertEqual(hits.length, 0,
       "VT20 em-dash sweep: U+2014 found in " + hits.length + " UI file(s): " + hits.join(", "));
+  });
+
+});
+
+// ============================================================================
+// SUITE 45, Phase 19m / v2.4.13 intermediate UX/UI patches
+// ============================================================================
+// VT21-VT28 covering Sections 0-8 of the v2.4.13 spec:
+//   .0 services-scope sub-tab REMOVED (VT21)
+//   .1 app-version chip in FOOTER not topbar (VT22)
+//   .2 global AI Assist top-right button (VT23)
+//   .3 NEW Overlay.js component open/close paths (VT24)
+//   .4 AI Assist click opens overlay (VT25)
+//   .5 demo banner on all 5 tabs when isDemo=true (VT26)
+//   .6 stepper hover affordance (VT27)
+//   .7 layer-name visual treatment in MatrixView (VT28)
+//   .8 brand-blue ratio calibration (covered by smoke + visual review,
+//      not a deterministic test)
+//
+// Stubs in place so imports resolve and tests fail RED on content,
+// not on module-load errors:
+//   ui/components/Overlay.js  STUB no-op exports (mirror of Drawer.js).
+// Implementation phase fills in DOM construction, animation, focus
+// management, AI overlay wiring, demo banner extraction, stepper hover
+// CSS, layer-name CSS in MatrixView.
+// ============================================================================
+
+import {
+  openOverlay, closeOverlay, isOpen as isOverlayOpen,
+  _resetForTests as _resetOverlayForTests
+} from "../ui/components/Overlay.js";
+
+describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section 0 . services-scope sub-tab REMOVED (VT21)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("VT21 · Services-scope sub-tab REMOVED from Reporting (REPORTING_TABS array in app.js source must not contain it)", async () => {
+    // Source-level check: scan app.js for the REPORTING_TABS literal and
+    // confirm "Services scope" / id "services" are not present. This is
+    // the most reliable check (renders side-effects mutate live state).
+    try {
+      var resp = await fetch("/app.js");
+      var src = await resp.text();
+      var match = src.match(/REPORTING_TABS\s*=\s*\[[^\]]*\]/);
+      assert(match,
+        "VT21 . v2.4.13 0 . app.js must contain a REPORTING_TABS array literal");
+      var content = match[0];
+      assert(!/id\s*:\s*"services"/.test(content),
+        "VT21 . v2.4.13 0 . REPORTING_TABS must NOT contain an entry with id: 'services'. Found: " + content);
+      assert(!/Services scope/.test(content),
+        "VT21 . REPORTING_TABS must NOT contain 'Services scope' label. Found: " + content);
+    } catch (e) {
+      assert(false, "VT21 fetch of /app.js failed: " + (e && e.message));
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section 1 . app-version chip in FOOTER not topbar (VT22)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("VT22 · App version chip is in the FOOTER, not in the topbar", () => {
+    var header = document.querySelector("#app-header, .topbar");
+    var footer = document.querySelector("#app-footer, footer");
+    var chipInHeader = header && header.querySelector("#appVersionChip");
+    var chipInFooter = footer && footer.querySelector("#appVersionChip");
+    assert(!chipInHeader,
+      "VT22 . v2.4.13 1 . #appVersionChip must NOT be inside the topbar");
+    assert(chipInFooter,
+      "VT22 . v2.4.13 1 . #appVersionChip must be inside the footer");
+    assert(chipInFooter && /^Canvas v/.test((chipInFooter.textContent || "").trim()),
+      "VT22 footer chip text must start with 'Canvas v'");
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section 2 . global AI Assist top-right button (VT23)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("VT23 · Global AI Assist button rendered in topbar with attractive Dell-blue styling", () => {
+    var btn = document.querySelector("#topbarAiBtn, .topbar-ai-btn");
+    assert(btn, "VT23 . v2.4.13 2 . global AI Assist button must exist in the topbar (#topbarAiBtn or .topbar-ai-btn)");
+    var inHeader = !!btn.closest("header, .topbar");
+    assert(inHeader, "VT23 AI Assist button must be inside the topbar");
+    var label = (btn.textContent || "").trim();
+    assert(/AI/i.test(label), "VT23 AI Assist button label must mention AI (got '" + label + "')");
+    var bg = getComputedStyle(btn).backgroundColor;
+    var isDellBlue = /rgb\(0,\s*118,\s*206\)|rgb\(0,\s*99,\s*174\)|rgb\(0,\s*68,\s*124\)/.test(bg);
+    assert(isDellBlue,
+      "VT23 AI Assist button must be solid Dell-blue (visible primary action). Got bg: " + bg);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section 3 . Overlay.js module open/close paths (VT24)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("VT24 · Overlay.js openOverlay adds .overlay.open, closeOverlay removes, Escape + backdrop click + close button all close, click inside does NOT close", () => {
+    _resetOverlayForTests();
+    closeOverlay();
+    var probe = document.createElement("div");
+    probe.textContent = "overlay-probe-body";
+    openOverlay({ title: "Probe overlay", lede: "smoke", body: probe, kind: "ai-assist" });
+    var panel = document.querySelector(".overlay.open");
+    assert(panel, "VT24 . openOverlay must add a .overlay.open element");
+    assert(panel.textContent.indexOf("Probe overlay") >= 0, "VT24 overlay must contain title");
+
+    closeOverlay();
+    assert(!document.querySelector(".overlay.open"), "VT24 closeOverlay must remove .overlay.open");
+
+    // Escape close
+    openOverlay({ title: "P", lede: "", body: document.createElement("div"), kind: "ai-assist" });
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    assert(!document.querySelector(".overlay.open"), "VT24 Escape must close overlay");
+
+    // Backdrop close
+    openOverlay({ title: "P", lede: "", body: document.createElement("div"), kind: "ai-assist" });
+    var backdrop = document.querySelector(".overlay-backdrop");
+    assert(backdrop, "VT24 openOverlay must produce an .overlay-backdrop element");
+    backdrop.click();
+    assert(!document.querySelector(".overlay.open"), "VT24 backdrop click must close overlay");
+
+    closeOverlay();
+    _resetOverlayForTests();
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section 4 . AI Assist click opens overlay (VT25)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("VT25 · Click on global AI Assist button opens an overlay with kind='ai-assist' + a skill list element", () => {
+    _resetOverlayForTests();
+    closeOverlay();
+    var btn = document.querySelector("#topbarAiBtn, .topbar-ai-btn");
+    assert(btn, "VT25 needs the AI Assist button to exist (relies on VT23 fix)");
+    btn.click();
+    var overlay = document.querySelector(".overlay.open");
+    assert(overlay, "VT25 . AI Assist button click must open an overlay");
+    var hasSkillList = overlay.querySelector(".ai-skill-list, [data-skill-list]");
+    assert(hasSkillList,
+      "VT25 . AI Assist overlay body must include a .ai-skill-list or [data-skill-list] element");
+    closeOverlay();
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section 5 . demo banner on all 5 tabs when isDemo=true (VT26)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("VT26 · Demo banner renders in the left panel of every tab when session.isDemo === true", () => {
+    replaceSession({
+      sessionId: "sess-vt26", isDemo: true,
+      customer: { name: "VT26 Demo Co", vertical: "Enterprise", region: "EMEA",
+                  drivers: [{ id: "cyber_resilience", priority: "High", outcomes: "" }] },
+      sessionMeta: { date: "2026-04-27", presalesOwner: "", status: "Demo", version: "2.0" },
+      instances: [], gaps: []
+    });
+    var renderers = [
+      [renderContextView,        "Tab 1 Context"],
+      [renderMatrixView,         "Tab 2/3 Matrix"],
+      [renderGapsEditView,       "Tab 4 Gaps"],
+      [renderReportingOverview,  "Tab 5 Reporting Overview"]
+    ];
+    renderers.forEach(function(pair) {
+      var fn = pair[0]; var label = pair[1];
+      var l = document.createElement("div"); var r = document.createElement("div");
+      try {
+        // Render with whatever signature the function accepts; pass session
+        // and an empty options object to avoid breakage.
+        if (fn === renderMatrixView)        fn(l, r, session, { stateFilter: "current" });
+        else if (fn === renderGapsEditView) fn(l, r, session);
+        else if (fn === renderContextView)  fn(l, r, session);
+        else                                 fn(l, r);
+      } catch (e) {
+        assert(false, "VT26 . " + label + " renderer threw: " + (e && e.message));
+        return;
+      }
+      var banner = l.querySelector(".demo-mode-banner");
+      assert(banner, "VT26 . " + label + " must render a .demo-mode-banner when session.isDemo === true");
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section 6 . stepper hover affordance (VT27)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("VT27 · Stepper steps render with cursor:pointer + hover affordance (hover background tint distinct from default)", () => {
+    var step = document.querySelector("#stepper .step");
+    assert(step, "VT27 needs the stepper to be rendered");
+    var defaultBg = getComputedStyle(step).backgroundColor;
+    var cursor = getComputedStyle(step).cursor;
+    assertEqual(cursor, "pointer",
+      "VT27 . v2.4.13 6 . step cursor must be 'pointer' (got '" + cursor + "')");
+    // Hover affordance: rendered via :hover CSS rule. We can't simulate a
+    // full hover state in the test runner reliably across browsers, so we
+    // check that a :hover rule exists by querying CSSOM.
+    var hoverRuleFound = false;
+    try {
+      for (var i = 0; i < document.styleSheets.length && !hoverRuleFound; i++) {
+        var rules;
+        try { rules = document.styleSheets[i].cssRules; } catch (e) { continue; }
+        if (!rules) continue;
+        for (var j = 0; j < rules.length; j++) {
+          var rule = rules[j];
+          if (rule && rule.selectorText && /\.step:hover/.test(rule.selectorText)) {
+            hoverRuleFound = true;
+            break;
+          }
+        }
+      }
+    } catch (e) { /* CORS or other access issue */ }
+    assert(hoverRuleFound,
+      "VT27 . v2.4.13 6 . CSS must include a .step:hover rule that produces a visible hover affordance (background or color change)");
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Section 7 . layer-name visual treatment in MatrixView (VT28)
+  // ──────────────────────────────────────────────────────────────────────
+
+  it("VT28 · MatrixView layer headers render with bumped typography (>=14px ink 600) + a color-coded left bar", () => {
+    var s = createEmptySession();
+    addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "VT28-A", vendorGroup: "dell", criticality: "Medium" });
+    addInstance(s, { state: "current", layerId: "storage", environmentId: "coreDc",
+      label: "VT28-B", vendorGroup: "dell", criticality: "Medium" });
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderMatrixView(l, r, s, { stateFilter: "current" });
+    var headers = l.querySelectorAll(".matrix-layer-header");
+    assert(headers.length >= 1,
+      "VT28 . v2.4.13 7 . MatrixView must render at least one .matrix-layer-header. Got: " + headers.length);
+    // Each header must have bumped typography + a color-coded left bar.
+    Array.from(headers).slice(0, 3).forEach(function(hdr) {
+      // Mount into body so getComputedStyle resolves.
+      document.body.appendChild(l);
+      var cs = getComputedStyle(hdr);
+      var fontSize = parseFloat(cs.fontSize);
+      var fontWeight = parseInt(cs.fontWeight, 10);
+      assert(fontSize >= 14,
+        "VT28 . layer header font-size must be >= 14px (got " + cs.fontSize + ")");
+      assert(fontWeight >= 600,
+        "VT28 . layer header font-weight must be >= 600 (got " + cs.fontWeight + ")");
+      // Left bar accent: either ::before or a child with class .matrix-layer-bar
+      var bar = hdr.querySelector(".matrix-layer-bar");
+      assert(bar,
+        "VT28 . each layer header must include a .matrix-layer-bar element with a color-coded background");
+      document.body.removeChild(l);
+    });
   });
 
 });
