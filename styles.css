@@ -268,10 +268,10 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   margin-top: 2px;
 }
 
-/* v2.4.13 polish iter-4 . session strip moved out of the topbar center
-   column into the right-side actions group, just before the AI Assist
-   button. Reads as "context next to actions" rather than floating in
-   the middle of the band. The center column is now a flexible spacer. */
+/* v2.4.13 polish iter-5 . session strip lives in the topbar center
+   column (col 2 of the 3-col grid), left-aligned so it sits next to
+   the brand block and leaves the right edge free for the AI Assist +
+   undo + gear actions cluster (the user's original layout). */
 .session-strip-wrap {
   display: inline-flex;
   align-items: center;
@@ -282,7 +282,8 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 1px 2px rgba(11, 42, 74, 0.04);
   min-width: 0;
-  max-width: 360px;
+  max-width: 420px;
+  justify-self: start;
   transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
 }
 .session-strip-wrap:hover {
@@ -354,28 +355,18 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
 
 .topbar-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
   flex-wrap: nowrap;
 }
-/* v2.4.13 polish iter-4 . vertical divider between the session strip
-   and the AI Assist button. Pairs the right-side context (session
-   strip) with the right-side actions (AI Assist + undo + gear)
-   visually so they read as one related cluster. */
-.topbar-actions-divider {
-  width: 1px;
-  height: 24px;
-  background: var(--rule-strong);
-  flex-shrink: 0;
-}
 
-/* v2.4.13 polish iter-3 . AI Assist button refined: brighter Dell-blue
-   gradient (#0085E0 -> Dell primary --dell-blue) with no gold accent.
-   Dynamicity now comes from a slow once-every-8s Dell-blue glow swell
-   that breathes the outer shadow then rests, instead of the prior
-   constant gold shimmer sweep. Sparkles ornament is a clean inline
-   SVG (Lucide-style multi-star) in white so it reads crisp against
-   the blue at any size. */
+/* v2.4.13 polish iter-5 . AI Assist button: "polished glass with a
+   quiet glint" luxury glow. The button rests for ~6 of every 8
+   seconds with a soft static Dell-blue ambient shadow + crisp inner
+   highlights, then a single ~1.5s bloom intensifies the outer halo
+   and a thin upper-edge light reflection traces across the surface.
+   Reads as considered presence: dignified at rest, briefly catching
+   the light on cycle. */
 .topbar-ai-btn {
   position: relative;
   display: inline-flex;
@@ -383,11 +374,8 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   gap: 7px;
   padding: 8px 16px;
   border-radius: 7px;
-  /* Solid color set explicitly so VT23 (and getComputedStyle in any
-     audit tool) resolves to Dell-blue; the gradient sits on top via
-     background-image with a brighter highlight at the top edge. */
   background-color: var(--dell-blue);
-  background-image: linear-gradient(180deg, #0085E0 0%, var(--dell-blue) 55%, #0070C2 100%);
+  background-image: linear-gradient(180deg, #0085E0 0%, var(--dell-blue) 55%, #0063AE 100%);
   color: #FFFFFF;
   border: 1px solid var(--dell-blue-deep);
   font-family: var(--font);
@@ -395,56 +383,124 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   font-weight: 600;
   letter-spacing: 0.01em;
   cursor: pointer;
+  /* Static resting shadow + inner highlight stack. The animation
+     below modulates only the OUTER glow shadow on its 8s cycle; the
+     inner highlights stay constant so the button always feels
+     polished, never "off." */
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.32),
-    inset 0 -1px 0 rgba(0, 50, 95, 0.30),
-    0 1px 0 rgba(0, 50, 95, 0.18),
-    0 3px 10px rgba(0, 118, 206, 0.22);
-  animation: topbar-ai-glow 12s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    inset 0 -1px 0 rgba(0, 50, 95, 0.32),
+    0 1px 0 rgba(0, 50, 95, 0.20),
+    0 2px 8px rgba(0, 118, 206, 0.18);
+  animation: ai-luxury-glow 8s cubic-bezier(0.4, 0, 0.4, 1) infinite;
   transition:
     transform 0.12s cubic-bezier(0.2, 0.8, 0.2, 1),
-    box-shadow 0.18s ease,
     background 0.18s ease,
     border-color 0.18s ease;
+  overflow: hidden; /* contain the inner light reflection sweep */
 }
-/* Luxurious slow Dell-blue breathe. 12s cycle with a long ramp-up +
-   ramp-down (S-curve), so the glow swells gracefully then recedes
-   without a sudden pulse. Resting state is soft Dell-blue ambient
-   shadow; peak (around the 50% mark) adds a wider Dell-blue halo
-   that reads as "considered presence" rather than "look at me." */
-@keyframes topbar-ai-glow {
-  0%, 100% {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.32),
-      inset 0 -1px 0 rgba(0, 50, 95, 0.30),
-      0 1px 0 rgba(0, 50, 95, 0.18),
-      0 3px 10px rgba(0, 118, 206, 0.20);
-  }
-  25% {
+/* The bloom keyframe. Rest occupies 0-25% and 70-100% so the user
+   sees a static button most of the time. The single bloom climbs
+   25-45%, holds gently 45-55%, decays 55-70%. Asymmetric ramp (slow
+   up, slow hold, slow down) reads as a considered breath, not a
+   pulse. */
+@keyframes ai-luxury-glow {
+  0%, 25%, 70%, 100% {
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.34),
-      inset 0 -1px 0 rgba(0, 50, 95, 0.30),
-      0 1px 0 rgba(0, 50, 95, 0.18),
-      0 4px 14px rgba(0, 118, 206, 0.30),
-      0 0 0 1px rgba(0, 133, 224, 0.08);
+      inset 0 -1px 0 rgba(0, 50, 95, 0.32),
+      0 1px 0 rgba(0, 50, 95, 0.20),
+      0 2px 8px rgba(0, 118, 206, 0.18);
   }
   50% {
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.38),
-      inset 0 -1px 0 rgba(0, 50, 95, 0.30),
-      0 2px 0 rgba(0, 50, 95, 0.18),
-      0 8px 26px rgba(0, 133, 224, 0.42),
-      0 0 0 2px rgba(0, 133, 224, 0.14),
-      0 0 22px rgba(0, 133, 224, 0.20);
+      inset 0 1px 0 rgba(255, 255, 255, 0.42),
+      inset 0 -1px 0 rgba(0, 50, 95, 0.32),
+      0 2px 0 rgba(0, 50, 95, 0.20),
+      0 6px 22px rgba(0, 133, 224, 0.45),
+      0 0 0 1px rgba(0, 133, 224, 0.16),
+      0 0 28px rgba(0, 133, 224, 0.28);
   }
-  75% {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.34),
-      inset 0 -1px 0 rgba(0, 50, 95, 0.30),
-      0 1px 0 rgba(0, 50, 95, 0.18),
-      0 4px 14px rgba(0, 118, 206, 0.30),
-      0 0 0 1px rgba(0, 133, 224, 0.08);
-  }
+}
+/* The "glint" overlay: a thin diagonal light reflection that traces
+   across the top of the button during the bloom phase. ::before sits
+   above the button surface as a transparent gradient that's mostly
+   invisible, with a brief moment of brightness at the bloom peak.
+   Mix-blend-mode: overlay keeps the highlight on the bright top half
+   of the gradient body, never washing out the deep navy bottom. */
+.topbar-ai-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.00) 45%,
+    rgba(255, 255, 255, 0.42) 50%,
+    rgba(255, 255, 255, 0.00) 55%,
+    transparent 70%
+  );
+  background-size: 240% 100%;
+  background-position: 240% 0;
+  mix-blend-mode: overlay;
+  animation: ai-luxury-glint 8s cubic-bezier(0.4, 0, 0.4, 1) infinite;
+  opacity: 0;
+}
+@keyframes ai-luxury-glint {
+  0%, 30%, 75%, 100% { opacity: 0; background-position: 240% 0; }
+  40%                { opacity: 1; }
+  60%                { opacity: 1; background-position: -140% 0; }
+  70%                { opacity: 0; background-position: -140% 0; }
+}
+.topbar-ai-btn:hover {
+  background-image: linear-gradient(180deg, #0095F0 0%, #0080DC 55%, var(--dell-blue) 100%);
+  border-color: var(--dell-blue-deep);
+  transform: translateY(-1px);
+  /* Hover overrides the breathe with a stronger static Dell-blue halo
+     so cursor-over reads unambiguously as the active state. */
+  animation: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.40),
+    inset 0 -1px 0 rgba(0, 50, 95, 0.30),
+    0 2px 0 rgba(0, 50, 95, 0.22),
+    0 8px 22px rgba(0, 133, 224, 0.45),
+    0 0 0 1px rgba(0, 133, 224, 0.18);
+}
+.topbar-ai-btn:hover::before {
+  animation: none;
+  opacity: 0;
+}
+.topbar-ai-btn:active {
+  transform: translateY(0);
+  animation: none;
+  box-shadow:
+    inset 0 1px 2px rgba(0, 50, 95, 0.32),
+    0 1px 0 rgba(0, 50, 95, 0.25);
+}
+.topbar-ai-btn:focus-visible {
+  outline: 2px solid #FFFFFF;
+  outline-offset: 2px;
+  animation: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    0 0 0 4px var(--dell-blue-soft),
+    0 4px 12px rgba(0, 118, 206, 0.32);
+}
+.topbar-ai-icon {
+  flex-shrink: 0;
+  color: #FFFFFF;
+  filter: drop-shadow(0 1px 1px rgba(0, 50, 95, 0.35));
+  position: relative;
+  z-index: 1;
+}
+.topbar-ai-label {
+  font-weight: 600;
+  white-space: nowrap;
+  text-shadow: 0 1px 0 rgba(0, 50, 95, 0.22);
+  position: relative;
+  z-index: 1;
 }
 .topbar-ai-btn:hover {
   background-image: linear-gradient(180deg, #0095F0 0%, #0080DC 55%, var(--dell-blue) 100%);
