@@ -1,16 +1,18 @@
-# Dell Discovery Canvas — Session Handoff
+# Dell Discovery Canvas , Session Handoff
 
-**Last session end**: 2026-04-26, after shipping `v2.4.12` Services Scope + Pre-flight regression fixes + post-smoke hot-patches (gap.services multi-select catalog + opt-in suggested chips + "+ Add service" picker for full catalog reach + Reporting "Services scope" sub-tab + ContextView no-op-Save isDemo fix + skillStore→AI-dropdown auto-refresh bus + Reporting Gaps Board side-panel services + Roadmap project-card chip CSS + 22 new tests).
+**Last session end**: 2026-04-27. v2.4.12 shipped (services scope + PR1/PR2/U1 + post-smoke hot-patches + 22 new tests). Then began Phase 19m UI rework: chunks 1-3 of design-system + topbar + stepper visual foundation shipped to main (UNTAGGED), then re-scoped 2026-04-27 into a NEW v2.4.13 intermediate release per user feedback. v2.4.13 spec + RED tests staged but not yet implemented; next session picks up at v2.4.13 implementation.
+
 **File purpose**: anyone (human or a fresh Claude Code session) opening this folder should read this file first to know exactly where work stopped, what's shipped, what's queued, and how to pick up.
 
 ---
 
 ## 1 · Where you are
 
-- `git log --oneline main` → HEAD = `v2.4.12` (commit `4084a69`).
-- `git tag --list 'v2.*' | sort -V` → 23 tags: `v2.1.1` through `v2.4.12` (plus the `v2.4.11.d01` + `v2.4.11.d02` hygiene-pass records on origin only).
-- Working tree: clean. Everything that was built is tagged and pushed to `origin/main`.
+- `git log --oneline main` , HEAD is on Phase 19m UI rework chunk 3 thorough (`dc30ba0` or later, ahead of last tag `v2.4.12` at `4084a69`).
+- `git tag --list 'v2.*' | sort -V` , 23 tags: `v2.1.1` through `v2.4.12` (plus the `v2.4.11.d01` + `v2.4.11.d02` hygiene-pass records on origin only). NO new tag yet for the Phase 19m chunks.
+- Working tree: clean. Everything built is on `origin/main`. The Phase 19m chunks (1, 2, 2.1, 2.2, 3 thorough) are intentionally untagged, sitting between `v2.4.12` and a future `v2.4.13` tag.
 - GitHub: https://github.com/M-Alshamrani/dell-discovery-canvas (private).
+- Local in sync with origin.
 
 ## 2 · What is shipped
 
@@ -40,9 +42,10 @@ Full chronology and commit refs live in `.claude/projects/.../memory/project_cur
 | v2.4.10 | 19j Save/open file | user-owned `.canvas` workbook + PWA file_handlers + Clear-all hardening |
 | v2.4.10.1 | 19j.1 HOTFIX | test-runner localStorage isolation (fixes "Bus Co" pollution) |
 | v2.4.11 | 19k Rules hardening | review-time enforcement + closed-vs-deleted + visible auto-behaviour + Operational/Services clarity + 3 in-flight bug fixes caught by browser smoke |
-| **v2.4.12** | **19l Services scope + PR/U + post-smoke hot-patches** | **`gap.services[]` field + 10-entry `SERVICE_TYPES` catalog + Tab 4 multi-chip selector with "+ Add service" picker (full catalog) + Tab 5.5 project-card chip row + NEW Reporting "Services scope" sub-tab + PR1 ContextView no-op Save preserves `isDemo` + PR2 skillsEvents bus → AI dropdown auto-refresh + U1 removal of D2 ops-gap CTA + M11 migrator backfill + closed-gap rollup exclusion + Reporting Gaps Board side-panel services + Roadmap chip pill CSS. Suite 43 SVC1-15 + DS23 (22 new tests). Total 531/531.** |
+| v2.4.12 | 19l Services scope + PR/U + post-smoke hot-patches | `gap.services[]` field + 10-entry `SERVICE_TYPES` catalog + Tab 4 multi-chip selector with "+ Add service" picker (full catalog) + Tab 5.5 project-card chip row + NEW Reporting "Services scope" sub-tab + PR1 ContextView no-op Save preserves `isDemo` + PR2 skillsEvents bus + AI dropdown auto-refresh + U1 removal of D2 ops-gap CTA + M11 migrator backfill + closed-gap rollup exclusion + Reporting Gaps Board side-panel services + Roadmap chip pill CSS. Suite 43 SVC1-15 + DS23 (22 new tests). Total 531/531. |
+| **untagged · Phase 19m UI rework foundation** | **19m chunks 1-3 of v2.4.13 + v2.5.0 visual rework** | **DS1 design tokens (4-tier ink, 3-tier surface, hairline scale, signal palette, full Dell-blue family) + DS2 .eyebrow utility + DS5 dash-bullet pattern + A1 em-dash sweep across 13 UI files + A2 Dell product accuracy on g-003 + d-006 + CD5 services `domain` field + DS24 demo gap domain coverage + GPLC-pattern topbar (white canvas + 1px hairline + 3-col grid + brand block + doc-meta strip + ghost actions) + leading-zero stepper (01 02 03 04 05 with mono Dell-blue numbers + canvas-soft band + 3px Dell-blue active rule + dell-blue-faint active tint) + local Dell logo (no CDN dependency). Suite 44 RED VT1-VT20 + Suite 35e DS24. 539 of 552 GREEN; 13 remaining RED for v2.4.13 + v2.5.0 implementation. UNTAGGED, sits between v2.4.12 and v2.4.13.** |
 
-**Test count**: 531 assertions across 44 suites in `diagnostics/appSpec.js` + `diagnostics/demoSpec.js`, all green.
+**Test count**: 539 assertions GREEN, 13 RED across 45 suites in `diagnostics/appSpec.js` + `diagnostics/demoSpec.js`. Pre-v2.4.13 implementation state.
 
 ## 3 · What closed in v2.4.5 + v2.4.5.1
 
@@ -91,7 +94,30 @@ Ordered for logical progression. Each bucket has locked scope in memory or SPEC.
 - **A4.1. v2.4.13 Demo refresh + old-schema purge + per-tab demo banner audit — DEFERRED from v2.4.12 attempt 2026-04-26.** Three items the user chose to defer: (a) demo `g-001` Phase 17 violation (`gapType: replace` with 2 desireds; same shape that was retyped on `g-004` in v2.4.11), (b) localStorage-pollution causing app to default to demo on initial open in user's browser (clean colleagues see fresh-start UX correctly), (c) per-tab demo banner audit — Tab 1 has `.demo-mode-banner` element; Tabs 2-5 do NOT. User did not catch (c) on v2.4.11 so it's gentle; (a) and (b) need a concerted demo refresh that purges any localStorage demo data created under older schemas and rebuilds demos against the v2.4.12+ data model. Opportunity to re-validate every demo gap against current taxonomy + invariants. Effort: ~3 hr.
 - **A5. v2.6.0 Action-command skills** — runtime for `json-commands` response format. Was originally v2.4.6; deferred so UX + crown-jewel land first.
 
-### Bucket B, Crown-jewel UI rework (v2.5.0 + v2.5.1)
+### NEW Bucket B0 · v2.4.13 intermediate UX/UI patches · LOCKED 2026-04-27 (NEXT UP)
+
+Sits between v2.4.12 and the v2.5.0 crown-jewel. Re-scoped from v2.5.0 chunks per user feedback after Phase 19m chunks 1-3 review. v2.4.13 ships visible-improvement quick wins; v2.5.0 then ships the deeper structural rework on top of v2.4.13's foundation.
+
+Full spec in `docs/CHANGELOG_PLAN.md § v2.4.13`. Eight sections, ~2 focused days, single tag.
+
+**Locked decisions** (do NOT re-litigate during implementation):
+
+- §0 Drop the Reporting "Services scope" sub-tab entirely. Services info already on gap and project drawers; sub-tab adds a navigation step without earning value.
+- §1 Move app-version chip from header to footer as a small mono caps capsule. Top bar reserved for functional/interactive elements; metadata in footer.
+- §2 NEW global "AI Assist" top-right button replaces the existing per-driver `useAiButton` mounting. Single source of truth, more discoverable. Solid Dell-blue accent so it reads as the visible primary action in the topbar.
+- §3 NEW `ui/components/Overlay.js` component. Centered modal at `~min(720px, 90vw) wide × min(640px, 80vh) tall`. Backdrop blur. Sticky head + scrollable body + sticky footer. Backdrop / Escape / X all close. Used by AI Assist immediately; v2.5.0 reuses for "+ Add" flows.
+- §4 AI Assist click opens overlay with context-aware skill list (filtered by `currentStep`), prompt preview, in-place result panel.
+- §5 Demo banner renders on all 5 tabs (Tab 1, 2, 3, 4, 5 plus each Reporting sub-tab) when `session.isDemo === true`. Currently only Tab 1. Existing colorful styling kept; user explicitly likes it.
+- §6 Stepper clickability cues: hover background + `.step-num` color shift to Dell-blue + bigger labels (Fitts's Law) + active step gets a `▸` chevron prefix or 3px Dell-blue left mark + bolder weights so "you are here" reads clearly.
+- §7 Layer-name visual treatment in MatrixView (Tabs 2 + 3): bump 11px ink-mute to 14px ink 600, add 4×100% color-coded left bar per layer (signal palette: workload neutral, compute amber, storage amber, network green, dataProtection red, virtualization Dell-blue), mono caps eyebrow above each layer block.
+- §8 Brand-blue ratio calibrated 3% to 8-10%. Specific accent moves on active stepper, primary CTAs, hover states, filter-chip active, card-hover left bars, eyebrow rules.
+- One open clarification deferred to next session: user message ended "the top bar becomes for functional things. we might need to" (sentence cut off). Spec proceeds without the missing piece; flag for next-session pickup.
+
+**Tests**: Suite 45 VT21-VT28 (RED first; covers services-tab removed, version in footer, AI button in topbar, Overlay module, AI overlay open, demo banner all-tabs, stepper hover, layer-name treatment).
+
+**Effort**: ~2 days, single tag.
+
+### Bucket B · Crown-jewel UI rework (v2.5.0 + v2.5.1) · REDUCED SCOPE 2026-04-27
 
 Joint spec in `docs/CHANGELOG_PLAN.md § v2.5.0` (LOCKED 2026-04-26) plus the philosophy alignment from the Dell Advisory Design System document the user provided 2026-04-26 plus the GPLC reference HTML at `C:/Users/Mahmo/Downloads/GPLC Digital Unified Platform v1.0.html`. Carried forward decisions from `project_crown_jewel_design.md` and `project_deferred_design_review.md`.
 

@@ -932,7 +932,190 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
-## v2.5.0 · Crown-jewel UI rework · LOCKED 2026-04-26 (next major release after v2.4.12)
+## v2.4.13 · Intermediate UX/UI patches · LOCKED 2026-04-27 (sits between v2.4.12 and v2.5.0)
+
+### Theme
+
+User feedback after v2.5.0 chunks 1-3 ("starting to worry about the UI fix all together"): pull a focused set of visible-improvement quick wins into an intermediate v2.4.13 release before the v2.5.0 structural rework lands. v2.4.13 ships the visible "feels finished" wins; v2.5.0 ships the deeper drawer-everywhere + universal detail-panel template + filters.
+
+v2.4.13 builds on top of the Phase 19m foundation work already shipped to main (chunks 1, 2, 2.1, 2.2, 3): DS1 design tokens, DS2 eyebrow utility, DS5 dash-bullet pattern, A1 em-dash sweep, A2 Dell product accuracy, CD5 services domain field, DS24 demo gap domain coverage, GPLC-pattern topbar, leading-zero stepper, local Dell logo. Those chunks were originally tagged v2.5.0 in commit messages but they constitute the foundation for both v2.4.13 and v2.5.0; the next tag will be v2.4.13 incorporating that foundation plus this intermediate scope.
+
+### Locked decisions (do not re-litigate during implementation)
+
+| Decision | Why |
+|---|---|
+| **Drop the Reporting "Services scope" sub-tab entirely.** Remove it from REPORTING_TABS in `app.js`. Either delete `SummaryServicesView.js` or leave it as a vestigial orphan module (cheaper to delete). | The sub-tab adds a navigation step without earning value: services are a facet of gaps and projects, and the v2.4.12 work + v2.5.0 detail-panel template already surface services on the gap drawer body, the project drawer body, and the Roadmap project-card chip row. The standalone sub-tab is redundant. User decision 2026-04-27. |
+| **AI assistance becomes a global top-right button, not per-tab.** "✨ AI Assist" or similarly attractive label, replacing the current app-version chip position in the topbar. Solid Dell-blue accent so it reads as the visible primary action in the topbar. Clicking opens a properly-sized overlay (NEW Overlay.js component, similar interaction-language to drawer but centered modal with more workspace). | Single source of truth for AI is more discoverable than today's buried per-driver button. The overlay gives AI assistance the workspace it needs (form fields side by side with skill list and result panel). Replaces, does not augment, the existing per-driver `useAiButton` mounting on Tab 1. v2.5.0's per-entity AI mounting in drawer bodies (was U4) is dropped; user chose global gateway for v2.4.13 + v2.5.0. |
+| **App version chip moves to footer**, rendered as a small mono caps capsule in the bottom bar. Top bar reserved for functional/interactive elements (brand block + doc-meta + AI Assist + Undo + gear). | Metadata belongs in the footer; functional elements belong in the topbar. User decision 2026-04-27. |
+| **Demo banner renders on all 5 tabs when `session.isDemo === true`** (currently only Tab 1 ContextView). Existing colorful styling kept; user explicitly likes it. | The colorful demo signal should follow the user across the workshop, not vanish after Tab 1. User said: "the demo purple, colorful, I like it, easy on the eye to notice; let's add it for all tabs when working with demo." |
+| **Color contrast and visual ergonomics calibrated** to research baselines: WCAG 2.1 contrast (4.5:1 body text, 3:1 UI elements), Treisman feature-integration (color/size/shape pop-out), Norman affordance theory (interactive things must look interactive), Fitts's Law (bigger targets faster + more confident), 60-30-10 color rule with Dell-blue ratio bumped from current ~3% to target ~8-10%. Specific visible fixes: stepper clickability cues, layer-name visual treatment in matrix views, single-CTA-per-surface discipline, hover signals across all interactive elements. | User feedback: "everything is grayish and all same color, my eyes can not see where to click or enjoy looking at the screen, isn't there a UI/UX colors best practices as per science and research?" Yes there is, and I was under-applying it. Specific user pain points named: stepper not obviously clickable + layer names look unfinished. |
+| **One open clarification deferred to a future session**: user message ended with "the top bar becomes for functional things. we might need to" (sentence cut off). Spec proceeds without the missing piece; flagged for next-session pickup. | Avoid blocking on incomplete information. |
+
+### Section 0 · Services-scope sub-tab removal
+
+| # | Item | Files |
+|---|---|---|
+| **A** | Remove "Services scope" entry from `REPORTING_TABS` array in `app.js` (between "Vendor Mix" and "Roadmap"). Remove the corresponding `case "services":` from `renderReportingTab` switch. Remove the `import { renderSummaryServicesView }` line. | `app.js` |
+| **B** | Delete `ui/views/SummaryServicesView.js` since no caller remains. | view file |
+| **C** | Remove the v2.4.12 "Services scope preview card" block from `ui/views/ReportingView.js` `renderReportingOverview` (the §0 services-scope-preview card). The services preview is unnecessary now that the sub-tab is gone; gap and project drawers carry the per-entity info. | `ui/views/ReportingView.js` |
+| **D** | Suite 44 VT19 (asserts SummaryServicesView renders `.service-card` grid) is OBSOLETE; delete from `diagnostics/appSpec.js`. | `diagnostics/appSpec.js` |
+
+### Section 1 · Footer version capsule
+
+| # | Item | Files |
+|---|---|---|
+| **A** | Move `<div class="header-app-version" id="appVersionChip">` from `<header>` to `<footer>` in `index.html`. Keep the same id so `app.js renderHeaderMeta` still sets the text. | `index.html` |
+| **B** | Restyle `.header-app-version` rule in `styles.css`: rename to `.footer-version-capsule` (or keep `.header-app-version` for stability, just adjust inside-footer styling). Mono caps 10.5px ink-mute, canvas-soft fill, rule-strong border, 999px radius. Sits at the right edge of the footer, gap auto-pushed by flex. | `styles.css` |
+
+### Section 2 · NEW global AI Assist top-right button
+
+| # | Item | Files |
+|---|---|---|
+| **A** | NEW `<button id="topbarAiBtn" class="topbar-ai-btn">` in `<header>` `.topbar-actions`, replacing the position vacated by the app-version chip. Label: "✨ AI Assist". | `index.html` |
+| **B** | `.topbar-ai-btn` CSS: solid Dell-blue background, white text, subtle hover (Dell-blue-deep). 6px×14px padding, 5px radius, 12.5px font-weight 600. The single most prominent action in the topbar. Click handler attached in `app.js wireTopbarAiBtn()`. | `styles.css`, `app.js` |
+| **C** | Click handler calls `openAiOverlay({ tabId, context })`, where `tabId` is `currentStep` and `context` carries the selected entity (driver / instance / gap) if any. | `app.js` |
+
+### Section 3 · NEW Overlay component
+
+| # | Item | Files |
+|---|---|---|
+| **A** | NEW `ui/components/Overlay.js` exporting `openOverlay({ title, lede, body, footer, kind, size })` and `closeOverlay()` and `isOpen()` and `_resetForTests()`. Module owns the backdrop + panel elements; backdrop click + Escape + ✕ all close. | NEW `ui/components/Overlay.js` |
+| **B** | Default size: `~min(720px, 90vw) wide × min(640px, 80vh) tall`. Centered with backdrop blur. Sticky head with title + lede + close. Scrollable body. Sticky footer for primary CTA right + cancel left. `kind` attribute for entity-specific styling hooks (`ai-assist`, `add-current-tile`, `add-desired-tile`, `add-gap`, `add-driver`). | same |
+| **C** | `--shadow-panel` token used for the overlay drop-shadow (already in DS1). Animation: `transform: scale(0.96) translateY(8px)` → `scale(1) translateY(0)` with backdrop fade. 200ms cubic-bezier. | `styles.css` for `.overlay`/`.overlay-backdrop` rules |
+
+### Section 4 · AI Assist overlay wiring
+
+| # | Item | Files |
+|---|---|---|
+| **A** | NEW `ui/views/AiAssistOverlay.js` exporting `openAiOverlay({ tabId, context })` that builds the overlay body and calls `Overlay.openOverlay({...})`. The body contains: tab-context summary at top, skill list (filtered by tabId), inline result panel below selected skill, primary "Run skill" CTA in the footer. | NEW view file |
+| **B** | Skills filter: `skillsForTab(tabId, { onlyDeployed: true })`. Click a skill in the list → it becomes the active skill, the run-button in footer activates, result panel shows the prompt preview. Click "Run skill" → `runSkillById(skill.id, getSession(), context)` and render result in-place. | view file |
+| **C** | Remove the existing `useAiButton` mount inside ContextView's right-panel driver detail. AI Assist is now globally accessible from the topbar; per-driver mounting is replaced. Keep the `core/skillStore.js` + `core/skillsEvents.js` infrastructure (PR2 from v2.4.12) untouched; the overlay subscribes via `onSkillsChanged` so the skill list refreshes when the user adds/edits skills via the gear icon → Skills section. | `ui/views/ContextView.js` (remove inline AI mount) |
+
+### Section 5 · Demo banner on all 5 tabs
+
+| # | Item | Files |
+|---|---|---|
+| **A** | Extract the existing `renderDemoBanner` from `ContextView.js` into a shared helper module: NEW `ui/components/DemoBanner.js` exporting `renderDemoBanner(target)`. Keeps the existing colorful styling intact (CSS class `.demo-mode-banner` + copy text). | NEW `ui/components/DemoBanner.js` |
+| **B** | Mount the helper at top of every view's left panel when `session.isDemo === true`: `ContextView`, `MatrixView` (Tabs 2 + 3), `GapsEditView` (Tab 4), Reporting sub-tab views (`ReportingView`, `SummaryHealthView`, `SummaryGapsView`, `SummaryVendorView`, `SummaryRoadmapView`). | each view file |
+| **C** | Banner styling stays as-is (philosophy hard rule: don't break what user explicitly likes). | `styles.css` (no changes needed) |
+
+### Section 6 · Stepper clickability cues
+
+| # | Item | Files |
+|---|---|---|
+| **A** | Hover state: `.step:hover` gets `background: var(--canvas)` (subtle but visible cursor-feedback against the canvas-soft stepper band) + `.step-num` color shifts to `--dell-blue` so the cursor-over signals "I will activate this." | `styles.css` |
+| **B** | Active step: keep dell-blue-faint background tint, bump the `.step-label` weight from 500 to 600 + `.step-num` weight from 600 to 700 + `.step-num` color stays Dell-blue + add a small `▸` chevron prefix before the step number on the active step (or a 3px Dell-blue left vertical mark) so active reads as "you are here." | `styles.css`, `app.js renderStepper` |
+| **C** | Slightly bigger labels: `.step-label` font-size 13 → 14px, `.step-num` 11 → 12px. Bigger Fitts target. | `styles.css` |
+
+### Section 7 · Layer-name visual treatment in matrix views
+
+| # | Item | Files |
+|---|---|---|
+| **A** | Layer headers in MatrixView (Tabs 2 + 3) currently render as plain ink-mute small text. Bump to 14px ink 600 + Inter, with a 4×100% left bar color-coded by layer (signal palette). Mapping: workload = dell-blue-soft (neutral lead), compute = amber, storage = amber, network/infrastructure = green, data protection = red, virtualization = dell-blue. | `ui/views/MatrixView.js`, `styles.css` (`.matrix-layer-header` + `.matrix-layer-bar`) |
+| **B** | Mono caps eyebrow above each layer header: `LAYER · COMPUTE` etc., using the `.eyebrow` utility class. Aids scanning across layer groups. | view file |
+| **C** | Consistent treatment in any other place that lists layers (filter chips already use chip-filter; this targets the layer-grouped HEADERS only). | view files |
+
+### Section 8 · Brand-blue ratio calibration
+
+| # | Item | Files |
+|---|---|---|
+| **A** | Calibrated audit pass on `styles.css`: target Dell-blue surface coverage ~8-10% (was ~3% post-chunk-3). | `styles.css` |
+| **B** | Apply Dell-blue accent to: active stepper step background + label (already done chunk 3), filter-chip active state (background `--dell-blue-soft` + text `--dell-blue-deep`), hover states across `.btn-ghost` (already in CSS), card hover left-bar accent (NEW class `.card-hover-bar`), section eyebrow rules (`.eyebrow-rule::before` 36px line). | `styles.css` |
+| **C** | Single primary CTA per surface in solid Dell-blue (`.btn-primary`). Save buttons, Approve, Run skill, Add. Everything else demoted to ghost. | view files |
+
+### Tests · Suite 45 (VT21-VT28)
+
+| # | Test | Asserts |
+|---|---|---|
+| **VT21** | Services-scope sub-tab REMOVED from REPORTING_TABS | `app.js REPORTING_TABS` array has no entry with `id: "services"`. `renderReportingTab` switch has no `case "services"`. |
+| **VT22** | App version chip in FOOTER, not topbar | `<header>` does NOT contain `#appVersionChip`. `<footer>` DOES contain `#appVersionChip` with text matching `/^Canvas v/`. |
+| **VT23** | Global AI Assist button in topbar | `.topbar-actions` contains `#topbarAiBtn` with class `.topbar-ai-btn`. Visible (not display:none). Background resolves to Dell-blue. |
+| **VT24** | Overlay.js module open/close | `openOverlay({...})` adds `.overlay.open` to DOM. `closeOverlay()` removes it. Escape closes. Backdrop click closes. Click inside panel does NOT close. `isOpen()` returns boolean. |
+| **VT25** | AI button click opens overlay | Click `#topbarAiBtn` → `.overlay.open` appears with kind="ai-assist" + a skill list element. |
+| **VT26** | Demo banner on all 5 tabs when isDemo=true | Render each view with a demo session; assert each renders a `.demo-mode-banner` element in the left panel. |
+| **VT27** | Stepper hover affordance | Programmatic hover on a step: `getComputedStyle(step:hover)` background changes. Cursor stays pointer. |
+| **VT28** | Layer name visual treatment | Render MatrixView with multiple layers; assert each `.matrix-layer-header` has font-size >= 14px, font-weight >= 600, ink color, plus a `.matrix-layer-bar` left-bar element with a non-transparent background-color. |
+
+### Section R · Regression guards (smoke checklist)
+
+| Guard | Check |
+|---|---|
+| **R1** | v2.4.12 R1-R10 all stay GREEN (services chips on gap drawer + AI dropdown auto-refresh on skill changes + ContextView no-op Save preserves isDemo + Roadmap project-card chip pills + everything from the v2.4.12 final smoke) |
+| **R2** | Phase 19m chunks 1-3 wins preserved (white topbar with hairline + leading-zero stepper + local Dell logo + design tokens + eyebrow utility + dash-bullet pattern + em-dash absence + services domain mapping) |
+| **R3** | Top-right shows AI Assist button as the visible primary action (not the version chip) |
+| **R4** | Footer shows version capsule at the right edge |
+| **R5** | Click AI Assist in any tab → overlay opens centered with backdrop blur + skill list scoped to that tab. Esc + backdrop + ✕ all close. |
+| **R6** | Load demo → banner visible on Tab 1, 2, 3, 4, 5 (and on each Reporting sub-tab) |
+| **R7** | Hover any stepper step → cursor pointer + background tint shows. Active step has clear "you are here" signal (chevron prefix + bolder weight + Dell-blue tint). |
+| **R8** | Tab 2 + 3 layer headers render with bigger ink type + a color-coded left bar per layer + mono caps eyebrow above |
+| **R9** | Brand-blue coverage visible without being loud: active stepper, AI Assist button, primary CTAs, hover states, eyebrow rules. Estimate ~8-10% surface area. |
+| **R10** | Hard refresh on every tab → no console errors |
+| **R11** | No em dashes in any source file (re-run VT20 sweep) |
+
+### Effort: ~2 focused days · single tag
+
+Day breakdown:
+- **Day 1**: §0 services-scope removal + §1 footer version capsule + §2 + §3 + §4 (AI Assist top button + Overlay.js + AI overlay wiring).
+- **Day 2**: §5 demo banner everywhere + §6 stepper clickability + §7 layer-name treatment + §8 brand-blue calibration + Suite 45 tests + §R smoke + tag.
+
+### Tag protocol (per locked discipline)
+
+1. Spec committed (this entry). Wait for sign-off before tests/code.
+2. Tests committed (Suite 45 VT21-VT28). Fail RED at first.
+3. Code execution: §0 → §8 in order.
+4. Browser smoke against §R guards. Report results.
+5. Pause for explicit "tag it" approval.
+6. Tag, push, update memory + HANDOFF.
+
+### What rolls forward to v2.5.0 (after v2.4.13 ships)
+
+v2.5.0 reduces in scope. The intermediate items absorbed by v2.4.13:
+- Services-scope sub-tab removal (was v2.5.0 §7)
+- Overlay component (introduced in v2.4.13 §3, v2.5.0 just uses it for "+ Add" flows)
+- Global AI Assist (replaces v2.5.0 §AI per-tab mounting)
+- Demo banner everywhere (was v2.4.13 backlog A4.1)
+- Stepper clickability + layer-name treatment + brand-blue calibration (parts of v2.5.0 §3 color discipline)
+
+v2.5.0 retains:
+- Drawer module + per-tab drawer wiring (click-existing-entity flows)
+- Detail panel universal template across all 5 entity types (DP1-DP10)
+- Cross-tab filter system (F1-F6)
+- Tag vocabulary migration (TV1-TV9)
+- + Add flows wired to the overlay component (NEW; "+ Add" in current/desired/gaps/drivers opens overlay)
+
+---
+
+## v2.5.0 · Crown-jewel UI rework · LOCKED 2026-04-26 (REDUCED SCOPE 2026-04-27 after v2.4.13 carved out)
+
+### Scope reduction notice (2026-04-27)
+
+After Phase 19m chunks 1-3 visual-foundation work shipped, user feedback led to pulling a focused set of intermediate UX/UI patches into a NEW v2.4.13 release that ships first. This v2.5.0 spec is now reduced. The following items moved out:
+
+| Was in v2.5.0 | Now in | Status |
+|---|---|---|
+| §7 Services scope sub-tab redesign (SR1-SR4) | v2.4.13 §0 | Sub-tab being REMOVED entirely (not redesigned). Services info already on gap and project drawers. |
+| §AI per-entity AI mounting (AI1-AI5) | v2.4.13 §2 + §4 | Replaced by v2.4.13 single global "AI Assist" top-right button + overlay. Per-entity drawer-inline AI dropped. |
+| Overlay component for "+ Add" flows | v2.4.13 §3 | NEW Overlay.js shipped in v2.4.13 (used initially for AI Assist). v2.5.0 then uses the same Overlay.js for "+ Add tile / + Add gap / + Add driver" flows. |
+| §3 Color discipline pass partial: stepper clickability + layer-name treatment + brand-blue ratio bump 3% to 8-10% | v2.4.13 §6, §7, §8 | Visible quick-wins land first; the rest of §3 (single-CTA-per-surface discipline + layered signal mapping) stays in v2.5.0. |
+| Demo banner on all 5 tabs | v2.4.13 §5 | User explicitly likes the existing colorful demo banner styling; lives in v2.4.13. |
+| Suite 44 VT19 (services-scope grid) | DELETED | Sub-tab removed; test obsolete. |
+| Suite 44 VT16 (per-entity AI mount) | TO BE REVISED | Will be retargeted at the global AI Assist button in v2.4.13 (re-tested as VT25 in Suite 45). |
+
+What v2.5.0 retains (after reduction):
+- §1 Design system foundation (DS1-DS8): mostly already shipped in chunks 1-3; remaining DS6 callout block + DS7 shared band + DS3 single .tag primitive
+- §2 Topbar + footer (TB1-TB6): mostly already shipped in chunks 2-3; remaining TB5 footer rework (other than the version capsule v2.4.13 ships)
+- §3 Color discipline (CD1-CD5) RESIDUAL: single-CTA-per-surface + layered signal-color mapping (the parts not in v2.4.13)
+- §4 Detail panel universal template (DP1-DP10): the big one. Sticky head with crumbs + STATUS STRIP + KEY ATTRIBUTES tech-grid + hairline-divided sections + dash-bullets + sticky footer + per-entity body adaptations across gap / current-tile / desired-tile / project / driver. Project drawer body absorbs the services scope info that previously needed a sub-tab.
+- §5 Drawer pattern (DR1-DR9): drawer-everywhere on Tabs 1-5 for click-existing-entity flows, using the existing Drawer.js stub
+- §6 Cross-tab filter system (F1-F6): body data-attribute pattern, multi-chip selectors, opacity dim
+- §7 Services scope redesign · DROPPED (moved to v2.4.13 §0 as removal)
+- §8 Tag vocabulary migration (TV1-TV9): consolidating 11+ chip / badge classes to one .tag primitive
+- §AI · DROPPED (moved to v2.4.13 §2 + §4 as global AI Assist)
+- NEW §+Add (v2.5.0 addition): wire "+ Add tile / + Add gap / + Add driver" buttons to open the v2.4.13 Overlay.js component instead of the current inline form. Adds a 2-column overlay layout: form fields left + AI assist panel right. Per-entity overlay bodies follow the same structural template as drawer bodies but at the larger overlay size.
+
+Effort estimate revised: ~3 days (was ~4) since the topbar + stepper + audit + design-system foundation work already landed in chunks 1-3 and v2.4.13 absorbed the AI mounting and overlay component construction.
+
+---
 
 ### Theme
 
