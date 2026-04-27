@@ -10,6 +10,7 @@ import { emitSessionChanged } from "../core/sessionEvents.js";
 import { clear as clearAiUndoStack } from "./aiUndoStack.js";
 import { setPrimaryLayer, deriveProjectId } from "../interactions/gapsCommands.js";
 import { normalizeServices } from "../core/services.js";
+import { markSaved } from "../core/saveStatus.js";
 
 export { createDemoSession } from "./demoSession.js";
 
@@ -154,7 +155,14 @@ export function migrateLegacySession(raw) {
 export let session = (function() {
   try {
     var raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return migrateLegacySession(JSON.parse(raw));
+    if (raw) {
+      var s = migrateLegacySession(JSON.parse(raw));
+      // v2.4.13 S2A , populated localStorage means the user has saved
+      // data; boot the status indicator at "saved" / "demo" instead of
+      // the default "idle" so the topbar reads correctly on first paint.
+      try { markSaved({ isDemo: !!s.isDemo }); } catch (e) { /* swallow */ }
+      return s;
+    }
   } catch(e) {}
   // v2.4.7 · empty canvas is the honest default for a brand-new user.
   // The old "fall back to demo" behaviour on first run mis-signalled
@@ -264,6 +272,10 @@ export function applyContextSave(patch) {
 export function saveToLocalStorage() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    // v2.4.13 S2A , topbar save indicator. After a successful writeback,
+    // mark "saved" (or "demo" when the session is a demo). renderHeaderMeta
+    // subscribes via onStatusChange and repaints the secondary line.
+    markSaved({ isDemo: !!session.isDemo });
     return true;
   } catch(e) {
     console.warn("Save failed:", e);
@@ -278,6 +290,10 @@ export function loadFromLocalStorage() {
     var migrated = migrateLegacySession(JSON.parse(raw));
     Object.keys(session).forEach(function(k) { delete session[k]; });
     Object.assign(session, migrated);
+    // v2.4.13 S2A , a successful load means the user has saved data on
+    // disk; mark the indicator as saved (or demo) so the topbar doesn't
+    // boot showing "Saving..." or "Empty canvas" for a populated session.
+    markSaved({ isDemo: !!session.isDemo });
     return true;
   } catch(e) {
     console.warn("Load failed:", e);

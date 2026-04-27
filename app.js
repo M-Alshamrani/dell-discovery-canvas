@@ -8,6 +8,7 @@ import { onSessionChanged, emitSessionChanged } from "./core/sessionEvents.js";
 import { APP_VERSION }               from "./core/version.js";
 import { loadAiConfig, saveAiConfig } from "./core/aiConfig.js";
 import { loadSkills, saveSkills }    from "./core/skillStore.js";
+import { getStatus as getSaveStatus, onStatusChange as onSaveStatusChange } from "./core/saveStatus.js";
 import { buildSaveEnvelope, parseFileEnvelope, applyEnvelope, suggestFilename, FILE_MIME } from "./services/sessionFile.js";
 import { renderContextView }         from "./ui/views/ContextView.js";
 import { renderMatrixView }          from "./ui/views/MatrixView.js";
@@ -54,6 +55,12 @@ document.addEventListener("DOMContentLoaded", function() {
   wireFooter();
   wireSettingsBtn();
   wireUndoBtn();
+  wireTopbarAiBtn();
+  // v2.4.13 S2A . repaint the secondary line whenever the save status
+  // bus emits, so "Saving..." -> "Saved just now" without a full
+  // re-render. Tick a 30s interval so "Saved 2m ago" keeps incrementing.
+  onSaveStatusChange(renderSessionStripStatus);
+  setInterval(renderSessionStripStatus, 30 * 1000);
   // v2.4.5 · every AI apply/undo + session reset routes through the
   // session-changed bus. The app shell re-renders header + current
   // tab so views pick up the live data (fixes the v2.4.4
@@ -118,6 +125,25 @@ function wireSettingsBtn() {
   if (btn) btn.addEventListener("click", openSettingsModal);
 }
 
+// v2.4.13 S2 . global AI Assist button click handler. The actual
+// AI overlay (tile grid + skill scope toggle + element-pick transparency)
+// lives in ui/views/AiAssistOverlay.js. We import dynamically so the
+// module is fetched lazily on first click; this also means the topbar
+// stays free of overlay-specific dependencies until the user opts in.
+function wireTopbarAiBtn() {
+  var btn = document.getElementById("topbarAiBtn");
+  if (!btn) return;
+  btn.addEventListener("click", function() {
+    import("./ui/views/AiAssistOverlay.js").then(function(mod) {
+      if (mod && typeof mod.openAiOverlay === "function") {
+        mod.openAiOverlay({ tabId: currentStep, context: {} });
+      }
+    }).catch(function(e) {
+      console.warn("[AI Assist] overlay module not available yet:", e);
+    });
+  });
+}
+
 function wireUndoBtn() {
   var btn      = document.getElementById("undoBtn");
   var allBtn   = document.getElementById("undoAllBtn");
@@ -169,38 +195,91 @@ function wireUndoBtn() {
 }
 
 function renderHeaderMeta() {
-  // v2.5.0 doc-meta strip: matches GPLC pattern verbatim.
-  // <span><b>LABEL</b> value</span> entries separated by 1px x 14px
-  // .sep dividers. Mono caps via the .doc-meta CSS class on the
-  // container.
+  // v2.4.13 S2A . session strip in topbar center column. Two-line stack:
+  //   line 1: workshop / customer name (Inter 600 14px ink)
+  //   line 2: save indicator (mono caps, leading colored dot)
+  // Replaces the v2.5.0 GPLC doc-meta strip; date and status now live
+  // only on the session.sessionMeta object and surface in Tab 1.
   var el = document.getElementById("sessionMetaHeader");
-  if (el) {
-    var name   = session.customer.name || "New session";
-    var date   = session.sessionMeta.date;
-    var status = session.sessionMeta.status;
-    el.innerHTML = "";
-    el.appendChild(metaSpan("Customer", name));
-    el.appendChild(metaSep());
-    el.appendChild(metaSpan("Date", date));
-    el.appendChild(metaSep());
-    el.appendChild(metaSpan("Status", status));
+  if (!el) {
+    var verEl = document.getElementById("appVersionChip");
+    if (verEl) verEl.textContent = "Canvas v" + APP_VERSION;
+    return;
   }
-  var verEl = document.getElementById("appVersionChip");
-  if (verEl) verEl.textContent = "Canvas v" + APP_VERSION;
+  var customerName = (session.customer && session.customer.name) || "";
+  var hasName      = !!customerName.trim();
+  var isDemo       = !!session.isDemo;
+
+  el.innerHTML = "";
+  el.setAttribute("data-empty", hasName || isDemo ? "false" : "true");
+
+  var nameLine = document.createElement("div");
+  nameLine.className = "session-strip-name";
+  nameLine.textContent = hasName
+    ? customerName
+    : (isDemo ? "Demo session" : "New session");
+  el.appendChild(nameLine);
+
+  var statusLine = document.createElement("div");
+  statusLine.className = "session-strip-status";
+  var dot = document.createElement("span");
+  dot.className = "session-strip-dot";
+  dot.setAttribute("aria-hidden", "true");
+  statusLine.appendChild(dot);
+  var statusText = document.createElement("span");
+  statusText.className = "session-strip-status-text";
+  statusLine.appendChild(statusText);
+  el.appendChild(statusLine);
+
+  renderSessionStripStatus();
+
+  var verEl2 = document.getElementById("appVersionChip");
+  if (verEl2) verEl2.textContent = "Canvas v" + APP_VERSION;
 }
 
-function metaSpan(label, value) {
-  var s = document.createElement("span");
-  var b = document.createElement("b");
-  b.textContent = label;
-  s.appendChild(b);
-  s.appendChild(document.createTextNode(value));
-  return s;
+// v2.4.13 S2A . repaint just the secondary line. Called on every save-
+// status emit and on a 30s interval so "Saved 2m ago" keeps incrementing.
+function renderSessionStripStatus() {
+  var statusLine = document.querySelector(".session-strip-status");
+  if (!statusLine) return;
+  var dot  = statusLine.querySelector(".session-strip-dot");
+  var text = statusLine.querySelector(".session-strip-status-text");
+  if (!dot || !text) return;
+
+  var snap = getSaveStatus();
+  var hasName = !!(session.customer && session.customer.name && session.customer.name.trim());
+  var isDemo  = !!session.isDemo;
+  var state   = "idle";
+  var label   = "Empty canvas";
+
+  if (snap.status === "saving") {
+    state = "saving"; label = "Saving...";
+  } else if (isDemo || snap.status === "demo") {
+    state = "demo"; label = "Demo session";
+  } else if (snap.status === "saved" && snap.savedAt) {
+    state = "saved"; label = "Saved " + relativeSavedAgo(snap.savedAt);
+  } else if (hasName) {
+    state = "saved"; label = "Not yet saved";
+  } else {
+    state = "idle"; label = "Empty canvas";
+  }
+
+  dot.setAttribute("data-state", state);
+  text.textContent = label;
 }
-function metaSep() {
-  var s = document.createElement("span");
-  s.className = "sep";
-  return s;
+
+function relativeSavedAgo(ts) {
+  var deltaMs = Date.now() - ts;
+  if (deltaMs < 0) deltaMs = 0;
+  var sec = Math.floor(deltaMs / 1000);
+  if (sec < 5)   return "just now";
+  if (sec < 60)  return sec + "s ago";
+  var min = Math.floor(sec / 60);
+  if (min < 60)  return min + "m ago";
+  var hr  = Math.floor(min / 60);
+  if (hr  < 24)  return hr + "h ago";
+  var day = Math.floor(hr / 24);
+  return day + "d ago";
 }
 
 function renderStepper() {

@@ -19,6 +19,8 @@
 // It is safe for handlers to call `renderStage()` directly — the event
 // is not fired during a render pass.
 
+import { markSaving } from "./saveStatus.js";
+
 var listeners = [];
 
 // Subscribe to session-changed events.
@@ -42,6 +44,13 @@ export function onSessionChanged(fn) {
 //   "session-replace"— replaceSession (e.g. import)
 export function emitSessionChanged(reason, label) {
   var evt = { reason: reason || "unknown", label: label || "" };
+  // v2.4.13 S2A , flip topbar indicator to "Saving..." for the brief
+  // window between change and writeback. saveToLocalStorage will flip it
+  // back to "saved"/"demo" on its next call. Skip during the test runner
+  // afterRestore emit so VT26 etc. don't see flicker.
+  if (reason !== "session-replace" || (label || "").indexOf("Tests complete") < 0) {
+    markSaving();
+  }
   listeners.slice().forEach(function(fn) {
     try { fn(evt); }
     catch (e) { /* never let a handler throw out of the bus */ }

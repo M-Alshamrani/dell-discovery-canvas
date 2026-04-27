@@ -32,6 +32,8 @@
 
 import { createTestRunner, runIsolated } from "./testRunner.js";
 import { emitSessionChanged } from "../core/sessionEvents.js";
+// v2.4.13 S2A · post-test indicator restore (see runAllTests below).
+import { markSaved as _markSaved, markIdle as _markIdle } from "../core/saveStatus.js";
 
 import {
   LAYERS, ENVIRONMENTS, CATALOG,
@@ -7224,5 +7226,19 @@ export function runAllTests() {
       resetSession();
     }
     emitSessionChanged("session-replace", "Tests complete");
+    // v2.4.13 S2A · the test pass leaves the saveStatus bus in whatever
+    // state the last test landed (often "saving" because every emit goes
+    // through markSaving). After restoring real session state, snap the
+    // indicator back to its true status: idle when fresh, saved/demo
+    // when the user has data on disk. Keeps the topbar honest after a
+    // page reload that runs tests.
+    try {
+      var hasName = !!(session.customer && session.customer.name && session.customer.name.trim());
+      if (hasName || session.isDemo) {
+        _markSaved({ isDemo: !!session.isDemo });
+      } else {
+        _markIdle();
+      }
+    } catch (e) { /* swallow */ }
   });
 }

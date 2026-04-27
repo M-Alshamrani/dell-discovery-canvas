@@ -228,36 +228,110 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   margin-top: 1px;
 }
 
-/* Doc-meta strip, GPLC pattern. Inline <span><b>LABEL</b> value</span>
-   with 1px x 14px .sep dividers. Mono caps 0.06em letter-spacing. */
-.doc-meta {
+/* v2.4.13 S2A . session strip in topbar center column. Replaces the
+   prior .doc-meta CUSTOMER . DATE . STATUS mono-caps strip with a
+   functional two-line stack:
+     line 1 (.session-strip-name) workshop / customer name in Inter ink
+     line 2 (.session-strip-status) save indicator with leading dot
+   Topbar = interactive things; metadata moves elsewhere. */
+.session-strip {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   align-items: center;
-  gap: 28px;
+  justify-content: center;
+  gap: 2px;
+  text-align: center;
+  min-width: 0;
+}
+.session-strip-name {
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+  line-height: 1.2;
+  max-width: 480px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-strip-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--ink-mute);
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  line-height: 1;
 }
-.doc-meta span b {
-  color: var(--ink);
-  font-weight: 600;
-  margin-right: 6px;
-}
-.doc-meta .sep {
+.session-strip-dot {
   display: inline-block;
-  width: 1px;
-  height: 14px;
-  background: var(--rule-strong);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-faint);
   flex-shrink: 0;
+}
+.session-strip-dot[data-state="idle"]   { background: var(--ink-faint); }
+.session-strip-dot[data-state="saving"] { background: var(--amber); }
+.session-strip-dot[data-state="saved"]  { background: var(--green); }
+.session-strip-dot[data-state="demo"]   { background: var(--dell-blue); }
+
+/* When the canvas is fresh (no session), demote both lines a half tier
+   so the topbar reads as "intentionally blank" rather than empty. */
+.session-strip[data-empty="true"] .session-strip-name {
+  color: var(--ink-mute);
+  font-weight: 500;
 }
 
 .topbar-actions {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+/* v2.4.13 S2 . global AI Assist button. Solid Dell-blue, single most
+   prominent action in the topbar. Click opens the AI Assist overlay
+   (S4). Hover deepens the blue; focus shows a subtle outline ring. */
+.topbar-ai-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 6px;
+  background: var(--dell-blue);
+  color: #FFFFFF;
+  border: 1px solid var(--dell-blue);
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+}
+.topbar-ai-btn:hover {
+  background: var(--dell-blue-deep);
+  border-color: var(--dell-blue-deep);
+  box-shadow: var(--shadow-sm);
+}
+.topbar-ai-btn:active {
+  transform: translateY(1px);
+}
+.topbar-ai-btn:focus-visible {
+  outline: 2px solid var(--dell-blue-soft);
+  outline-offset: 2px;
+}
+.topbar-ai-spark {
+  display: inline-block;
+  font-size: 12px;
+  line-height: 1;
+  filter: brightness(1.4) saturate(0.4);
+}
+.topbar-ai-label {
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 /* v2.4.13 S1 . app-version capsule moved from topbar to footer. Top bar

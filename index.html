@@ -34,10 +34,18 @@
           <div class="t2">Dell Technologies . Advisory</div>
         </div>
       </div>
-      <div class="doc-meta" id="sessionMetaHeader">
-        <span>No session loaded</span>
+      <div class="session-strip" id="sessionMetaHeader">
+        <div class="session-strip-name">New session</div>
+        <div class="session-strip-status">
+          <span class="session-strip-dot" data-state="idle" aria-hidden="true"></span>
+          <span class="session-strip-status-text">Empty canvas</span>
+        </div>
       </div>
       <div class="topbar-actions">
+        <button id="topbarAiBtn" class="topbar-ai-btn" type="button" aria-label="Open AI Assist">
+          <span class="topbar-ai-spark" aria-hidden="true">✨</span>
+          <span class="topbar-ai-label">AI Assist</span>
+        </button>
         <button id="undoBtn" class="undo-chip" type="button" aria-label="Undo last AI change" style="display:none;">
           ↶ Undo last AI change
           <span id="undoCountBadge" class="undo-count-badge" aria-hidden="true"></span>
