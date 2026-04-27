@@ -139,98 +139,89 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
    color sprawl; bottom accent gradient (philosophy hero::after pattern)
    reinforces the brand without filling it; subtle ink-tinted shadow
    defines it as a distinct surface. */
-#app-header {
+/* ── Topbar (v2.5.0 final, matches GPLC sample verbatim) ────────
+   72px sticky header. Three-column grid (brand | doc-meta | actions).
+   White canvas with 1px hairline bottom rule. backdrop-filter blur
+   for the polished feel when content scrolls behind it. Authority
+   comes from the structured brand block (logo + 1px vertical divider
+   + two-line stack), the centred mono-caps doc-meta strip, and the
+   ghost-button actions, NOT from heavy color or thick borders. */
+#app-header,
+.topbar {
   position: sticky;
   top: 0;
   z-index: 40;
-  height: 84px;
   background: var(--canvas);
-  border-bottom: 2px solid var(--dell-blue);
-  box-shadow: 0 2px 8px rgba(11, 42, 74, 0.08), 0 1px 2px rgba(11, 42, 74, 0.04);
+  border-bottom: 1px solid var(--rule);
+  backdrop-filter: saturate(180%) blur(8px);
+  flex-shrink: 0;
+}
+.topbar-inner {
+  margin: 0 auto;
+  padding: 0 32px;
+  height: 72px;
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 32px;
-  padding: 0 28px;
-  flex-shrink: 0;
 }
-.header-brand {
+.brand {
   display: flex;
   align-items: center;
   gap: 16px;
 }
-.header-brand img {
-  /* TB2 . local Dell logo, no inversion (logo is dark blue on white now). */
-  height: 44px !important;
+.brand-logo {
+  height: 44px;
   width: auto;
   display: block;
+  object-fit: contain;
   flex-shrink: 0;
-  filter: none !important;
 }
-.header-brand-text {
+.brand-divider {
+  width: 1px;
+  height: 32px;
+  background: var(--rule-strong);
+  flex-shrink: 0;
+}
+.brand-text {
   display: flex;
   flex-direction: column;
   line-height: 1.15;
-  padding-left: 18px;
-  border-left: 1px solid var(--rule-strong);
 }
-.header-logo  { width: 44px; height: 44px; flex-shrink: 0; }
-.header-eyebrow {
-  font-family: var(--font-mono);
-  font-size: 10px;
+.brand-text .t1 {
   font-weight: 600;
-  color: var(--dell-blue);
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.header-eyebrow::before {
-  content: "";
-  display: inline-block;
-  width: 28px;
-  height: 2px;
-  background: var(--dell-blue);
-}
-.header-title {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: -0.005em;
   color: var(--ink);
-  letter-spacing: -0.015em;
-  line-height: 1.1;
 }
-.header-sub {
-  font-size: 11.5px;
-  color: var(--ink-soft);
-  font-family: var(--font);
-  letter-spacing: 0;
-  text-transform: none;
-  margin-top: 3px;
-  font-weight: 400;
+.brand-text .t2 {
+  font-size: 10.5px;
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-top: 1px;
 }
 
-/* Doc-meta strip in center column. Mono caps with vertical 1px rules
-   between fields. Anchors the topbar with structured information. */
-.header-meta-strip {
+/* Doc-meta strip, GPLC pattern. Inline <span><b>LABEL</b> value</span>
+   with 1px x 14px .sep dividers. Mono caps 0.06em letter-spacing. */
+.doc-meta {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 24px;
+  gap: 28px;
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--ink-mute);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.meta-field {
-  font-weight: 500;
-  color: var(--ink-soft);
-  white-space: nowrap;
+.doc-meta span b {
+  color: var(--ink);
+  font-weight: 600;
+  margin-right: 6px;
 }
-.meta-field:first-child { color: var(--ink); font-weight: 600; }
-.meta-sep {
+.doc-meta .sep {
   display: inline-block;
   width: 1px;
   height: 14px;
@@ -238,14 +229,10 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   flex-shrink: 0;
 }
 
-/* Legacy alias retained for any caller still referencing .header-meta. */
-.header-meta {
-  font-size: 10.5px;
-  color: var(--ink-mute);
-  font-family: var(--font-mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  font-weight: 500;
+.topbar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 /* v2.5.0 . app-version chip on white topbar. Mono caps subdued. */
@@ -253,8 +240,8 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   font-family: var(--font-mono);
   font-size: 10.5px;
   font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 999px;
+  padding: 4px 10px;
+  border-radius: var(--radius-md);
   background: var(--canvas-soft);
   border: 1px solid var(--rule-strong);
   color: var(--ink-soft);
@@ -269,16 +256,12 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
    filling. Mono Dell-blue leading-zero number + sans sentence-case
    label per philosophy "L.01" idiom. */
 #stepper {
-  position: sticky;
-  top: 84px;
-  z-index: 35;
   display: flex;
   align-items: stretch;
   gap: 0;
-  padding: 0 28px;
+  padding: 0 32px;
   background: var(--canvas-soft);
   border-bottom: 1px solid var(--rule);
-  box-shadow: 0 1px 2px rgba(11, 42, 74, 0.03);
   flex-shrink: 0;
   height: 48px;
 }

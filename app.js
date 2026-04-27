@@ -169,35 +169,37 @@ function wireUndoBtn() {
 }
 
 function renderHeaderMeta() {
-  // v2.5.0 TB3: doc-meta strip rendered as structured spans with 1px
-  // vertical rules between fields (philosophy three-column topbar).
-  // Each meta field is a span; .sep elements are visual dividers; the
-  // overall element is a flex row with mono caps typography.
+  // v2.5.0 doc-meta strip: matches GPLC pattern verbatim.
+  // <span><b>LABEL</b> value</span> entries separated by 1px x 14px
+  // .sep dividers. Mono caps via the .doc-meta CSS class on the
+  // container.
   var el = document.getElementById("sessionMetaHeader");
   if (el) {
     var name   = session.customer.name || "New session";
     var date   = session.sessionMeta.date;
     var status = session.sessionMeta.status;
     el.innerHTML = "";
-    el.appendChild(metaField(name));
+    el.appendChild(metaSpan("Customer", name));
     el.appendChild(metaSep());
-    el.appendChild(metaField(date));
+    el.appendChild(metaSpan("Date", date));
     el.appendChild(metaSep());
-    el.appendChild(metaField(status));
+    el.appendChild(metaSpan("Status", status));
   }
   var verEl = document.getElementById("appVersionChip");
   if (verEl) verEl.textContent = "Canvas v" + APP_VERSION;
 }
 
-function metaField(text) {
+function metaSpan(label, value) {
   var s = document.createElement("span");
-  s.className = "meta-field";
-  s.textContent = text;
+  var b = document.createElement("b");
+  b.textContent = label;
+  s.appendChild(b);
+  s.appendChild(document.createTextNode(value));
   return s;
 }
 function metaSep() {
   var s = document.createElement("span");
-  s.className = "meta-sep";
+  s.className = "sep";
   return s;
 }
 

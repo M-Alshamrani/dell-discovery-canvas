@@ -20,40 +20,40 @@
 </head>
 <body>
 
-  <header id="app-header">
-    <div class="header-brand">
-      <!-- v2.5.0 TB2: local Dell logo (offline-safe, no CDN dependency).
-           Dell-blue logo on white topbar; the inverted-white treatment from
-           the v2.2.x blue gradient era is gone. -->
-      <img src="./Logo/delltech-logo-stk-blue-rgb.avif"
-           alt="Dell Technologies" />
-      <div class="header-brand-text">
-        <div class="header-eyebrow">DELL TECHNOLOGIES · ADVISORY</div>
-        <div class="header-title">Discovery Canvas</div>
-        <div class="header-sub">IT &amp; Enterprise Architecture Workshop</div>
+  <!-- v2.5.0 . topbar markup matches the GPLC sample HTML exactly.
+       72px sticky header: brand block (logo + 1px vertical divider + two-
+       line brand-text) | doc-meta strip (center, mono caps with 1px rules)
+       | actions (right, version chip + undo + gear). -->
+  <header id="app-header" class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <img class="brand-logo" src="./Logo/delltech-logo-stk-blue-rgb.avif" alt="Dell Technologies" />
+        <div class="brand-divider"></div>
+        <div class="brand-text">
+          <div class="t1">Discovery Canvas</div>
+          <div class="t2">Dell Technologies . Advisory</div>
+        </div>
       </div>
-    </div>
-    <!-- v2.5.0 TB3: doc-meta strip in the center column. Mono caps,
-         vertical 1px rules between fields. Philosophy three-column header. -->
-    <div class="header-meta-strip" id="sessionMetaHeader">
-      <span>No session loaded</span>
-    </div>
-    <div class="header-right">
-      <div class="header-app-version" id="appVersionChip" title="Dell Discovery Canvas build version (separate from session schema version)">Canvas v.</div>
-      <button id="undoBtn" class="undo-chip" type="button" aria-label="Undo last AI change" style="display:none;">
-        ↶ Undo last AI change
-        <span id="undoCountBadge" class="undo-count-badge" aria-hidden="true"></span>
-      </button>
-      <button id="undoAllBtn" class="undo-chip undo-chip-all" type="button" aria-label="Undo all tracked AI changes" style="display:none;">
-        ↶↶ Undo all
-      </button>
-      <button id="settingsBtn" class="gear-btn" type="button" aria-label="Open AI settings">
-        <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="8" cy="8" r="2"/>
-          <path d="M8 1.2v1.6 M8 13.2v1.6 M14.8 8h-1.6 M2.8 8h-1.6 M12.8 3.2l-1.1 1.1 M4.3 11.7l-1.1 1.1 M12.8 12.8l-1.1-1.1 M4.3 4.3l-1.1-1.1"/>
-        </svg>
-      </button>
+      <div class="doc-meta" id="sessionMetaHeader">
+        <span>No session loaded</span>
+      </div>
+      <div class="topbar-actions">
+        <div class="header-app-version" id="appVersionChip" title="Dell Discovery Canvas build version (separate from session schema version)">Canvas v.</div>
+        <button id="undoBtn" class="undo-chip" type="button" aria-label="Undo last AI change" style="display:none;">
+          ↶ Undo last AI change
+          <span id="undoCountBadge" class="undo-count-badge" aria-hidden="true"></span>
+        </button>
+        <button id="undoAllBtn" class="undo-chip undo-chip-all" type="button" aria-label="Undo all tracked AI changes" style="display:none;">
+          ↶↶ Undo all
+        </button>
+        <button id="settingsBtn" class="gear-btn" type="button" aria-label="Open AI settings">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="8" cy="8" r="2"/>
+            <path d="M8 1.2v1.6 M8 13.2v1.6 M14.8 8h-1.6 M2.8 8h-1.6 M12.8 3.2l-1.1 1.1 M4.3 11.7l-1.1 1.1 M12.8 12.8l-1.1-1.1 M4.3 4.3l-1.1-1.1"/>
+          </svg>
+        </button>
+      </div>
     </div>
   </header>
 
