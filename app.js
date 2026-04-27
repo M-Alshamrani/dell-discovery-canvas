@@ -232,6 +232,18 @@ function renderHeaderMeta() {
 
 // v2.4.13 S2A . repaint just the secondary line. Called on every save-
 // status emit and on a 30s interval so "Saved 2m ago" keeps incrementing.
+//
+// State priority (highest first):
+//   isDemo=true                 -> "Demo session" / Dell-blue dot
+//   status=saving (transient)   -> "Saving..."   / amber
+//   status=saved + savedAt      -> "Saved Xs ago" / green
+//   has customer name           -> "Not yet saved" / gray
+//   nothing yet                 -> "Empty canvas" / gray
+//
+// isDemo precedes saving because demo state is stable (you're viewing
+// example data); flipping a demo session to "Saving... -> Saved" on
+// every emit would be misleading. Once the user types into Tab 1 the
+// applyContextSave flips isDemo=false and the indicator normalizes.
 function renderSessionStripStatus() {
   var statusLine = document.querySelector(".session-strip-status");
   if (!statusLine) return;
@@ -245,10 +257,10 @@ function renderSessionStripStatus() {
   var state   = "idle";
   var label   = "Empty canvas";
 
-  if (snap.status === "saving") {
-    state = "saving"; label = "Saving...";
-  } else if (isDemo || snap.status === "demo") {
+  if (isDemo) {
     state = "demo"; label = "Demo session";
+  } else if (snap.status === "saving") {
+    state = "saving"; label = "Saving...";
   } else if (snap.status === "saved" && snap.savedAt) {
     state = "saved"; label = "Saved " + relativeSavedAgo(snap.savedAt);
   } else if (hasName) {

@@ -75,8 +75,12 @@ export function renderContextView(left, right, session) {
     applyContextSave(patch);
     saveIdBtn.textContent = "Saved";
     setTimeout(function() { saveIdBtn.textContent = "Save context"; }, 1500);
-    var hdr = document.getElementById("sessionMetaHeader");
-    if (hdr) hdr.textContent = (session.customer.name || "New session") + "  |  " + session.sessionMeta.date + "  |  v" + session.sessionMeta.version;
+    // v2.4.13 S2A: applyContextSave emits session-changed when anything
+    // changed, which routes through app.js onSessionChanged ->
+    // renderHeaderMeta to rebuild the topbar session strip with the new
+    // customer name. The legacy direct-textContent hack on
+    // #sessionMetaHeader is removed (it clobbered the structured strip
+    // markup with a flat string).
   });
   idCard.appendChild(saveIdBtn);
   left.appendChild(idCard);

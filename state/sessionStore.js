@@ -265,6 +265,12 @@ export function applyContextSave(patch) {
   if (changed && session.customer.name && session.customer.name.trim()) {
     session.isDemo = false;
   }
+  // v2.4.13 S2A . emit BEFORE save so the markSaved snapshot from
+  // saveToLocalStorage is the final state of the saveStatus bus
+  // (emitSessionChanged calls markSaving as a transient pulse). No-op
+  // saves do NOT emit, so the v2.4.12 PR1 isDemo-preservation contract
+  // holds.
+  if (changed) emitSessionChanged("context-save", "Save context");
   saveToLocalStorage();
   return session;
 }
