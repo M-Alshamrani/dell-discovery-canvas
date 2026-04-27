@@ -6413,10 +6413,8 @@ describe("43 · Phase 19l · v2.4.12 services scope + pre-flight regression fixe
 // filter system, services-scope cards, and the em-dash sweep.
 // ============================================================================
 
-import {
-  openDrawer, closeDrawer, isOpen as isDrawerOpen,
-  _resetForTests as _resetDrawerForTests
-} from "../ui/components/Drawer.js";
+// v2.4.14 . Drawer.js removed (drawer-everywhere parked per user 2026-04-27);
+// Suite 44 VT7-VT14 + VT16 deleted alongside.
 
 describe("44 · Phase 19m · v2.5.0 crown-jewel UI rework", () => {
 
@@ -6476,30 +6474,8 @@ describe("44 · Phase 19m · v2.5.0 crown-jewel UI rework", () => {
   // Section 8, tag vocabulary migration (VT3)
   // ──────────────────────────────────────────────────────────────────────
 
-  it("VT3 · TV1-TV9 single .tag primitive (legacy chip/badge classes are absent from rendered DOM)", () => {
-    var s = fixtureSession();
-    var legacyClasses = [
-      "urgency-badge", "urg-high", "urg-med", "urg-low",
-      "type-badge", "status-badge", "status-closed-pill",
-      "services-chip-picked", "services-chip-suggested",
-      "solutions-chip", "chip-filter",
-      "priority-chip", "priority-high", "priority-medium", "priority-low",
-      "dell-tag", "env-also-chip", "also-affects-chip"
-    ];
-    var l = document.createElement("div"); var r = document.createElement("div");
-    renderGapsEditView(l, r, s);
-    legacyClasses.forEach(function(cls) {
-      var hits = l.querySelectorAll("." + cls);
-      assertEqual(hits.length, 0,
-        "TV migration: legacy class '." + cls + "' must NOT appear in rendered DOM (found " + hits.length + ")");
-    });
-    var chips = l.querySelectorAll(".tag");
-    chips.forEach(function(chip) {
-      var v = chip.dataset.variant;
-      assert(v && /^(neutral|emphasis|filled|state|signal-r|signal-a|signal-g)$/.test(v),
-        "Every .tag must have a valid data-variant (got '" + v + "')");
-    });
-  });
+  // v2.4.14 . VT3 deleted. TV1-TV9 tag-primitive migration is pure CSS
+  // tech debt with no user-visible value; parked indefinitely.
 
   // ──────────────────────────────────────────────────────────────────────
   // Section 2, topbar (VT4-VT6)
@@ -6556,192 +6532,6 @@ describe("44 · Phase 19m · v2.5.0 crown-jewel UI rework", () => {
     });
   });
 
-  // ──────────────────────────────────────────────────────────────────────
-  // Section 5, drawer module + per-tab wiring + content-swap (VT7-VT12)
-  // ──────────────────────────────────────────────────────────────────────
-
-  it("VT7 · DR1-DR2 drawer module: openDrawer adds .panel.open, closeDrawer removes it, Escape + backdrop click also close, click inside does not", () => {
-    _resetDrawerForTests();
-    closeDrawer();
-    var probe = document.createElement("div");
-    probe.textContent = "probe-body";
-    openDrawer({ crumbs: "TEST · LEAF", title: "Probe title", lede: "smoke", body: probe, kind: "gap" });
-    var panel = document.querySelector(".panel.open");
-    assert(panel, "VT7 openDrawer must add a .panel.open element");
-    assert(panel.textContent.indexOf("Probe title") >= 0, "VT7 panel must contain title");
-    closeDrawer();
-    assert(!document.querySelector(".panel.open"), "VT7 closeDrawer must remove .panel.open");
-
-    openDrawer({ crumbs: "T", title: "P", lede: "", body: document.createElement("div"), kind: "gap" });
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    assert(!document.querySelector(".panel.open"), "VT7 Escape must close drawer");
-
-    openDrawer({ crumbs: "T", title: "P", lede: "", body: document.createElement("div"), kind: "gap" });
-    var backdrop = document.querySelector(".panel-backdrop");
-    assert(backdrop, "VT7 openDrawer must produce a .panel-backdrop element");
-    backdrop.click();
-    assert(!document.querySelector(".panel.open"), "VT7 backdrop click must close drawer");
-
-    closeDrawer();
-    _resetDrawerForTests();
-  });
-
-  it("VT8 · DR3 Tab 1 driver tile click opens drawer with driver body", () => {
-    _resetDrawerForTests(); closeDrawer();
-    replaceSession({
-      sessionId: "sess-vt8", isDemo: false,
-      customer: { name: "VT8 Co", vertical: "Enterprise", region: "EMEA",
-        drivers: [{ id: "cyber_resilience", priority: "High", outcomes: "" }] },
-      sessionMeta: { date: "2026-04-26", presalesOwner: "", status: "Draft", version: "2.0" },
-      instances: [], gaps: []
-    });
-    var l = document.createElement("div"); var r = document.createElement("div");
-    renderContextView(l, r, session);
-    var tile = l.querySelector(".driver-tile, [data-driver-id]");
-    assert(tile, "VT8 ContextView must render at least one driver tile");
-    tile.click();
-    var panel = document.querySelector(".panel.open");
-    assert(panel, "VT8 driver tile click must open drawer");
-    assert(/CYBER|cyber|Cyber/i.test(panel.textContent),
-      "VT8 panel must contain driver context (got first 100: " + panel.textContent.slice(0, 100) + ")");
-    closeDrawer();
-  });
-
-  it("VT9 · DR4 Tab 2 + Tab 3 tile click opens drawer with KEY ATTRIBUTES tech-grid", () => {
-    _resetDrawerForTests(); closeDrawer();
-    var s = fixtureSession();
-    var origGaps = session.gaps.slice();
-    var origInstances = session.instances.slice();
-    session.instances = s.instances.slice();
-    session.gaps = s.gaps.slice();
-    try {
-      var l = document.createElement("div"); var r = document.createElement("div");
-      renderMatrixView(l, r, session, { stateFilter: "current" });
-      var tile = l.querySelector("[data-instance-id], .matrix-tile, .tile");
-      assert(tile, "VT9 MatrixView must render at least one tile");
-      tile.click();
-      var panel = document.querySelector(".panel.open");
-      assert(panel, "VT9 tile click must open drawer");
-      assert(panel.querySelector(".tech-grid"),
-        "VT9 drawer body must include a .tech-grid (KEY ATTRIBUTES section)");
-    } finally {
-      session.gaps = origGaps;
-      session.instances = origInstances;
-      closeDrawer();
-    }
-  });
-
-  it("VT10 · DR5 Tab 4 gap card click opens drawer with SERVICES NEEDED section", () => {
-    _resetDrawerForTests(); closeDrawer();
-    var s = fixtureSession();
-    var l = document.createElement("div"); var r = document.createElement("div");
-    renderGapsEditView(l, r, s);
-    var card = l.querySelector(".gap-card");
-    assert(card, "VT10 GapsEditView must render at least one gap card");
-    card.click();
-    var panel = document.querySelector(".panel.open");
-    assert(panel, "VT10 gap-card click must open drawer");
-    assert(/services needed|services/i.test(panel.textContent),
-      "VT10 drawer body must include a SERVICES NEEDED eyebrow / section");
-    closeDrawer();
-  });
-
-  it("VT11 · DR6 Tab 5 sub-tab click paths open drawers (gap card, project card, per-service row)", () => {
-    _resetDrawerForTests(); closeDrawer();
-    var s = fixtureSession();
-    var origGaps = session.gaps.slice();
-    var origInstances = session.instances.slice();
-    session.instances = s.instances.slice();
-    session.gaps = s.gaps.slice();
-    try {
-      // SummaryGapsView, gap card click
-      var l1 = document.createElement("div"); var r1 = document.createElement("div");
-      renderSummaryGapsView(l1, r1);
-      var gapCard = l1.querySelector(".gap-card");
-      if (gapCard) {
-        gapCard.click();
-        assert(document.querySelector(".panel.open"),
-          "VT11 SummaryGapsView gap-card click must open drawer");
-        closeDrawer();
-      }
-      // SummaryRoadmapView, project card click
-      var l2 = document.createElement("div"); var r2 = document.createElement("div");
-      renderSummaryRoadmapView(l2, r2);
-      var projCard = l2.querySelector(".project-card, [data-project-id]");
-      if (projCard) {
-        projCard.click();
-        assert(document.querySelector(".panel.open"),
-          "VT11 SummaryRoadmapView project-card click must open drawer");
-        closeDrawer();
-      }
-    } finally {
-      session.gaps = origGaps;
-      session.instances = origInstances;
-      closeDrawer();
-    }
-  });
-
-  it("VT12 · DR7 content swap on different-card-click (no close-then-open)", () => {
-    _resetDrawerForTests(); closeDrawer();
-    var s = createEmptySession();
-    createGap(s, { description: "VT12 alpha", layerId: "compute", gapType: "replace",
-      relatedCurrentInstanceIds: ["i-x"], relatedDesiredInstanceIds: ["d-x"], services: [] });
-    createGap(s, { description: "VT12 bravo", layerId: "compute", gapType: "replace",
-      relatedCurrentInstanceIds: ["i-y"], relatedDesiredInstanceIds: ["d-y"], services: [] });
-    var l = document.createElement("div"); var r = document.createElement("div");
-    renderGapsEditView(l, r, s);
-    var cards = l.querySelectorAll(".gap-card");
-    assert(cards.length >= 2, "VT12 needs at least 2 gap cards in fixture");
-    cards[0].click();
-    assert(document.querySelector(".panel.open"), "VT12 first card must open drawer");
-    var titleAlpha = (document.querySelector(".panel.open h3") || {}).textContent || "";
-    assert(/alpha/i.test(titleAlpha), "VT12 first drawer must show alpha title");
-    cards[1].click();
-    assert(document.querySelector(".panel.open"),
-      "VT12 second card must keep drawer open (content-swap, not close-then-open)");
-    var titleBravo = (document.querySelector(".panel.open h3") || {}).textContent || "";
-    assert(/bravo/i.test(titleBravo),
-      "VT12 drawer title must update to bravo (got: " + titleBravo + ")");
-    closeDrawer();
-  });
-
-  // ──────────────────────────────────────────────────────────────────────
-  // Section 4, detail panel template (VT13-VT15)
-  // ──────────────────────────────────────────────────────────────────────
-
-  it("VT13 · DP1 every drawer body has sticky head shape (.panel-head with .panel-crumbs + h3 + .panel-lede)", () => {
-    _resetDrawerForTests(); closeDrawer();
-    var s = fixtureSession();
-    var l = document.createElement("div"); var r = document.createElement("div");
-    renderGapsEditView(l, r, s);
-    var card = l.querySelector(".gap-card");
-    assert(card, "VT13 needs a gap card to open");
-    card.click();
-    var panel = document.querySelector(".panel.open");
-    assert(panel, "VT13 drawer must be open");
-    var head = panel.querySelector(".panel-head");
-    assert(head, "VT13 drawer must contain .panel-head");
-    assert(head.querySelector(".panel-crumbs"), "VT13 .panel-head must contain .panel-crumbs");
-    assert(head.querySelector("h3"), "VT13 .panel-head must contain h3 title");
-    var ledeEl = head.querySelector(".panel-lede");
-    assert(ledeEl !== null, "VT13 .panel-head must contain .panel-lede element (may be empty for some entities)");
-    closeDrawer();
-  });
-
-  it("VT14 · DP3 KEY ATTRIBUTES tech-grid renders with at least 4 cells in any entity drawer", () => {
-    _resetDrawerForTests(); closeDrawer();
-    var s = fixtureSession();
-    var l = document.createElement("div"); var r = document.createElement("div");
-    renderGapsEditView(l, r, s);
-    var card = l.querySelector(".gap-card");
-    card.click();
-    var grid = document.querySelector(".panel.open .tech-grid");
-    assert(grid, "VT14 drawer body must include .tech-grid");
-    var cells = grid.querySelectorAll(".tech-item");
-    assert(cells.length >= 4, "VT14 .tech-grid must have >= 4 .tech-item cells (got " + cells.length + ")");
-    closeDrawer();
-  });
-
   it("VT15 · DP5 dash bullet list renders with 6x2px Dell-blue ::before on .panel-section li", () => {
     var fixture = document.createElement("div");
     fixture.className = "panel-section";
@@ -6763,46 +6553,6 @@ describe("44 · Phase 19m · v2.5.0 crown-jewel UI rework", () => {
     }
   });
 
-  // ──────────────────────────────────────────────────────────────────────
-  // Section AI, AI assist on every entity drawer (VT16)
-  // ──────────────────────────────────────────────────────────────────────
-
-  it("VT16 · AI1-AI5 every entity drawer body has an AI ASSIST eyebrow + .use-ai-wrap", () => {
-    _resetDrawerForTests(); closeDrawer();
-    var s = fixtureSession();
-
-    // Gap drawer (Tab 4)
-    var l1 = document.createElement("div"); var r1 = document.createElement("div");
-    renderGapsEditView(l1, r1, s);
-    l1.querySelector(".gap-card").click();
-    var panelGap = document.querySelector(".panel.open");
-    assert(panelGap, "VT16 gap drawer must open");
-    assert(/AI ASSIST|ai assist/i.test(panelGap.textContent),
-      "VT16 gap drawer must include 'AI ASSIST' eyebrow");
-    assert(panelGap.querySelector(".use-ai-wrap"),
-      "VT16 gap drawer must include a .use-ai-wrap (mounted useAiButton)");
-    closeDrawer();
-
-    // Driver drawer (Tab 1)
-    replaceSession({
-      sessionId: "sess-vt16-driver", isDemo: false,
-      customer: { name: "VT16 Co", vertical: "Enterprise", region: "EMEA",
-        drivers: [{ id: "cyber_resilience", priority: "High", outcomes: "" }] },
-      sessionMeta: { date: "2026-04-26", presalesOwner: "", status: "Draft", version: "2.0" },
-      instances: [], gaps: []
-    });
-    var l2 = document.createElement("div"); var r2 = document.createElement("div");
-    renderContextView(l2, r2, session);
-    var dtile = l2.querySelector(".driver-tile, [data-driver-id]");
-    if (dtile) {
-      dtile.click();
-      var panelDrv = document.querySelector(".panel.open");
-      assert(panelDrv, "VT16 driver drawer must open");
-      assert(panelDrv.querySelector(".use-ai-wrap"),
-        "VT16 driver drawer must include .use-ai-wrap");
-      closeDrawer();
-    }
-  });
 
   // ──────────────────────────────────────────────────────────────────────
   // Section 6, cross-tab filter system (VT17-VT18)
