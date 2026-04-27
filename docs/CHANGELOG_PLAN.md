@@ -932,6 +932,146 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
+## v2.4.15 · Dynamic environments + UX polish bundle · LOCKED 2026-04-27 (NEXT UP)
+
+### Theme
+
+Two threads bundled into one tag because they share the same render surfaces:
+1. **Dynamic environment model** , move from a fixed 4-entry `ENVIRONMENTS` constant to a user-managed list sourced from a catalog. Each env carries metadata (alias, location, size, power, tier, notes) so the v2.4.16 report can say "Riyadh DC . 5 MW . Tier III" instead of "Core DC."
+2. **UX polish stack** , vendor mix segmented bar, modern collapsible filter bar, session capsule polish (better icon + last-updated), footer alignment, matrix column-gap + invisible corner, Load demo icon.
+
+The structural change (item 1) lands first; the polish items follow in the same release because they touch overlapping render sites.
+
+### Locked decisions (do not re-litigate during implementation)
+
+| Decision | Why |
+|---|---|
+| **Environment catalog** with these 8 entries: Main / Core DC, Secondary / DR DC, Vault / 3rd site (NEW), Public Cloud, Edge / Remote, Co-location (NEW), Hosted / MSP (NEW), Sovereign Cloud (NEW). User enables which apply via Tab 1; each can only be enabled once. | Industry-standard list with 3 new types covering MEA enterprise + regulated verticals. Single-instance enforcement keeps schema simple. |
+| **Default enabled set for new sessions** = the 4 v2.4.14 envs (Main, DR, Public, Edge). Existing sessions auto-enable whatever envs their instances/gaps reference. | Backward-compat with every existing session + matches the historical default. |
+| **Schema**: `session.environments: [{ id: "coreDc", alias?, location?, sizeKw?, sqm?, tier?, notes? }]`. The `id` IS the catalog typeId (no UUID complexity); single-instance enforcement = no two entries share the same id. | Keeps existing `instance.environmentId === "coreDc"` references unchanged. Simpler than a UUID + typeId split. |
+| **`environmentAliases` map (v2.4.14) drains into `session.environments[N].alias`** during migration; the legacy field is deleted post-migrate. | One source of truth for alias; no two-system drift. |
+| **Vendor mix uses ONE horizontal stacked bar per dimension** (Combined / Current / Desired), not per-layer + per-env tables. Dell-blue / ink-mute / amber segments with inline percentages on segments large enough. | "github languages" pattern; cleaner than the v2.4.14 multi-card layout. |
+| **Modern filter UI** = single "Filters . N active" button with chevron count badge. Click expands an inline panel with multi-select chips per dimension. Active filters render as removable pills above the kanban. | Hick's Law: collapse what's not active. Scales as we add dimensions. |
+| **Session capsule icon** = Lucide `building-2` (corporate office tower). The v2.4.14 briefcase reads as a shopping bag. | User feedback 2026-04-27. |
+| **Session capsule adds "Updated HH:MM" segment** after the save indicator, separated by a second `\|` divider. | Polish: glance-readable + verifiable last-edit time. |
+| **Footer hint right-aligned** with `\|` divider before the version capsule. | User feedback: hint felt out of place centered. |
+| **Matrix column-gap = 3px**, less than the 6px row-gap, so rows remain the dominant scan direction. Corner cell (`.matrix-corner`, `.hm-corner`) goes visually invisible (transparent + no border). | Eye prefers ONE dominant scan direction in a matrix. Empty corner cell drew unnecessary attention. |
+| **Load demo icon** = Lucide `play-circle` (triangle-in-circle) instead of `rotate-cw`. | The v2.4.14 rotate-cw read as "deformed circular arrow that closed on itself." play-circle matches the "start the demo" semantic. |
+
+### Section 1 · Dynamic environment model (DE1-DE9)
+
+| # | Item | Files |
+|---|---|---|
+| **DE1** | NEW `ENV_CATALOG` constant in `core/config.js` (8 entries: id, label, hint). Replaces the prior `ENVIRONMENTS` constant as the source of truth for available types. Old `ENVIRONMENTS` kept as a deprecated alias resolving to `ENV_CATALOG.filter(c => DEFAULT_ENABLED_ENV_IDS.includes(c.id))` so legacy imports keep resolving until migration is complete. NEW `DEFAULT_ENABLED_ENV_IDS = ["coreDc", "drDc", "publicCloud", "edge"]`. | `core/config.js` |
+| **DE2** | NEW `getActiveEnvironments(session)` helper in `core/config.js`. Returns `session.environments` if non-empty, else returns the DEFAULT_ENABLED_ENV_IDS list as catalog entries (so a fresh session that hasn't been migrated still renders sensibly). | same |
+| **DE3** | Schema change in `state/sessionStore.js createEmptySession`: `environments: []` (empty default; populated either by demo or by migrator on first load of a legacy session). Drop the `environmentAliases` field from createEmptySession (replaced by per-env `alias`). | `state/sessionStore.js` |
+| **DE4** | Migrator (`migrateLegacySession`) auto-enables environments referenced by any instance.environmentId or gap.affectedEnvironments. For each enabled env, drains `session.environmentAliases[envId]` into `environments[N].alias`. Old field deleted post-migrate. Idempotent. | same |
+| **DE5** | Tab 1 ContextView "Environments" card rebuilt: list of enabled envs with metadata fields (alias, location, sizeKw, sqm, tier, notes), per-env Remove button, "+ Add environment" picker showing only unenabled catalog entries. Each metadata input saves on blur via saveToLocalStorage. | `ui/views/ContextView.js` |
+| **DE6** | Every render site that loops `ENVIRONMENTS` swaps to `getActiveEnvironments(session)`: MatrixView (env headers + cell loops), SummaryHealthView (env headers + heatmap cells), GapsEditView (env-select dropdown + env-checkbox row), services / roadmap / vendor mix services. | all view files + services |
+| **DE7** | `getEnvLabel(envId, session)` (v2.4.14) updated to read alias from `session.environments[].alias` instead of `session.environmentAliases[envId]`. | `core/config.js` |
+| **DE8** | Tests update: Suite 5 sessionStore migrator tests cover the auto-enable + alias drain. Suite 12 ContextView DOM tests include the new metadata fields. Suite 15 summary-view tests reflect dynamic env count (where they assumed exactly 4). | `diagnostics/appSpec.js` |
+| **DE9** | Demo session (`state/demoSession.js`) populates `session.environments` with 4 entries that have realistic metadata (Riyadh DC . 5 MW . Tier III, Jeddah DR . 2 MW . Tier II, AWS me-south-1, Branch sites x14). DEMO_CHANGELOG entry per the foundational-testing rule. | `state/demoSession.js`, `docs/DEMO_CHANGELOG.md` |
+
+### Section 2 · Vendor mix segmented bar (VB1-VB3)
+
+| # | Item | Files |
+|---|---|---|
+| **VB1** | NEW `.vendor-bar` component in styles.css: horizontal flex container with proportional segments (Dell, non-Dell, custom). 16px tall, 10px radius, no internal dividers (CSS gap:0). Each segment has min-width:6% with text-overflow:ellipsis on inline percentage label; smaller segments collapse to colored stripe with tooltip. | `styles.css` |
+| **VB2** | `SummaryVendorView` rewritten: drops the per-layer + per-env table cards. Renders 3 stacked bars (Combined, Current state, Desired state) with shared legend strip. Total counts displayed above each bar in mono tabular-nums. | `ui/views/SummaryVendorView.js` |
+| **VB3** | Per-layer breakdown collapses to ONE bar per layer (6 bars stacked vertically). Inline mini-bars at 12px tall instead of the 16px main bar. | same |
+
+### Section 3 · Modern filter bar (FB1-FB6)
+
+| # | Item | Files |
+|---|---|---|
+| **FB1** | NEW `ui/components/FilterBar.js` exporting `renderFilterBar(target, opts)`. opts: `{ dimensions: [{id, label, options}], session, scope }`. Renders a single "Filters . N active" button with chevron + count badge. | NEW file |
+| **FB2** | Click button -> expands inline panel (smooth 200ms cubic-bezier). Panel groups dimensions: Layer, Service, Domain, Urgency. Each dimension is a multi-select chip group. Selected chips have check-icon + Dell-blue-soft background. | same |
+| **FB3** | Active filter strip above the kanban: removable chip pills (`.tag[data-variant="filled"]` style with ✕ button). Click ✕ removes that filter. "Clear all" link at the right end of the strip when 2+ filters active. | same + `ui/views/GapsEditView.js` |
+| **FB4** | Underlying state stays in `state/filterState.js` (v2.4.14). FilterBar reads/writes via existing API. localStorage persistence stays. | `state/filterState.js` (no change), FilterBar.js |
+| **FB5** | Replace the v2.4.14 services chip-row in GapsEditView with the new FilterBar (same dimension; expanded UI). Services dimension stays as the only one wired in v2.4.15; layer/domain/urgency dimensions reserved (chips render but body data attribute + CSS dim rule extension is v2.4.16+). | `ui/views/GapsEditView.js` |
+| **FB6** | Same FilterBar mounted in SummaryGapsView (Tab 5 Gaps Board) read-only kanban. Same dimension set. | `ui/views/SummaryGapsView.js` |
+
+### Section 4 · Session capsule polish (SC1-SC2)
+
+| # | Item | Files |
+|---|---|---|
+| **SC1** | Replace briefcase SVG (which reads as a shopping bag) with Lucide `building-2` (corporate office tower). Inline SVG in `index.html` + the `app.js renderHeaderMeta` SVG construction. | `index.html`, `app.js` |
+| **SC2** | Add a "Updated HH:MM" segment after the save indicator, separated by a second `\|` divider. Format: `HH:MM` if `savedAt` is today, `MMM DD HH:MM` otherwise. Rendered by `renderSessionStripStatus` from `getSaveStatus().savedAt`. | `app.js` |
+
+### Section 5 · Footer alignment (FT1)
+
+| # | Item | Files |
+|---|---|---|
+| **FT1** | Footer hint right-aligned, with a 1px `\|` divider before the version capsule. Layout: `[footer-actions] ... flex spacer ... [hint][divider][version]`. CSS: `.footer-hint` removes `flex:1` + `text-align:center`, gets `margin-left:auto` instead. | `index.html`, `styles.css` |
+
+### Section 6 · Matrix tweaks (MT1-MT3)
+
+| # | Item | Files |
+|---|---|---|
+| **MT1** | `.matrix-grid` and `.heatmap-grid` get `column-gap: 3px` (was 1px). Less than the existing 6px `row-gap` so rows remain dominant. | `styles.css` |
+| **MT2** | `.matrix-corner` and `.hm-corner` go visually invisible: `background: transparent; border: none;`. Cell stays in the grid for layout alignment but no longer draws as an empty box. | `styles.css` |
+| **MT3** | Load demo button icon swap: replace `rotate-cw` (read as "deformed circular arrow") with Lucide `play-circle` (triangle inside a circle). | `index.html` (footer button SVG) |
+
+### Tests · Suite 46 (DE1-DE10 + VB1-VB3 + FB1-FB6)
+
+| # | Test | Asserts |
+|---|---|---|
+| **DE1** | ENV_CATALOG present with 8 entries | `core/config.js` exports ENV_CATALOG with id+label+hint shape; length === 8. |
+| **DE2** | getActiveEnvironments fallback | Empty session.environments returns the 4 default-enabled entries. |
+| **DE3** | createEmptySession schema | New empty session has `environments: []`, no `environmentAliases` field. |
+| **DE4** | Migrator auto-enables referenced envs | Legacy session with instances pointing at coreDc + edge migrates to environments containing those two ids only. |
+| **DE5** | Migrator drains aliases | Legacy session.environmentAliases.coreDc = "Riyadh DC" lands as session.environments[i].alias = "Riyadh DC"; environmentAliases field is deleted. |
+| **DE6** | ContextView Environments card lists enabled + offers picker | Render returns >= one .env-row element per enabled env; + Add picker excludes already-enabled types. |
+| **DE7** | Add new env via picker | Click "+ Add" -> select Vault from dropdown -> session.environments includes a vault entry. Picker no longer offers Vault. |
+| **DE8** | Remove env via X button | Click remove on coreDc -> session.environments no longer contains coreDc. Picker offers Main again. |
+| **DE9** | MatrixView env headers reflect dynamic count | Session with environments=[coreDc, edge] renders exactly 2 .matrix-env-head elements. |
+| **DE10** | getEnvLabel reads from session.environments | Set session.environments[0].alias = "Riyadh DC" -> getEnvLabel("coreDc", session) returns "Riyadh DC". |
+| **VB1** | Vendor bar renders with proportional segments | SummaryVendorView with mixed Dell/non-Dell/custom data renders 3 .vendor-bar-segment children with width sum >= 99%. |
+| **VB2** | Vendor bar inline percentages | Segments wider than 6% have visible percentage label inside. |
+| **VB3** | Per-layer bars stack vertically | At least 6 .vendor-bar elements in the per-layer breakdown (one per layer). |
+| **FB1** | FilterBar renders single button | renderFilterBar produces one .filter-bar-toggle element with text matching /Filters/. |
+| **FB2** | FilterBar expands on click | Click toggle -> .filter-bar-panel becomes display !== "none". Re-click collapses. |
+| **FB3** | Multi-select chip toggles | Click a service chip in the panel -> body[data-filter-services] set + chip gets is-active class. |
+| **FB4** | Active filter strip renders pills | One active filter -> one .active-filter-pill element with the value text + ✕ button. |
+| **FB5** | Pill ✕ removes filter | Click ✕ -> body data attr cleared + pill removed from DOM. |
+| **FB6** | Filter count badge | "Filters . 2 active" text appears when 2 filters active. |
+
+### Section R · Regression guards (smoke checklist)
+
+| Guard | Check |
+|---|---|
+| **R1** | v2.4.14 tests stay GREEN. 547 -> ~570+ depending on how many new Suite 46 tests land + any deletions from updated Suite 12/15. |
+| **R2** | Load demo -> 4 envs render with city aliases + metadata. Tab 2 + Tab 3 + Heatmap show "Riyadh DC", "Jeddah DR", "AWS me-south-1", "Branch sites x14". |
+| **R3** | Add new env via Tab 1 (e.g. Vault) -> immediately shows up as a 5th column in MatrixView + Heatmap + GapsEditView env-select. |
+| **R4** | Remove env -> column disappears. Existing instances tied to that env stay in session.instances but become orphaned (visible in JSON; not rendered). Show user a warning at remove-time. |
+| **R5** | Vendor mix shows 3 stacked horizontal bars (Combined / Current / Desired) + per-layer mini bars stacked. No tables. |
+| **R6** | Filter button on Tab 4 says "Filters" when nothing active, "Filters . 1 active" when 1 chip selected. Click ✕ on the active pill above kanban -> filter clears. |
+| **R7** | Session capsule shows building-2 icon + workshop name + "Updated HH:MM" timestamp. |
+| **R8** | Footer reads `[buttons] ... [hint] \| [version]` with hint right-aligned. |
+| **R9** | Matrix has visible 3px column-gaps + 6px row-gaps. Corner cell invisible. Load demo button icon is play-circle. |
+| **R10** | Hard refresh -> filters preserved (FilterBar reads filterState localStorage) + envs preserved (session.environments survives JSON round-trip). |
+| **R11** | No em dashes in any source file (re-run VT20 sweep). |
+| **R12** | No console errors during the full tour. |
+
+### Effort: ~14 hours, single tag
+
+- **Day 1 morning** (~3 hr): DE1-DE4 schema + catalog + migrator + Suite 46 DE tests RED first.
+- **Day 1 afternoon** (~3 hr): DE5 ContextView Environments card + DE6-DE7 render-site sweep + DE8-DE9 demo update.
+- **Day 2 morning** (~3 hr): VB1-VB3 vendor mix rebuild + FB1-FB6 modern filter bar.
+- **Day 2 afternoon** (~3 hr): SC1-SC2 session capsule polish + FT1 footer + MT1-MT3 matrix tweaks + Suite 46 remaining tests GREEN.
+- **Day 2 wrap** (~2 hr): browser smoke + APP_VERSION bump + tag protocol.
+
+### Tag protocol (per locked discipline)
+
+1. Spec committed (this entry). Wait for user "spec looks right" sign-off.
+2. Tests committed (Suite 46 DE/VB/FB). Fail RED at first.
+3. Code execution: §1 first (foundational schema), then §2-§6 in any order.
+4. Browser smoke against §R guards. Report results.
+5. Pause for explicit "tag it" approval.
+6. Tag, push, update memory + HANDOFF.
+
+---
+
 ## v2.4.14 · Hygiene + polish + filter system + Lucide + env aliases · IMPLEMENTED 2026-04-27 (tagged + pushed)
 
 **Status:** drawer-everywhere parked per user direction; the v2.5.0-residual polish that doesn't depend on drawers shipped here, plus three additive features (env aliases, filter system, Lucide migration). Test surface flipped from yellow `545/12/557` to fully green `547/0/547` by deleting 10 obsolete tests + landing the filter system. Tag `v2.4.14` at `9c9e5eb`.
