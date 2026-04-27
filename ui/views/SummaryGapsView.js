@@ -6,11 +6,14 @@ import { helpButton } from "./HelpModal.js";
 import { effectiveDellSolutions } from "../../services/programsService.js";
 import { session as liveSession } from "../../state/sessionStore.js";
 import { serviceLabel } from "../../core/services.js";
+import { renderDemoBanner } from "../components/DemoBanner.js";
 
 export function renderSummaryGapsView(left, right) {
   let activeLayerIds = new Set(LAYERS.map(l => l.id));
   let activeEnvId    = "all";
   let selectedGapId  = null;
+
+  if (liveSession && liveSession.isDemo) renderDemoBanner(left);
 
   // ── header card ──────────────────────────────────────────────────────────
   const header = mk("div", "card");

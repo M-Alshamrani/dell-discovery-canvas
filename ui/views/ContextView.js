@@ -15,6 +15,7 @@
 import { BUSINESS_DRIVERS, CUSTOMER_VERTICALS } from "../../core/config.js";
 import { saveToLocalStorage, resetToDemo, isFreshSession, applyContextSave } from "../../state/sessionStore.js";
 import { helpButton } from "./HelpModal.js";
+import { renderDemoBanner } from "../components/DemoBanner.js";
 
 export function renderContextView(left, right, session) {
   left.innerHTML  = "";
@@ -360,11 +361,8 @@ function attachAutoBullet(textarea) {
 }
 
 // ── Helpers ─────────────────────────────────────────────────
-function renderDemoBanner(container) {
-  var b = mk("div", "demo-mode-banner");
-  b.innerHTML = "<strong>Demo mode</strong> , Edit the fields below to start your own session, then click Save.";
-  container.appendChild(b);
-}
+// v2.4.13 S5: renderDemoBanner extracted to ui/components/DemoBanner.js
+// so every view can mount it; ContextView re-imports the shared helper.
 
 // v2.4.7 · U1 · brand-new-session welcome card. Two CTAs: Load demo
 // (flips to the Acme FSI persona + re-renders via the session-changed

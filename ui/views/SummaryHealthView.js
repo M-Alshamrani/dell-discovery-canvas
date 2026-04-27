@@ -4,8 +4,10 @@ import { LAYERS, ENVIRONMENTS } from "../../core/config.js";
 import { session }              from "../../state/sessionStore.js";
 import { getHealthSummary, computeBucketMetrics, scoreToRiskLabel, scoreToClass } from "../../services/healthMetrics.js";
 import { helpButton } from "./HelpModal.js";
+import { renderDemoBanner } from "../components/DemoBanner.js";
 
 export function renderSummaryHealthView(left, right) {
+  if (session && session.isDemo) renderDemoBanner(left);
   var s = getHealthSummary(session, LAYERS, ENVIRONMENTS);
 
   // Overview chips

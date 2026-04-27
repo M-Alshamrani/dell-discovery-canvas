@@ -11,6 +11,7 @@ import {
   syncGapFromDesired, syncGapsFromCurrentCriticality
 } from "../../interactions/desiredStateSync.js";
 import { helpButton } from "./HelpModal.js";
+import { renderDemoBanner } from "../components/DemoBanner.js";
 
 export function renderMatrixView(left, right, session, opts) {
   var stateFilter    = (opts && opts.stateFilter) || "current";
@@ -790,11 +791,8 @@ function updateUnreviewedBanner(container, session) {
   container.appendChild(banner);
 }
 
-function renderDemoBanner(container) {
-  var b = mk("div", "demo-mode-banner");
-  b.innerHTML = "<strong>Demo mode</strong> -- You are viewing example data. Use the Reporting tab to explore, or click <em>New Session</em> in the footer to start fresh with your own customer.";
-  container.appendChild(b);
-}
+// v2.4.13 S5: private renderDemoBanner removed; uses the shared helper
+// imported at the top of the file from ui/components/DemoBanner.js.
 
 function showToast(msg, type) {
   var t = document.getElementById("matrix-toast");

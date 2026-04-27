@@ -14,6 +14,7 @@ import { buildProjects } from "../../services/roadmapService.js";
 import { groupProjectsByProgram, driverLabel as driverLabelFor } from "../../services/programsService.js";
 import { helpButton } from "./HelpModal.js";
 import { serviceLabel } from "../../core/services.js";
+import { renderDemoBanner } from "../components/DemoBanner.js";
 
 var PHASES = [
   { id: "now",   label: "Now",   subtitle: "0-12 months"  },
@@ -23,6 +24,7 @@ var PHASES = [
 
 export function renderSummaryRoadmapView(left, right, sess) {
   var session = sess || liveSession;
+  if (session && session.isDemo) renderDemoBanner(left);
   // Do NOT clear left/right here , the Reporting tab bar (#summary-tabs) lives in `left`
   // and the caller has already appended it before calling us. Sibling sub-tab views
   // (Health, Gaps, Vendor) also only append. Clearing here used to make the sub-tab bar

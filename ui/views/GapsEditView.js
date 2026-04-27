@@ -12,6 +12,7 @@ import { saveToLocalStorage } from "../../state/sessionStore.js";
 import { helpButton } from "./HelpModal.js";
 import { validateActionLinks, actionById } from "../../core/taxonomy.js";
 import { SERVICE_TYPES, SUGGESTED_SERVICES_BY_GAP_TYPE, suggestedFor, serviceLabel } from "../../core/services.js";
+import { renderDemoBanner } from "../components/DemoBanner.js";
 
 // Phase 18: count how many gaps reference an instance id (in either link
 // list). Used for the "linked to N gaps" multi-link chip and for the
@@ -45,6 +46,10 @@ export function renderGapsEditView(left, right, session) {
   // hidden from the main board so they don't clutter active work.
   // User can flip on to see + recover them.
   var showClosedGaps        = false;
+
+  // v2.4.13 S5 . demo banner mirrors Tab 1 styling so the colorful demo
+  // signal follows the user across the workshop.
+  if (session && session.isDemo) renderDemoBanner(left);
 
   // ---- Header ----
   var header = mk("div", "card");

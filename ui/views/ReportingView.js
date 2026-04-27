@@ -8,8 +8,13 @@ import { generateExecutiveSummary, generateSessionBrief, buildProjects,
 import { getHealthSummary } from "../../services/healthMetrics.js";
 import { LAYERS, ENVIRONMENTS, BUSINESS_DRIVERS } from "../../core/config.js";
 import { helpButton } from "./HelpModal.js";
+import { renderDemoBanner } from "../components/DemoBanner.js";
 
 export function renderReportingOverview(left, right) {
+  // v2.4.13 S5 . demo banner on every Reporting sub-tab including
+  // Overview. Same shared helper, same colorful styling.
+  if (session && session.isDemo) renderDemoBanner(left);
+
   var coverage = computeDiscoveryCoverage(session);
   var risk     = computeRiskPosture(session);
   var summary  = getHealthSummary(session, LAYERS, ENVIRONMENTS);

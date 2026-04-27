@@ -4,10 +4,13 @@ import { LAYERS, ENVIRONMENTS } from "../../core/config.js";
 import { computeMixByLayer, computeMixByEnv, computeVendorTableData } from "../../services/vendorMixService.js";
 import { helpButton } from "./HelpModal.js";
 import { session as liveSession } from "../../state/sessionStore.js";
+import { renderDemoBanner } from "../components/DemoBanner.js";
 
 export function renderSummaryVendorView(left, right) {
   let stateFilter    = "combined";
   let activeLayerIds = new Set(LAYERS.map(l => l.id));
+
+  if (liveSession && liveSession.isDemo) renderDemoBanner(left);
 
   const overview = mk("div", "card");
   overview.innerHTML = `
