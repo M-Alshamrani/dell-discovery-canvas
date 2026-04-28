@@ -32,19 +32,27 @@
 
 import * as fState from "../../state/filterState.js";
 
-const DIMS = ["services", "layer", "domain", "urgency"];
+// v2.4.15-polish iter-3 . environment + gapType + driver are wired in
+// state/filterState.js too, so the FilterBar accepts them as opt-in
+// dimensions when callers pass them.
+const DIMS = ["services", "layer", "domain", "urgency", "environment", "gapType", "driver"];
 const PANEL_OPEN_KEY = "dd_filter_panel_open_v1";
 const DIM_OPEN_KEY   = "dd_filter_dim_open_v1";
 
 // Public API: render a FilterBar inside `target`.
-// opts: { dimensions: [{ id, label, options:[{id,label}] }], session, scope }
-//   - scope: optional Element where the gap-cards live (defaults to target)
+// opts: { dimensions, toggles, session, scope, trailing }
+//   - dimensions: [{ id, label, options:[{id,label}] }]
+//   - toggles:    [{ key, label, hint? }]   (v2.4.15-polish iter-3)
+//   - scope:      optional Element where .gap-cards live (defaults to target)
+//   - trailing:   optional Element appended to the right of the toggle pill
+//                 (used for "+ Add gap" CTA so it sits on the same line)
 export function renderFilterBar(target, opts) {
   if (!target || typeof target.appendChild !== "function") return null;
   opts = opts || {};
   var dims = (opts.dimensions || []).filter(function(d) {
     return d && d.id && DIMS.indexOf(d.id) >= 0;
   });
+  var togglesSpec = (opts.toggles || []).filter(function(t) { return t && t.key; });
   var scope = opts.scope || target;
 
   var root = document.createElement("div");
@@ -141,11 +149,57 @@ export function renderFilterBar(target, opts) {
     panel.appendChild(group);
   });
 
+  // ---- Toggles row (binary on/off filters at the bottom of the panel) ----
+  if (togglesSpec.length > 0) {
+    var togGroup = document.createElement("div");
+    togGroup.className = "filter-bar-toggles";
+    togGroup.setAttribute("data-filter-bar-toggles", "");
+    var togHeading = document.createElement("div");
+    togHeading.className = "filter-bar-toggles-heading";
+    togHeading.textContent = "Quick toggles";
+    togGroup.appendChild(togHeading);
+    var togRow = document.createElement("div");
+    togRow.className = "filter-bar-toggles-row";
+    togglesSpec.forEach(function(t) {
+      var row = document.createElement("label");
+      row.className = "filter-bar-toggle-row";
+      row.setAttribute("data-filter-toggle", t.key);
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!fState.getToggle(t.key);
+      cb.addEventListener("change", function() {
+        fState.setToggle(t.key, cb.checked);
+      });
+      row.appendChild(cb);
+      var lbl = document.createElement("span");
+      lbl.className = "filter-bar-toggle-label";
+      lbl.textContent = t.label || t.key;
+      row.appendChild(lbl);
+      if (typeof t.countFn === "function") {
+        var badge = document.createElement("span");
+        badge.className = "filter-bar-toggle-count";
+        var n = t.countFn();
+        badge.textContent = (n > 0 ? "(" + n + ")" : "");
+        row.appendChild(badge);
+      }
+      if (t.hint) row.title = t.hint;
+      togRow.appendChild(row);
+    });
+    togGroup.appendChild(togRow);
+    panel.appendChild(togGroup);
+  }
+
   // ---- Active-pill strip (above the kanban) ----
   var pillStrip = document.createElement("div");
   pillStrip.className = "filter-active-pill-strip";
 
-  root.appendChild(toggle);
+  // ---- Toggle row (the trailing CTA slot, e.g. "+ Add gap") ----
+  var headerRow = document.createElement("div");
+  headerRow.className = "filter-bar-header-row";
+  headerRow.appendChild(toggle);
+  if (opts.trailing) headerRow.appendChild(opts.trailing);
+
+  root.appendChild(headerRow);
   root.appendChild(panel);
   root.appendChild(pillStrip);
   target.appendChild(root);
@@ -196,6 +250,25 @@ export function renderFilterBar(target, opts) {
         countEl.style.display = n > 0 ? "" : "none";
       }
     });
+
+    // Toggle checkboxes follow the live store. activeCount also picks
+    // up any active toggles so the toggle pill badge stays honest.
+    var togglesActive = 0;
+    var togglesSnap = fState.getToggles();
+    panel.querySelectorAll(".filter-bar-toggle-row[data-filter-toggle]").forEach(function(row) {
+      var key = row.getAttribute("data-filter-toggle");
+      var cb = row.querySelector("input[type='checkbox']");
+      var v = !!togglesSnap[key];
+      if (cb) cb.checked = v;
+      if (v) togglesActive++;
+    });
+    if (togglesActive > 0) {
+      activeCount += togglesActive;
+      togLabel.textContent = "Filters · " + activeCount + " active";
+      togBadge.textContent = String(activeCount);
+      togBadge.style.display = "";
+      toggle.classList.add("has-active");
+    }
 
     // Active-pill strip.
     pillStrip.innerHTML = "";
@@ -260,7 +333,9 @@ export function applyMatchClasses(scope, snapshot) {
       var attr = card.getAttribute("data-" + dim);
       var matches = false;
       if (typeof attr === "string" && attr.length > 0) {
-        if (dim === "services") {
+        // services + environment are multi-value (space-separated);
+        // every other dim is single-value.
+        if (dim === "services" || dim === "environment") {
           matches = attr.split(/\s+/).indexOf(active) >= 0;
         } else {
           matches = attr === active;

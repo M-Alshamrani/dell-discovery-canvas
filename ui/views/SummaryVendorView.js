@@ -137,15 +137,40 @@ export function renderSummaryVendorView(left, right, sessionArg) {
     stackByHost.appendChild(chip);
   });
 
-  const layerCard = mk("div", "card"); layerCard.innerHTML = `<div class="card-title">Mix by layer</div><div class="vm-by-layer"></div>`; left.appendChild(layerCard);
-  const layerHost = layerCard.querySelector(".vm-by-layer");
-  const envCard   = mk("div", "card"); envCard.innerHTML   = `<div class="card-title">Mix by environment</div><div class="vm-by-env"></div>`;   left.appendChild(envCard);
-  const envHost   = envCard.querySelector(".vm-by-env");
-  const tableCard = mk("div", "card");
+  // v2.4.15-polish iter-3 . Option A vendor mix redesign. Standing
+  // per-layer + per-env stacked-bar cards REMOVED. Their information
+  // surfaces on demand instead: click any KPI tile or bar segment to
+  // drill the right panel. This drops the visible bar count from 11
+  // to 1 (headline) while INCREASING information density via the
+  // three KPI tiles (Dell density / Most diverse layer / Top non-Dell
+  // concentration) and on-demand right-panel drill.
+  const kpiCard = mk("div", "card vm-kpi-card");
+  kpiCard.innerHTML = `<div class="card-title">Headline insights</div>
+    <div class="vm-kpi-grid"></div>`;
+  left.appendChild(kpiCard);
+  const kpiGridHost = kpiCard.querySelector(".vm-kpi-grid");
+
+  // Vendor detail table is kept but collapsible -- power users still
+  // get the raw breakdown without it dominating the canvas.
+  const tableCard = mk("div", "card vm-table-card");
   tableCard.innerHTML = `
-    <div class="card-title">Vendor detail</div>
-    <div class="table-scroll"><table class="vendor-table" id="vm-table"></table></div>`;
+    <button type="button" class="card-title vm-table-toggle" data-table-open="false">
+      <span class="vm-table-caret">▸</span> All instances by vendor
+    </button>
+    <div class="vm-table-wrap" style="display:none">
+      <div class="table-scroll"><table class="vendor-table" id="vm-table"></table></div>
+    </div>`;
   left.appendChild(tableCard);
+  const tableToggle = tableCard.querySelector(".vm-table-toggle");
+  const tableWrap   = tableCard.querySelector(".vm-table-wrap");
+  tableToggle.addEventListener("click", function() {
+    var open = tableToggle.getAttribute("data-table-open") === "true";
+    var next = !open;
+    tableToggle.setAttribute("data-table-open", next ? "true" : "false");
+    tableWrap.style.display = next ? "" : "none";
+    var caret = tableToggle.querySelector(".vm-table-caret");
+    if (caret) caret.textContent = next ? "▾" : "▸";
+  });
 
   // Phase 13 · right-panel detail: click any vendor row → instance breakdown here.
   renderVendorRight(null);
@@ -176,14 +201,9 @@ export function renderSummaryVendorView(left, right, sessionArg) {
     renderHeadlineBar(overviewBarsHost, stateLabel, stackData);
     renderHeadlineLegend(overviewLegendHost, stackData);
 
-    var visibleEnvs = getVisibleEnvironments(liveSession);
-    renderBars(layerHost,
-      computeMixByLayer({ stateFilter, layerIds: ids() }),
-      ids().map(id => ({ id, label: LAYERS.find(l=>l.id===id)?.label || id })));
-
-    renderBars(envHost,
-      computeMixByEnv({ stateFilter, layerIds: ids(), environments: visibleEnvs }),
-      visibleEnvs.map(e => ({ id: e.id, label: e.label })));
+    // v2.4.15-polish iter-3 . three KPI insights derived from the
+    // (layer, env, vendor) cube without rendering more bars.
+    renderKpis(kpiGridHost, stateFilter, ids(), visibleEnvs);
 
     renderTable(rows);
   }
@@ -318,6 +338,151 @@ export function renderSummaryVendorView(left, right, sessionArg) {
     c.appendChild(grp);
   }
 
+  // v2.4.15-polish iter-3 . three KPI insights to replace the per-layer
+  // and per-env standing cards. Each tile is click-to-drill so the
+  // right panel renders the underlying detail.
+  function renderKpis(host, stateFilter, layerIdList, visibleEnvs) {
+    if (!host) return;
+    host.innerHTML = "";
+    var instances = (liveSession && Array.isArray(liveSession.instances)) ? liveSession.instances : [];
+    var layerSet = {};
+    layerIdList.forEach(function(id) { layerSet[id] = true; });
+    var filtered = instances.filter(function(i) {
+      if (stateFilter === "current" && i.state !== "current") return false;
+      if (stateFilter === "desired" && i.state !== "desired") return false;
+      if (layerIdList.length && !layerSet[i.layerId])         return false;
+      return true;
+    });
+    var totalCount = filtered.length;
+
+    // KPI 1 . Dell density (% of estate that is Dell, plus delta vs.
+    // desired state if combined view is active).
+    var dellCount = filtered.filter(function(i) { return i.vendorGroup === "dell"; }).length;
+    var dellPct = totalCount > 0 ? Math.round((dellCount / totalCount) * 100) : 0;
+    var deltaText = "";
+    if (stateFilter === "combined" && totalCount > 0) {
+      var curInst = filtered.filter(function(i) { return i.state === "current"; });
+      var desInst = filtered.filter(function(i) { return i.state === "desired"; });
+      if (curInst.length > 0 && desInst.length > 0) {
+        var curPct = Math.round((curInst.filter(function(i) { return i.vendorGroup === "dell"; }).length / curInst.length) * 100);
+        var desPct = Math.round((desInst.filter(function(i) { return i.vendorGroup === "dell"; }).length / desInst.length) * 100);
+        var delta = desPct - curPct;
+        deltaText = (delta >= 0 ? "+" : "") + delta + "pp current → desired";
+      }
+    }
+    host.appendChild(buildKpi({
+      eyebrow: "Dell density",
+      value: dellPct + "%",
+      hint: dellCount + " of " + totalCount + " instances",
+      tag: { t: "data", text: deltaText || "share of estate" },
+      onClick: function() { renderVendorRight("__dell"); }
+    }));
+
+    // KPI 2 . Most diverse layer (by Shannon entropy across vendor
+    // groups). The richer the spread, the higher the diversity score.
+    var byLayer = {};
+    LAYERS.forEach(function(L) { byLayer[L.id] = { dell: 0, nonDell: 0, custom: 0, total: 0 }; });
+    filtered.forEach(function(i) {
+      var b = byLayer[i.layerId];
+      if (!b) return;
+      var g = i.vendorGroup === "dell" ? "dell"
+            : i.vendorGroup === "nonDell" ? "nonDell"
+            : "custom";
+      b[g]++;
+      b.total++;
+    });
+    var diverseLayer = null;
+    var diverseScore = -1;
+    LAYERS.forEach(function(L) {
+      var b = byLayer[L.id];
+      if (!b || b.total === 0) return;
+      var score = 0;
+      ["dell", "nonDell", "custom"].forEach(function(g) {
+        var p = b[g] / b.total;
+        if (p > 0) score -= p * Math.log2(p);
+      });
+      if (score > diverseScore) { diverseScore = score; diverseLayer = L; }
+    });
+    var diverseSpark = diverseLayer ? buildSpark(byLayer[diverseLayer.id]) : null;
+    host.appendChild(buildKpi({
+      eyebrow: "Most diverse layer",
+      value: diverseLayer ? diverseLayer.label : "—",
+      hint: diverseLayer ? "spread across all 3 vendor groups" : "no diverse layer",
+      tag: diverseLayer ? { t: "tech", text: byLayer[diverseLayer.id].total + " instances" } : null,
+      sparkEl: diverseSpark,
+      onClick: function() {
+        if (diverseLayer) renderVendorRight("__layer:" + diverseLayer.id);
+      }
+    }));
+
+    // KPI 3 . Top non-Dell concentration (env or layer with the
+    // highest non-Dell share).
+    var topNonDell = null;
+    var topShare = -1;
+    LAYERS.forEach(function(L) {
+      var b = byLayer[L.id];
+      if (!b || b.total === 0) return;
+      var share = (b.nonDell + b.custom) / b.total;
+      if (share > topShare) { topShare = share; topNonDell = { kind: "layer", id: L.id, label: L.label, share: share, total: b.total }; }
+    });
+    visibleEnvs.forEach(function(env) {
+      var byEnv = filtered.filter(function(i) { return i.environmentId === env.id; });
+      if (byEnv.length === 0) return;
+      var nd = byEnv.filter(function(i) { return i.vendorGroup !== "dell"; }).length;
+      var share = nd / byEnv.length;
+      if (share > topShare) { topShare = share; topNonDell = { kind: "env", id: env.id, label: getEnvLabel(env.id, liveSession), share: share, total: byEnv.length }; }
+    });
+    host.appendChild(buildKpi({
+      eyebrow: "Top non-Dell concentration",
+      value: topNonDell ? topNonDell.label : "—",
+      hint: topNonDell ? Math.round(topNonDell.share * 100) + "% non-Dell · " + topNonDell.total + " inst." : "no data",
+      tag: topNonDell ? { t: "sec", text: Math.round(topNonDell.share * 100) + "% non-Dell" } : null,
+      onClick: function() {
+        if (topNonDell) renderVendorRight("__" + topNonDell.kind + ":" + topNonDell.id);
+      }
+    }));
+  }
+
+  function buildKpi(opts) {
+    var tile = mk("button", "vm-kpi-tile");
+    tile.type = "button";
+    var eb = mk("div", "vm-kpi-eyebrow");
+    eb.textContent = opts.eyebrow || "";
+    tile.appendChild(eb);
+    var val = mk("div", "vm-kpi-value");
+    val.textContent = opts.value || "—";
+    tile.appendChild(val);
+    if (opts.sparkEl) tile.appendChild(opts.sparkEl);
+    if (opts.hint) {
+      var h = mk("div", "vm-kpi-hint");
+      h.textContent = opts.hint;
+      tile.appendChild(h);
+    }
+    if (opts.tag && opts.tag.text) {
+      var t = mk("span", "tag vm-kpi-tag");
+      t.setAttribute("data-t", opts.tag.t || "tech");
+      t.textContent = opts.tag.text;
+      tile.appendChild(t);
+    }
+    if (typeof opts.onClick === "function") {
+      tile.addEventListener("click", opts.onClick);
+    }
+    return tile;
+  }
+
+  function buildSpark(b) {
+    var spark = mk("div", "vm-kpi-spark");
+    var total = (b && b.total) || 1;
+    [["dell", "var(--dell-blue, #0076CE)"], ["nonDell", "var(--ink-mute, #6b7280)"], ["custom", "var(--amber, #f59e0b)"]].forEach(function(pair) {
+      var w = pct(b[pair[0]] || 0, total);
+      var seg = mk("div", "vm-kpi-spark-seg");
+      seg.style.width = w + "%";
+      seg.style.background = pair[1];
+      spark.appendChild(seg);
+    });
+    return spark;
+  }
+
   function renderHeadlineLegend(c, stack) {
     if (!c) return;
     c.innerHTML = "";
@@ -391,11 +556,35 @@ export function renderSummaryVendorView(left, right, sessionArg) {
     if (!vendorName) {
       const ph = mk("div", "detail-placeholder");
       ph.innerHTML = `
-        <div class="detail-ph-title">Vendor detail</div>
-        <div class="detail-ph-hint">Click any row in the Vendor table on the left to see that vendor's instances broken down by layer, environment, and state.</div>`;
+        <div class="detail-ph-title">Drill into a slice</div>
+        <div class="detail-ph-hint">Click a KPI tile, a bar segment, or a row in the table below to break that slice down by layer, environment, and state.</div>`;
       right.appendChild(ph);
       return;
     }
+
+    // v2.4.15-polish iter-3 . slice keys for KPI tile drill. Routed
+    // here so the right panel always renders the same shape regardless
+    // of where the click came from.
+    if (typeof vendorName === "string" && vendorName.indexOf("__") === 0) {
+      const sliceKey = vendorName.slice(2);
+      let title = sliceKey, matching = [];
+      if (sliceKey === "dell") {
+        title = "Dell Technologies estate";
+        matching = (liveSession.instances || []).filter(i => i.vendorGroup === "dell");
+      } else if (sliceKey.indexOf("layer:") === 0) {
+        const layerId = sliceKey.slice(6);
+        const lay = LAYERS.find(l => l.id === layerId);
+        title = (lay ? lay.label : layerId) + " . layer slice";
+        matching = (liveSession.instances || []).filter(i => i.layerId === layerId);
+      } else if (sliceKey.indexOf("env:") === 0) {
+        const envId = sliceKey.slice(4);
+        title = getEnvLabel(envId, liveSession) + " . environment slice";
+        matching = (liveSession.instances || []).filter(i => i.environmentId === envId);
+      }
+      renderSlicePanel(title, matching);
+      return;
+    }
+
     const matching = (liveSession.instances || []).filter(i => (i.vendor || "") === vendorName);
     const panel = mk("div", "detail-panel");
     const title = mk("div", "detail-title"); title.textContent = vendorName;
@@ -441,6 +630,61 @@ export function renderSummaryVendorView(left, right, sessionArg) {
       panel.appendChild(row);
     });
 
+    right.appendChild(panel);
+  }
+
+  // v2.4.15-polish iter-3 . shared slice-panel renderer. Used by KPI
+  // tile clicks + bar segment clicks. Reads any `matching` instance
+  // list and emits the same right-panel shape (title, vendor split,
+  // state split, instance list).
+  function renderSlicePanel(title, matching) {
+    const panel = mk("div", "detail-panel");
+    panel.appendChild(mkt("div", "detail-eyebrow", "Slice"));
+    panel.appendChild(mkt("div", "detail-title", title));
+    panel.appendChild(mkt("div", "detail-sub",
+      matching.length + " instance" + (matching.length === 1 ? "" : "s")));
+    if (matching.length === 0) {
+      panel.appendChild(mkt("div", "detail-text",
+        "No instances in this slice yet."));
+      right.appendChild(panel);
+      return;
+    }
+    // Vendor split tag row.
+    const vendCount = { dell: 0, nonDell: 0, custom: 0 };
+    matching.forEach(function(i) {
+      vendCount[i.vendorGroup === "dell" ? "dell" : i.vendorGroup === "nonDell" ? "nonDell" : "custom"]++;
+    });
+    const vRow = mk("div", "vm-slice-tags");
+    [["dell", "Dell", "app"], ["nonDell", "Other", "tech"], ["custom", "Custom", "data"]].forEach(function(p) {
+      const tag = mkt("span", "tag", p[1] + " " + vendCount[p[0]]);
+      tag.setAttribute("data-t", p[2]);
+      vRow.appendChild(tag);
+    });
+    panel.appendChild(vRow);
+    // State split.
+    const cur = matching.filter(i => i.state === "current").length;
+    const des = matching.filter(i => i.state === "desired").length;
+    const sRow = mk("div", "vm-slice-tags");
+    const tCur = mkt("span", "tag", "Current " + cur);
+    tCur.setAttribute("data-t", "biz");
+    sRow.appendChild(tCur);
+    const tDes = mkt("span", "tag", "Desired " + des);
+    tDes.setAttribute("data-t", "biz");
+    sRow.appendChild(tDes);
+    panel.appendChild(sRow);
+    // Instance list (top 12; expand if needed).
+    const instSep = mk("div", "detail-sep"); instSep.textContent = "Instances"; panel.appendChild(instSep);
+    matching.slice(0, 12).forEach(function(inst) {
+      const envLabel = (getVisibleEnvironments(liveSession).find(e => e.id === inst.environmentId) || {}).label || inst.environmentId;
+      const row = mk("div", "detail-row");
+      row.innerHTML = '<span class="vg-badge vg-' + (inst.vendorGroup || 'custom') +
+        '">' + inst.state + '</span> ' + (inst.label || "(unnamed)") + ' . ' + envLabel;
+      panel.appendChild(row);
+    });
+    if (matching.length > 12) {
+      panel.appendChild(mkt("div", "detail-text muted",
+        "+ " + (matching.length - 12) + " more . expand the All instances table for the full list."));
+    }
     right.appendChild(panel);
   }
 

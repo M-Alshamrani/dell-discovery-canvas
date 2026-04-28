@@ -92,8 +92,11 @@ export function openAiOverlay(opts) {
   if (state.pickListener) document.removeEventListener("dell-canvas:entity-click", state.pickListener);
   state.pickListener = function(ev) {
     if (!isOpen()) return;
-    var panel = document.querySelector(".overlay.open.is-transparent");
-    if (!panel) return;   // not in pick mode
+    // Pick mode is signalled by either the legacy is-transparent class
+    // or the new is-pick-capsule class. Both should resolve to "we're
+    // currently waiting for an entity click."
+    var panel = document.querySelector(".overlay.open.is-pick-capsule, .overlay.open.is-transparent");
+    if (!panel) return;
     var d = ev && ev.detail || {};
     state.context.picked = d;
     exitPickMode(body, d);
@@ -154,31 +157,37 @@ function buildBody() {
 // click for any element carrying data-instance-id / data-gap-id /
 // data-driver-id / data-project-id. The pickListener inside openAi-
 // Overlay catches that event and drops transparency.
-var PICK_SELECTORS = "[data-instance-id], [data-gap-id], [data-driver-id], [data-project-id], .driver-tile, .instance-tile, .gap-card";
+// v2.4.15-polish iter-3 . env tiles + service tiles added to the
+// pick-mode catch-all. The previous selector missed the v2.4.15
+// env-tile entity, which made AI Assist's click feature look broken
+// when the user clicked an env on Tab 1.
+var PICK_SELECTORS = "[data-instance-id], [data-gap-id], [data-driver-id], [data-project-id], [data-env-id], [data-service-id], .driver-tile, .instance-tile, .gap-card, .env-tile";
 
 function engagePickMode(body, label) {
+  // v2.4.15-polish iter-3 . capsule-morph mode (was: full-transparent
+  // overlay + small floating pill). The whole overlay morphs to a
+  // small top-right pill so the user has the canvas back while picking.
+  // Heartbeat animation (1.4s ease-in-out) gives the "alive, waiting"
+  // feel. Esc restores. Click outside the capsule on a pick target
+  // dispatches dell-canvas:entity-click + restores.
   setTransparent(true);
+  var panel = document.querySelector(".overlay.open");
+  if (panel) {
+    panel.classList.add("is-pick-capsule");
+    panel.setAttribute("data-pick-label", label || "a target");
+  }
+  var backdrop = document.querySelector(".overlay-backdrop");
+  if (backdrop) backdrop.classList.add("is-pick-capsule");
 
   // Inline status row inside the overlay is suppressed during pick
-  // mode (the overlay itself is barely visible at 10% opacity);
-  // a separate floating .pick-mode-pill is the persistent indicator.
+  // mode -- the capsule label IS the status.
   var status = body.querySelector(".ai-pick-status");
   if (status) status.style.display = "none";
 
-  // Floating pill at top-center of the viewport. Persists until the
-  // user picks an entity or presses Escape.
-  var existing = document.querySelector(".pick-mode-pill");
-  if (existing) existing.remove();
-  var pill = document.createElement("div");
-  pill.className = "pick-mode-pill";
-  pill.innerHTML =
-    '<svg class="pick-mode-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" ' +
-    'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-    '<path d="M3 3l4.2 11 1.5-4.5 4.5-1.5L3 3z"/>' +
-    '</svg>' +
-    '<span>Pick ' + (label || "a target") + ' on the page</span>' +
-    '<span class="pick-mode-kbd">Esc</span>';
-  document.body.appendChild(pill);
+  // No separate pick-mode-pill anymore; the overlay itself is the
+  // capsule. Capsule label rendered via ::before pseudo from the
+  // data-pick-label attribute.
+  var pill = null;
 
   var cancelOnEsc = function(e) {
     if (e.key !== "Escape" && e.keyCode !== 27) return;
@@ -187,7 +196,7 @@ function engagePickMode(body, label) {
   };
 
   var clickInterceptor = function(e) {
-    var panel = document.querySelector(".overlay.open.is-transparent");
+    var panel = document.querySelector(".overlay.open.is-pick-capsule");
     if (!panel) return;
     if (panel.contains(e.target)) return;
     if (pill && pill.contains(e.target)) return;
@@ -200,11 +209,15 @@ function engagePickMode(body, label) {
           || hit.getAttribute("data-gap-id")
           || hit.getAttribute("data-driver-id")
           || hit.getAttribute("data-project-id")
+          || hit.getAttribute("data-env-id")
+          || hit.getAttribute("data-service-id")
           || null,
       kind:  hit.getAttribute("data-instance-id") ? "instance"
           : hit.getAttribute("data-gap-id")      ? "gap"
           : hit.getAttribute("data-driver-id")   ? "driver"
           : hit.getAttribute("data-project-id")  ? "project"
+          : hit.getAttribute("data-env-id")      ? "environment"
+          : hit.getAttribute("data-service-id")  ? "service"
           : "entity",
       label: (hit.textContent || "").trim().slice(0, 60)
     };
@@ -215,7 +228,13 @@ function engagePickMode(body, label) {
   function teardown() {
     document.removeEventListener("keydown", cancelOnEsc, true);
     document.removeEventListener("click", clickInterceptor, true);
-    if (pill && pill.parentNode) pill.parentNode.removeChild(pill);
+    var p = document.querySelector(".overlay.open.is-pick-capsule");
+    if (p) {
+      p.classList.remove("is-pick-capsule");
+      p.removeAttribute("data-pick-label");
+    }
+    var bd = document.querySelector(".overlay-backdrop.is-pick-capsule");
+    if (bd) bd.classList.remove("is-pick-capsule");
     setTransparent(false);
   }
 
@@ -229,6 +248,15 @@ function engagePickMode(body, label) {
 // (caller decides whether to re-run a skill with the new context).
 function exitPickMode(body, picked) {
   setTransparent(false);
+  // v2.4.15-polish iter-3 . also drop the capsule class so the overlay
+  // morphs back to its full-size shape.
+  var p = document.querySelector(".overlay.open.is-pick-capsule");
+  if (p) {
+    p.classList.remove("is-pick-capsule");
+    p.removeAttribute("data-pick-label");
+  }
+  var bd = document.querySelector(".overlay-backdrop.is-pick-capsule");
+  if (bd) bd.classList.remove("is-pick-capsule");
   var status = body.querySelector(".ai-pick-status");
   if (!status) return;
   if (picked && (picked.label || picked.id)) {

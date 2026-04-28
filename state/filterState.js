@@ -20,12 +20,18 @@
 // later releases without breaking the contract.
 
 var STORAGE_KEY = "dd_filter_state_v1";
+var TOGGLES_KEY = "dd_filter_toggles_v1";
 // v2.4.15 . FB7 . full set of cross-tab filter dimensions wired
 // end-to-end. body[data-filter-<dim>] + .gap-card .filter-match-<dim>
 // CSS rules combine (via :not chain) for AND-combine semantics.
 var DIMS = ["services", "layer", "domain", "urgency", "gapType", "environment", "driver"];
+// v2.4.15-polish iter-3 . binary toggles that sit alongside dim filters
+// (e.g. "Needs review only", "Show closed gaps"). Lives in a separate
+// store from the dim values so consumers can subscribe to one or both.
+var TOGGLE_KEYS = ["needsReviewOnly", "showClosedGaps"];
 
 var state = loadState();
+var toggles = loadToggles();
 var listeners = [];
 
 export function getActiveValue(dim) {
@@ -63,9 +69,34 @@ export function clearDim(dim) {
 
 export function clearAll() {
   state = {};
+  toggles = {};
   persist();
+  persistToggles();
   applyToBody();
   notify();
+}
+
+// v2.4.15-polish iter-3 . binary toggle accessors. State persists to
+// dd_filter_toggles_v1 and applies to body data attributes (dataset
+// attribute "data-toggle-<key>" set when value is true) so CSS can
+// hook into them too.
+export function getToggle(key) {
+  if (TOGGLE_KEYS.indexOf(key) < 0) return false;
+  return !!toggles[key];
+}
+export function setToggle(key, value) {
+  if (TOGGLE_KEYS.indexOf(key) < 0) return;
+  var v = !!value;
+  if ((toggles[key] || false) === v) return;
+  if (v) toggles[key] = true; else delete toggles[key];
+  persistToggles();
+  applyToBody();
+  notify();
+}
+export function getToggles() {
+  var out = {};
+  TOGGLE_KEYS.forEach(function(k) { out[k] = !!toggles[k]; });
+  return out;
 }
 
 export function subscribe(fn) {
@@ -89,11 +120,26 @@ export function applyToBody() {
       document.body.removeAttribute(attr);
     }
   });
+  TOGGLE_KEYS.forEach(function(k) {
+    var attr = "data-toggle-" + k;
+    if (toggles[k]) document.body.setAttribute(attr, "true");
+    else            document.body.removeAttribute(attr);
+  });
 }
 
 export function _resetForTests() {
   state = {};
+  toggles = {};
   listeners = [];
+  // v2.4.15-polish iter-3 . FilterBar's per-instance persistence keys
+  // (panel-open + per-dim collapse) are owned by the component, not
+  // this store. Tests that need a clean FilterBar render must clear
+  // them explicitly, so we wipe them here too as a convenience -- a
+  // fresh _resetForTests() returns the WHOLE filter system to baseline.
+  try {
+    localStorage.removeItem("dd_filter_panel_open_v1");
+    localStorage.removeItem("dd_filter_dim_open_v1");
+  } catch (e) { /* ignore */ }
   applyToBody();
 }
 
@@ -105,7 +151,28 @@ export function _resetForTests() {
 // localStorage has been restored to the user's pre-test snapshot.
 export function _reloadFromStorage() {
   state = loadState();
+  toggles = loadToggles();
   applyToBody();
+}
+
+function persistToggles() {
+  try {
+    var live = {};
+    TOGGLE_KEYS.forEach(function(k) { if (toggles[k]) live[k] = true; });
+    if (Object.keys(live).length === 0) localStorage.removeItem(TOGGLES_KEY);
+    else                                  localStorage.setItem(TOGGLES_KEY, JSON.stringify(live));
+  } catch (e) { /* ignore */ }
+}
+function loadToggles() {
+  try {
+    var raw = localStorage.getItem(TOGGLES_KEY);
+    if (!raw) return {};
+    var parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    var out = {};
+    TOGGLE_KEYS.forEach(function(k) { if (parsed[k]) out[k] = true; });
+    return out;
+  } catch (e) { return {}; }
 }
 
 function persist() {

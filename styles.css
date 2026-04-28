@@ -1586,6 +1586,90 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   filter: brightness(1.08);
 }
 
+/* v2.4.15-polish iter-3 . KPI tiles replace the per-layer + per-env
+   standing cards. Three click-to-drill tiles, one per insight: Dell
+   density, Most diverse layer, Top non-Dell concentration. Each tile
+   is a button so it's keyboard-accessible. Spark bar + GPLC tag give
+   the data a quick visual fingerprint. */
+.vm-kpi-card { padding-bottom: 14px; }
+.vm-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-top: 10px;
+}
+.vm-kpi-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px 16px;
+  background: var(--canvas, #ffffff);
+  border: 1px solid var(--rule, #e5e7eb);
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.15s ease;
+  font-family: var(--font, "Inter", system-ui, sans-serif);
+}
+.vm-kpi-tile:hover {
+  transform: translateY(-1px);
+  border-color: var(--dell-blue, #0076CE);
+  box-shadow: 0 2px 8px rgba(11, 42, 74, 0.08);
+}
+.vm-kpi-eyebrow {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 9.5px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--ink-mute, #6b7280);
+}
+.vm-kpi-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--ink, #111827);
+  line-height: 1.2;
+}
+.vm-kpi-hint {
+  font-size: 11px;
+  color: var(--ink-mute, #6b7280);
+  font-variant-numeric: tabular-nums;
+}
+.vm-kpi-tag {
+  margin-top: 2px;
+}
+.vm-kpi-spark {
+  display: flex;
+  width: 100%;
+  height: 5px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--canvas-soft, #f3f4f6);
+  margin: 4px 0 2px 0;
+}
+.vm-kpi-spark-seg { transition: width 0.18s ease; }
+
+/* Collapsible "All instances" table . starts collapsed; click toggle
+   reveals. */
+.vm-table-toggle {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.vm-table-toggle .vm-table-caret { color: var(--ink-mute, #6b7280); }
+
+.vm-slice-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
 .vm-overview-legend {
   display: flex;
   flex-wrap: wrap;
@@ -3846,6 +3930,78 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .overlay.is-transparent .overlay-footer {
   pointer-events: none;
 }
+
+/* v2.4.15-polish iter-3 . CAPSULE MORPH . pick mode now collapses the
+   whole overlay panel into a top-right floating capsule (~280x44).
+   Backdrop fades to nothing so the canvas is fully reachable; the
+   panel ignores its old centered geometry and slides + scales into
+   the corner. Heartbeat animation gives the "alive, waiting" cue
+   without being distracting. Esc returns to full overlay.
+
+   Implementation: the .overlay panel keeps its position:fixed but we
+   override center/size to a top-right pill via transforms. Internal
+   sections (head/body/footer) are display:none in the capsule, and a
+   ::before pseudo paints the live "AI . pick X . Esc" label using the
+   data-pick-label attribute set by AiAssistOverlay.engagePickMode. */
+.overlay-backdrop.is-pick-capsule {
+  background: transparent;
+  pointer-events: none;
+  backdrop-filter: none;
+}
+.overlay.open.is-pick-capsule {
+  /* Cancel the centered animation + reposition to top-right. */
+  animation: none;
+  inset: auto;
+  top: 60px;
+  right: 16px;
+  bottom: auto;
+  left: auto;
+  width: auto;
+  height: auto;
+  min-width: 220px;
+  max-width: 320px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--dell-blue-soft, #e8f2fb) 0%, #ffffff 100%);
+  border: 1px solid var(--dell-blue, #0076CE);
+  box-shadow: 0 6px 18px rgba(0, 118, 206, 0.18);
+  pointer-events: auto;
+  filter: none;
+  transform: translateZ(0);
+  transition: top 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+              right 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+              border-radius 0.35s ease,
+              max-width 0.35s ease;
+  animation: capsule-heartbeat 1.4s ease-in-out infinite;
+}
+.overlay.open.is-pick-capsule > * { display: none; }
+.overlay.open.is-pick-capsule::before {
+  content: "● AI · awaiting click on " attr(data-pick-label) " · Esc to cancel";
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font, "Inter", system-ui, sans-serif);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dell-blue-deep, #00447C);
+  white-space: nowrap;
+  padding: 12px 0;
+  letter-spacing: 0.01em;
+}
+@keyframes capsule-heartbeat {
+  0%, 100% {
+    box-shadow: 0 6px 18px rgba(0, 118, 206, 0.18);
+    transform: translateZ(0) scale(1);
+  }
+  50% {
+    box-shadow: 0 6px 24px rgba(0, 118, 206, 0.42), 0 0 0 6px rgba(0, 118, 206, 0.12);
+    transform: translateZ(0) scale(1.015);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .overlay.open.is-pick-capsule { animation: none; }
+}
 .overlay-head {
   display: flex;
   align-items: flex-start;
@@ -4452,18 +4608,20 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
    .filter-match-<dim> class dim out. Multi-dim AND combine is automatic
    via the :not chain (a card needs ALL active match classes to escape
    ALL dim rules). */
-body[data-filter-services] .gap-card:not(.filter-match-services),
-body[data-filter-layer]    .gap-card:not(.filter-match-layer),
-body[data-filter-domain]   .gap-card:not(.filter-match-domain),
-body[data-filter-urgency]  .gap-card:not(.filter-match-urgency) {
+body[data-filter-services]    .gap-card:not(.filter-match-services),
+body[data-filter-layer]       .gap-card:not(.filter-match-layer),
+body[data-filter-domain]      .gap-card:not(.filter-match-domain),
+body[data-filter-urgency]     .gap-card:not(.filter-match-urgency),
+body[data-filter-environment] .gap-card:not(.filter-match-environment) {
   opacity: 0.22;
   filter: grayscale(0.55);
   transition: opacity 0.15s ease, filter 0.15s ease;
 }
-body[data-filter-services] .gap-card.filter-match-services,
-body[data-filter-layer]    .gap-card.filter-match-layer,
-body[data-filter-domain]   .gap-card.filter-match-domain,
-body[data-filter-urgency]  .gap-card.filter-match-urgency {
+body[data-filter-services]    .gap-card.filter-match-services,
+body[data-filter-layer]       .gap-card.filter-match-layer,
+body[data-filter-domain]      .gap-card.filter-match-domain,
+body[data-filter-urgency]     .gap-card.filter-match-urgency,
+body[data-filter-environment] .gap-card.filter-match-environment {
   transition: opacity 0.15s ease, filter 0.15s ease;
 }
 
@@ -4591,6 +4749,54 @@ body[data-filter-urgency]  .gap-card.filter-match-urgency {
 }
 .filter-bar-chip-row .filter-chip:hover { transform: translateY(-1px); }
 .filter-bar-chip-row .filter-chip.is-active { font-weight: 600; }
+
+/* v2.4.15-polish iter-3 . header-row holds the toggle pill on the left
+   and an optional trailing CTA on the right (e.g. "+ Add gap"). */
+.filter-bar-header-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.filter-bar-header-row > .filter-bar-toggle:first-child { margin-right: auto; }
+
+/* Toggles section inside the FilterBar panel . binary on/off filters
+   like "Needs review only" / "Show closed gaps". Sits at the bottom
+   of the accordion so it doesn't compete with dimensional filters. */
+.filter-bar-toggles {
+  border-top: 1px dashed var(--rule, #e5e7eb);
+  margin-top: 4px;
+  padding: 12px 10px 10px;
+}
+.filter-bar-toggles-heading {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--ink, #111827);
+  margin-bottom: 8px;
+}
+.filter-bar-toggles-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.filter-bar-toggle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ink, #111827);
+  padding: 4px 0;
+}
+.filter-bar-toggle-row input[type="checkbox"] { accent-color: var(--dell-blue, #0076CE); }
+.filter-bar-toggle-row .filter-bar-toggle-count {
+  margin-left: 4px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-mute, #6b7280);
+}
 
 .filter-active-pill-strip {
   display: flex;

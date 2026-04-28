@@ -1980,6 +1980,10 @@ describe("13 · ui/views/MatrixView — DOM contract", () => {
 describe("14 · ui/views/GapsEditView — DOM contract", () => {
 
   function mountGaps(sess) {
+    // v2.4.15-polish iter-3 . reset cross-tab filter state between tests
+    // so a stale layer/env/toggle from a prior test doesn't make the
+    // freshly-mounted view filter out the test fixture's gaps.
+    filterState._resetForTests();
     const l = document.createElement("div");
     const r = document.createElement("div");
     renderGapsEditView(l, r, sess || freshSession());
@@ -2042,21 +2046,23 @@ describe("14 · ui/views/GapsEditView — DOM contract", () => {
     );
   });
 
-  it("layer filter chips are rendered for all LAYERS", () => {
+  it("layer filter chips are rendered for all LAYERS (now inside FilterBar accordion)", () => {
+    // v2.4.15-polish iter-3 . Layer chips moved from a standalone
+    // .chip-filter row to the FilterBar's Layer accordion. The chips
+    // are still in the DOM regardless of accordion open/closed state.
     const { l }  = mountGaps();
-    const chips  = l.querySelectorAll(".chip-filter");
-    assert(chips.length >= LAYERS.length, "must render at least one chip per layer");
+    const chips  = l.querySelectorAll(".filter-chip[data-filter-dim='layer']");
+    assert(chips.length >= LAYERS.length,
+      "must render at least one filter-chip per LAYER inside the FilterBar (got " + chips.length + ")");
   });
 
-  it("environment filter dropdown contains all ENVIRONMENTS", () => {
+  it("environment filter is wired in the FilterBar (no standalone dropdown)", () => {
+    // v2.4.15-polish iter-3 . The env dropdown migrated into the
+    // FilterBar's Environment accordion. Each visible env gets a chip.
     const { l } = mountGaps();
-    const sel   = l.querySelector("select");
-    if (!sel) return;
-    const vals  = [...sel.options].map(o => o.value);
-    ENVIRONMENTS.forEach(env =>
-      assert(vals.includes(env.id) || vals.includes("all"),
-        `env filter must include '${env.id}'`)
-    );
+    const envChips = l.querySelectorAll(".filter-chip[data-filter-dim='environment']");
+    assert(envChips.length > 0,
+      "FilterBar must render at least one Environment chip (got " + envChips.length + ")");
   });
 
   it("renders without throwing when session has many gaps across all phases", () => {
@@ -2114,20 +2120,29 @@ describe("14 · ui/views/GapsEditView — DOM contract", () => {
   });
 
   it("Needs-review filter hides cards where reviewed === true (T6.8 · replaces T4.15)", () => {
+    // v2.4.15-polish iter-3 . the legacy .needs-review-check toggle
+    // moved into the FilterBar's Quick toggles section. Test now
+    // drives the toggle via the [data-filter-toggle="needsReviewOnly"]
+    // input so the FilterBar -> filterState -> renderAll bridge fires
+    // end-to-end.
+    filterState._resetForTests();
     const s = freshSession();
-    createGap(s, { description:"Reviewed", layerId:LayerIds[0] });  // manual → reviewed: true
+    createGap(s, { description:"Reviewed", layerId:LayerIds[0] });
     createGap(s, { description:"Needs-review", layerId:LayerIds[0], reviewed: false });
     const l = document.createElement("div");
     const r = document.createElement("div");
     renderGapsEditView(l, r, s);
     assertEqual(l.querySelectorAll(".gap-card").length, 2, "both cards visible before filter");
-    const toggle = l.querySelector(".needs-review-check");
-    assert(toggle !== null, "needs-review toggle must render");
+    const toggleRow = l.querySelector("[data-filter-toggle='needsReviewOnly']");
+    assert(toggleRow !== null, "needs-review toggle row must render in the FilterBar");
+    const toggle = toggleRow.querySelector("input[type='checkbox']");
+    assert(toggle !== null, "needs-review toggle must include a checkbox input");
     toggle.checked = true;
     toggle.dispatchEvent(new Event("change", { bubbles: true }));
     const remaining = l.querySelectorAll(".gap-card");
     assertEqual(remaining.length, 1, "filter must hide reviewed cards");
     assert(remaining[0].textContent.indexOf("Needs-review") >= 0, "the visible card is the unreviewed one");
+    filterState._resetForTests();
   });
 
   it("Manual gap creation via + Add uses defaults phase=next urgency=Medium status=open (T4.13)", () => {
@@ -6566,6 +6581,7 @@ describe("44 · Phase 19m · v2.5.0 crown-jewel UI rework", () => {
   // ──────────────────────────────────────────────────────────────────────
 
   it("VT17 · F1 filter body data attributes dim non-matching cards via CSS", () => {
+    filterState._resetForTests();
     document.body.removeAttribute("data-filter-services");
     var s = fixtureSession();
     createGap(s, { description: "VT17 unmatch", layerId: "compute", gapType: "replace",
@@ -7639,7 +7655,13 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       "VB2 · at least one wide segment (>=6%) must render a visible inline percentage label");
   });
 
-  it("VB3 · Per-layer breakdown renders >=6 stacked .vendor-bar elements (one per layer)", () => {
+  it("VB3 · Headline insights card renders 3 KPI tiles (replaces per-layer + per-env breakdown bars)", () => {
+    // v2.4.15-polish iter-3 . per user direction 2026-04-28, the
+    // standing per-layer + per-env stacked-bar cards are gone. Their
+    // information surfaces on demand via three click-to-drill KPI
+    // tiles (Dell density / Most diverse layer / Top non-Dell
+    // concentration). Headline 100%-stacked bar still renders above
+    // (asserted by VB1).
     var s = makeEnvSession([{ id: "coreDc", hidden: false }]);
     var layers = ["workload", "compute", "storage", "dataProtection", "virtualization", "infrastructure"];
     layers.forEach(function(L, idx) {
@@ -7648,9 +7670,23 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     });
     var l = document.createElement("div"); var r = document.createElement("div");
     renderSummaryVendorView(l, r, s);
-    var bars = l.querySelectorAll(".vendor-bar");
-    assert(bars.length >= 6,
-      "VB3 · per-layer breakdown must render >=6 .vendor-bar (one per layer). Got " + bars.length);
+    document.body.appendChild(l);
+    try {
+      var tiles = l.querySelectorAll(".vm-kpi-tile");
+      assertEqual(tiles.length, 3,
+        "VB3 · headline-insights card must render exactly 3 KPI tiles (got " + tiles.length + ")");
+      var eyebrows = Array.prototype.map.call(
+        l.querySelectorAll(".vm-kpi-eyebrow"),
+        function(e) { return (e.textContent || "").trim(); });
+      assert(eyebrows.indexOf("Dell density") >= 0,
+        "VB3 · KPI tiles must include 'Dell density' (got " + eyebrows.join(", ") + ")");
+      assert(eyebrows.indexOf("Most diverse layer") >= 0,
+        "VB3 · KPI tiles must include 'Most diverse layer' (got " + eyebrows.join(", ") + ")");
+      assert(eyebrows.indexOf("Top non-Dell concentration") >= 0,
+        "VB3 · KPI tiles must include 'Top non-Dell concentration' (got " + eyebrows.join(", ") + ")");
+    } finally {
+      document.body.removeChild(l);
+    }
   });
 
   // ===================================================================

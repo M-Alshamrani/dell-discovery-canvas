@@ -1,6 +1,6 @@
 // ui/views/GapsEditView.js -- fully wired gaps & initiatives board
 
-import { LAYERS, ENVIRONMENTS, BUSINESS_DRIVERS, getEnvLabel } from "../../core/config.js";
+import { LAYERS, ENVIRONMENTS, BUSINESS_DRIVERS, getEnvLabel, getVisibleEnvironments } from "../../core/config.js";
 import { LayerIds, EnvironmentIds } from "../../core/models.js";
 import { createGap, updateGap, deleteGap, setGapDriverId, approveGap,
          linkCurrentInstance, linkDesiredInstance,
@@ -13,8 +13,10 @@ import { helpButton } from "./HelpModal.js";
 import { validateActionLinks, actionById } from "../../core/taxonomy.js";
 import { SERVICE_TYPES, SUGGESTED_SERVICES_BY_GAP_TYPE, suggestedFor, serviceLabel, serviceDomain } from "../../core/services.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
-import { getActiveValue as getFilter, toggleValue as toggleFilter, subscribe as subscribeFilter } from "../../state/filterState.js";
-import { renderFilterBar } from "../components/FilterBar.js";
+import { getActiveValue as getFilter, toggleValue as toggleFilter, subscribe as subscribeFilter,
+         getToggles, setToggle } from "../../state/filterState.js";
+import { renderFilterBar, applyMatchClasses as applyFilterMatchClasses } from "../components/FilterBar.js";
+import { getSnapshot as getFilterSnapshot } from "../../state/filterState.js";
 
 // v2.4.14 F1 . apply the active services filter to a gap card. Sets
 // .filter-match-services when the card's services include the active
@@ -121,22 +123,78 @@ export function renderGapsEditView(left, right, session) {
   });
   var filterBarHost = mk("div", "gaps-filter-bar-host");
   header.appendChild(filterBarHost);
-  // Re-mount on every render; FilterBar manages its own state subscription.
+
+  // v2.4.15-polish iter-3 . define the "+ Add gap" CTA BEFORE the
+  // FilterBar so we can pass it as opts.trailing (var hoisting would
+  // give us `undefined` if the declaration came later in the function).
+  var addBtn = mkt("button", "btn-primary btn-with-feedback", "+ Add gap");
+  addBtn.addEventListener("click", function() { openAddDialog(); });
+
+  // v2.4.15-polish iter-3 . FilterBar owns Layer + Service + Domain +
+  // Urgency + Environment dimensions plus the binary toggles row
+  // ("Needs review only" / "Show closed gaps"). + Add gap rides as
+  // the trailing CTA on the same line as the filter pill.
   if (left._unsubFilter) try { left._unsubFilter(); } catch (e) {}
+  var visibleEnvsForFilter = (typeof getVisibleEnvironments === "function")
+    ? getVisibleEnvironments(session)
+    : ENVIRONMENTS;
+  var closedCountForBadge = (session.gaps || []).filter(function(g) {
+    return g && g.status === "closed";
+  }).length;
   renderFilterBar(filterBarHost, {
     dimensions: [
       { id: "services", label: "Service",
         options: SERVICE_TYPES.map(function(s) { return { id: s.id, label: s.label.split(" / ")[0] }; }) },
       { id: "layer",    label: "Layer",
         options: LAYERS.map(function(l) { return { id: l.id, label: l.label }; }) },
+      { id: "environment", label: "Environment",
+        options: visibleEnvsForFilter.map(function(e) {
+          return { id: e.id, label: getEnvLabel(e.id, session) };
+        }) },
       { id: "domain",   label: "Domain",
-        options: Object.keys(domains).sort().map(function(d) { return { id: d, label: d.charAt(0).toUpperCase() + d.slice(1) }; }) },
+        options: Object.keys(domains).sort().map(function(d) {
+          return { id: d, label: d.charAt(0).toUpperCase() + d.slice(1) };
+        }) },
       { id: "urgency",  label: "Urgency",
         options: [{ id: "High", label: "High" }, { id: "Medium", label: "Medium" }, { id: "Low", label: "Low" }] }
     ],
+    toggles: [
+      { key: "needsReviewOnly", label: "Needs review only",
+        hint: "Show only gaps that still need approval or review." },
+      { key: "showClosedGaps",
+        label: "Show closed gaps" + (closedCountForBadge > 0 ? " (" + closedCountForBadge + ")" : ""),
+        hint: "Closed gaps are hidden by default. Tick to see + recover them." }
+    ],
     session: session,
-    scope: left
+    scope: left,
+    trailing: addBtn
   });
+
+  // Bridge filterState into GapsEditView's local renderAll. The legacy
+  // local state vars (activeLayerIds, activeEnvId, showNeedsReviewOnly,
+  // showClosedGaps) survive intact -- we just sync them on every
+  // filterState change so renderAll's existing logic keeps working.
+  function syncFromFilterState() {
+    var lay = getFilter("layer");
+    var env = getFilter("environment");
+    if (lay) {
+      activeLayerIds = new Set([lay]);
+    } else {
+      activeLayerIds = new Set(LAYERS.map(function(l) { return l.id; }));
+    }
+    activeEnvId = env || "all";
+    var togs = (typeof getToggles === "function") ? getToggles() : null;
+    if (togs) {
+      showNeedsReviewOnly = !!togs.needsReviewOnly;
+      showClosedGaps      = !!togs.showClosedGaps;
+    }
+  }
+  syncFromFilterState();
+  var unsubFilter = subscribeFilter(function() {
+    syncFromFilterState();
+    renderAll();
+  });
+  left._unsubFilter = unsubFilter;
 
   // Auto-gap notice + v2.4.11 · C2 · "Review all" guided walkthrough button.
   var autoGaps = getAutoGaps();
@@ -164,83 +222,24 @@ export function renderGapsEditView(left, right, session) {
     header.appendChild(notice);
   }
 
-  // Filter row
-  var filterRow = mk("div", "filter-row");
-  filterRow.appendChild(mkt("span", "filter-label", "Layers:"));
-  var lc = mk("div", "chips-row");
-  LAYERS.forEach(function(layer) {
-    var chip = mkt("div", "chip-filter active", layer.label);
-    chip.addEventListener("click", function() {
-      chip.classList.toggle("active");
-      if (chip.classList.contains("active")) activeLayerIds.add(layer.id);
-      else activeLayerIds.delete(layer.id);
-      if (!activeLayerIds.size) {
-        LAYERS.forEach(function(l) { activeLayerIds.add(l.id); });
-        lc.querySelectorAll(".chip-filter").forEach(function(c) { c.classList.add("active"); });
-      }
-      renderAll();
-    });
-    lc.appendChild(chip);
-  });
-  filterRow.appendChild(lc);
-
-  var envSel = mk("select", "form-select inline-sel");
-  var allOpt = document.createElement("option"); allOpt.value = "all"; allOpt.textContent = "All environments";
-  envSel.appendChild(allOpt);
-  ENVIRONMENTS.forEach(function(env) {
-    var opt = document.createElement("option"); opt.value = env.id; opt.textContent = getEnvLabel(env.id, session);
-    envSel.appendChild(opt);
-  });
-  envSel.addEventListener("change", function(e) { activeEnvId = e.target.value; renderAll(); });
-  filterRow.appendChild(envSel);
-
-  // v2.1 · "Needs review only" toggle (replaces unmapped-solutions filter).
-  var needsReviewToggle = mk("label", "chip-filter needs-review-toggle");
-  var needsReviewCb = document.createElement("input");
-  needsReviewCb.type = "checkbox";
-  needsReviewCb.className = "needs-review-check";
-  needsReviewCb.checked = false;
-  needsReviewCb.addEventListener("change", function() {
-    showNeedsReviewOnly = needsReviewCb.checked;
-    needsReviewToggle.classList.toggle("active", showNeedsReviewOnly);
-    renderAll();
-  });
-  needsReviewToggle.appendChild(needsReviewCb);
-  needsReviewToggle.appendChild(document.createTextNode(" Needs review only"));
-  needsReviewToggle.title = "Show only gaps that still need approval or review.";
-  filterRow.appendChild(needsReviewToggle);
-
-  // v2.4.11 · A2 · "Show closed gaps" filter chip. Dynamic count badge
-  // when there are closed gaps so the user knows there's something to
-  // recover. Toggle re-renders the board.
-  var closedCount = (session.gaps || []).filter(function(g) { return g.status === "closed"; }).length;
-  var closedToggle = mk("label", "chip-filter closed-gaps-toggle");
-  var closedCb = document.createElement("input");
-  closedCb.type = "checkbox";
-  closedCb.className = "closed-gaps-check";
-  closedCb.checked = showClosedGaps;
-  closedCb.addEventListener("change", function() {
-    showClosedGaps = closedCb.checked;
-    closedToggle.classList.toggle("active", showClosedGaps);
-    renderAll();
-  });
-  closedToggle.appendChild(closedCb);
-  closedToggle.appendChild(document.createTextNode(
-    " Show closed gaps" + (closedCount > 0 ? " (" + closedCount + ")" : "")));
-  closedToggle.title = "Closed gaps are hidden by default. They appear when their tile's disposition was set to Keep, or when manually closed. Tick to see + recover them.";
-  filterRow.appendChild(closedToggle);
-
-  var addBtn = mkt("button", "btn-primary", "+ Add gap");
-  addBtn.style.marginLeft = "auto";
-  addBtn.addEventListener("click", function() { openAddDialog(); });
-  filterRow.appendChild(addBtn);
+  // v2.4.15-polish iter-3 . legacy filter-row removed. Layer / Env /
+  // Needs-review / Show-closed all live inside the elegant FilterBar
+  // pill below. The "+ Add gap" CTA travels with it as the trailing
+  // slot. State bridging happens in subscribeFilter() further down --
+  // we keep activeLayerIds / activeEnvId / showNeedsReviewOnly /
+  // showClosedGaps locally so the existing renderAll logic doesn't
+  // need rewriting.
+  // (addBtn is defined ABOVE the renderFilterBar call so it can ride
+  // as the FilterBar's trailing CTA. Hoisting would give us `undefined`
+  // if it came later in the function.)
 
   // v2.4.12 · U1 · the v2.4.11 D2 "+ Add operational / services gap"
   // button is removed. Services attach to any gap as a multi-chip facet
   // (see "Services needed" section in the gap detail panel) , a dedicated
   // ops-typed gap CTA reinforced a wrong mental model.
 
-  header.appendChild(filterRow);
+  // (legacy filter-row removed; FilterBar pill below carries the same
+  // controls plus the binary toggles and the "+ Add gap" trailing CTA)
   left.appendChild(header);
 
   var board = mk("div", "kanban");
@@ -290,7 +289,16 @@ export function renderGapsEditView(left, right, session) {
     });
   }
 
-  function renderAll() { renderBoard(); renderDetail(); }
+  function renderAll() {
+    renderBoard();
+    renderDetail();
+    // v2.4.15-polish iter-3 . re-apply FilterBar match classes after the
+    // kanban rebuild. renderBoard wipes + recreates gap-cards from
+    // scratch, so any .filter-match-<dim> class applied earlier is lost.
+    try {
+      applyFilterMatchClasses(left, getFilterSnapshot());
+    } catch (e) { /* defensive: filterState may be unavailable in some test contexts */ }
+  }
 
   // ---- Kanban board with drag-and-drop ----
   function renderBoard() {
@@ -367,6 +375,12 @@ export function renderGapsEditView(left, right, session) {
     // FilterBar's match-class pass can target them.
     if (gap.layerId) card.setAttribute("data-layer", gap.layerId);
     if (gap.urgency) card.setAttribute("data-urgency", gap.urgency);
+    // v2.4.15-polish iter-3 . carry affectedEnvironments[] as a space-
+    // separated attribute so the FilterBar's environment dim can dim
+    // non-matching cards.
+    if (Array.isArray(gap.affectedEnvironments) && gap.affectedEnvironments.length > 0) {
+      card.setAttribute("data-environment", gap.affectedEnvironments.join(" "));
+    }
     // v2.4.14 F1 . cards declare their services as a space-separated
     // attribute so the filter system + CSS dim rule can match.
     if (Array.isArray(gap.services) && gap.services.length > 0) {
