@@ -4,7 +4,7 @@
 // still re-exports `createDemoSession` so existing callers and tests
 // don't break; see SPEC §12 and docs/DEMO_CHANGELOG.md for the rationale.
 
-import { LEGACY_DRIVER_LABEL_TO_ID } from "../core/config.js";
+import { LEGACY_DRIVER_LABEL_TO_ID, ENV_CATALOG, DEFAULT_ENABLED_ENV_IDS } from "../core/config.js";
 import { createDemoSession as createDemoSessionImpl } from "./demoSession.js";
 import { emitSessionChanged } from "../core/sessionEvents.js";
 import { clear as clearAiUndoStack } from "./aiUndoStack.js";
@@ -34,11 +34,14 @@ export function createEmptySession() {
       status:        "Draft",
       version:       "2.0"
     },
-    // v2.4.14 . per-session aliases for environments. Keys are
-    // ENVIRONMENTS[].id (coreDc, drDc, publicCloud, edge); values are
-    // the customer-friendly name (e.g. "Riyadh DC", "Jeddah DR").
-    // Empty string or missing key falls back to the canonical label.
-    environmentAliases: {},
+    // v2.4.15 . dynamic environment model. session.environments is the
+    // user-managed list of envs in scope for this engagement. Each entry:
+    //   { id: "coreDc", hidden: false, alias?, location?, sizeKw?, sqm?, tier?, notes? }
+    // The id IS the catalog typeId (no UUID layer). Single-instance
+    // enforcement: no two entries share the same id. Empty array means
+    // "fall back to the default-enabled set" via getActiveEnvironments().
+    // Replaces the v2.4.14 environmentAliases map (drained by migrator).
+    environments: [],
     instances:  [],
     gaps:       []
   };
@@ -87,10 +90,61 @@ export function migrateLegacySession(raw) {
 
   if (!Array.isArray(s.instances)) s.instances = [];
   if (!Array.isArray(s.gaps))      s.gaps      = [];
-  // v2.4.14 . backfill environmentAliases on legacy sessions.
-  if (!s.environmentAliases || typeof s.environmentAliases !== "object") {
-    s.environmentAliases = {};
+
+  // ------------------------------------------------------------------
+  // v2.4.15 . dynamic environment model.
+  // (1) Build session.environments[] from referenced ids if not present.
+  //     Auto-enable any env id mentioned by an instance.environmentId or
+  //     a gap.affectedEnvironments[]. If still empty, leave [] so
+  //     getActiveEnvironments() falls back to DEFAULT_ENABLED_ENV_IDS.
+  // (2) Drain legacy s.environmentAliases[envId] into per-env alias.
+  // (3) Backfill hidden:false on every entry (idempotent — running the
+  //     migrator on a v2.4.15-shaped session is a no-op).
+  // (4) Drop the legacy environmentAliases field once drained.
+  // ------------------------------------------------------------------
+  var legacyAliases = (s.environmentAliases && typeof s.environmentAliases === "object")
+    ? s.environmentAliases : null;
+
+  if (!Array.isArray(s.environments)) {
+    var referenced = {};
+    s.instances.forEach(function(i) {
+      if (i && typeof i.environmentId === "string" && i.environmentId.length > 0) {
+        referenced[i.environmentId] = true;
+      }
+    });
+    s.gaps.forEach(function(g) {
+      if (g && Array.isArray(g.affectedEnvironments)) {
+        g.affectedEnvironments.forEach(function(envId) {
+          if (typeof envId === "string" && envId.length > 0) referenced[envId] = true;
+        });
+      }
+    });
+    s.environments = Object.keys(referenced).map(function(id) {
+      return { id: id, hidden: false };
+    });
   }
+
+  // Per-entry hygiene: ensure shape (id + hidden), drain alias, dedupe ids.
+  var seenIds = {};
+  s.environments = s.environments.filter(function(e) {
+    if (!e || typeof e.id !== "string" || e.id.length === 0) return false;
+    if (seenIds[e.id]) return false;
+    seenIds[e.id] = true;
+    return true;
+  }).map(function(e) {
+    var out = Object.assign({}, e);
+    if (typeof out.hidden !== "boolean") out.hidden = false;
+    if (legacyAliases && typeof legacyAliases[out.id] === "string" &&
+        legacyAliases[out.id].trim().length > 0 &&
+        (typeof out.alias !== "string" || out.alias.length === 0)) {
+      out.alias = legacyAliases[out.id].trim();
+    }
+    return out;
+  });
+
+  // Drop the legacy field once drained — single source of truth from
+  // here on is session.environments[].alias.
+  if ("environmentAliases" in s) delete s.environmentAliases;
 
   // v2.1 rule 6: default `reviewed` on any gap missing it.
   //   auto-drafted (has linked desired tiles) → reviewed: false (surfaces the dot)

@@ -1,14 +1,22 @@
 // ui/views/SummaryHealthView.js -- bold heatmap redesign
 
-import { LAYERS, ENVIRONMENTS, getEnvLabel } from "../../core/config.js";
-import { session }              from "../../state/sessionStore.js";
+import { LAYERS, ENVIRONMENTS, getEnvLabel, getVisibleEnvironments } from "../../core/config.js";
+import { session as moduleSession } from "../../state/sessionStore.js";
 import { getHealthSummary, computeBucketMetrics, scoreToRiskLabel, scoreToClass } from "../../services/healthMetrics.js";
 import { helpButton } from "./HelpModal.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
 
-export function renderSummaryHealthView(left, right) {
+export function renderSummaryHealthView(left, right, sessionArg) {
+  // v2.4.15 . accept an optional session argument so tests can drive the
+  // view with a fixture session. Falls back to the module-scoped session
+  // when called by app.js with the historical 2-arg signature.
+  var session = sessionArg || moduleSession;
   if (session && session.isDemo) renderDemoBanner(left);
-  var s = getHealthSummary(session, LAYERS, ENVIRONMENTS);
+  // v2.4.15 . SD8 . Tab 5 reporting renders ONLY visible (non-hidden)
+  // envs. Hidden envs stay in session.environments (and the saved file)
+  // but never appear in heatmap, vendor mix, gaps board or roadmap.
+  var visibleEnvs = getVisibleEnvironments(session);
+  var s = getHealthSummary(session, LAYERS, visibleEnvs);
 
   // Overview chips
   var overview = mk("div", "card");
@@ -56,15 +64,16 @@ export function renderSummaryHealthView(left, right) {
   var heatCard = mk("div", "card");
   var wrap = mk("div", "matrix-scroll-wrap");
   var grid = mk("div", "heatmap-grid");
-  grid.style.gridTemplateColumns = "160px repeat(" + ENVIRONMENTS.length + ", 1fr)";
+  grid.style.gridTemplateColumns = "160px repeat(" + visibleEnvs.length + ", 1fr)";
 
   // Header row. v2.4.13 polish iter-2: env headers match the GPLC E.0X
   // code + sans name idiom used in MatrixView so the heatmap and the
   // matrix read as one consistent visual language across tabs.
   grid.appendChild(mk("div", "hm-corner"));
-  ENVIRONMENTS.forEach(function(env, eIdx) {
-    var h = mk("div", "hm-env-header matrix-env-head");
+  visibleEnvs.forEach(function(env, eIdx) {
+    var h = mk("div", "hm-env-header matrix-env-head heatmap-env-head");
     h.setAttribute("data-env-id", env.id);
+    h.setAttribute("data-env",    env.id);
     var code = mk("span", "matrix-env-code");
     code.textContent = "E." + ("0" + (eIdx + 1)).slice(-2);
     var name = mk("span", "matrix-env-name");
@@ -92,7 +101,7 @@ export function renderSummaryHealthView(left, right) {
     name.textContent = layer.label;
     hdrCell.appendChild(name);
     grid.appendChild(hdrCell);
-    ENVIRONMENTS.forEach(function(env) {
+    visibleEnvs.forEach(function(env) {
       var m = computeBucketMetrics(layer.id, env.id, session);
       var cell = mk("div", "hm-cell " + scoreToClass(m.totalScore, m.hasData));
       cell.setAttribute("data-layer-id", layer.id);
@@ -126,7 +135,7 @@ export function renderSummaryHealthView(left, right) {
             c.getAttribute("data-layer-id") === layer.id &&
             c.getAttribute("data-env-id")   === env.id);
         });
-        renderDetail(right, layer.id, env.id);
+        renderDetail(right, layer.id, env.id, session);
       });
       grid.appendChild(cell);
     });
@@ -142,24 +151,27 @@ export function renderSummaryHealthView(left, right) {
 
   // Auto-select first non-empty cell
   for (var li = 0; li < LAYERS.length; li++) {
-    for (var ei = 0; ei < ENVIRONMENTS.length; ei++) {
-      var m2 = computeBucketMetrics(LAYERS[li].id, ENVIRONMENTS[ei].id, session);
+    for (var ei = 0; ei < visibleEnvs.length; ei++) {
+      var m2 = computeBucketMetrics(LAYERS[li].id, visibleEnvs[ei].id, session);
       if (m2.hasData) {
         selectedLayer = LAYERS[li].id;
-        selectedEnv   = ENVIRONMENTS[ei].id;
-        var firstCell = grid.querySelector("[data-layer-id='" + LAYERS[li].id + "'][data-env-id='" + ENVIRONMENTS[ei].id + "']");
+        selectedEnv   = visibleEnvs[ei].id;
+        var firstCell = grid.querySelector("[data-layer-id='" + LAYERS[li].id + "'][data-env-id='" + visibleEnvs[ei].id + "']");
         if (firstCell) firstCell.classList.add("selected");
-        renderDetail(right, LAYERS[li].id, ENVIRONMENTS[ei].id);
+        renderDetail(right, LAYERS[li].id, visibleEnvs[ei].id, session);
         return;
       }
     }
   }
 }
 
-function renderDetail(right, layerId, envId) {
+function renderDetail(right, layerId, envId, session) {
+  // v2.4.15 . session passed in as a parameter so the view supports both
+  // the legacy 2-arg signature (uses module-scoped session) and the new
+  // 3-arg signature with a test fixture session.
+  if (!session) session = moduleSession;
   right.innerHTML = "";
   var layer   = LAYERS.find(function(l) { return l.id === layerId; });
-  var env     = ENVIRONMENTS.find(function(e) { return e.id === envId; });
   var m       = computeBucketMetrics(layerId, envId, session);
   var desired = (session.instances || []).filter(function(i) {
     return i.state === "desired" && i.layerId === layerId && i.environmentId === envId;

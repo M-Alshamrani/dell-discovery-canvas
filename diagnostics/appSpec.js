@@ -31,9 +31,11 @@
 // ============================================================================
 
 import { createTestRunner, runIsolated } from "./testRunner.js";
-import { emitSessionChanged } from "../core/sessionEvents.js";
+import { emitSessionChanged, onSessionChanged } from "../core/sessionEvents.js";
 // v2.4.13 S2A · post-test indicator restore (see runAllTests below).
-import { markSaved as _markSaved, markIdle as _markIdle } from "../core/saveStatus.js";
+import { markSaved as _markSaved, markIdle as _markIdle, markSaving as _markSaving } from "../core/saveStatus.js";
+// v2.4.15 · Suite 46 · synchronous filterState for FB7 tests + reset between cases.
+import * as filterState from "../state/filterState.js";
 
 import {
   LAYERS, ENVIRONMENTS, CATALOG,
@@ -2590,7 +2592,7 @@ describe("22 · services/programsService", () => {
     const text = detail ? detail.textContent : "";
     l.remove(); r.remove();
     assert(detail !== null, "clicking project card populates .detail-panel");
-    assert(text.indexOf("Core DC") >= 0, "project detail includes project name context");
+    assert(text.indexOf("Primary Data Center") >= 0, "project detail includes project name context (v2.4.15: label is 'Primary Data Center', was 'Core DC')");
     assert(text.indexOf("Constituent gaps") >= 0, "project detail lists constituent gaps section");
   });
 
@@ -2780,7 +2782,7 @@ describe("15 · ui/views/Summary views — DOM contracts", () => {
     assert(result.hasName, "project card must include a name");
     assert(result.hasUrg, "project card must include an urgency badge");
     assert(result.hasCount, "project card must include a gap-count badge");
-    assert(result.nameText.indexOf("Core DC") >= 0, "name must include env label");
+    assert(result.nameText.indexOf("Primary Data Center") >= 0, "name must include env label (v2.4.15: 'Primary Data Center', was 'Core DC')");
     assert(result.nameText.indexOf("Data Protection") >= 0, "name must include layer label");
     assert(result.nameText.indexOf("Modernization") >= 0, "name must include action verb");
   });
@@ -3371,7 +3373,7 @@ describe("20 * services/roadmapService -- project grouping", () => {
     createGap(s, { description:"X", layerId:"storage", phase:"now", gapType:"replace",
       affectedEnvironments:["coreDc"], reviewed:false });
     var proj = buildProjects(s, {}).projects[0];
-    assert(proj.name.indexOf("Core DC") >= 0, "name must include env label 'Core DC'");
+    assert(proj.name.indexOf("Primary Data Center") >= 0, "name must include env label (v2.4.15: 'Primary Data Center', was 'Core DC')");
     assert(proj.name.indexOf("Data Storage") >= 0, "name must include layer label 'Data Storage'");
     assert(proj.name.indexOf("Modernization") >= 0, "name must include action verb 'Modernization' for gapType=replace");
   });
@@ -6986,6 +6988,12 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     else el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
   }
 
+  function closeAnyModal() {
+    document.querySelectorAll(".hide-env-modal, .save-guard-modal, .modal-overlay").forEach(function(m) {
+      if (m.parentNode) m.parentNode.removeChild(m);
+    });
+  }
+
   // ===================================================================
   // Section 1 · DE1-DE10 · Dynamic environment model
   // ===================================================================
@@ -7156,6 +7164,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
   });
 
   it("DE8 · Hide button (replaces prior Remove) flips env.hidden to true; entry remains in environments", () => {
+    _markSaved({ isDemo: false }); // ensure clean (not "saving") state so save-guard does NOT fire
     var s = makeEnvSession([
       { id: "coreDc", hidden: false },
       { id: "drDc",   hidden: false }
@@ -7168,8 +7177,8 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       assert(hideBtn,
         "DE8 · must render a Hide button per active env (looked for .env-hide-btn / [data-env-hide])");
       dispatchClick(hideBtn);
-      // Confirmation modal may open; if so, click its Hide action to confirm.
-      var confirmBtn = document.querySelector(".hide-env-modal .confirm-hide, [data-hide-env-confirm], .modal-hide-env .btn-hide");
+      // Confirmation modal opens. Click its Hide action to confirm.
+      var confirmBtn = document.querySelector(".hide-env-modal .confirm-hide, [data-hide-env-confirm]");
       if (confirmBtn) dispatchClick(confirmBtn);
       var coreEntry = findEnv(s, "coreDc");
       assert(coreEntry,
@@ -7179,6 +7188,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
         JSON.stringify(coreEntry) + ")");
     } finally {
       document.body.removeChild(l);
+      closeAnyModal();
     }
   });
 
@@ -7265,7 +7275,10 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       { id: "coreDc",      hidden: false },
       { id: "publicCloud", hidden: false }
     ]);
+    var cur = addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "INT4-cur", vendorGroup: "dell", criticality: "Medium" });
     var g = createGap(s, { description: "INT4 gap", layerId: "compute", gapType: "ops",
+      relatedCurrentInstanceIds: [cur.id],
       affectedEnvironments: ["coreDc", "publicCloud"] });
     var beforeAffected = (g.affectedEnvironments || []).slice();
     findEnv(s, "coreDc").hidden = true;
@@ -7276,6 +7289,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
   });
 
   it("DE-INT5 · ≥1 active env invariant: cannot hide the last active env", () => {
+    _markSaved({ isDemo: false }); // clean state so save-guard does NOT fire if button clicks
     var s = makeEnvSession([
       { id: "coreDc", hidden: false }
     ]);
@@ -7360,9 +7374,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     }
   });
 
-  it("SD3 · Hide button save-guards when session has unsaved changes", async () => {
-    // Use the markSaving/markIdle helpers to fake a dirty state.
-    var saveStatus = await import("../core/saveStatus.js");
+  it("SD3 · Hide button save-guards when session has unsaved changes", () => {
     var s = makeEnvSession([
       { id: "coreDc", hidden: false },
       { id: "drDc",   hidden: false }
@@ -7371,26 +7383,26 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     renderContextView(l, r, s);
     document.body.appendChild(l);
     try {
-      // Force a dirty state — markSaving emits state without persisting.
-      if (typeof saveStatus.markSaving === "function") saveStatus.markSaving();
+      // Force a dirty state ahead of the click. markSaving sets the save-status
+      // bus to "saving"; the Hide flow consults this to decide whether to open
+      // the save-guard modal first.
+      _markSaving();
       var hideBtn = l.querySelector(".env-row[data-env-id='coreDc'] .env-hide-btn, [data-env-hide='coreDc']");
       assert(hideBtn, "SD3 · need a Hide button on coreDc");
       dispatchClick(hideBtn);
-      // Save-guard modal should appear.
-      var saveGuard = document.querySelector(".save-guard-modal, [data-save-guard], .modal-save-guard, .hide-env-modal[data-save-guard='true']");
+      var saveGuard = document.querySelector(".save-guard-modal, [data-save-guard='true']");
       assert(saveGuard,
         "SD3 · clicking Hide on a dirty session must open a save-guard modal (Save & Hide / Hide without saving / Cancel)");
-      // Cleanup any open dialog.
-      var cancelBtn = document.querySelector(".save-guard-modal .btn-cancel, [data-save-guard] .btn-cancel, .hide-env-modal .btn-cancel");
-      if (cancelBtn) dispatchClick(cancelBtn);
     } finally {
+      closeAnyModal();
       document.body.removeChild(l);
-      // Restore idle so subsequent tests don't see a dirty banner.
-      if (typeof saveStatus.markSaved === "function") saveStatus.markSaved({ isDemo: false });
+      // Restore clean state so subsequent tests don't see a dirty banner.
+      _markSaved({ isDemo: false });
     }
   });
 
   it("SD4 · Hide confirmation modal copy includes env label + instance count line + Hide+Cancel buttons", () => {
+    _markSaved({ isDemo: false }); // clean state so save-guard does NOT fire first
     var s = makeEnvSession([
       { id: "coreDc", hidden: false, alias: "Riyadh DC" },
       { id: "drDc",   hidden: false }
@@ -7428,6 +7440,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
   });
 
   it("SD5 · Confirmed hide flips hidden flag + emits session-changed with reason matching /env|hide/", () => {
+    _markSaved({ isDemo: false }); // clean state so save-guard does NOT fire first
     var s = makeEnvSession([
       { id: "coreDc", hidden: false },
       { id: "drDc",   hidden: false }
@@ -7436,16 +7449,10 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     renderContextView(l, r, s);
     document.body.appendChild(l);
     var captured = null;
-    var unsub = null;
+    var unsub = onSessionChanged(function(ev) {
+      if (!captured) captured = ev;
+    });
     try {
-      var bus = require ? null : null;
-      // Subscribe via the sessionEvents bus.
-      // Use a dynamic import marker — emitSessionChanged is already imported above in this file.
-      // We hook into the global `document` listener pattern used by app.js:
-      var handler = function(ev) {
-        if (!captured) captured = ev && ev.detail;
-      };
-      document.addEventListener("session-changed", handler);
       var hideBtn = l.querySelector(".env-row[data-env-id='coreDc'] .env-hide-btn, [data-env-hide='coreDc']");
       assert(hideBtn, "SD5 · need a Hide button on coreDc");
       dispatchClick(hideBtn);
@@ -7458,11 +7465,10 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       assert(captured && /hide|env/i.test(captured.reason || ""),
         "SD5 · session-changed reason must mention env/hide (got '" +
         (captured && captured.reason) + "')");
-      document.removeEventListener("session-changed", handler);
     } finally {
+      unsub();
+      closeAnyModal();
       document.body.removeChild(l);
-      var leftover = document.querySelector(".hide-env-modal, [data-hide-env-modal]");
-      if (leftover && leftover.parentNode) leftover.parentNode.removeChild(leftover);
     }
   });
 

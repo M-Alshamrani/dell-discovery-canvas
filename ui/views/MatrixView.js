@@ -1,6 +1,6 @@
 // ui/views/MatrixView.js -- current / desired state matrix (fixed disposition workflow)
 
-import { LAYERS, ENVIRONMENTS, CATALOG, getEnvLabel } from "../../core/config.js";
+import { LAYERS, ENVIRONMENTS, CATALOG, getEnvLabel, getActiveEnvironments } from "../../core/config.js";
 import { addInstance, updateInstance, deleteInstance,
          mapAsset, unmapAsset, proposeCriticalityUpgrades } from "../../interactions/matrixCommands.js";
 import { createGap } from "../../interactions/gapsCommands.js";
@@ -45,25 +45,39 @@ export function renderMatrixView(left, right, session, opts) {
     left.appendChild(header);
   }
 
+  // v2.4.15 . dynamic environment list. Render every active env (visible
+  // + hidden); hidden columns get data-env-hidden="true" + a CSS rule
+  // greys them out top-to-bottom so the user can still see the structure
+  // but can't edit. Tab 5 reporting uses getVisibleEnvironments and
+  // excludes hidden envs entirely (see SummaryHealthView etc.).
+  var activeEnvs = getActiveEnvironments(session);
+
   // Grid
   var wrap = mk("div", "matrix-scroll-wrap");
   var grid = mk("div", "matrix-grid");
-  grid.style.gridTemplateColumns = "160px repeat(" + ENVIRONMENTS.length + ", 1fr)";
+  grid.style.gridTemplateColumns = "160px repeat(" + activeEnvs.length + ", 1fr)";
 
   // Header row. v2.4.13 polish iter-2: each env header now follows the
   // GPLC sample's "code + name" idiom: a mono "E.0X" code in Dell-blue
   // above (or before) the sentence-case env name, so the column header
   // reads as a deliberate reference label instead of a flat caps line.
   grid.appendChild(mk("div", "matrix-corner"));
-  ENVIRONMENTS.forEach(function(env, eIdx) {
+  activeEnvs.forEach(function(env, eIdx) {
     var h = mk("div", "matrix-env-head");
     h.setAttribute("data-env-id", env.id);
+    h.setAttribute("data-env",    env.id);
+    if (env.hidden) h.setAttribute("data-env-hidden", "true");
     var code = mk("span", "matrix-env-code");
     code.textContent = "E." + ("0" + (eIdx + 1)).slice(-2);
     var name = mk("span", "matrix-env-name");
     name.textContent = getEnvLabel(env.id, session);
     h.appendChild(code);
     h.appendChild(name);
+    if (env.hidden) {
+      var tag = mk("span", "env-hidden-tag tag");
+      tag.textContent = "HIDDEN";
+      h.appendChild(tag);
+    }
     grid.appendChild(h);
   });
 
@@ -85,11 +99,12 @@ export function renderMatrixView(left, right, session, opts) {
     nameEl.textContent = layer.label;
     hdr.appendChild(nameEl);
     grid.appendChild(hdr);
-    ENVIRONMENTS.forEach(function(env) {
+    activeEnvs.forEach(function(env) {
       var cell = mk("div", "matrix-cell");
       cell.setAttribute("data-matrix-cell", "");
       cell.setAttribute("data-layer-id", layer.id);
       cell.setAttribute("data-env-id",   env.id);
+      if (env.hidden) cell.setAttribute("data-env-hidden", "true");
       renderCell(cell, layer.id, env.id);
       grid.appendChild(cell);
     });

@@ -1,12 +1,15 @@
 // ui/views/SummaryVendorView.js — vendor & platform mix analytics
 
-import { LAYERS, ENVIRONMENTS } from "../../core/config.js";
+import { LAYERS, getVisibleEnvironments } from "../../core/config.js";
 import { computeMixByLayer, computeMixByEnv, computeVendorTableData } from "../../services/vendorMixService.js";
 import { helpButton } from "./HelpModal.js";
-import { session as liveSession } from "../../state/sessionStore.js";
+import { session as moduleLiveSession } from "../../state/sessionStore.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
 
-export function renderSummaryVendorView(left, right) {
+export function renderSummaryVendorView(left, right, sessionArg) {
+  // v2.4.15 . accept session as optional 3rd arg so tests can drive
+  // with a fixture; default to module-scoped live session.
+  var liveSession = sessionArg || moduleLiveSession;
   let stateFilter    = "combined";
   let activeLayerIds = new Set(LAYERS.map(l => l.id));
 
@@ -65,8 +68,22 @@ export function renderSummaryVendorView(left, right) {
     lc.appendChild(chip);
   });
 
-  const layerCard = mk("div", "card"); layerCard.innerHTML = `<div class="card-title">Mix by layer</div><div id="vm-by-layer"></div>`; left.appendChild(layerCard);
-  const envCard   = mk("div", "card"); envCard.innerHTML   = `<div class="card-title">Mix by environment</div><div id="vm-by-env"></div>`;   left.appendChild(envCard);
+  // v2.4.15 . VB1-VB3 . segmented bar overview (3 stacked horizontal bars)
+  // for Combined / Current / Desired. Replaces the multi-card legacy
+  // table layout for top-level mix communication. Per-layer + per-env
+  // detail bars remain below.
+  const overviewCard = mk("div", "card");
+  overviewCard.innerHTML = `<div class="card-title">Mix overview</div>
+    <div class="vm-overview-bars"></div>`;
+  left.appendChild(overviewCard);
+  // v2.4.15 . hold direct refs (don't rely on document.getElementById,
+  // which doesn't see elements until the parent is in document).
+  const overviewBarsHost = overviewCard.querySelector(".vm-overview-bars");
+
+  const layerCard = mk("div", "card"); layerCard.innerHTML = `<div class="card-title">Mix by layer</div><div class="vm-by-layer"></div>`; left.appendChild(layerCard);
+  const layerHost = layerCard.querySelector(".vm-by-layer");
+  const envCard   = mk("div", "card"); envCard.innerHTML   = `<div class="card-title">Mix by environment</div><div class="vm-by-env"></div>`;   left.appendChild(envCard);
+  const envHost   = envCard.querySelector(".vm-by-env");
   const tableCard = mk("div", "card");
   tableCard.innerHTML = `
     <div class="card-title">Vendor detail</div>
@@ -90,33 +107,100 @@ export function renderSummaryVendorView(left, right) {
       <span class="chip-stat">Non-Dell: ${n}</span>
       <span class="chip-stat">Custom: ${c}</span>`;
 
-    renderBars("vm-by-layer",
+    // v2.4.15 . VB1-VB2 . overview bars: Combined / Current / Desired.
+    // Each is a single .vendor-bar with 3 .vendor-bar-segment children
+    // sized proportionally; segments wider than 6% show inline %.
+    var overviewItems = [
+      { label: "Combined",     stateFilter: "combined" },
+      { label: "Current state", stateFilter: "current"  },
+      { label: "Desired state", stateFilter: "desired"  }
+    ];
+    var overviewMix = overviewItems.map(function(item) {
+      var byLayer = computeMixByLayer({ stateFilter: item.stateFilter, layerIds: ids() });
+      var totals = { dell: 0, nonDell: 0, custom: 0, total: 0 };
+      Object.keys(byLayer).forEach(function(lid) {
+        totals.dell    += byLayer[lid].dell    || 0;
+        totals.nonDell += byLayer[lid].nonDell || 0;
+        totals.custom  += byLayer[lid].custom  || 0;
+        totals.total   += byLayer[lid].total   || 0;
+      });
+      return { label: item.label, counts: totals };
+    });
+    renderOverviewBars(overviewBarsHost, overviewMix);
+
+    var visibleEnvs = getVisibleEnvironments(liveSession);
+    renderBars(layerHost,
       computeMixByLayer({ stateFilter, layerIds: ids() }),
       ids().map(id => ({ id, label: LAYERS.find(l=>l.id===id)?.label || id })));
 
-    renderBars("vm-by-env",
-      computeMixByEnv({ stateFilter, layerIds: ids(), environments: ENVIRONMENTS }),
-      ENVIRONMENTS.map(e => ({ id: e.id, label: e.label })));
+    renderBars(envHost,
+      computeMixByEnv({ stateFilter, layerIds: ids(), environments: visibleEnvs }),
+      visibleEnvs.map(e => ({ id: e.id, label: e.label })));
 
     renderTable(rows);
   }
 
-  function renderBars(containerId, mix, items) {
-    const c = document.getElementById(containerId); if (!c) return; c.innerHTML = "";
+  // v2.4.15 . overview-bar renderer (VB1/VB2). Always emits exactly 3
+  // .vendor-bar-segment children so the test can rely on the count;
+  // empty (0%) segments render with width:0 + display:none for visual
+  // cleanness but stay in DOM so JSON probes remain stable.
+  function renderOverviewBars(c, items) {
+    if (!c) return;
+    c.innerHTML = "";
+    items.forEach(function(item) {
+      var counts = item.counts || { dell:0, nonDell:0, custom:0, total:0 };
+      var total  = counts.total || 1;
+      var dp = pct(counts.dell,    total);
+      var np = pct(counts.nonDell, total);
+      var cp = 100 - dp - np;
+      if (cp < 0) cp = 0;
+
+      var grp = mk("div", "vendor-bar-group");
+      var lbl = mk("div", "vendor-bar-label metric");
+      lbl.textContent = item.label + " (" + counts.total + " " +
+        (counts.total === 1 ? "instance" : "instances") + ")";
+      grp.appendChild(lbl);
+
+      var bar = mk("div", "vendor-bar");
+      [["dell", dp], ["nonDell", np], ["custom", cp]].forEach(function(pair) {
+        var seg = mk("div", "vendor-bar-segment vendor-bar-segment-" + pair[0]);
+        seg.setAttribute("data-vendor-group", pair[0]);
+        seg.style.width = pair[1] + "%";
+        seg.title = pair[0] + ": " + pair[1] + "%";
+        if (pair[1] >= 6) {
+          // Inline % label only when the segment is wide enough to read.
+          seg.textContent = pair[1] + "%";
+        }
+        bar.appendChild(seg);
+      });
+      grp.appendChild(bar);
+      c.appendChild(grp);
+    });
+  }
+
+  // v2.4.15 . VB3 . per-layer / per-env bars now also emit .vendor-bar
+  // (alongside legacy .bar-track) so the same CSS rules + the same test
+  // selectors apply across overview + breakdown sections.
+  function renderBars(c, mix, items) {
+    if (!c) return; c.innerHTML = "";
     items.forEach(item => {
       const counts = mix[item.id] || { dell:0, nonDell:0, custom:0, total:0 };
       const total  = counts.total || 1;
       const dp = pct(counts.dell,   total);
       const np = pct(counts.nonDell,total);
-      const cp = pct(counts.custom, total);
+      let   cp = 100 - dp - np;
+      if (cp < 0) cp = 0;
 
       const grp = mk("div", "bar-group");
       const lbl = mk("div", "bar-label"); lbl.textContent = item.label; grp.appendChild(lbl);
-      const bar = mk("div", "bar-track");
-      [["bar-dell",dp],["bar-nondell",np],["bar-custom",cp]].forEach(([cls, w]) => {
-        if (w > 0) {
-          const seg = mk("div", cls); seg.style.width = w + "%"; seg.title = `${w}%`; bar.appendChild(seg);
-        }
+      const bar = mk("div", "bar-track vendor-bar vendor-bar-mini");
+      [["dell", dp, "bar-dell"], ["nonDell", np, "bar-nondell"], ["custom", cp, "bar-custom"]].forEach(([group, w, legacyCls]) => {
+        const seg = mk("div", legacyCls + " vendor-bar-segment vendor-bar-segment-" + group);
+        seg.setAttribute("data-vendor-group", group);
+        seg.style.width = w + "%";
+        seg.title = group + ": " + w + "%";
+        if (w >= 6) seg.textContent = w + "%";
+        bar.appendChild(seg);
       });
       grp.appendChild(bar);
       const meta = mk("div", "bar-meta");
@@ -193,7 +277,7 @@ export function renderSummaryVendorView(left, right) {
     // Instance list
     const instSep = mk("div", "detail-sep"); instSep.textContent = "Instances"; panel.appendChild(instSep);
     matching.forEach(inst => {
-      const envLabel = ENVIRONMENTS.find(e => e.id === inst.environmentId)?.label || inst.environmentId;
+      const envLabel = (getVisibleEnvironments(liveSession).find(e => e.id === inst.environmentId) || {}).label || inst.environmentId;
       const row = mk("div", "detail-row");
       row.innerHTML = `<span class="vg-badge vg-${inst.vendorGroup||'custom'}">${inst.state}</span> ${inst.label} — ${envLabel}`;
       panel.appendChild(row);

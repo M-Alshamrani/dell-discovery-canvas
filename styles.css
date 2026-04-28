@@ -1176,6 +1176,82 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   min-width: 600px;
 }
 .matrix-corner   { background: var(--surface-2); }
+
+/* v2.4.15 . MT2 . corner cell goes visually invisible on both matrix +
+   heatmap. Cell stays in the grid for layout alignment but no longer
+   draws as an empty box. */
+.matrix-corner, .hm-corner {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* v2.4.15 . SD7 . hidden env columns render greyed-out top-to-bottom.
+   Headers (.matrix-env-head[data-env-hidden="true"]) and their
+   matrix-cells (.matrix-cell[data-env-hidden="true"]) get reduced
+   opacity, grayscale, dashed outline + are non-interactive. The user
+   can still see the structure but can't edit; clicking is a no-op.
+   Hidden envs are EXCLUDED entirely from Tab 5 reporting via
+   getVisibleEnvironments() in SummaryHealthView/SummaryVendorView. */
+.matrix-env-head[data-env-hidden="true"],
+.matrix-cell[data-env-hidden="true"] {
+  opacity: 0.35;
+  filter: grayscale(1);
+  pointer-events: none;
+  outline: 1px dashed var(--rule-strong, #cbd5e1);
+  outline-offset: -2px;
+}
+.matrix-env-head[data-env-hidden="true"] .env-hidden-tag {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+/* v2.4.15 . MT1 . matrix + heatmap column-gap = 3px (was 1px). Less
+   than the 6px row-gap so rows remain the dominant scan direction. */
+.matrix-grid, .heatmap-grid { column-gap: 3px; }
+
+/* v2.4.15 . VB1-VB3 . vendor mix segmented bar. Single horizontal bar
+   with 3 proportional segments (Dell / non-Dell / custom). 16px tall
+   on the overview, 12px on per-layer mini bars. Inline percentage
+   label visible when the segment is at least ~6% wide; smaller
+   segments shrink to a colored stripe with hover tooltip. */
+.vendor-bar-group { margin-bottom: 10px; }
+.vendor-bar-label {
+  font-size: 11px;
+  color: var(--ink-mute, #6b7280);
+  margin-bottom: 4px;
+  letter-spacing: 0.4px;
+  font-variant-numeric: tabular-nums;
+}
+.vendor-bar {
+  display: flex;
+  height: 16px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--canvas-soft, #f3f4f6);
+}
+.vendor-bar-mini { height: 12px; }
+.vendor-bar-segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.vendor-bar-segment-dell    { background: var(--dell-blue, #0076CE); }
+.vendor-bar-segment-nonDell { background: var(--ink-mute, #6b7280); }
+.vendor-bar-segment-custom  { background: var(--amber, #f59e0b); }
 /* v2.4.13 polish iter-2 . old single-line .matrix-env-head removed;
    the structured rule below (line ~1100) carries the new GPLC code +
    name pattern. */

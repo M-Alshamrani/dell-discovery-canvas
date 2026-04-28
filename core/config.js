@@ -14,45 +14,88 @@ export const LAYERS = [
 
 // infrastructure = networking + security + management combined for simplicity
 
-export const ENVIRONMENTS = [
-  { id: "coreDc",      label: "Core DC" },
-  { id: "drDc",        label: "DR / Secondary DC" },
-  { id: "publicCloud", label: "Public Cloud" },
-  { id: "edge",        label: "Edge / Remote" }
+// v2.4.15 · ENV_CATALOG is the authoritative list of available environment
+// types. Each entry: { id, label, hint }. The id is stable across versions
+// (used as session.environments[].id and instance.environmentId); labels
+// are exec-readable and may be retuned in future releases without breaking
+// data. ENVIRONMENTS (below) is the legacy default-4 export kept for any
+// caller that hasn't migrated to ENV_CATALOG / getActiveEnvironments yet.
+export const ENV_CATALOG = [
+  { id: "coreDc",         label: "Primary Data Center",     hint: "The main on-premises site" },
+  { id: "drDc",           label: "Disaster Recovery Site",  hint: "Active or warm standby for failover" },
+  { id: "archiveSite",    label: "Archive Site",            hint: "Compliance archive, immutable backups, tertiary tier" },
+  { id: "publicCloud",    label: "Public Cloud",            hint: "AWS, Azure, GCP, Oracle" },
+  { id: "edge",           label: "Branch & Edge Sites",     hint: "Retail, factory floor, remote offices" },
+  { id: "coLo",           label: "Co-location",             hint: "Third-party data center space" },
+  { id: "managedHosting", label: "Managed Hosting",         hint: "Provider-operated dedicated hosting" },
+  { id: "sovereignCloud", label: "Sovereign Cloud",         hint: "In-region regulated cloud (UAE, KSA, EU)" }
 ];
 
-// ===========================================================================
-// v2.4.15 RED-STUBS · dynamic environment model (DE1-DE9 + SD1-SD9 + soft-delete)
-// These exports exist so diagnostics/appSpec.js Suite 46 can import them and
-// fail RED on content rather than on module-load errors. Implementation phase
-// (after RED tests commit) replaces these with real values + behavior.
-// ===========================================================================
+// The ids enabled by default on a fresh session. Existing sessions
+// auto-enable whatever envs their data references (see migrator).
+export const DEFAULT_ENABLED_ENV_IDS = ["coreDc", "drDc", "publicCloud", "edge"];
 
-export const ENV_CATALOG = [];                 // RED-STUB · target: 8 entries with new labels
-export const DEFAULT_ENABLED_ENV_IDS = [];     // RED-STUB · target: ["coreDc","drDc","publicCloud","edge"]
+// Legacy export kept for any view / service that still iterates the
+// canonical 4-entry list. New code should call getActiveEnvironments().
+export const ENVIRONMENTS = ENV_CATALOG.filter(function(c) {
+  return DEFAULT_ENABLED_ENV_IDS.indexOf(c.id) >= 0;
+}).map(function(c) {
+  // Preserve historical shape: just { id, label } so existing call-sites
+  // keep working without surprise extra fields.
+  return { id: c.id, label: c.label };
+});
 
-export function getActiveEnvironments(session) { // RED-STUB · target: session.environments OR fallback to defaults as catalog entries
-  return [];
+// Returns the list of envs active in this session: each entry is the
+// session's enriched record (with id, hidden, alias?, location?, sizeKw?,
+// sqm?, tier?, notes?) merged with the catalog metadata (label, hint).
+// If session.environments is empty (e.g. brand-new session), falls back
+// to the default-enabled set rendered as catalog entries with hidden:false.
+export function getActiveEnvironments(session) {
+  var arr = session && Array.isArray(session.environments) ? session.environments : null;
+  if (arr && arr.length > 0) {
+    return arr.map(function(entry) {
+      var cat = ENV_CATALOG.find(function(c) { return c.id === entry.id; });
+      return Object.assign(
+        { id: entry.id, label: cat ? cat.label : entry.id, hint: cat ? cat.hint : "" },
+        entry
+      );
+    });
+  }
+  // Fallback: render the default-enabled set as catalog entries.
+  return DEFAULT_ENABLED_ENV_IDS.map(function(id) {
+    var cat = ENV_CATALOG.find(function(c) { return c.id === id; });
+    return cat ? { id: cat.id, label: cat.label, hint: cat.hint, hidden: false } : { id: id, hidden: false };
+  });
 }
 
-export function getVisibleEnvironments(session) { // RED-STUB · target: getActiveEnvironments(s).filter(e => !e.hidden)
-  return [];
+export function getVisibleEnvironments(session) {
+  return getActiveEnvironments(session).filter(function(e) { return !e.hidden; });
 }
 
-export function getHiddenEnvironments(session) {  // RED-STUB · target: getActiveEnvironments(s).filter(e => e.hidden)
-  return [];
+export function getHiddenEnvironments(session) {
+  return getActiveEnvironments(session).filter(function(e) { return e.hidden === true; });
 }
 
-// v2.4.14 . per-session environment aliases. Returns the customer-
-// supplied alias (e.g. "Riyadh DC") if the session has one for the
-// given env id; otherwise falls back to the canonical ENVIRONMENTS
-// label. Renders consume this everywhere they used `env.label`.
-// v2.4.15 · DE7 will update this to read from session.environments[].alias.
+// v2.4.15 · DE7 · getEnvLabel reads from session.environments[].alias.
+// Falls back to the canonical ENV_CATALOG label, then to the env id.
+// For backward-compat during migration: if session still carries the
+// legacy environmentAliases map (only happens before migrateLegacySession
+// has run), read it as a secondary fallback.
 export function getEnvLabel(envId, session) {
-  var alias = session && session.environmentAliases && session.environmentAliases[envId];
-  if (typeof alias === "string" && alias.trim().length > 0) return alias.trim();
-  var entry = ENVIRONMENTS.find(function(e) { return e.id === envId; });
-  return entry ? entry.label : envId;
+  if (session && Array.isArray(session.environments)) {
+    var entry = session.environments.find(function(e) { return e.id === envId; });
+    if (entry && typeof entry.alias === "string" && entry.alias.trim().length > 0) {
+      return entry.alias.trim();
+    }
+  }
+  if (session && session.environmentAliases && typeof session.environmentAliases === "object") {
+    var legacy = session.environmentAliases[envId];
+    if (typeof legacy === "string" && legacy.trim().length > 0) return legacy.trim();
+  }
+  var cat = ENV_CATALOG.find(function(c) { return c.id === envId; });
+  if (cat) return cat.label;
+  var legacyEntry = ENVIRONMENTS.find(function(e) { return e.id === envId; });
+  return legacyEntry ? legacyEntry.label : envId;
 }
 
 // Catalog — each entry may carry an optional `environments` whitelist.
