@@ -5482,28 +5482,35 @@ describe("40 · Phase 19i · v2.4.9 primary-layer invariant + explicit gap.proje
       "button must carry the .footer-btn-destructive class so it reads as destructive");
   });
 
-  it("CL2 · clicking Clear-all-data prompts confirm, and Cancel-path performs no wipe", () => {
-    // v2.4.10 · NEVER assign to window.localStorage.clear — for the
-    // Storage interface that triggers setItem('clear', fn.toString())
-    // which pollutes storage with a literal 'clear' KEY that survives
-    // page reloads. Previous CL2 left that key on every page load.
-    // Instead: stub confirm → FALSE, click, verify zero wipe occurred
-    // by counting keys before/after.
+  it("CL2 · clicking Clear-all-data opens the Notify confirm overlay; canary survives until confirmed", () => {
+    // v2.4.15-polish iter-4 . the destructive Clear-all flow migrated
+    // from native window.confirm to Notify.js confirmAction (an
+    // Overlay-based modal). CL2 now asserts the click opens the
+    // overlay (with the right title + danger styling) and that NO
+    // wipe happens until the user confirms. Cancel via overlay
+    // close-button keeps the canary alive.
     const btn = document.getElementById("clearAllBtn");
     assert(btn, "#clearAllBtn must render");
-    // Seed one canary key so "did it wipe" is observable.
     window.localStorage.setItem("__cl2_canary__", "alive");
-    const origConfirm = window.confirm;
-    let confirmCalled = 0;
-    window.confirm = function() { confirmCalled++; return false; };
     try {
       btn.click();
-      assertEqual(confirmCalled, 1, "confirm dialog must fire once per click");
+      const modal = document.querySelector(".overlay.open.notify-modal");
+      assert(modal, "CL2 · click must open a notify-modal Overlay");
+      assert(/Clear ALL app data/.test(modal.textContent || ""),
+        "CL2 · modal title must explain the clear-all destructive action");
+      assert(modal.classList.contains("notify-danger"),
+        "CL2 · clear-all confirm must use the danger variant");
       assertEqual(window.localStorage.getItem("__cl2_canary__"), "alive",
-        "Cancel-path must NOT wipe storage (canary survives)");
+        "CL2 · merely opening the modal must NOT wipe storage (canary survives until confirm)");
+      // Close via the X button to dismiss without confirming.
+      const closeX = modal.querySelector(".overlay-close");
+      if (closeX) closeX.click();
     } finally {
-      window.confirm = origConfirm;
       window.localStorage.removeItem("__cl2_canary__");
+      // Belt + braces cleanup if the overlay stayed open.
+      document.querySelectorAll(".overlay.open, .overlay-backdrop").forEach(function(n) {
+        if (n.parentNode) n.parentNode.removeChild(n);
+      });
     }
   });
 
@@ -7884,36 +7891,38 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     }
   });
 
-  it("FB7b · Domain dim chip click sets body[data-filter-domain] + matching cards get .filter-match-domain", () => {
+  it("FB7b · Gap type dim chip click sets body[data-filter-gapType] + matching cards get .filter-match-gapType", () => {
+    // v2.4.15-polish iter-4 . Domain dim retired per user direction;
+    // Gap type takes its slot in the FilterBar accordion. Same contract:
+    // chip click -> body data attr + .filter-match-gapType on cards.
     filterState._resetForTests();
     var s = createEmptySession();
     s.environments = [{ id: "coreDc", hidden: false }];
-    var cur1 = addInstance(s, { state: "current", layerId: "infrastructure", environmentId: "coreDc",
+    var cur1 = addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
       label: "FB7b-cur1", vendorGroup: "dell", criticality: "Medium" });
     var cur2 = addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
       label: "FB7b-cur2", vendorGroup: "dell", criticality: "Medium" });
-    // Use service ids that produce a stable domain for the chip lookup
-    createGap(s, { description: "FB7b infra gap", layerId: "infrastructure", gapType: "ops",
+    createGap(s, { description: "FB7b ops gap", layerId: "compute", gapType: "ops",
       relatedCurrentInstanceIds: [cur1.id], services: ["migration"] });
-    createGap(s, { description: "FB7b compute gap", layerId: "compute", gapType: "ops",
+    createGap(s, { description: "FB7b enhance gap", layerId: "compute", gapType: "enhance",
       relatedCurrentInstanceIds: [cur2.id], services: ["training"] });
     var l = document.createElement("div"); var r = document.createElement("div");
     renderGapsEditView(l, r, s);
     document.body.appendChild(l);
     try {
       dispatchClick(l.querySelector(".filter-bar-toggle"));
-      var chip = l.querySelector(".filter-chip[data-filter-dim='domain']");
-      assert(chip, "FB7b · panel must include at least one Domain chip");
-      var domainValue = chip.getAttribute("data-filter-value");
+      var chip = l.querySelector(".filter-chip[data-filter-dim='gapType'][data-filter-value='ops']");
+      assert(chip, "FB7b · panel must include the 'ops' Gap type chip");
       dispatchClick(chip);
-      assertEqual(document.body.getAttribute("data-filter-domain"), domainValue,
-        "FB7b · click must set body[data-filter-domain]='" + domainValue + "'");
-      var anyMatchClass = l.querySelectorAll(".gap-card.filter-match-domain").length;
-      assert(anyMatchClass >= 0,
-        "FB7b · domain dim must apply .filter-match-domain class to matching cards (got " + anyMatchClass + ")");
+      var bodyAttr = document.body.getAttribute("data-filter-gapType") || "";
+      assert(bodyAttr.split(" ").indexOf("ops") >= 0,
+        "FB7b · click must include 'ops' in body[data-filter-gapType]. Got '" + bodyAttr + "'");
+      var matchCount = l.querySelectorAll(".gap-card[data-gapType='ops'].filter-match-gapType").length;
+      assert(matchCount >= 1,
+        "FB7b · matching gap-card must have .filter-match-gapType class (got " + matchCount + ")");
     } finally {
       document.body.removeChild(l);
-      document.body.removeAttribute("data-filter-domain");
+      document.body.removeAttribute("data-filter-gapType");
       filterState._resetForTests();
     }
   });

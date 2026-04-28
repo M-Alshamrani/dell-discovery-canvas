@@ -23,6 +23,7 @@ import { renderDemoBanner } from "../components/DemoBanner.js";
 import { emitSessionChanged } from "../../core/sessionEvents.js";
 import { getStatus as getSaveStatus } from "../../core/saveStatus.js";
 import { openOverlay, closeOverlay } from "../components/Overlay.js";
+import { confirmAction } from "../components/Notify.js";
 
 export function renderContextView(left, right, session) {
   left.innerHTML  = "";
@@ -657,14 +658,23 @@ function buildDriverTile(d, idx, session, row, right) {
   del.title = "Remove driver";
   del.addEventListener("click", function(e) {
     e.stopPropagation();
-    if (d.outcomes && d.outcomes.trim().length > 0) {
-      if (!confirm("Remove driver '" + label + "'? Outcomes you typed will be lost.")) return;
+    function doDelete() {
+      var driverIdx = (session.customer.drivers || []).indexOf(d);
+      if (driverIdx >= 0) session.customer.drivers.splice(driverIdx, 1);
+      saveToLocalStorage();
+      paintDriverTiles(row, session, right);
+      renderWelcomePanel(right);
     }
-    var driverIdx = (session.customer.drivers || []).indexOf(d);
-    if (driverIdx >= 0) session.customer.drivers.splice(driverIdx, 1);
-    saveToLocalStorage();
-    paintDriverTiles(row, session, right);
-    renderWelcomePanel(right);
+    if (d.outcomes && d.outcomes.trim().length > 0) {
+      confirmAction({
+        title: "Remove driver?",
+        body: "'" + label + "' has outcomes you've already typed. Removing the driver discards them. This can't be undone.",
+        confirmLabel: "Remove driver",
+        danger: true
+      }).then(function(yes) { if (yes) doDelete(); });
+    } else {
+      doDelete();
+    }
   });
   tile.appendChild(del);
 

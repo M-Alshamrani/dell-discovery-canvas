@@ -98,6 +98,12 @@ export function openAiOverlay(opts) {
     var panel = document.querySelector(".overlay.open.is-pick-capsule, .overlay.open.is-transparent");
     if (!panel) return;
     var d = ev && ev.detail || {};
+    // v2.4.15-polish iter-4 . enrich the picked detail with the FULL
+    // session record so skill templates can reference the entity's
+    // structured fields (alias / location / sizeKw / criticality /
+    // affectedLayers / etc.). Without this, the LLM only sees
+    // {id, kind, label} which isn't enough for granular reasoning.
+    d.entity = lookupEntity(session, d.kind, d.id) || null;
     state.context.picked = d;
     exitPickMode(body, d);
   };
@@ -108,6 +114,43 @@ export function openAiOverlay(opts) {
    unused by v2.4.13 callers but exposed so tile click handlers can
    invoke it when a skill is flagged as needing entity selection. */
 export { engagePickMode };
+
+// v2.4.15-polish iter-4 . resolve a picked entity reference into the
+// full record that lives in session, so skill templates can reach
+// {{context.picked.entity.<field>}}. Returns null when the kind/id is
+// unknown so templates render an empty string instead of crashing.
+function lookupEntity(session, kind, id) {
+  if (!session || !kind || !id) return null;
+  if (kind === "instance") {
+    return (session.instances || []).find(function(i) { return i.id === id; }) || null;
+  }
+  if (kind === "gap") {
+    return (session.gaps || []).find(function(g) { return g.id === id; }) || null;
+  }
+  if (kind === "driver") {
+    return (session.customer && session.customer.drivers || []).find(function(d) { return d.id === id; }) || null;
+  }
+  if (kind === "environment") {
+    return (session.environments || []).find(function(e) { return e.id === id; }) || null;
+  }
+  if (kind === "service") {
+    // Services live as ids on gaps; bubble up an aggregate envelope.
+    var gapsWithService = (session.gaps || []).filter(function(g) {
+      return Array.isArray(g.services) && g.services.indexOf(id) >= 0;
+    });
+    return {
+      id: id,
+      kind: "service",
+      gapCount: gapsWithService.length,
+      gapIds: gapsWithService.map(function(g) { return g.id; })
+    };
+  }
+  if (kind === "project") {
+    var withProject = (session.gaps || []).filter(function(g) { return g.projectId === id; });
+    return { id: id, kind: "project", gapCount: withProject.length };
+  }
+  return null;
+}
 
 function buildBody() {
   var body = document.createElement("div");
@@ -260,9 +303,28 @@ function exitPickMode(body, picked) {
   var status = body.querySelector(".ai-pick-status");
   if (!status) return;
   if (picked && (picked.label || picked.id)) {
-    status.textContent = "Picked: " + (picked.label || picked.id);
+    // v2.4.15-polish iter-4 . show what got picked AND which fields the
+    // skill template can now reference. Helps skill authors verify
+    // the picked entity has the data they expect.
+    status.innerHTML = "";
     status.style.display = "";
-    setTimeout(function() { if (status) status.style.display = "none"; }, 2000);
+    var head = document.createElement("div");
+    head.className = "ai-pick-status-head";
+    head.textContent = "Picked: " + (picked.label || picked.id) + " (" + (picked.kind || "entity") + ")";
+    status.appendChild(head);
+    if (picked.entity) {
+      var hint = document.createElement("div");
+      hint.className = "ai-pick-status-hint";
+      var keys = Object.keys(picked.entity).filter(function(k) {
+        var v = picked.entity[k];
+        return v != null && v !== "";
+      });
+      hint.textContent = "Available in templates: " +
+        keys.slice(0, 8).map(function(k) { return "{{context.picked.entity." + k + "}}"; }).join("  ") +
+        (keys.length > 8 ? "  …" : "");
+      status.appendChild(hint);
+    }
+    setTimeout(function() { if (status) status.style.display = "none"; }, 5000);
   } else {
     status.style.display = "none";
   }

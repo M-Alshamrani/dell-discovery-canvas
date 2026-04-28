@@ -13,10 +13,12 @@ import { helpButton } from "./HelpModal.js";
 import { validateActionLinks, actionById } from "../../core/taxonomy.js";
 import { SERVICE_TYPES, SUGGESTED_SERVICES_BY_GAP_TYPE, suggestedFor, serviceLabel, serviceDomain } from "../../core/services.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
-import { getActiveValue as getFilter, toggleValue as toggleFilter, subscribe as subscribeFilter,
+import { getActiveValue as getFilter, getActiveValues as getFilterValues,
+         toggleValue as toggleFilter, subscribe as subscribeFilter,
          getToggles, setToggle } from "../../state/filterState.js";
 import { renderFilterBar, applyMatchClasses as applyFilterMatchClasses } from "../components/FilterBar.js";
 import { getSnapshot as getFilterSnapshot } from "../../state/filterState.js";
+import { confirmAction, notifyError } from "../components/Notify.js";
 
 // v2.4.14 F1 . apply the active services filter to a gap card. Sets
 // .filter-match-services when the card's services include the active
@@ -85,7 +87,12 @@ function findOtherGapLinking(session, instanceId, excludeGapId) {
 
 export function renderGapsEditView(left, right, session) {
   var activeLayerIds        = new Set(LAYERS.map(function(l) { return l.id; }));
-  var activeEnvId           = "all";
+  // v2.4.15-polish iter-4 . multi-select active sets. Empty set = no
+  // filter applied for that dim (matches everything). filteredGaps
+  // checks size > 0 before applying the include test.
+  var activeEnvIds          = new Set();
+  var activeGapTypes        = new Set();
+  var activeUrgencies       = new Set();
   var selectedGapId         = null;
   var dragGapId             = null;
   var showNeedsReviewOnly   = false;
@@ -108,19 +115,9 @@ export function renderGapsEditView(left, right, session) {
   header.appendChild(mkt("div", "card-hint",
     "Each gap bridges current to desired state. Auto-drafted gaps appear when you set a disposition in Desired State. Drag cards between phases to re-prioritise."));
 
-  // v2.4.15 . FB1-FB7 . modern collapsible FilterBar with all 4
-  // dimensions wired (services / layer / domain / urgency). Mounted as
-  // a single button + panel + active-pill strip; replaces the v2.4.14
-  // services-only chip row.
-  var domains = {};
-  (session.gaps || []).forEach(function(g) {
-    if (g && Array.isArray(g.services)) {
-      g.services.forEach(function(sid) {
-        var dom = serviceDomain(sid);
-        if (dom) domains[dom] = true;
-      });
-    }
-  });
+  // v2.4.15-polish iter-4 . FilterBar dim list = Service / Layer /
+  // Environment / Gap type / Urgency. Domain is dropped (per user
+  // direction). Each dim is multi-select (via filterState arrays).
   var filterBarHost = mk("div", "gaps-filter-bar-host");
   header.appendChild(filterBarHost);
 
@@ -151,10 +148,14 @@ export function renderGapsEditView(left, right, session) {
         options: visibleEnvsForFilter.map(function(e) {
           return { id: e.id, label: getEnvLabel(e.id, session) };
         }) },
-      { id: "domain",   label: "Domain",
-        options: Object.keys(domains).sort().map(function(d) {
-          return { id: d, label: d.charAt(0).toUpperCase() + d.slice(1) };
-        }) },
+      { id: "gapType",  label: "Gap type",
+        options: [
+          { id: "replace",  label: "Replace" },
+          { id: "enhance",  label: "Enhance" },
+          { id: "ops",      label: "Operational / services" },
+          { id: "newCap",   label: "New capability" },
+          { id: "consolidate", label: "Consolidate" }
+        ] },
       { id: "urgency",  label: "Urgency",
         options: [{ id: "High", label: "High" }, { id: "Medium", label: "Medium" }, { id: "Low", label: "Low" }] }
     ],
@@ -175,14 +176,20 @@ export function renderGapsEditView(left, right, session) {
   // showClosedGaps) survive intact -- we just sync them on every
   // filterState change so renderAll's existing logic keeps working.
   function syncFromFilterState() {
-    var lay = getFilter("layer");
-    var env = getFilter("environment");
-    if (lay) {
-      activeLayerIds = new Set([lay]);
+    // v2.4.15-polish iter-4 . multi-select aware. Layer + Environment
+    // can each have multiple active values now. activeLayerIds is a
+    // Set so legacy filteredGaps logic keeps working; activeEnvIds is
+    // a Set too (replaces the single activeEnvId).
+    var layVals = getFilterValues("layer");
+    var envVals = getFilterValues("environment");
+    if (layVals.length > 0) {
+      activeLayerIds = new Set(layVals);
     } else {
       activeLayerIds = new Set(LAYERS.map(function(l) { return l.id; }));
     }
-    activeEnvId = env || "all";
+    activeEnvIds = new Set(envVals);
+    activeGapTypes = new Set(getFilterValues("gapType"));
+    activeUrgencies = new Set(getFilterValues("urgency"));
     var togs = (typeof getToggles === "function") ? getToggles() : null;
     if (togs) {
       showNeedsReviewOnly = !!togs.needsReviewOnly;
@@ -269,23 +276,34 @@ export function renderGapsEditView(left, right, session) {
   }
 
   function filteredGaps() {
-    var layerIds = Array.from(activeLayerIds);
-    var envId    = activeEnvId;
-    // v2.4.11 · B1 · already correctly operates on `affectedLayers` (with
-    // a fallback to [layerId] for legacy sessions). The v2.4.9 invariant
-    // ensures affectedLayers[0] === layerId, so a primary-Compute gap
-    // with affectedLayers=["compute","storage"] correctly matches the
-    // Storage layer chip too.
+    // v2.4.15-polish iter-4 . multi-select intersection. For each dim
+    // with at least one active value, gap matches iff its value(s)
+    // intersect with the active set. No active values for a dim ->
+    // dim doesn't filter (matches everything).
+    var layerIds   = Array.from(activeLayerIds);
+    var envIds     = Array.from(activeEnvIds);
+    var gapTypes   = Array.from(activeGapTypes);
+    var urgencies  = Array.from(activeUrgencies);
+    var allLayers  = activeLayerIds.size === LAYERS.length;
     return (session.gaps || []).filter(function(g) {
       var layers = (g.affectedLayers && g.affectedLayers.length) ? g.affectedLayers : [g.layerId];
       var envs   = g.affectedEnvironments || [];
-      var lOk = !layerIds.length || layers.some(function(l) { return layerIds.indexOf(l) >= 0; });
-      var eOk = envId === "all" || envs.length === 0 || envs.indexOf(envId) >= 0;
+      // Layer dim: when every layer is active (empty user filter), all
+      // gaps match. Otherwise, intersection.
+      var lOk = allLayers || layers.some(function(l) { return layerIds.indexOf(l) >= 0; });
+      // Environment dim: empty active set = no filter; otherwise gap
+      // must reference at least one active env (gaps with empty
+      // affectedEnvironments are kept).
+      var eOk = envIds.length === 0 ||
+                envs.length === 0 ||
+                envs.some(function(e) { return envIds.indexOf(e) >= 0; });
+      var gtOk = gapTypes.length === 0 ||
+                 (g.gapType && gapTypes.indexOf(g.gapType) >= 0);
+      var uOk  = urgencies.length === 0 ||
+                 (g.urgency && urgencies.indexOf(g.urgency) >= 0);
       var nrOk = !showNeedsReviewOnly || g.reviewed === false;
-      // v2.4.11 · A2 · closed gaps (status === "closed") are hidden by
-      // default. Show them only when the "Show closed" filter chip is on.
       var statusOk = (g.status !== "closed") || showClosedGaps;
-      return lOk && eOk && nrOk && statusOk;
+      return lOk && eOk && gtOk && uOk && nrOk && statusOk;
     });
   }
 
@@ -346,7 +364,7 @@ export function renderGapsEditView(left, right, session) {
             syncDesiredFromGap(session, dragGapId);
             saveToLocalStorage();
             renderAll();
-          } catch(err) { alert("Could not move: " + err.message); }
+          } catch(err) { notifyError({ title: "Couldn't move the gap", body: err.message || String(err) }); }
         }
       });
 
@@ -375,11 +393,19 @@ export function renderGapsEditView(left, right, session) {
     // FilterBar's match-class pass can target them.
     if (gap.layerId) card.setAttribute("data-layer", gap.layerId);
     if (gap.urgency) card.setAttribute("data-urgency", gap.urgency);
+    if (gap.gapType) card.setAttribute("data-gapType", gap.gapType);
     // v2.4.15-polish iter-3 . carry affectedEnvironments[] as a space-
     // separated attribute so the FilterBar's environment dim can dim
     // non-matching cards.
     if (Array.isArray(gap.affectedEnvironments) && gap.affectedEnvironments.length > 0) {
       card.setAttribute("data-environment", gap.affectedEnvironments.join(" "));
+    }
+    // affectedLayers[] gets reflected as data-layer (multi-value) so a
+    // gap that affects both Compute and Storage matches both filter
+    // chips. The primary layerId is always first in the array per the
+    // v2.4.9 invariant, so single-value match-by-primary is preserved.
+    if (Array.isArray(gap.affectedLayers) && gap.affectedLayers.length > 1) {
+      card.setAttribute("data-layer", gap.affectedLayers.join(" "));
     }
     // v2.4.14 F1 . cards declare their services as a space-separated
     // attribute so the filter system + CSS dim rule can match.
@@ -888,13 +914,27 @@ export function renderGapsEditView(left, right, session) {
     });
     actions.appendChild(saveBtn);
 
-    var delBtn = mkt("button", "btn-danger", "Delete");
+    var delBtn = mkt("button", "btn-danger btn-with-feedback", "Delete");
     delBtn.addEventListener("click", function() {
-      if (!confirm("Delete this gap?")) return;
-      deleteGap(session, gap.id);
-      saveToLocalStorage();
-      selectedGapId = null;
-      renderAll();
+      confirmAction({
+        title: "Delete this gap?",
+        body: (gap.description || "(unnamed gap)") +
+              " . This removes the gap from the kanban + all linked instance references. Cannot be undone.",
+        confirmLabel: "Delete gap",
+        danger: true
+      }).then(function(yes) {
+        if (!yes) return;
+        delBtn.classList.add("is-loading");
+        try {
+          deleteGap(session, gap.id);
+          saveToLocalStorage();
+          selectedGapId = null;
+          renderAll();
+        } catch (e) {
+          delBtn.classList.remove("is-loading");
+          notifyError({ title: "Couldn't delete gap", body: (e && e.message) || String(e) });
+        }
+      });
     });
     actions.appendChild(delBtn);
     panel.appendChild(actions);
@@ -916,7 +956,7 @@ export function renderGapsEditView(left, right, session) {
       currentLinked.forEach(function(inst) {
         curList.appendChild(buildLinkRow(inst, function() {
           try { unlinkCurrentInstance(session, gap.id, inst.id); saveToLocalStorage(); renderAll(); }
-          catch(e) { alert(e.message); }
+          catch(e) { notifyError({ title: "Couldn't apply change", body: (e && e.message) || String(e) }); }
         }));
       });
     }
@@ -926,7 +966,7 @@ export function renderGapsEditView(left, right, session) {
     addCurBtn.addEventListener("click", function() {
       openLinkPicker("current", gap, function(instId) {
         try { linkCurrentInstance(session, gap.id, instId); saveToLocalStorage(); renderAll(); }
-        catch(e) { alert(e.message); }
+        catch(e) { notifyError({ title: "Couldn't apply change", body: (e && e.message) || String(e) }); }
       });
     });
     curSection.appendChild(addCurBtn);
@@ -946,7 +986,7 @@ export function renderGapsEditView(left, right, session) {
       desiredLinked.forEach(function(inst) {
         desList.appendChild(buildLinkRow(inst, function() {
           try { unlinkDesiredInstance(session, gap.id, inst.id); saveToLocalStorage(); renderAll(); }
-          catch(e) { alert(e.message); }
+          catch(e) { notifyError({ title: "Couldn't apply change", body: (e && e.message) || String(e) }); }
         }));
       });
     }
@@ -961,19 +1001,27 @@ export function renderGapsEditView(left, right, session) {
         // when there's a conflict , make the confirm + acknowledged opt-in
         // explicit so no caller can accidentally bypass.
         var check = confirmPhaseOnLink(session, gap.id, instId);
-        var acknowledged = false;
-        if (check.status === "conflict") {
-          var msg = "Linking '" + check.desiredLabel + "' will reassign its Phase from " +
-                    check.currentPriority + " to " + check.targetPriority + ".\n\nProceed?";
-          if (!window.confirm(msg)) return;
-          acknowledged = true;
+        function doLink(acknowledged) {
+          try {
+            linkDesiredInstance(session, gap.id, instId, { acknowledged: acknowledged });
+            syncDesiredFromGap(session, gap.id);     // gap wins → desired tile picks up gap.phase
+            saveToLocalStorage();
+            renderAll();
+          } catch(e) {
+            notifyError({ title: "Couldn't apply change", body: (e && e.message) || String(e) });
+          }
         }
-        try {
-          linkDesiredInstance(session, gap.id, instId, { acknowledged: acknowledged });
-          syncDesiredFromGap(session, gap.id);     // gap wins → desired tile picks up gap.phase
-          saveToLocalStorage();
-          renderAll();
-        } catch(e) { alert(e.message); }
+        if (check.status === "conflict") {
+          confirmAction({
+            title:        "Reassign phase?",
+            body:         "Linking '" + check.desiredLabel + "' will move its phase from " +
+                          check.currentPriority + " to " + check.targetPriority + ".",
+            confirmLabel: "Reassign + link",
+            cancelLabel:  "Cancel"
+          }).then(function(yes) { if (yes) doLink(true); });
+        } else {
+          doLink(false);
+        }
       });
     });
     desSection.appendChild(addDesBtn);
@@ -1163,7 +1211,8 @@ export function renderGapsEditView(left, right, session) {
         vals[el.getAttribute("data-prop")] = el.value;
       });
       if (!vals.description || !vals.description.trim()) {
-        alert("Description is required."); return;
+        notifyError({ title: "Description required", body: "Every gap needs a one-line description so it reads on the kanban." });
+        return;
       }
       try {
         // v2.4.11 · B2 · build affectedLayers from the Also-affects chips.
@@ -1184,7 +1233,7 @@ export function renderGapsEditView(left, right, session) {
         selectedGapId = newGap.id;
         overlay.remove();
         renderAll();
-      } catch(e) { alert("Validation error: " + e.message); }
+      } catch(e) { notifyError({ title: "Validation error", body: e.message || String(e) }); }
     });
     actions.appendChild(cancelBtn); actions.appendChild(createBtn);
     box.appendChild(actions); overlay.appendChild(box);

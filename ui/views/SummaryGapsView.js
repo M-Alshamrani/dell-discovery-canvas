@@ -7,6 +7,10 @@ import { effectiveDellSolutions } from "../../services/programsService.js";
 import { session as liveSession } from "../../state/sessionStore.js";
 import { serviceLabel, serviceDomain } from "../../core/services.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
+import { mountSharedFilterBar } from "../components/SharedFilterBar.js";
+import { getActiveValues as getFilterValues, subscribe as subscribeFilter,
+         getToggles, getSnapshot as getFilterSnapshot } from "../../state/filterState.js";
+import { applyMatchClasses as applyFilterMatchClasses } from "../components/FilterBar.js";
 
 // v2.4.14 CD3 . dominant domain across a gap's services for the hue bar.
 function pickGapDomain(gap) {
@@ -22,8 +26,16 @@ function pickGapDomain(gap) {
 }
 
 export function renderSummaryGapsView(left, right) {
+  // v2.4.15-polish iter-4 . SummaryGapsView shares the same FilterBar
+  // vocabulary as Tab 4 (Service / Layer / Environment / Gap type /
+  // Urgency + Quick toggles). Local state vars stay so getFilteredGaps
+  // still works, but they're driven by filterState via syncFromFilterState.
   let activeLayerIds = new Set(LAYERS.map(l => l.id));
-  let activeEnvId    = "all";
+  let activeEnvIds   = new Set();
+  let activeGapTypes = new Set();
+  let activeUrgencies = new Set();
+  let showNeedsReviewOnly = false;
+  let showClosedGaps      = false;
   let selectedGapId  = null;
 
   if (liveSession && liveSession.isDemo) renderDemoBanner(left);
@@ -32,38 +44,35 @@ export function renderSummaryGapsView(left, right) {
   const header = mk("div", "card");
   header.innerHTML = `
     <div class="card-title-row"><div class="card-title">Gaps and initiatives board</div></div>
-    <div class="card-hint">Read-only view. Use the Gaps step to create or edit initiatives.</div>
+    <div class="card-hint">Read-only view. Filters match the Gaps tab so your view follows you across the report.</div>
     <div class="chips-row" id="sg-chips"></div>`;
   header.querySelector(".card-title-row").appendChild(helpButton("reporting_gaps"));
 
-  const filterRow = mk("div", "filter-row");
-  filterRow.innerHTML = `<span class="filter-label">Layers:</span>`;
-  const layerChips = mk("div", "chips-row");
+  const filterBarHost = mk("div", "sg-filter-bar-host");
+  header.appendChild(filterBarHost);
+  mountSharedFilterBar(filterBarHost, { session: liveSession, scope: left });
 
-  LAYERS.forEach(layer => {
-    const chip = mk("div", "chip-filter active");
-    chip.textContent = layer.label;
-    chip.addEventListener("click", () => {
-      chip.classList.toggle("active");
-      if (chip.classList.contains("active")) activeLayerIds.add(layer.id);
-      else                                    activeLayerIds.delete(layer.id);
-      if (!activeLayerIds.size) {
-        LAYERS.forEach(l => activeLayerIds.add(l.id));
-        layerChips.querySelectorAll(".chip-filter").forEach(c => c.classList.add("active"));
-      }
-      renderAll();
-    });
-    layerChips.appendChild(chip);
+  function syncFromFilterState() {
+    const layVals  = getFilterValues("layer");
+    const envVals  = getFilterValues("environment");
+    const gtVals   = getFilterValues("gapType");
+    const urgVals  = getFilterValues("urgency");
+    activeLayerIds = layVals.length > 0 ? new Set(layVals) : new Set(LAYERS.map(l => l.id));
+    activeEnvIds   = new Set(envVals);
+    activeGapTypes = new Set(gtVals);
+    activeUrgencies = new Set(urgVals);
+    const togs = getToggles();
+    showNeedsReviewOnly = !!togs.needsReviewOnly;
+    showClosedGaps      = !!togs.showClosedGaps;
+  }
+  syncFromFilterState();
+  if (left._unsubFilter) try { left._unsubFilter(); } catch (e) {}
+  left._unsubFilter = subscribeFilter(function() {
+    syncFromFilterState();
+    renderAll();
+    try { applyFilterMatchClasses(left, getFilterSnapshot()); } catch (e) {}
   });
-  filterRow.appendChild(layerChips);
 
-  const envSel = mk("select", "form-select inline-sel");
-  envSel.innerHTML = `<option value="all">All environments</option>` +
-    ENVIRONMENTS.map(e => `<option value="${e.id}">${e.label}</option>`).join("");
-  envSel.addEventListener("change", e => { activeEnvId = e.target.value; renderAll(); });
-  filterRow.appendChild(envSel);
-
-  header.appendChild(filterRow);
   left.appendChild(header);
 
   const board = mk("div", "kanban"); left.appendChild(board);
@@ -75,7 +84,15 @@ export function renderSummaryGapsView(left, right) {
       <div class="detail-ph-hint">Click any gap card to see context, mapped Dell solutions, and linked technologies.</div>
     </div>`;
 
-  function filters() { return { layerIds: [...activeLayerIds], envId: activeEnvId }; }
+  function filters() {
+    // v2.4.15-polish iter-4 . multi-select aware. Empty Set = no filter
+    // for that dim. getFilteredGaps takes a single envId so we pass
+    // "all" when no environments are filtered, or the FIRST active env
+    // for backward compat. Multi-env filtering happens via the
+    // FilterBar's CSS dim rule + applyMatchClasses on the cards.
+    const envId = activeEnvIds.size === 0 ? "all" : Array.from(activeEnvIds)[0];
+    return { layerIds: [...activeLayerIds], envId: envId };
+  }
 
   function renderAll() {
     renderChips();

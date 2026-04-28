@@ -181,7 +181,11 @@ function renderProposalsPanel(skill, runResult, policy, getContext) {
             });
             remaining.splice(remaining.indexOf(p), 1);
             rerender();
-          } catch (e) { alert("Apply failed: " + (e.message || String(e))); }
+          } catch (e) {
+            import("./Notify.js").then(function(N) {
+              N.notifyError({ title: "Apply failed", body: e.message || String(e) });
+            });
+          }
         });
         actions.appendChild(skipBtn);
         actions.appendChild(applyBtn);
@@ -206,7 +210,11 @@ function renderProposalsPanel(skill, runResult, policy, getContext) {
         });
         remaining.length = 0;
         rerender();
-      } catch (e) { alert("Apply-all failed: " + (e.message || String(e))); }
+      } catch (e) {
+        import("./Notify.js").then(function(N) {
+          N.notifyError({ title: "Apply-all failed", body: e.message || String(e) });
+        });
+      }
     });
     foot.appendChild(applyAll);
     panel.appendChild(foot);

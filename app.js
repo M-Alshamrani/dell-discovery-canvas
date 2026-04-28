@@ -13,6 +13,7 @@ import { getStatus as getSaveStatus, onStatusChange as onSaveStatusChange } from
 // restores the user's saved body[data-filter-<dim>] attributes on app
 // boot, before the user navigates to a tab that uses FilterBar.
 import "./state/filterState.js";
+import { confirmAction, notifyError, notifyInfo, notifySuccess } from "./ui/components/Notify.js";
 import { buildSaveEnvelope, parseFileEnvelope, applyEnvelope, suggestFilename, FILE_MIME } from "./services/sessionFile.js";
 import { renderContextView }         from "./ui/views/ContextView.js";
 import { renderMatrixView }          from "./ui/views/MatrixView.js";
@@ -194,8 +195,14 @@ function wireUndoBtn() {
   if (allBtn) {
     allBtn.addEventListener("click", function() {
       if (aiUndoStack.depth() < 2) return;
-      if (!confirm("Revert ALL " + aiUndoStack.depth() + " tracked AI changes? This cannot itself be undone.")) return;
-      aiUndoStack.undoAll();
+      var depth = aiUndoStack.depth();
+      confirmAction({
+        title: "Revert all AI changes?",
+        body: "This rolls back " + depth + " tracked AI mutation" + (depth === 1 ? "" : "s") +
+              ". The undo stack itself can't be reversed.",
+        confirmLabel: "Revert " + depth,
+        danger: true
+      }).then(function(yes) { if (yes) aiUndoStack.undoAll(); });
     });
   }
 
@@ -531,19 +538,33 @@ function wireFooter() {
 
   if (demoBtn) {
     demoBtn.addEventListener("click", function() {
-      if (!confirm("Reset to demo session? Current data will be lost.")) return;
-      resetToDemo();
-      currentStep = "reporting"; currentReportingTab = "overview";
-      renderHeaderMeta(); renderStepper(); renderStage();
+      confirmAction({
+        title: "Load demo session?",
+        body: "This replaces the current canvas with the Riyadh / Jeddah demo. Anything you've typed is lost (use Save to file first if you want to keep it).",
+        confirmLabel: "Load demo",
+        danger: true
+      }).then(function(yes) {
+        if (!yes) return;
+        resetToDemo();
+        currentStep = "reporting"; currentReportingTab = "overview";
+        renderHeaderMeta(); renderStepper(); renderStage();
+      });
     });
   }
 
   if (newSessionBtn) {
     newSessionBtn.addEventListener("click", function() {
-      if (!confirm("Start a fresh session? Current data will be lost.")) return;
-      resetSession();
-      currentStep = "context"; currentReportingTab = "overview";
-      renderHeaderMeta(); renderStepper(); renderStage();
+      confirmAction({
+        title: "Start fresh?",
+        body: "This wipes the canvas and starts a brand-new session. Anything you've typed is lost (use Save to file first to keep it).",
+        confirmLabel: "Start fresh",
+        danger: true
+      }).then(function(yes) {
+        if (!yes) return;
+        resetSession();
+        currentStep = "context"; currentReportingTab = "overview";
+        renderHeaderMeta(); renderStepper(); renderStage();
+      });
     });
   }
 
@@ -602,64 +623,61 @@ function wireFooter() {
   // writes back to localStorage. Emits session-changed to refresh UI.
   function handleOpenedFile(file) {
     var reader = new FileReader();
-    reader.onerror = function() { alert("Couldn't read the file. Is it readable?"); };
+    reader.onerror = function() {
+      notifyError({ title: "Couldn't read the file", body: "The file may not be readable. Try downloading it again." });
+    };
     reader.onload = function() {
       var env;
       try { env = parseFileEnvelope(String(reader.result || "")); }
-      catch (e) { alert("Can't open this file:\n\n" + (e.message || String(e))); return; }
-
-      var hasKeys = env.providerKeys && Object.keys(env.providerKeys).length > 0;
-      var applyKeys = false;
-      if (hasKeys) {
-        applyKeys = confirm(
-          "This file includes AI provider API keys. Apply them to your setup?\n\n" +
-          "Click OK to replace your current API keys with the file's.\n" +
-          "Click Cancel to keep your own keys (the file's are ignored)."
-        );
+      catch (e) {
+        notifyError({ title: "Can't open this file", body: e.message || String(e) });
+        return;
       }
 
-      var res;
-      try { res = applyEnvelope(env, { applyApiKeys: applyKeys }); }
-      catch (e) { alert("Can't apply this file:\n\n" + (e.message || String(e))); return; }
-
-      // Replace the live session via sessionStore's replaceSession.
-      replaceSession(res.session);
-      saveToLocalStorage();
-      // Replace skills.
-      saveSkills(res.skills);
-      // Provider config (possibly with keys merged in).
-      if (res.providerConfig) saveAiConfig(res.providerConfig);
-
-      emitSessionChanged("session-replace", "Opened " + (file.name || "file"));
-
-      var msg = "Opened " + file.name + "\n\nSaved by: Canvas v" + res.savedAppVersion +
-        (res.savedAt ? " at " + res.savedAt : "");
-      if (res.warnings.length) msg += "\n\nNotes:\n  • " + res.warnings.join("\n  • ");
-      // Non-blocking success , console + a brief toast would be nicer,
-      // but alert is honest feedback for v2.4.10. v2.5.x can replace with
-      // a toast.
-      setTimeout(function() { alert(msg); }, 0);
+      var hasKeys = env.providerKeys && Object.keys(env.providerKeys).length > 0;
+      function continueOpen(applyKeys) {
+        var res;
+        try { res = applyEnvelope(env, { applyApiKeys: applyKeys }); }
+        catch (e) {
+          notifyError({ title: "Can't apply this file", body: e.message || String(e) });
+          return;
+        }
+        replaceSession(res.session);
+        saveToLocalStorage();
+        saveSkills(res.skills);
+        if (res.providerConfig) saveAiConfig(res.providerConfig);
+        emitSessionChanged("session-replace", "Opened " + (file.name || "file"));
+        var body = "Saved by Canvas v" + res.savedAppVersion +
+          (res.savedAt ? " at " + res.savedAt : "");
+        if (res.warnings.length) body += " · " + res.warnings.length + " note" + (res.warnings.length === 1 ? "" : "s");
+        notifySuccess({ title: "Opened " + (file.name || "file"), body: body });
+      }
+      if (hasKeys) {
+        confirmAction({
+          title: "Apply included API keys?",
+          body: "This file includes AI provider API keys. Confirm to replace your current keys with the file's. Cancel to keep your own (the file's keys are ignored).",
+          confirmLabel: "Apply file's keys",
+          cancelLabel:  "Keep my keys"
+        }).then(function(yes) { continueOpen(!!yes); });
+      } else {
+        continueOpen(false);
+      }
     };
     reader.readAsText(file);
   }
 
   if (clearAllBtn) {
     clearAllBtn.addEventListener("click", function() {
-      if (!confirm(
-        "Clear ALL app data and reload?\n\n" +
-        "This wipes:\n" +
-        "  • session (customer, drivers, instances, gaps)\n" +
-        "  • AI skills library\n" +
-        "  • AI provider config + API keys\n" +
-        "  • Undo history\n\n" +
-        "Cannot be undone. Use 'Save to file' first if you want a backup."
-      )) return;
-      try { localStorage.clear(); } catch (e) { /* private mode , ignore */ }
-      // v2.4.10 · force a FRESH navigation (not just a cache-revalidating
-      // reload) by appending a one-time query string. Some browsers skip
-      // the module cache on location.reload() only in certain contexts;
-      // a new href is unambiguous.
-      window.location.href = window.location.pathname + "?cleared=" + Date.now();
+      confirmAction({
+        title: "Clear ALL app data?",
+        body: "This wipes the session (customer, drivers, instances, gaps), the AI skills library, AI provider config and API keys, and the undo history. Cannot be undone. Save to file first if you want a backup.",
+        confirmLabel: "Clear everything",
+        danger: true
+      }).then(function(yes) {
+        if (!yes) return;
+        try { localStorage.clear(); } catch (e) { /* private mode , ignore */ }
+        window.location.href = window.location.pathname + "?cleared=" + Date.now();
+      });
     });
   }
 }

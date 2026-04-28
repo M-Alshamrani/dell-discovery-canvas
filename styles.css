@@ -4110,12 +4110,75 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 
 /* Hide / save-guard panel content. Light, calm, sentence-case body copy
    matching the rest of the overlay vocabulary. */
-.hide-env-body, .save-guard-body { padding: 6px 4px 0 4px; }
-.hide-env-lede, .save-guard-lede {
+.hide-env-body, .save-guard-body, .notify-body { padding: 6px 4px 0 4px; }
+.hide-env-lede, .save-guard-lede, .notify-lede {
   font-size: 13px;
   color: var(--ink-soft, #4b5563);
   line-height: 1.55;
   margin: 0;
+}
+
+/* v2.4.15-polish iter-4 . Notify.js modals + toasts. Single visual
+   vocabulary for every confirmation / error / info pulse across the
+   app. Replaces the scattered native confirm() / alert() calls. */
+.notify-modal.notify-danger .btn-danger {
+  background: var(--red, #C8102E);
+  color: #fff;
+  border: 1px solid var(--red, #C8102E);
+}
+.notify-modal.notify-danger .btn-danger:hover {
+  background: #a30c25;
+  border-color: #a30c25;
+}
+.notify-modal.notify-error .notify-error-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.notify-modal.notify-error .notify-error-icon {
+  color: var(--red, #C8102E);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* Toast host . top-right stack of small auto-dismissing notifications. */
+.notify-toast-host {
+  position: fixed;
+  top: 80px;
+  right: 16px;
+  z-index: 10500;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  max-width: 360px;
+}
+.notify-toast {
+  pointer-events: auto;
+  background: var(--canvas, #ffffff);
+  border-radius: 10px;
+  padding: 10px 14px;
+  box-shadow: 0 6px 18px rgba(11, 42, 74, 0.12);
+  border: 1px solid var(--rule, #e5e7eb);
+  border-left: 3px solid var(--ink-mute, #6b7280);
+  opacity: 0;
+  transform: translateX(8px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.notify-toast.is-visible { opacity: 1; transform: translateX(0); }
+.notify-toast-info    { border-left-color: var(--dell-blue, #0076CE); }
+.notify-toast-success { border-left-color: var(--green, #00843D); }
+.notify-toast-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink, #111827);
+  letter-spacing: 0.01em;
+  margin-bottom: 2px;
+}
+.notify-toast-body {
+  font-size: 12px;
+  color: var(--ink-mute, #6b7280);
+  line-height: 1.4;
 }
 
 /* v2.4.15-polish . T2.A1 . GPLC tag primitive. ONE class covers every
@@ -4610,18 +4673,18 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
    ALL dim rules). */
 body[data-filter-services]    .gap-card:not(.filter-match-services),
 body[data-filter-layer]       .gap-card:not(.filter-match-layer),
-body[data-filter-domain]      .gap-card:not(.filter-match-domain),
 body[data-filter-urgency]     .gap-card:not(.filter-match-urgency),
-body[data-filter-environment] .gap-card:not(.filter-match-environment) {
+body[data-filter-environment] .gap-card:not(.filter-match-environment),
+body[data-filter-gapType]     .gap-card:not(.filter-match-gapType) {
   opacity: 0.22;
   filter: grayscale(0.55);
   transition: opacity 0.15s ease, filter 0.15s ease;
 }
 body[data-filter-services]    .gap-card.filter-match-services,
 body[data-filter-layer]       .gap-card.filter-match-layer,
-body[data-filter-domain]      .gap-card.filter-match-domain,
 body[data-filter-urgency]     .gap-card.filter-match-urgency,
-body[data-filter-environment] .gap-card.filter-match-environment {
+body[data-filter-environment] .gap-card.filter-match-environment,
+body[data-filter-gapType]     .gap-card.filter-match-gapType {
   transition: opacity 0.15s ease, filter 0.15s ease;
 }
 

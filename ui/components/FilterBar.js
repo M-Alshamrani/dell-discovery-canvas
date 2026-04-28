@@ -100,7 +100,7 @@ export function renderFilterBar(target, opts) {
     var dimOpen = dimOpenState[dim.id];
     if (typeof dimOpen !== "boolean") {
       // Default: open if dim already has an active value, else closed.
-      dimOpen = !!fState.getActiveValue(dim.id);
+      dimOpen = fState.getActiveValues(dim.id).length > 0;
     }
     if (dimOpen) group.classList.add("is-open");
 
@@ -136,7 +136,7 @@ export function renderFilterBar(target, opts) {
       chip.setAttribute("data-filter-dim", dim.id);
       chip.setAttribute("data-filter-value", opt.id);
       chip.textContent = opt.label;
-      if (fState.getActiveValue(dim.id) === opt.id) {
+      if (fState.isActive(dim.id, opt.id)) {
         chip.classList.add("is-active");
         chip.setAttribute("data-t", "app");
       }
@@ -206,14 +206,18 @@ export function renderFilterBar(target, opts) {
 
   function paint() {
     var snap = fState.getSnapshot();
+    // v2.4.15-polish iter-4 . snap[dim] is now Array<string> (or
+    // undefined when no values are active). activeDims accumulates
+    // one entry per (dim, value) pair so the active-pill strip can
+    // render every chip individually.
     var activeCount = 0;
     var activeDims = [];
     DIMS.forEach(function(d) {
-      var v = snap[d];
-      if (typeof v === "string" && v.length > 0) {
+      var arr = Array.isArray(snap[d]) ? snap[d] : [];
+      arr.forEach(function(v) {
         activeCount++;
         activeDims.push({ dim: d, value: v });
-      }
+      });
     });
 
     // Toggle label + badge. Keep "Filters · N active" in textContent
@@ -236,7 +240,7 @@ export function renderFilterBar(target, opts) {
     panel.querySelectorAll(".filter-chip[data-filter-dim]").forEach(function(chip) {
       var d = chip.getAttribute("data-filter-dim");
       var v = chip.getAttribute("data-filter-value");
-      var isActive = snap[d] === v;
+      var isActive = fState.isActive(d, v);
       chip.classList.toggle("is-active", isActive);
       chip.setAttribute("data-t", isActive ? "app" : "tech");
       if (isActive) dimCounts[d] = (dimCounts[d] || 0) + 1;
@@ -315,31 +319,35 @@ export function renderFilterBar(target, opts) {
 }
 
 // Adds / removes .filter-match-<dim> on every .gap-card inside scope
-// based on the gap-card's data-<dim> attribute. The CSS dim rule then
+// based on the gap-card's data-<dim> attribute. The CSS dim rule
 // dims any card that does NOT carry the match class for an active
 // filter dimension. Multi-dim AND combine is automatic via CSS :not.
+//
+// v2.4.15-polish iter-4 . both sides may be multi-value:
+//   - snapshot[dim]      Array<string>       multi-select within a dim
+//   - card data-<dim>    "v1 v2 v3"          multi-value entity (services, env)
+// A card matches the dim if ANY card-value intersects ANY snapshot-value
+// (within-dim OR-combine). Multi-DIM AND-combine still applies via the
+// CSS :not chain.
 export function applyMatchClasses(scope, snapshot) {
   if (!scope || typeof scope.querySelectorAll !== "function") return;
   var cards = scope.querySelectorAll(".gap-card");
   if (!cards || cards.length === 0) return;
   Array.prototype.forEach.call(cards, function(card) {
     DIMS.forEach(function(dim) {
-      var active = snapshot[dim];
+      var active = Array.isArray(snapshot[dim]) ? snapshot[dim] : [];
       var matchClass = "filter-match-" + dim;
-      if (typeof active !== "string" || active.length === 0) {
+      if (active.length === 0) {
         card.classList.remove(matchClass);
         return;
       }
       var attr = card.getAttribute("data-" + dim);
+      var cardValues = (typeof attr === "string" && attr.length > 0)
+        ? attr.split(/\s+/).filter(Boolean)
+        : [];
       var matches = false;
-      if (typeof attr === "string" && attr.length > 0) {
-        // services + environment are multi-value (space-separated);
-        // every other dim is single-value.
-        if (dim === "services" || dim === "environment") {
-          matches = attr.split(/\s+/).indexOf(active) >= 0;
-        } else {
-          matches = attr === active;
-        }
+      for (var i = 0; i < cardValues.length && !matches; i++) {
+        if (active.indexOf(cardValues[i]) >= 0) matches = true;
       }
       card.classList.toggle(matchClass, matches);
     });
