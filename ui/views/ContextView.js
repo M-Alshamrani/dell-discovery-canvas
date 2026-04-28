@@ -142,6 +142,21 @@ function paintEnvironmentsCard(card, session, right) {
   var hidden  = displayList.filter(function(e) { return e.hidden === true; });
   var canHide = visible.length > 1;
 
+  // v2.4.15-polish iter-5 . preset chip row. One-click "Single site"
+  // for clients that only have a Main DC -- saves the user from
+  // hiding DR + Public + Edge one at a time. Renders only when more
+  // than one env is currently visible (clicking it would otherwise
+  // be a no-op).
+  if (visible.length > 1) {
+    var presetRow = mk("div", "env-preset-row");
+    presetRow.appendChild(mkt("span", "env-preset-label", "Quick shape"));
+    presetRow.appendChild(buildPresetChip("Single site",
+      "Hide every environment except the Primary Data Center. Useful when the client has a single on-prem footprint.",
+      function() { return ["coreDc"]; },
+      session, card, right));
+    card.appendChild(presetRow);
+  }
+
   // Active tiles row + "+ Add environment" tile at the end.
   var activeRow = mk("div", "env-tiles-row");
   visible.forEach(function(envEntry) {
@@ -174,6 +189,45 @@ function paintEnvironmentsCard(card, session, right) {
     hiddenSection.appendChild(hiddenRow);
     card.appendChild(hiddenSection);
   }
+}
+
+// v2.4.15-polish iter-5 . preset chip in the Environments card. Click
+// runs a confirm modal listing what will be hidden + what will stay,
+// then flips hidden flags on every active env not in the keepIds list.
+// keepFn(session) returns Array<envId> to keep visible.
+function buildPresetChip(label, hint, keepFn, session, card, right) {
+  var chip = mk("button", "env-preset-chip tag");
+  chip.type = "button";
+  chip.setAttribute("data-t", "biz");
+  chip.textContent = label;
+  chip.title = hint;
+  chip.addEventListener("click", function() {
+    var keep = keepFn(session) || [];
+    var keepSet = {};
+    keep.forEach(function(id) { keepSet[id] = true; });
+    var willHide = (session.environments || [])
+      .filter(function(e) { return !e.hidden && !keepSet[e.id]; })
+      .map(function(e) {
+        var cat = ENV_CATALOG.find(function(c) { return c.id === e.id; });
+        return e.alias || (cat ? cat.label : e.id);
+      });
+    if (willHide.length === 0) return;
+    confirmAction({
+      title: label + " preset",
+      lede:  hint,
+      body:  "Will hide: " + willHide.join(", ") + ". Each one stays in your saved file and can be restored from the Hidden environments section. Active envs not yet added to the session are unaffected."
+    }).then(function(yes) {
+      if (!yes) return;
+      (session.environments || []).forEach(function(e) {
+        if (!keepSet[e.id]) e.hidden = true;
+      });
+      saveToLocalStorage();
+      emitSessionChanged("env-preset", "Preset: " + label);
+      paintEnvironmentsCard(card, session, right);
+      renderWelcomePanel(right);
+    });
+  });
+  return chip;
 }
 
 function buildEnvTile(envEntry, session, card, right, isHidden, canHide) {
@@ -316,20 +370,49 @@ function renderEnvDetail(right, session, envEntry, card, canHide) {
     panel.appendChild(mkt("div", "panel-lede muted", catalog.hint));
   }
 
+  // v2.4.15-polish iter-5 . typed inputs where the value is bounded:
+  //   * Capacity (MW)    number stepper, 0-200, step 0.5
+  //   * Floor area (m²)  number stepper, 0-100000, step 50
+  //   * Tier             datalist (suggestions list, free typing OK)
+  // Free-form fields (alias, location, notes) stay plain text.
   var fields = [
-    { key: "alias",    label: "Alias",                placeholder: catalog ? catalog.label : envEntry.id, type: "text",   hint: "What the customer calls this site." },
-    { key: "location", label: "Location",             placeholder: "City, region",                        type: "text",   hint: "Used in the report." },
-    { key: "sizeKw",   label: "Capacity (MW)",        placeholder: "e.g. 5",                              type: "number", hint: "Power footprint, in megawatts." },
-    { key: "sqm",      label: "Floor area (m²)",      placeholder: "e.g. 320",                            type: "number", hint: "Useful for telco / colo conversations." },
-    { key: "tier",     label: "Tier",                 placeholder: "e.g. Tier III",                       type: "text",   hint: "Uptime / certification level." },
-    { key: "notes",    label: "Notes",                placeholder: "Anything else to remember",           type: "text",   hint: "Free-form context for this site." }
+    { key: "alias",    label: "Alias",            placeholder: catalog ? catalog.label : envEntry.id, type: "text",   hint: "What the customer calls this site." },
+    { key: "location", label: "Location",         placeholder: "City, region",                        type: "text",   hint: "Used in the report." },
+    { key: "sizeKw",   label: "Capacity (MW)",    placeholder: "e.g. 5",                              type: "number", min: 0, max: 200, step: 0.5,
+      hint: "Power footprint in megawatts. Use the +/- buttons or type." },
+    { key: "sqm",      label: "Floor area (m²)",  placeholder: "e.g. 320",                            type: "number", min: 0, max: 100000, step: 50,
+      hint: "Useful for telco / colo conversations." },
+    { key: "tier",     label: "Tier",             placeholder: "e.g. Tier III",                       type: "datalist",
+      list:  ["Tier I", "Tier II", "Tier III", "Tier IV", "Public", "Sovereign", "Edge / Branch", "N/A"],
+      hint: "Pick a standard tier or type a custom value." },
+    { key: "notes",    label: "Notes",            placeholder: "Anything else to remember",           type: "text",   hint: "Free-form context for this site." }
   ];
   var grid = mk("div", "env-detail-grid");
   fields.forEach(function(f) {
     var grp = mk("div", "form-group env-meta-field");
     grp.appendChild(mkt("label", "form-label", f.label));
     var input = mk("input", "form-input env-meta-input");
-    input.type = f.type;
+    if (f.type === "datalist") {
+      input.type = "text";
+      var listId = "env-datalist-" + envEntry.id + "-" + f.key;
+      input.setAttribute("list", listId);
+      var dl = document.createElement("datalist");
+      dl.id = listId;
+      (f.list || []).forEach(function(opt) {
+        var o = document.createElement("option");
+        o.value = opt;
+        dl.appendChild(o);
+      });
+      grp.appendChild(dl);
+    } else {
+      input.type = f.type;
+    }
+    if (f.type === "number") {
+      if (typeof f.min  === "number") input.setAttribute("min",  String(f.min));
+      if (typeof f.max  === "number") input.setAttribute("max",  String(f.max));
+      if (typeof f.step === "number") input.setAttribute("step", String(f.step));
+      input.setAttribute("inputmode", "decimal");
+    }
     input.placeholder = f.placeholder;
     var current = envEntry[f.key];
     input.value = (current === undefined || current === null) ? "" : String(current);
@@ -338,6 +421,10 @@ function renderEnvDetail(right, session, envEntry, card, canHide) {
       var v = (input.value || "").trim();
       if (f.type === "number") {
         var n = parseFloat(v);
+        if (!isNaN(n)) {
+          if (typeof f.min === "number" && n < f.min) n = f.min;
+          if (typeof f.max === "number" && n > f.max) n = f.max;
+        }
         envEntry[f.key] = isNaN(n) ? undefined : n;
       } else {
         envEntry[f.key] = v.length === 0 ? undefined : v;

@@ -1284,6 +1284,39 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
    the env command palette overlay. Hidden tiles render in a separate
    muted row below. Click any tile -> right panel opens with the full
    metadata form + Hide / Restore action in the footer. */
+/* v2.4.15-polish iter-5 . preset-chip row above the env tiles. Quick
+   one-click "shape my workshop" affordance for common single-DC /
+   hybrid scenarios. Only renders when there's something to hide. */
+.env-preset-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+.env-preset-label {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 9px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--ink-mute, #6b7280);
+}
+.env-preset-chip {
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0.04em;
+  font-family: var(--font, "Inter", system-ui, sans-serif);
+  font-size: 11px;
+  padding: 3px 10px;
+  transition: transform 0.08s ease, background 0.12s ease, border-color 0.12s ease;
+}
+.env-preset-chip:hover {
+  transform: translateY(-1px);
+  border-color: var(--dell-blue, #0076CE);
+  background: var(--dell-blue-soft, #e8f2fb);
+  color: var(--dell-blue-deep, #00447C);
+}
+
 .env-tiles-row {
   display: flex;
   flex-wrap: wrap;
