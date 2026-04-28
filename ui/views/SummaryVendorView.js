@@ -1,10 +1,38 @@
 // ui/views/SummaryVendorView.js — vendor & platform mix analytics
 
-import { LAYERS, getVisibleEnvironments } from "../../core/config.js";
+import { LAYERS, getVisibleEnvironments, getEnvLabel } from "../../core/config.js";
 import { computeMixByLayer, computeMixByEnv, computeVendorTableData } from "../../services/vendorMixService.js";
 import { helpButton } from "./HelpModal.js";
 import { session as moduleLiveSession } from "../../state/sessionStore.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
+import * as fState from "../../state/filterState.js";
+
+// v2.4.15-polish T2.C1 . dimension picker palette. The user picks how
+// the headline 100%-stacked bar is split: by vendor group (default;
+// matches the v2.4.15 contract), by layer, or by environment. Each
+// dimension uses a deterministic color palette so legends stay stable
+// across renders.
+var BAR_DIMENSIONS = [
+  { id: "vendorGroup", label: "Vendor",      filterKey: null }, // doesn't cross-filter
+  { id: "layer",       label: "Layer",       filterKey: "layer" },
+  { id: "environment", label: "Environment", filterKey: null }   // env dim isn't yet in DIMS
+];
+var SEGMENT_PALETTE = {
+  vendorGroup: {
+    dell:    { color: "var(--dell-blue, #0076CE)",  label: "Dell Technologies" },
+    nonDell: { color: "var(--ink-mute, #6b7280)",   label: "Other vendors" },
+    custom:  { color: "var(--amber, #f59e0b)",      label: "Custom / in-house" }
+  },
+  layer: {
+    workload:       { color: "#0076CE", label: "Workloads & Apps" },
+    compute:        { color: "#5B8DEF", label: "Compute" },
+    storage:        { color: "#7B61FF", label: "Storage" },
+    dataProtection: { color: "#C8102E", label: "Data Protection" },
+    virtualization: { color: "#00843D", label: "Virtualization" },
+    infrastructure: { color: "#B27400", label: "Infrastructure" }
+  }
+  // environment palette is computed dynamically per session.
+};
 
 export function renderSummaryVendorView(left, right, sessionArg) {
   // v2.4.15 . accept session as optional 3rd arg so tests can drive
@@ -12,6 +40,7 @@ export function renderSummaryVendorView(left, right, sessionArg) {
   var liveSession = sessionArg || moduleLiveSession;
   let stateFilter    = "combined";
   let activeLayerIds = new Set(LAYERS.map(l => l.id));
+  let stackBy        = "vendorGroup"; // dimension the headline bar splits on
 
   if (liveSession && liveSession.isDemo) renderDemoBanner(left);
 
@@ -74,7 +103,11 @@ export function renderSummaryVendorView(left, right, sessionArg) {
   // detail bars remain below.
   const overviewCard = mk("div", "card");
   overviewCard.innerHTML = `<div class="card-title">Mix overview</div>
-    <div class="card-hint">A 100% horizontal bar showing how Dell, non-Dell, and custom-built platforms split across the estate. Use the View toggle above to switch between Combined / Current / Desired.</div>
+    <div class="card-hint">A 100% stacked bar that splits the estate by your chosen dimension. Click any segment to filter the rest of the page; use the View toggle to switch between Combined / Current / Desired.</div>
+    <div class="vm-stack-by-row">
+      <span class="vm-stack-by-label">Stack by</span>
+      <div class="vm-stack-by-chips"></div>
+    </div>
     <div class="vm-overview-bars"></div>
     <div class="vm-overview-legend"></div>`;
   left.appendChild(overviewCard);
@@ -82,6 +115,27 @@ export function renderSummaryVendorView(left, right, sessionArg) {
   // which doesn't see elements until the parent is in document).
   const overviewBarsHost = overviewCard.querySelector(".vm-overview-bars");
   const overviewLegendHost = overviewCard.querySelector(".vm-overview-legend");
+  const stackByHost = overviewCard.querySelector(".vm-stack-by-chips");
+
+  // Stack-by dimension chips (Vendor / Layer / Environment).
+  BAR_DIMENSIONS.forEach(function(dim) {
+    var chip = mk("button", "tag vm-stack-chip");
+    chip.type = "button";
+    chip.setAttribute("data-t", dim.id === stackBy ? "app" : "tech");
+    chip.setAttribute("data-stack-by", dim.id);
+    chip.textContent = dim.label;
+    chip.addEventListener("click", function() {
+      stackBy = dim.id;
+      stackByHost.querySelectorAll(".vm-stack-chip").forEach(function(c) {
+        var isActive = c.getAttribute("data-stack-by") === stackBy;
+        c.setAttribute("data-t", isActive ? "app" : "tech");
+        c.classList.toggle("is-active", isActive);
+      });
+      renderAll();
+    });
+    if (dim.id === stackBy) chip.classList.add("is-active");
+    stackByHost.appendChild(chip);
+  });
 
   const layerCard = mk("div", "card"); layerCard.innerHTML = `<div class="card-title">Mix by layer</div><div class="vm-by-layer"></div>`; left.appendChild(layerCard);
   const layerHost = layerCard.querySelector(".vm-by-layer");
@@ -110,23 +164,17 @@ export function renderSummaryVendorView(left, right, sessionArg) {
       <span class="chip-stat">Non-Dell: ${n}</span>
       <span class="chip-stat">Custom: ${c}</span>`;
 
-    // v2.4.15 polish . ONE 100%-stacked overview bar driven by the
-    // existing Combined / Current / Desired segmented control. Single
-    // bar reads as one chart; the legend underneath spells out the
-    // colors in plain English with counts. Per-layer mini bars stay.
-    var byLayerOverview = computeMixByLayer({ stateFilter: stateFilter, layerIds: ids() });
-    var totals = { dell: 0, nonDell: 0, custom: 0, total: 0 };
-    Object.keys(byLayerOverview).forEach(function(lid) {
-      totals.dell    += byLayerOverview[lid].dell    || 0;
-      totals.nonDell += byLayerOverview[lid].nonDell || 0;
-      totals.custom  += byLayerOverview[lid].custom  || 0;
-      totals.total   += byLayerOverview[lid].total   || 0;
-    });
+    // v2.4.15-polish T2.C1 . headline 100%-stacked bar driven by the
+    // chosen dimension (vendor / layer / environment). The bar segments
+    // map to the dimension's palette + each segment is click-to-filter
+    // so users can drill from the chart into the rest of the page.
+    var visibleEnvs = getVisibleEnvironments(liveSession);
+    var stackData = computeStackData(stackBy, stateFilter, ids(), visibleEnvs);
     var stateLabel = stateFilter === "current"  ? "Current state"
                   : stateFilter === "desired"   ? "Desired state"
                   :                                "Combined (current + desired)";
-    renderOverviewBars(overviewBarsHost, [{ label: stateLabel, counts: totals }]);
-    renderOverviewLegend(overviewLegendHost, totals);
+    renderHeadlineBar(overviewBarsHost, stateLabel, stackData);
+    renderHeadlineLegend(overviewLegendHost, stackData);
 
     var visibleEnvs = getVisibleEnvironments(liveSession);
     renderBars(layerHost,
@@ -144,57 +192,145 @@ export function renderSummaryVendorView(left, right, sessionArg) {
   // .vendor-bar-segment children so the test can rely on the count;
   // empty (0%) segments render with width:0 + display:none for visual
   // cleanness but stay in DOM so JSON probes remain stable.
-  function renderOverviewBars(c, items) {
-    if (!c) return;
-    c.innerHTML = "";
-    items.forEach(function(item) {
-      var counts = item.counts || { dell:0, nonDell:0, custom:0, total:0 };
-      var total  = counts.total || 1;
-      var dp = pct(counts.dell,    total);
-      var np = pct(counts.nonDell, total);
-      var cp = 100 - dp - np;
-      if (cp < 0) cp = 0;
-
-      var grp = mk("div", "vendor-bar-group vendor-bar-overview");
-      var lbl = mk("div", "vendor-bar-label metric");
-      lbl.textContent = item.label + " · " + counts.total + " " +
-        (counts.total === 1 ? "instance" : "instances");
-      grp.appendChild(lbl);
-
-      var bar = mk("div", "vendor-bar vendor-bar-large");
-      [["dell", dp], ["nonDell", np], ["custom", cp]].forEach(function(pair) {
-        var seg = mk("div", "vendor-bar-segment vendor-bar-segment-" + pair[0]);
-        seg.setAttribute("data-vendor-group", pair[0]);
-        seg.style.width = pair[1] + "%";
-        seg.title = pair[0] + ": " + pair[1] + "%";
-        if (pair[1] >= 6) seg.textContent = pair[1] + "%";
-        bar.appendChild(seg);
-      });
-      grp.appendChild(bar);
-      c.appendChild(grp);
+  // v2.4.15-polish T2.C1 . compute the stack by an arbitrary dimension.
+  // Reads counts directly from `liveSession.instances` so the function
+  // works when the view is mounted with a test fixture session (the
+  // upstream vendorMixService imports the module-scoped live session
+  // and would miss fixture data).
+  function computeStackData(dim, stateFilter, layerIdList, visibleEnvs) {
+    var instances = (liveSession && Array.isArray(liveSession.instances)) ? liveSession.instances : [];
+    var layerSet = {};
+    layerIdList.forEach(function(id) { layerSet[id] = true; });
+    var filtered = instances.filter(function(i) {
+      if (stateFilter === "current" && i.state !== "current") return false;
+      if (stateFilter === "desired" && i.state !== "desired") return false;
+      if (layerIdList.length && !layerSet[i.layerId])         return false;
+      return true;
     });
+
+    if (dim === "vendorGroup") {
+      var totals = { dell: 0, nonDell: 0, custom: 0, total: 0 };
+      filtered.forEach(function(i) {
+        var g = i.vendorGroup === "dell" ? "dell"
+              : i.vendorGroup === "nonDell" ? "nonDell"
+              : "custom";
+        totals[g]++;
+        totals.total++;
+      });
+      var seg = ["dell", "nonDell", "custom"].map(function(g) {
+        return {
+          id: g,
+          label: SEGMENT_PALETTE.vendorGroup[g].label,
+          count: totals[g] || 0,
+          color: SEGMENT_PALETTE.vendorGroup[g].color,
+          dataAttr: "vendor-group",
+          filterDim: null
+        };
+      });
+      return { dim: dim, total: totals.total, segments: seg };
+    }
+    if (dim === "layer") {
+      var byLayerMap = {};
+      LAYERS.forEach(function(L) { byLayerMap[L.id] = 0; });
+      filtered.forEach(function(i) {
+        if (typeof byLayerMap[i.layerId] === "number") byLayerMap[i.layerId]++;
+      });
+      var total = 0;
+      var segs = LAYERS.map(function(L) {
+        var c = byLayerMap[L.id] || 0;
+        total += c;
+        return {
+          id: L.id,
+          label: SEGMENT_PALETTE.layer[L.id].label,
+          count: c,
+          color: SEGMENT_PALETTE.layer[L.id].color,
+          dataAttr: "layer",
+          filterDim: "layer"
+        };
+      });
+      return { dim: dim, total: total, segments: segs };
+    }
+    // environment
+    var byEnvMap = {};
+    visibleEnvs.forEach(function(env) { byEnvMap[env.id] = 0; });
+    filtered.forEach(function(i) {
+      if (typeof byEnvMap[i.environmentId] === "number") byEnvMap[i.environmentId]++;
+    });
+    var totalE = 0;
+    var ENV_PALETTE = ["#0076CE", "#5B8DEF", "#7B61FF", "#00843D", "#B27400", "#C8102E", "#3E4C62", "#9AA5B8"];
+    var segsE = visibleEnvs.map(function(env, idx) {
+      var c = byEnvMap[env.id] || 0;
+      totalE += c;
+      return {
+        id: env.id,
+        label: getEnvLabel(env.id, liveSession),
+        count: c,
+        color: ENV_PALETTE[idx % ENV_PALETTE.length],
+        dataAttr: "env",
+        filterDim: null
+      };
+    });
+    return { dim: dim, total: totalE, segments: segsE };
   }
 
-  // v2.4.15 polish . clean legend with color swatches + counts. Reads
-  // like a key under the headline bar so users don't need to hover
-  // segments to know what each color means.
-  function renderOverviewLegend(c, counts) {
+  function renderHeadlineBar(c, stateLabel, stack) {
     if (!c) return;
     c.innerHTML = "";
-    var rows = [
-      { id: "dell",    label: "Dell Technologies", count: counts.dell    || 0 },
-      { id: "nonDell", label: "Other vendors",     count: counts.nonDell || 0 },
-      { id: "custom",  label: "Custom / in-house", count: counts.custom  || 0 }
-    ];
-    rows.forEach(function(r) {
+    var total = stack.total || 1;
+
+    var grp = mk("div", "vendor-bar-group vendor-bar-overview");
+    var lbl = mk("div", "vendor-bar-label metric");
+    lbl.textContent = stateLabel + " · " + stack.total + " " +
+      (stack.total === 1 ? "instance" : "instances");
+    grp.appendChild(lbl);
+
+    var bar = mk("div", "vendor-bar vendor-bar-large vendor-bar-shimmer");
+    var widths = stack.segments.map(function(s) { return pct(s.count, total); });
+    // Round-robin correction: ensure widths sum to 100 (avoid floating-
+    // point fuzz).
+    var sum = widths.reduce(function(a, b) { return a + b; }, 0);
+    if (sum > 0 && sum !== 100 && widths.length > 0) {
+      // Adjust the largest segment by the delta.
+      var largestIdx = 0;
+      widths.forEach(function(w, i) { if (w > widths[largestIdx]) largestIdx = i; });
+      widths[largestIdx] += (100 - sum);
+    }
+    stack.segments.forEach(function(s, i) {
+      var w = widths[i] || 0;
+      var seg = mk("div", "vendor-bar-segment");
+      seg.style.width = w + "%";
+      seg.style.background = s.color;
+      seg.setAttribute("data-" + s.dataAttr, s.id);
+      seg.title = s.label + ": " + s.count + " (" + w + "%)";
+      if (w >= 6) seg.textContent = w + "%";
+      // Click any segment -> set body[data-filter-<dim>] for the
+      // relevant filter dimension (currently layer is the only one
+      // wired through filterState).
+      if (s.filterDim) {
+        seg.classList.add("is-clickable");
+        seg.addEventListener("click", function() {
+          fState.toggleValue(s.filterDim, s.id);
+        });
+      }
+      bar.appendChild(seg);
+    });
+    grp.appendChild(bar);
+    c.appendChild(grp);
+  }
+
+  function renderHeadlineLegend(c, stack) {
+    if (!c) return;
+    c.innerHTML = "";
+    stack.segments.forEach(function(s) {
       var item = mk("div", "vendor-legend-item");
-      var sw = mk("span", "vendor-legend-swatch vendor-legend-swatch-" + r.id);
+      var sw = mk("span", "vendor-legend-swatch");
+      sw.style.background = s.color;
       item.appendChild(sw);
       var lbl = mk("span", "vendor-legend-label");
-      lbl.textContent = r.label;
+      lbl.textContent = s.label;
       item.appendChild(lbl);
       var cnt = mk("span", "vendor-legend-count metric");
-      cnt.textContent = r.count;
+      cnt.textContent = s.count;
       item.appendChild(cnt);
       c.appendChild(item);
     });

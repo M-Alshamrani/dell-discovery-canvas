@@ -1330,35 +1330,37 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   font-size: 11px;
   color: var(--ink-mute, #6b7280);
   font-variant-numeric: tabular-nums;
+  margin-top: 2px;
 }
-.env-tile-tag {
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  font-size: 9px;
-  letter-spacing: 1.2px;
-  padding: 1px 6px;
-  border: 1px solid var(--ink-mute, #6b7280);
-  border-radius: 999px;
-  text-transform: uppercase;
-  color: var(--ink-mute, #6b7280);
-  background: transparent;
+.env-tile-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  align-items: center;
 }
 .env-tile-hidden {
   background: var(--canvas-soft, #f9fafb);
   opacity: 0.78;
 }
 .env-tile-hidden .env-tile-sublabel { color: var(--ink-mute, #6b7280); }
+.env-tile-hidden .lucide-eye-off { color: var(--ink-mute, #6b7280); }
 .env-tile-hidden .env-restore-btn {
   margin-top: 8px;
   font-size: 11px;
-  padding: 0;
+  padding: 4px 10px;
   background: transparent;
-  border: none;
+  border: 1px solid var(--dell-blue, #0076CE);
+  border-radius: 999px;
   color: var(--dell-blue, #0076CE);
   cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s ease, color 0.15s ease;
 }
-.env-tile-hidden .env-restore-btn:hover { text-decoration: underline; }
+.env-tile-hidden .env-restore-btn:hover {
+  background: var(--dell-blue, #0076CE);
+  color: #fff;
+}
 
 .env-add-btn {
   flex: 0 1 calc(50% - 4px);
@@ -1509,6 +1511,80 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 }
 .vendor-bar-large { height: 28px; border-radius: 14px; }
 .vendor-bar-large .vendor-bar-segment { font-size: 12px; padding: 0 6px; }
+
+/* v2.4.15-polish T2.C1 . dimension picker above the headline bar.
+   User picks how the bar splits (Vendor / Layer / Environment); the
+   active dimension chip switches to the GPLC `data-t="app"` accent. */
+.vm-stack-by-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 12px 0;
+  flex-wrap: wrap;
+}
+.vm-stack-by-label {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 9px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--ink-mute, #6b7280);
+}
+.vm-stack-by-chips {
+  display: inline-flex;
+  gap: 4px;
+}
+.vm-stack-chip {
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0.04em;
+  font-family: var(--font, "Inter", system-ui, sans-serif);
+  font-size: 11px;
+  padding: 3px 10px;
+  transition: transform 0.08s ease;
+}
+.vm-stack-chip:hover { transform: translateY(-1px); }
+.vm-stack-chip.is-active { font-weight: 600; }
+
+/* Shimmer effect . a slow gradient sweep across the headline bar so
+   the visualization feels alive without being distracting. ~6s loop,
+   gentle white highlight at ~20% opacity. Disabled when the user
+   prefers reduced motion. */
+.vendor-bar-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.vendor-bar-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0) 40%,
+    rgba(255, 255, 255, 0.22) 50%,
+    rgba(255, 255, 255, 0) 60%,
+    transparent 100%
+  );
+  background-size: 250% 100%;
+  animation: vendor-bar-shimmer-sweep 6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes vendor-bar-shimmer-sweep {
+  0%   { background-position: -100% 0; }
+  100% { background-position: 200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vendor-bar-shimmer::after { animation: none; }
+}
+
+.vendor-bar-segment.is-clickable {
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+.vendor-bar-segment.is-clickable:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
 
 .vm-overview-legend {
   display: flex;
@@ -3886,6 +3962,50 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   margin: 0;
 }
 
+/* v2.4.15-polish . T2.A1 . GPLC tag primitive. ONE class covers every
+   chip / pill / badge / status indicator across the app. The data-t
+   variant dictates the signal color so consumers don't sprinkle their
+   own colors. Mono caps + small radius + tight letter-spacing matches
+   the reference HTML at Downloads/GPLC Digital Unified Platform v1.0.html.
+
+   Variants:
+     [data-t="biz"]   Dell-blue outlined        -- business / strategic
+     [data-t="app"]   Dell-blue soft fill       -- application / driver
+     [data-t="data"]  Amber outlined            -- data / capacity
+     [data-t="tech"]  Neutral outlined          -- technology / generic
+     [data-t="sec"]   Red filled                -- security / critical
+     [data-t="ops"]   Green filled              -- ops / governance / hidden
+     [data-t="env"]   Dell-blue soft fill       -- environment label
+     [data-t="urg"][data-level="High|Medium|Low"]  -- urgency signal
+*/
+.tag-base, .tag {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--rule-strong, #cbd5e1);
+  color: var(--ink-mute, #6b7280);
+  background: transparent;
+  white-space: nowrap;
+  line-height: 1.4;
+  vertical-align: middle;
+}
+.tag[data-t="biz"]  { border-color: var(--dell-blue, #0076CE); color: var(--dell-blue, #0076CE); }
+.tag[data-t="app"]  { border-color: var(--dell-blue, #0076CE); color: var(--dell-blue-deep, #00447C); background: var(--dell-blue-soft, #e8f2fb); }
+.tag[data-t="data"] { border-color: var(--amber, #f59e0b);     color: var(--amber, #f59e0b);     background: rgba(245, 158, 11, 0.08); }
+.tag[data-t="tech"] { border-color: var(--ink-mute, #6b7280);  color: var(--ink-soft, #4b5563); }
+.tag[data-t="sec"]  { border-color: var(--red, #C8102E);       color: var(--red, #C8102E);       background: rgba(200, 16, 46, 0.06); }
+.tag[data-t="ops"]  { border-color: var(--green, #00843D);     color: var(--green, #00843D);     background: rgba(0, 132, 61, 0.08); }
+.tag[data-t="env"]  { border-color: var(--dell-blue, #0076CE); color: var(--dell-blue-deep, #00447C); background: var(--dell-blue-soft, #e8f2fb); }
+.tag[data-t="urg"][data-level="High"]   { border-color: var(--red, #C8102E);   color: var(--red, #C8102E);   background: rgba(200, 16, 46, 0.06); }
+.tag[data-t="urg"][data-level="Medium"] { border-color: var(--amber, #f59e0b); color: var(--amber, #f59e0b); background: rgba(245, 158, 11, 0.08); }
+.tag[data-t="urg"][data-level="Low"]    { border-color: var(--ink-mute, #6b7280); color: var(--ink-soft, #4b5563); }
+
 /* v2.4.15-polish . T2.A3 . consistent button feedback states. Any button
    with class .btn-with-feedback can transition through:
        idle      -> default style
@@ -4347,67 +4467,131 @@ body[data-filter-urgency]  .gap-card.filter-match-urgency {
   transition: opacity 0.15s ease, filter 0.15s ease;
 }
 
-/* v2.4.15 . FB1-FB6 . FilterBar visual treatment. */
-.filter-bar-root { display: block; margin: 8px 0; }
+/* v2.4.15-polish . FilterBar redesigned to match the reference HTML
+   pattern. Compact pill toggle (sliders icon + label + count badge),
+   accordion panel with per-dim collapse, GPLC tag chips for filter
+   options, active chips switch to the data-t="app" accent so the eye
+   spots them first. */
+.filter-bar-root { display: block; margin: 8px 0 10px; }
+
 .filter-bar-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: var(--canvas-soft, #f3f4f6);
+  gap: 8px;
+  padding: 6px 12px 6px 10px;
+  background: var(--canvas, #ffffff);
   border: 1px solid var(--rule, #e5e7eb);
   border-radius: 999px;
   font-size: 12px;
   font-weight: 500;
   color: var(--ink, #111827);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.filter-bar-toggle::before {
-  content: "▾";
-  font-size: 10px;
-  color: var(--ink-mute, #6b7280);
+.filter-bar-toggle:hover {
+  border-color: var(--dell-blue, #0076CE);
+  box-shadow: 0 1px 3px rgba(11, 42, 74, 0.08);
 }
-.filter-bar-toggle:hover { background: var(--canvas-alt, #e5e7eb); }
-.filter-bar-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  margin-top: 8px;
-  background: #ffffff;
-  border: 1px solid var(--rule, #e5e7eb);
-  border-radius: 10px;
-}
-.filter-bar-dim-heading {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 1.4px;
-  text-transform: uppercase;
-  color: var(--ink-mute, #6b7280);
-  margin-bottom: 6px;
-}
-.filter-bar-chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.filter-bar-chip-row .filter-chip {
-  padding: 3px 10px;
-  background: var(--canvas-soft, #f3f4f6);
-  border: 1px solid var(--rule, #e5e7eb);
-  border-radius: 999px;
-  font-size: 11px;
-  cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
-}
-.filter-bar-chip-row .filter-chip:hover { background: var(--canvas-alt, #e5e7eb); }
-.filter-bar-chip-row .filter-chip.is-active {
+.filter-bar-toggle.has-active {
   background: var(--dell-blue-soft, #e8f2fb);
   border-color: var(--dell-blue, #0076CE);
   color: var(--dell-blue-deep, #00447C);
   font-weight: 600;
 }
+.filter-bar-toggle-icon { color: var(--ink-mute, #6b7280); }
+.filter-bar-toggle.has-active .filter-bar-toggle-icon { color: var(--dell-blue, #0076CE); }
+.filter-bar-toggle-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  background: var(--dell-blue, #0076CE);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.4px;
+}
+
+.filter-bar-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  margin-top: 8px;
+  background: var(--canvas, #ffffff);
+  border: 1px solid var(--rule, #e5e7eb);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(11, 42, 74, 0.04);
+}
+
+.filter-bar-dim {
+  border-radius: 8px;
+  transition: background 0.12s ease;
+}
+.filter-bar-dim:hover { background: var(--canvas-soft, #f9fafb); }
+.filter-bar-dim-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+.filter-bar-dim-caret {
+  color: var(--ink-mute, #6b7280);
+  transition: transform 0.18s ease;
+}
+.filter-bar-dim.is-open .filter-bar-dim-caret { transform: rotate(180deg); }
+.filter-bar-dim-heading-label {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--ink, #111827);
+}
+.filter-bar-dim-heading-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  background: var(--dell-blue-soft, #e8f2fb);
+  color: var(--dell-blue-deep, #00447C);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.filter-bar-chip-row {
+  display: none;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 10px 12px 10px;
+}
+.filter-bar-dim.is-open .filter-bar-chip-row { display: flex; }
+
+.filter-bar-chip-row .filter-chip {
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.12s ease, border-color 0.12s ease;
+  padding: 3px 8px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  font-family: var(--font, "Inter", system-ui, sans-serif);
+  font-size: 11px;
+}
+.filter-bar-chip-row .filter-chip:hover { transform: translateY(-1px); }
+.filter-bar-chip-row .filter-chip.is-active { font-weight: 600; }
+
 .filter-active-pill-strip {
   display: flex;
   flex-wrap: wrap;
@@ -4419,11 +4603,11 @@ body[data-filter-urgency]  .gap-card.filter-match-urgency {
   align-items: center;
   gap: 4px;
   padding: 2px 4px 2px 10px;
+  font-family: var(--font, "Inter", system-ui, sans-serif);
   font-size: 11px;
-  background: var(--dell-blue-soft, #e8f2fb);
-  border: 1px solid var(--dell-blue, #0076CE);
-  border-radius: 999px;
-  color: var(--dell-blue-deep, #00447C);
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-weight: 500;
 }
 .active-filter-pill .pill-remove {
   background: transparent;
@@ -4433,6 +4617,7 @@ body[data-filter-urgency]  .gap-card.filter-match-urgency {
   font-size: 11px;
   padding: 1px 4px;
   border-radius: 999px;
+  transition: background 0.12s ease;
 }
 .active-filter-pill .pill-remove:hover { background: rgba(0, 118, 206, 0.18); }
 .active-filter-clear-all {

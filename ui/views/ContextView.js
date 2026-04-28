@@ -179,36 +179,68 @@ function buildEnvTile(envEntry, session, card, right, isHidden, canHide) {
   var catalog = ENV_CATALOG.find(function(c) { return c.id === envEntry.id; });
   var label   = catalog ? catalog.label : envEntry.id;
   var alias   = (envEntry.alias && envEntry.alias.trim()) || label;
-  var meta    = [];
-  if (envEntry.location)       meta.push(envEntry.location);
-  if (envEntry.sizeKw != null) meta.push(envEntry.sizeKw + " MW");
-  if (envEntry.tier)           meta.push(envEntry.tier);
 
   var tile = mk("div", "env-tile" + (isHidden ? " env-tile-hidden" : ""));
   tile.setAttribute("data-env-row", "true");
   tile.setAttribute("data-env-id", envEntry.id);
 
+  // v2.4.15-polish . tile structure: alias headline + catalog eyebrow +
+  // a row of GPLC tags showing the env's metadata at a glance. Hidden
+  // tiles get an eye-off icon instead of metadata + the OPS-color
+  // "HIDDEN" tag. Empty metadata fields just don't render their tag --
+  // no placeholder noise.
   tile.appendChild(mkt("div", "env-tile-label", alias));
   tile.appendChild(mkt("div", "env-tile-sublabel", catalog ? catalog.label : envEntry.id));
-  if (meta.length > 0) {
-    tile.appendChild(mkt("div", "env-tile-meta", meta.join(" . ")));
-  }
 
   if (isHidden) {
-    tile.appendChild(mkt("span", "env-tile-tag tag", "HIDDEN"));
-    // One-click restore from the tile (no confirmation; low-stakes reverse).
-    var restore = mk("button", "env-restore-btn btn-link");
+    var hiddenRow = mk("div", "env-tile-tags");
+    hiddenRow.appendChild(mkLucide("eye-off", 12));
+    var hiddenTag = mkt("span", "tag", "HIDDEN");
+    hiddenTag.setAttribute("data-t", "ops");
+    hiddenRow.appendChild(hiddenTag);
+    tile.appendChild(hiddenRow);
+    var instCount = countInstancesForEnv(session, envEntry.id);
+    if (instCount > 0) {
+      tile.appendChild(mkt("div", "env-tile-meta",
+        instCount + " instance" + (instCount === 1 ? "" : "s") + " preserved in saved file"));
+    }
+    var restore = mk("button", "env-restore-btn btn-with-feedback");
     restore.type = "button";
     restore.textContent = "Restore";
     restore.setAttribute("data-env-restore", envEntry.id);
     restore.addEventListener("click", function(e) {
       e.stopPropagation();
-      envEntry.hidden = false;
-      saveToLocalStorage();
-      emitSessionChanged("env-restore", "Restore environment");
-      paintEnvironmentsCard(card, session, right);
+      restore.classList.add("is-loading");
+      try {
+        envEntry.hidden = false;
+        saveToLocalStorage();
+        emitSessionChanged("env-restore", "Restore environment");
+        paintEnvironmentsCard(card, session, right);
+      } catch (err) {
+        restore.classList.remove("is-loading");
+        restore.classList.add("is-error");
+        restore.textContent = "Restore failed";
+      }
     });
     tile.appendChild(restore);
+  } else {
+    var tagsRow = mk("div", "env-tile-tags");
+    if (envEntry.location) {
+      var loc = mkt("span", "tag", envEntry.location);
+      loc.setAttribute("data-t", "tech");
+      tagsRow.appendChild(loc);
+    }
+    if (envEntry.sizeKw != null) {
+      var size = mkt("span", "tag", envEntry.sizeKw + " MW");
+      size.setAttribute("data-t", "data");
+      tagsRow.appendChild(size);
+    }
+    if (envEntry.tier) {
+      var tier = mkt("span", "tag", envEntry.tier);
+      tier.setAttribute("data-t", "biz");
+      tagsRow.appendChild(tier);
+    }
+    if (tagsRow.children.length > 0) tile.appendChild(tagsRow);
   }
 
   // Click anywhere on the tile -> open right-panel detail editor.
@@ -220,6 +252,56 @@ function buildEnvTile(envEntry, session, card, right, isHidden, canHide) {
 
   return tile;
 }
+
+// v2.4.15-polish . tiny inline-SVG helper for Lucide-style icons. Used
+// directly inside view code where importing the full ui/icons.js
+// module isn't worth it. `name` is one of the small catalog below.
+function mkLucide(name, size) {
+  var s = size || 14;
+  var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("width",  String(s));
+  svg.setAttribute("height", String(s));
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  svg.classList.add("lucide-" + name);
+  var paths = LUCIDE_ICONS[name] || [];
+  paths.forEach(function(d) {
+    if (typeof d === "string") {
+      var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      p.setAttribute("d", d);
+      svg.appendChild(p);
+    } else if (d && d.tag) {
+      var el = document.createElementNS("http://www.w3.org/2000/svg", d.tag);
+      Object.keys(d).forEach(function(k) {
+        if (k !== "tag") el.setAttribute(k, d[k]);
+      });
+      svg.appendChild(el);
+    }
+  });
+  return svg;
+}
+
+var LUCIDE_ICONS = {
+  "eye-off": [
+    "M9.88 9.88a3 3 0 1 0 4.24 4.24",
+    "M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 11 7 11 7a13.16 13.16 0 0 1-1.67 2.68",
+    "M6.61 6.61A13.526 13.526 0 0 0 1 12s4 7 11 7a9.74 9.74 0 0 0 5.39-1.61",
+    { tag: "line", x1: "2", x2: "22", y1: "2", y2: "22" }
+  ],
+  "eye": [
+    "M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z",
+    { tag: "circle", cx: "12", cy: "12", r: "3" }
+  ],
+  "lock": [
+    { tag: "rect", x: "3", y: "11", width: "18", height: "11", rx: "2", ry: "2" },
+    "M7 11V7a5 5 0 0 1 10 0v4"
+  ]
+};
 
 function renderEnvDetail(right, session, envEntry, card, canHide) {
   var catalog = ENV_CATALOG.find(function(c) { return c.id === envEntry.id; });
