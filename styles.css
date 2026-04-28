@@ -3959,19 +3959,123 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   border-radius: 999px;
 }
 
-/* When body has a services filter active, every gap-card without the
-   match class dims; matching cards stay full opacity. Same idea
-   carries forward to other dimensions when they ship. */
-body[data-filter-services] .gap-card:not(.filter-match-services) {
+/* v2.4.15 . FB7a-d . cross-tab filter dim rules for all 4 dimensions.
+   When body[data-filter-<dim>] is set, gap-cards lacking the matching
+   .filter-match-<dim> class dim out. Multi-dim AND combine is automatic
+   via the :not chain (a card needs ALL active match classes to escape
+   ALL dim rules). */
+body[data-filter-services] .gap-card:not(.filter-match-services),
+body[data-filter-layer]    .gap-card:not(.filter-match-layer),
+body[data-filter-domain]   .gap-card:not(.filter-match-domain),
+body[data-filter-urgency]  .gap-card:not(.filter-match-urgency) {
   opacity: 0.22;
   filter: grayscale(0.55);
   transition: opacity 0.15s ease, filter 0.15s ease;
 }
-body[data-filter-services] .gap-card.filter-match-services {
-  opacity: 1;
-  filter: none;
+body[data-filter-services] .gap-card.filter-match-services,
+body[data-filter-layer]    .gap-card.filter-match-layer,
+body[data-filter-domain]   .gap-card.filter-match-domain,
+body[data-filter-urgency]  .gap-card.filter-match-urgency {
   transition: opacity 0.15s ease, filter 0.15s ease;
 }
+
+/* v2.4.15 . FB1-FB6 . FilterBar visual treatment. */
+.filter-bar-root { display: block; margin: 8px 0; }
+.filter-bar-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--canvas-soft, #f3f4f6);
+  border: 1px solid var(--rule, #e5e7eb);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink, #111827);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.filter-bar-toggle::before {
+  content: "▾";
+  font-size: 10px;
+  color: var(--ink-mute, #6b7280);
+}
+.filter-bar-toggle:hover { background: var(--canvas-alt, #e5e7eb); }
+.filter-bar-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  margin-top: 8px;
+  background: #ffffff;
+  border: 1px solid var(--rule, #e5e7eb);
+  border-radius: 10px;
+}
+.filter-bar-dim-heading {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--ink-mute, #6b7280);
+  margin-bottom: 6px;
+}
+.filter-bar-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.filter-bar-chip-row .filter-chip {
+  padding: 3px 10px;
+  background: var(--canvas-soft, #f3f4f6);
+  border: 1px solid var(--rule, #e5e7eb);
+  border-radius: 999px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.filter-bar-chip-row .filter-chip:hover { background: var(--canvas-alt, #e5e7eb); }
+.filter-bar-chip-row .filter-chip.is-active {
+  background: var(--dell-blue-soft, #e8f2fb);
+  border-color: var(--dell-blue, #0076CE);
+  color: var(--dell-blue-deep, #00447C);
+  font-weight: 600;
+}
+.filter-active-pill-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.active-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 10px;
+  font-size: 11px;
+  background: var(--dell-blue-soft, #e8f2fb);
+  border: 1px solid var(--dell-blue, #0076CE);
+  border-radius: 999px;
+  color: var(--dell-blue-deep, #00447C);
+}
+.active-filter-pill .pill-remove {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 999px;
+}
+.active-filter-pill .pill-remove:hover { background: rgba(0, 118, 206, 0.18); }
+.active-filter-clear-all {
+  font-size: 11px;
+  color: var(--ink-mute, #6b7280);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  margin-left: 4px;
+}
+.active-filter-clear-all:hover { color: var(--ink, #111827); text-decoration: underline; }
 
 /* ── v2.4.14 / Lucide icon migration ─────────────────────────────
    Footer + topbar buttons now use inline Lucide-style stroke SVG

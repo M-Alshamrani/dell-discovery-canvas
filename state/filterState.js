@@ -20,7 +20,10 @@
 // later releases without breaking the contract.
 
 var STORAGE_KEY = "dd_filter_state_v1";
-var DIMS = ["services", "layer", "gapType", "environment", "driver"];
+// v2.4.15 . FB7 . full set of cross-tab filter dimensions wired
+// end-to-end. body[data-filter-<dim>] + .gap-card .filter-match-<dim>
+// CSS rules combine (via :not chain) for AND-combine semantics.
+var DIMS = ["services", "layer", "domain", "urgency", "gapType", "environment", "driver"];
 
 var state = loadState();
 var listeners = [];

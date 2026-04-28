@@ -14,6 +14,7 @@ import { validateActionLinks, actionById } from "../../core/taxonomy.js";
 import { SERVICE_TYPES, SUGGESTED_SERVICES_BY_GAP_TYPE, suggestedFor, serviceLabel, serviceDomain } from "../../core/services.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
 import { getActiveValue as getFilter, toggleValue as toggleFilter, subscribe as subscribeFilter } from "../../state/filterState.js";
+import { renderFilterBar } from "../components/FilterBar.js";
 
 // v2.4.14 F1 . apply the active services filter to a gap card. Sets
 // .filter-match-services when the card's services include the active
@@ -105,50 +106,37 @@ export function renderGapsEditView(left, right, session) {
   header.appendChild(mkt("div", "card-hint",
     "Each gap bridges current to desired state. Auto-drafted gaps appear when you set a disposition in Desired State. Drag cards between phases to re-prioritise."));
 
-  // v2.4.14 F1-F2 . services filter chip row. Click a chip to dim every
-  // gap card whose services don't include that service id; click again
-  // (or click another chip) to clear / switch.
-  var filterRow = mk("div", "filter-chip-row");
-  filterRow.setAttribute("data-filter-row", "services");
-  var filterLabel = mkt("span", "filter-chip-label", "Filter by service");
-  filterRow.appendChild(filterLabel);
-  SERVICE_TYPES.forEach(function(svc) {
-    var chip = mkt("button", "chip-filter filter-chip", svc.label.split(" / ")[0]);
-    chip.type = "button";
-    chip.setAttribute("data-filter-chip", "");
-    chip.setAttribute("data-filter-dim", "services");
-    chip.setAttribute("data-service-id", svc.id);
-    if (getFilter("services") === svc.id) chip.classList.add("is-active", "active");
-    chip.addEventListener("click", function() {
-      toggleFilter("services", svc.id);
-    });
-    filterRow.appendChild(chip);
+  // v2.4.15 . FB1-FB7 . modern collapsible FilterBar with all 4
+  // dimensions wired (services / layer / domain / urgency). Mounted as
+  // a single button + panel + active-pill strip; replaces the v2.4.14
+  // services-only chip row.
+  var domains = {};
+  (session.gaps || []).forEach(function(g) {
+    if (g && Array.isArray(g.services)) {
+      g.services.forEach(function(sid) {
+        var dom = serviceDomain(sid);
+        if (dom) domains[dom] = true;
+      });
+    }
   });
-  header.appendChild(filterRow);
-
-  // v2.4.14 F1 . on filter change, re-paint the chip is-active state
-  // and re-apply match class on every gap card. Lightweight (no full
-  // re-render). Unsubscribe is fire-and-forget; filterState's listener
-  // list is small + leaks are bounded.
-  var unsubFilter = subscribeFilter(function(snap) {
-    var serviceFilter = snap.services || null;
-    filterRow.querySelectorAll(".chip-filter").forEach(function(c) {
-      var sid = c.getAttribute("data-service-id");
-      var active = sid && sid === serviceFilter;
-      c.classList.toggle("is-active", !!active);
-      c.classList.toggle("active", !!active);
-    });
-    document.querySelectorAll(".gap-card[data-services]").forEach(function(c) {
-      var services = (c.getAttribute("data-services") || "").split(/\s+/).filter(Boolean);
-      var match = !!serviceFilter && services.indexOf(serviceFilter) >= 0;
-      if (!serviceFilter) c.classList.remove("filter-match-services");
-      else c.classList.toggle("filter-match-services", match);
-    });
-  });
-  // Make sure filter state lives only as long as the view; the next
-  // renderGapsEditView call will install a fresh subscription.
+  var filterBarHost = mk("div", "gaps-filter-bar-host");
+  header.appendChild(filterBarHost);
+  // Re-mount on every render; FilterBar manages its own state subscription.
   if (left._unsubFilter) try { left._unsubFilter(); } catch (e) {}
-  left._unsubFilter = unsubFilter;
+  renderFilterBar(filterBarHost, {
+    dimensions: [
+      { id: "services", label: "Service",
+        options: SERVICE_TYPES.map(function(s) { return { id: s.id, label: s.label.split(" / ")[0] }; }) },
+      { id: "layer",    label: "Layer",
+        options: LAYERS.map(function(l) { return { id: l.id, label: l.label }; }) },
+      { id: "domain",   label: "Domain",
+        options: Object.keys(domains).sort().map(function(d) { return { id: d, label: d.charAt(0).toUpperCase() + d.slice(1) }; }) },
+      { id: "urgency",  label: "Urgency",
+        options: [{ id: "High", label: "High" }, { id: "Medium", label: "Medium" }, { id: "Low", label: "Low" }] }
+    ],
+    session: session,
+    scope: left
+  });
 
   // Auto-gap notice + v2.4.11 · C2 · "Review all" guided walkthrough button.
   var autoGaps = getAutoGaps();
@@ -375,6 +363,10 @@ export function renderGapsEditView(left, right, session) {
     // the muted-hue left bar via CSS.
     var domain = pickGapDomain(gap);
     if (domain) card.setAttribute("data-domain", domain);
+    // v2.4.15 FB7a/c . cards carry layer + urgency on data attributes so
+    // FilterBar's match-class pass can target them.
+    if (gap.layerId) card.setAttribute("data-layer", gap.layerId);
+    if (gap.urgency) card.setAttribute("data-urgency", gap.urgency);
     // v2.4.14 F1 . cards declare their services as a space-separated
     // attribute so the filter system + CSS dim rule can match.
     if (Array.isArray(gap.services) && gap.services.length > 0) {

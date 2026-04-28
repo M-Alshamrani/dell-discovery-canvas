@@ -34,8 +34,9 @@ import { createTestRunner, runIsolated } from "./testRunner.js";
 import { emitSessionChanged, onSessionChanged } from "../core/sessionEvents.js";
 // v2.4.13 S2A · post-test indicator restore (see runAllTests below).
 import { markSaved as _markSaved, markIdle as _markIdle, markSaving as _markSaving } from "../core/saveStatus.js";
-// v2.4.15 · Suite 46 · synchronous filterState for FB7 tests + reset between cases.
+// v2.4.15 · Suite 46 · synchronous filterState + FilterBar imports for FB tests.
 import * as filterState from "../state/filterState.js";
+import { renderFilterBar } from "../ui/components/FilterBar.js";
 
 import {
   LAYERS, ENVIRONMENTS, CATALOG,
@@ -7617,17 +7618,15 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
   // Section FB · FB1-FB6 · Modern collapsible FilterBar
   // ===================================================================
 
-  it("FB1 · renderFilterBar produces a single .filter-bar-toggle button with label /Filters/", async () => {
-    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
-    assert(FBmod && typeof FBmod.renderFilterBar === "function",
-      "FB1 · ui/components/FilterBar.js must export renderFilterBar");
+  it("FB1 · renderFilterBar produces a single .filter-bar-toggle button with label /Filters/", () => {
+    filterState._resetForTests();
     var target = document.createElement("div");
     document.body.appendChild(target);
     try {
-      FBmod.renderFilterBar(target, {
+      renderFilterBar(target, {
         dimensions: [{ id: "services", label: "Service", options: [{ id: "migration", label: "Migration" }] }],
         session: createEmptySession(),
-        scope: "gaps-edit"
+        scope: target
       });
       var toggles = target.querySelectorAll(".filter-bar-toggle, [data-filter-bar-toggle]");
       assertEqual(toggles.length, 1,
@@ -7636,19 +7635,19 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
         "FB1 · toggle text must contain 'Filters' (got '" + toggles[0].textContent + "')");
     } finally {
       document.body.removeChild(target);
+      filterState._resetForTests();
     }
   });
 
-  it("FB2 · Click toggle expands .filter-bar-panel; re-click collapses", async () => {
-    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
-    assert(FBmod && typeof FBmod.renderFilterBar === "function", "FB2 · need FilterBar module");
+  it("FB2 · Click toggle expands .filter-bar-panel; re-click collapses", () => {
+    filterState._resetForTests();
     var target = document.createElement("div");
     document.body.appendChild(target);
     try {
-      FBmod.renderFilterBar(target, {
+      renderFilterBar(target, {
         dimensions: [{ id: "services", label: "Service", options: [{ id: "migration", label: "Migration" }] }],
         session: createEmptySession(),
-        scope: "gaps-edit"
+        scope: target
       });
       var toggle = target.querySelector(".filter-bar-toggle");
       dispatchClick(toggle);
@@ -7657,28 +7656,25 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       var visible = getComputedStyle(panel).display !== "none";
       assert(visible, "FB2 · panel must be visible after first click (display !== 'none')");
       dispatchClick(toggle);
-      var panelAfter = target.querySelector(".filter-bar-panel, [data-filter-bar-panel]");
-      var collapsed = !panelAfter || getComputedStyle(panelAfter).display === "none";
-      assert(collapsed, "FB2 · re-click must collapse panel (display 'none' or removed)");
+      var collapsed = getComputedStyle(panel).display === "none";
+      assert(collapsed, "FB2 · re-click must collapse panel (display 'none')");
     } finally {
       document.body.removeChild(target);
+      filterState._resetForTests();
     }
   });
 
-  it("FB3 · Service chip click sets body[data-filter-services] + chip gets is-active class", async () => {
-    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
-    var fState = await import("../state/filterState.js");
-    fState._resetForTests();
+  it("FB3 · Service chip click sets body[data-filter-services] + chip gets is-active class", () => {
+    filterState._resetForTests();
     document.body.removeAttribute("data-filter-services");
-    assert(FBmod && typeof FBmod.renderFilterBar === "function", "FB3 · need FilterBar module");
     var target = document.createElement("div");
     document.body.appendChild(target);
     try {
-      FBmod.renderFilterBar(target, {
+      renderFilterBar(target, {
         dimensions: [{ id: "services", label: "Service",
           options: [{ id: "migration", label: "Migration" }, { id: "training", label: "Training" }] }],
         session: createEmptySession(),
-        scope: "gaps-edit"
+        scope: target
       });
       dispatchClick(target.querySelector(".filter-bar-toggle"));
       var chip = target.querySelector(".filter-chip[data-filter-dim='services'][data-filter-value='migration']");
@@ -7691,23 +7687,21 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     } finally {
       document.body.removeChild(target);
       document.body.removeAttribute("data-filter-services");
-      fState._resetForTests();
+      filterState._resetForTests();
     }
   });
 
-  it("FB4 · Active filter strip renders a removable pill per active filter", async () => {
-    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
-    var fState = await import("../state/filterState.js");
-    fState._resetForTests();
+  it("FB4 · Active filter strip renders a removable pill per active filter", () => {
+    filterState._resetForTests();
     document.body.removeAttribute("data-filter-services");
     var target = document.createElement("div");
     document.body.appendChild(target);
     try {
-      FBmod.renderFilterBar(target, {
+      renderFilterBar(target, {
         dimensions: [{ id: "services", label: "Service",
           options: [{ id: "migration", label: "Migration" }] }],
         session: createEmptySession(),
-        scope: "gaps-edit"
+        scope: target
       });
       dispatchClick(target.querySelector(".filter-bar-toggle"));
       var chip = target.querySelector(".filter-chip[data-filter-dim='services'][data-filter-value='migration']");
@@ -7719,27 +7713,25 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     } finally {
       document.body.removeChild(target);
       document.body.removeAttribute("data-filter-services");
-      fState._resetForTests();
+      filterState._resetForTests();
     }
   });
 
-  it("FB5 · Clicking the pill X removes the filter (body data attr cleared + pill removed)", async () => {
-    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
-    var fState = await import("../state/filterState.js");
-    fState._resetForTests();
+  it("FB5 · Clicking the pill X removes the filter (body data attr cleared + pill removed)", () => {
+    filterState._resetForTests();
     document.body.removeAttribute("data-filter-services");
     var target = document.createElement("div");
     document.body.appendChild(target);
     try {
-      FBmod.renderFilterBar(target, {
+      renderFilterBar(target, {
         dimensions: [{ id: "services", label: "Service",
           options: [{ id: "migration", label: "Migration" }] }],
         session: createEmptySession(),
-        scope: "gaps-edit"
+        scope: target
       });
       dispatchClick(target.querySelector(".filter-bar-toggle"));
       dispatchClick(target.querySelector(".filter-chip[data-filter-value='migration']"));
-      var x = target.querySelector(".active-filter-pill .pill-remove, .active-filter-pill .x, [data-pill-remove]");
+      var x = target.querySelector(".active-filter-pill .pill-remove, [data-pill-remove]");
       assert(x, "FB5 · need an X to click");
       dispatchClick(x);
       assert(!document.body.hasAttribute("data-filter-services"),
@@ -7749,24 +7741,22 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     } finally {
       document.body.removeChild(target);
       document.body.removeAttribute("data-filter-services");
-      fState._resetForTests();
+      filterState._resetForTests();
     }
   });
 
-  it("FB6 · Toggle label updates to 'Filters · 2 active' when 2 filters are selected", async () => {
-    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
-    var fState = await import("../state/filterState.js");
-    fState._resetForTests();
+  it("FB6 · Toggle label updates to 'Filters · 2 active' when 2 filters are selected", () => {
+    filterState._resetForTests();
     var target = document.createElement("div");
     document.body.appendChild(target);
     try {
-      FBmod.renderFilterBar(target, {
+      renderFilterBar(target, {
         dimensions: [
           { id: "services", label: "Service", options: [{ id: "migration", label: "Migration" }] },
           { id: "layer",    label: "Layer",   options: [{ id: "compute",   label: "Compute"   }] }
         ],
         session: createEmptySession(),
-        scope: "gaps-edit"
+        scope: target
       });
       dispatchClick(target.querySelector(".filter-bar-toggle"));
       dispatchClick(target.querySelector(".filter-chip[data-filter-dim='services'][data-filter-value='migration']"));
@@ -7778,7 +7768,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       document.body.removeChild(target);
       document.body.removeAttribute("data-filter-services");
       document.body.removeAttribute("data-filter-layer");
-      fState._resetForTests();
+      filterState._resetForTests();
     }
   });
 
@@ -7786,18 +7776,17 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
   // Section FB7 · FB7a-d · All 4 filter dimensions wired (services / layer / domain / urgency)
   // ===================================================================
 
-  it("FB7a · Layer dim chip click sets body[data-filter-layer] + matching .gap-card[data-layer] gets .filter-match-layer", async () => {
-    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
-    var fState = await import("../state/filterState.js");
-    fState._resetForTests();
+  it("FB7a · Layer dim chip click sets body[data-filter-layer] + matching .gap-card[data-layer] gets .filter-match-layer", () => {
+    filterState._resetForTests();
     var s = createEmptySession();
     s.environments = [{ id: "coreDc", hidden: false }];
     var cur = addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
       label: "FB7a-cur", vendorGroup: "dell", criticality: "Medium" });
     createGap(s, { description: "FB7a compute gap", layerId: "compute", gapType: "ops",
       relatedCurrentInstanceIds: [cur.id], services: [] });
-    createGap(s, { description: "FB7a storage gap", layerId: "storage", gapType: "ops",
-      relatedCurrentInstanceIds: [], services: [] });
+    createGap(s, { description: "FB7a storage gap dec context that exceeds ten chars",
+      layerId: "storage", gapType: "ops", notes: "FB7a storage gap context that exceeds ten chars",
+      services: [] });
     var l = document.createElement("div"); var r = document.createElement("div");
     renderGapsEditView(l, r, s);
     document.body.appendChild(l);
@@ -7816,18 +7805,23 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     } finally {
       document.body.removeChild(l);
       document.body.removeAttribute("data-filter-layer");
-      fState._resetForTests();
+      filterState._resetForTests();
     }
   });
 
-  it("FB7b · Domain dim chip click sets body[data-filter-domain] + matching cards get .filter-match-domain", async () => {
-    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
-    var fState = await import("../state/filterState.js");
-    fState._resetForTests();
+  it("FB7b · Domain dim chip click sets body[data-filter-domain] + matching cards get .filter-match-domain", () => {
+    filterState._resetForTests();
     var s = createEmptySession();
     s.environments = [{ id: "coreDc", hidden: false }];
-    createGap(s, { description: "FB7b infra gap", layerId: "infrastructure", gapType: "ops" });
-    createGap(s, { description: "FB7b compute gap", layerId: "compute", gapType: "ops" });
+    var cur1 = addInstance(s, { state: "current", layerId: "infrastructure", environmentId: "coreDc",
+      label: "FB7b-cur1", vendorGroup: "dell", criticality: "Medium" });
+    var cur2 = addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "FB7b-cur2", vendorGroup: "dell", criticality: "Medium" });
+    // Use service ids that produce a stable domain for the chip lookup
+    createGap(s, { description: "FB7b infra gap", layerId: "infrastructure", gapType: "ops",
+      relatedCurrentInstanceIds: [cur1.id], services: ["migration"] });
+    createGap(s, { description: "FB7b compute gap", layerId: "compute", gapType: "ops",
+      relatedCurrentInstanceIds: [cur2.id], services: ["training"] });
     var l = document.createElement("div"); var r = document.createElement("div");
     renderGapsEditView(l, r, s);
     document.body.appendChild(l);
@@ -7845,23 +7839,26 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     } finally {
       document.body.removeChild(l);
       document.body.removeAttribute("data-filter-domain");
-      fState._resetForTests();
+      filterState._resetForTests();
     }
   });
 
-  it("FB7c · Urgency dim chip click sets body[data-filter-urgency] + .gap-card[data-urgency] attribute is present", async () => {
-    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
-    var fState = await import("../state/filterState.js");
-    fState._resetForTests();
+  it("FB7c · Urgency dim chip click sets body[data-filter-urgency] + .gap-card[data-urgency] attribute is present", () => {
+    filterState._resetForTests();
     var s = createEmptySession();
     s.environments = [{ id: "coreDc", hidden: false }];
-    createGap(s, { description: "FB7c high gap", layerId: "compute", gapType: "ops", urgency: "High" });
-    createGap(s, { description: "FB7c low gap",  layerId: "compute", gapType: "ops", urgency: "Low" });
+    var cur1 = addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "FB7c-cur1", vendorGroup: "dell", criticality: "Medium" });
+    var cur2 = addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "FB7c-cur2", vendorGroup: "dell", criticality: "Medium" });
+    createGap(s, { description: "FB7c high gap", layerId: "compute", gapType: "ops",
+      relatedCurrentInstanceIds: [cur1.id], urgency: "High" });
+    createGap(s, { description: "FB7c low gap",  layerId: "compute", gapType: "ops",
+      relatedCurrentInstanceIds: [cur2.id], urgency: "Low" });
     var l = document.createElement("div"); var r = document.createElement("div");
     renderGapsEditView(l, r, s);
     document.body.appendChild(l);
     try {
-      // Every gap-card in v2.4.15 must carry a data-urgency attribute.
       var withAttr = l.querySelectorAll(".gap-card[data-urgency]").length;
       assert(withAttr >= 2,
         "FB7c · every .gap-card must carry a data-urgency attribute (got " + withAttr + " of 2 expected)");
@@ -7875,25 +7872,29 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     } finally {
       document.body.removeChild(l);
       document.body.removeAttribute("data-filter-urgency");
-      fState._resetForTests();
+      filterState._resetForTests();
     }
   });
 
-  it("FB7d · Multi-dim AND combine: only cards matching ALL active dims stay un-dimmed", async () => {
-    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
-    var fState = await import("../state/filterState.js");
-    fState._resetForTests();
+  it("FB7d · Multi-dim AND combine: only cards matching ALL active dims stay un-dimmed", () => {
+    filterState._resetForTests();
     var s = createEmptySession();
     s.environments = [{ id: "coreDc", hidden: false }];
-    var cur = addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
-      label: "FB7d-cur", vendorGroup: "dell", criticality: "Medium" });
+    var cur1 = addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "FB7d-cur1", vendorGroup: "dell", criticality: "Medium" });
+    var cur2 = addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "FB7d-cur2", vendorGroup: "dell", criticality: "Medium" });
+    var cur3 = addInstance(s, { state: "current", layerId: "storage", environmentId: "coreDc",
+      label: "FB7d-cur3", vendorGroup: "dell", criticality: "Medium" });
     // Card 1: layer=compute, urgency=High -> matches BOTH.
     createGap(s, { description: "FB7d match", layerId: "compute", gapType: "ops",
-      relatedCurrentInstanceIds: [cur.id], urgency: "High" });
+      relatedCurrentInstanceIds: [cur1.id], urgency: "High" });
     // Card 2: layer=compute, urgency=Low  -> matches layer only.
-    createGap(s, { description: "FB7d partial1", layerId: "compute", gapType: "ops", urgency: "Low" });
+    createGap(s, { description: "FB7d partial1", layerId: "compute", gapType: "ops",
+      relatedCurrentInstanceIds: [cur2.id], urgency: "Low" });
     // Card 3: layer=storage, urgency=High -> matches urgency only.
-    createGap(s, { description: "FB7d partial2", layerId: "storage", gapType: "ops", urgency: "High" });
+    createGap(s, { description: "FB7d partial2", layerId: "storage", gapType: "ops",
+      relatedCurrentInstanceIds: [cur3.id], urgency: "High" });
     var l = document.createElement("div"); var r = document.createElement("div");
     renderGapsEditView(l, r, s);
     document.body.appendChild(l);
@@ -7913,7 +7914,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       document.body.removeChild(l);
       document.body.removeAttribute("data-filter-layer");
       document.body.removeAttribute("data-filter-urgency");
-      fState._resetForTests();
+      filterState._resetForTests();
     }
   });
 
