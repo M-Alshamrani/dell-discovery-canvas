@@ -104,151 +104,197 @@ export function renderContextView(left, right, session) {
 
   paintDriverTiles(driversRow, session, right);
 
-  // v2.4.15 . Environments card with dynamic env model + soft-delete.
-  // Two sub-sections: Active environments (editable list of metadata
-  // fields + Hide button per row) and Hidden environments (collapsed
-  // soft-delete archive with Restore button per row). + Add picker
-  // appends a new env from the catalog (only types not already in
-  // session.environments are offered).
-  var envCard = renderEnvironmentsCard(session);
+  // v2.4.15 . Environments card . tile-and-palette UX matching the
+  // driver-tile pattern above (click tile -> right-panel detail edit;
+  // "+ Add environment" tile -> command-palette overlay; Hide /
+  // Restore live in the right-panel detail). Replaces the v2.4.15-pre-
+  // polish cramped per-row metadata grid.
+  var envCard = renderEnvironmentsCard(session, right);
   left.appendChild(envCard);
 
   renderWelcomePanel(right);
 }
 
 // ---------------------------------------------------------------------------
-// v2.4.15 · Environments card with Active + Hidden sub-sections + soft-delete.
+// v2.4.15 · Environments card . tile + command-palette + right-panel detail.
 // ---------------------------------------------------------------------------
-function renderEnvironmentsCard(session) {
+function renderEnvironmentsCard(session, right) {
   var card = mk("div", "card env-card");
   card.style.marginTop = "12px";
   card.appendChild(mkt("div", "card-title", "Environments"));
   card.appendChild(mkt("div", "card-hint",
-    "Add the environments in scope for this engagement. Give each one a customer-friendly alias (e.g. \"Riyadh DC\") plus optional metadata. Hide an environment to remove it from the report without losing its data."));
+    "Click any environment to edit alias, location, capacity, and tier on the right. Click \"+ Add environment\" to bring a new type into scope. Hide an environment to drop it from the report without losing its data."));
 
-  // v2.4.15 . do NOT mutate session.environments during render. The
-  // empty-array fallback is read-only via getActiveEnvironments(); the
-  // user's first Add/Hide interaction creates real entries via the picker
-  // / hide flow, which guard with Array.isArray before push.
-  paintEnvironmentsCard(card, session);
+  paintEnvironmentsCard(card, session, right);
   return card;
 }
 
-function paintEnvironmentsCard(card, session) {
-  // Wipe everything except the title + hint (first 2 children).
+function paintEnvironmentsCard(card, session, right) {
   while (card.children.length > 2) card.removeChild(card.lastChild);
 
-  // For display purposes only: if session.environments is empty, render
-  // the default-4 fallback. This is READ-ONLY: we never mutate the
-  // session here. First user interaction (Add/Hide) materializes real
-  // entries via the picker / hide flow.
+  // Read-only display list (never mutates session.environments).
   var displayList = (session.environments && session.environments.length > 0)
     ? session.environments.slice()
     : getActiveEnvironments(session);
   var visible = displayList.filter(function(e) { return !e.hidden; });
   var hidden  = displayList.filter(function(e) { return e.hidden === true; });
-  var canHide = visible.length > 1; // ≥1-active invariant
+  var canHide = visible.length > 1;
 
-  // ---------- Active environments sub-section ----------
-  var activeSection = mk("div", "env-active-section");
-  activeSection.appendChild(mkt("div", "env-section-heading", "Active environments"));
-
-  var activeList = mk("div", "env-list env-active-list");
+  // Active tiles row + "+ Add environment" tile at the end.
+  var activeRow = mk("div", "env-tiles-row");
   visible.forEach(function(envEntry) {
-    activeList.appendChild(buildEnvRow(envEntry, session, /*isHidden*/ false, canHide));
+    activeRow.appendChild(buildEnvTile(envEntry, session, card, right, /*isHidden*/ false, canHide));
   });
-  activeSection.appendChild(activeList);
-
-  // + Add picker: select + button. Excludes ids already in session.environments.
-  var pickerWrap = mk("div", "env-picker");
   var inSession = {};
   (session.environments || []).forEach(function(e) { inSession[e.id] = true; });
   var available = ENV_CATALOG.filter(function(c) { return !inSession[c.id]; });
   if (available.length > 0) {
-    var sel = mk("select", "env-picker-select form-input");
-    var ph = document.createElement("option");
-    ph.value = ""; ph.textContent = "Add an environment…";
-    sel.appendChild(ph);
-    available.forEach(function(c) {
-      var opt = document.createElement("option");
-      opt.value = c.id; opt.textContent = c.label;
-      sel.appendChild(opt);
-    });
-    var addBtn = mk("button", "env-add-btn btn-secondary");
+    var addBtn = mk("button", "env-add-btn");
     addBtn.type = "button";
-    addBtn.textContent = "+ Add";
+    addBtn.textContent = "+ Add environment";
     addBtn.addEventListener("click", function() {
-      var id = sel.value;
-      if (!id) return;
-      if (!Array.isArray(session.environments)) session.environments = [];
-      session.environments.push({ id: id, hidden: false });
-      saveToLocalStorage();
-      emitSessionChanged("env-add", "Add environment");
-      paintEnvironmentsCard(card, session);
+      openEnvPalette(session, card, right);
     });
-    pickerWrap.appendChild(sel);
-    pickerWrap.appendChild(addBtn);
-  } else {
-    pickerWrap.appendChild(mkt("div", "env-picker-empty muted",
-      "All available environment types are already in this session."));
+    activeRow.appendChild(addBtn);
   }
-  activeSection.appendChild(pickerWrap);
-  card.appendChild(activeSection);
+  card.appendChild(activeRow);
 
-  // ---------- Hidden environments sub-section (only if any) ----------
+  // Hidden tiles row (muted) + heading. Only renders when there are any.
   if (hidden.length > 0) {
     var hiddenSection = mk("div", "env-hidden-section hidden-environments");
     hiddenSection.setAttribute("data-env-hidden-section", "true");
     hiddenSection.appendChild(mkt("div", "env-section-heading muted",
-      "Hidden environments (" + hidden.length + ")"));
-    hiddenSection.appendChild(mkt("div", "env-section-hint muted",
-      "Hidden environments stay in your saved file and are excluded from the report. Click Restore to bring one back."));
-    var hiddenList = mk("div", "env-list env-hidden-list");
+      "Hidden environments (" + hidden.length + ") . excluded from the report; click to restore."));
+    var hiddenRow = mk("div", "env-tiles-row env-tiles-row-hidden");
     hidden.forEach(function(envEntry) {
-      hiddenList.appendChild(buildEnvRow(envEntry, session, /*isHidden*/ true, /*canHide*/ false));
+      hiddenRow.appendChild(buildEnvTile(envEntry, session, card, right, /*isHidden*/ true, /*canHide*/ false));
     });
-    hiddenSection.appendChild(hiddenList);
+    hiddenSection.appendChild(hiddenRow);
     card.appendChild(hiddenSection);
   }
 }
 
-function buildEnvRow(envEntry, session, isHidden, canHide) {
+function buildEnvTile(envEntry, session, card, right, isHidden, canHide) {
   var catalog = ENV_CATALOG.find(function(c) { return c.id === envEntry.id; });
-  var labelText = catalog ? catalog.label : envEntry.id;
+  var label   = catalog ? catalog.label : envEntry.id;
+  var alias   = (envEntry.alias && envEntry.alias.trim()) || label;
+  var meta    = [];
+  if (envEntry.location)       meta.push(envEntry.location);
+  if (envEntry.sizeKw != null) meta.push(envEntry.sizeKw + " MW");
+  if (envEntry.tier)           meta.push(envEntry.tier);
 
-  var row = mk("div", "env-row" + (isHidden ? " env-row-hidden" : " env-row-active"));
-  row.setAttribute("data-env-row", "true");
-  row.setAttribute("data-env-id", envEntry.id);
+  var tile = mk("div", "env-tile" + (isHidden ? " env-tile-hidden" : ""));
+  tile.setAttribute("data-env-row", "true");
+  tile.setAttribute("data-env-id", envEntry.id);
 
-  var head = mk("div", "env-row-head");
-  var nameWrap = mk("div", "env-row-name");
-  nameWrap.appendChild(mkt("div", "env-row-label", labelText));
-  if (catalog && catalog.hint) {
-    nameWrap.appendChild(mkt("div", "env-row-hint muted", catalog.hint));
+  tile.appendChild(mkt("div", "env-tile-label", alias));
+  tile.appendChild(mkt("div", "env-tile-sublabel", catalog ? catalog.label : envEntry.id));
+  if (meta.length > 0) {
+    tile.appendChild(mkt("div", "env-tile-meta", meta.join(" . ")));
   }
-  head.appendChild(nameWrap);
 
   if (isHidden) {
-    var instCount = countInstancesForEnv(session, envEntry.id);
-    head.appendChild(mkt("span", "env-hidden-tag tag", "HIDDEN"));
-    head.appendChild(mkt("span", "env-hidden-pill",
-      instCount + " instance" + (instCount === 1 ? "" : "s") + " tied · saved file preserved"));
+    tile.appendChild(mkt("span", "env-tile-tag tag", "HIDDEN"));
+    // One-click restore from the tile (no confirmation; low-stakes reverse).
     var restore = mk("button", "env-restore-btn btn-link");
     restore.type = "button";
     restore.textContent = "Restore";
     restore.setAttribute("data-env-restore", envEntry.id);
-    restore.addEventListener("click", function() {
+    restore.addEventListener("click", function(e) {
+      e.stopPropagation();
       envEntry.hidden = false;
       saveToLocalStorage();
       emitSessionChanged("env-restore", "Restore environment");
-      var card = restore.closest(".env-card");
-      if (card) paintEnvironmentsCard(card, session);
+      paintEnvironmentsCard(card, session, right);
     });
-    head.appendChild(restore);
+    tile.appendChild(restore);
+  }
+
+  // Click anywhere on the tile -> open right-panel detail editor.
+  tile.addEventListener("click", function() {
+    card.querySelectorAll(".env-tile").forEach(function(t) { t.classList.remove("selected"); });
+    tile.classList.add("selected");
+    renderEnvDetail(right, session, envEntry, card, canHide && !isHidden);
+  });
+
+  return tile;
+}
+
+function renderEnvDetail(right, session, envEntry, card, canHide) {
+  var catalog = ENV_CATALOG.find(function(c) { return c.id === envEntry.id; });
+  var displayName = (envEntry.alias && envEntry.alias.trim()) || (catalog ? catalog.label : envEntry.id);
+  right.innerHTML = "";
+
+  var panel = mk("div", "card env-detail-panel");
+  panel.appendChild(mkt("div", "panel-eyebrow", catalog ? catalog.label : envEntry.id));
+  panel.appendChild(mkt("div", "panel-title", displayName));
+  if (catalog && catalog.hint) {
+    panel.appendChild(mkt("div", "panel-lede muted", catalog.hint));
+  }
+
+  var fields = [
+    { key: "alias",    label: "Alias",                placeholder: catalog ? catalog.label : envEntry.id, type: "text",   hint: "What the customer calls this site." },
+    { key: "location", label: "Location",             placeholder: "City, region",                        type: "text",   hint: "Used in the report." },
+    { key: "sizeKw",   label: "Capacity (MW)",        placeholder: "e.g. 5",                              type: "number", hint: "Power footprint, in megawatts." },
+    { key: "sqm",      label: "Floor area (m²)",      placeholder: "e.g. 320",                            type: "number", hint: "Useful for telco / colo conversations." },
+    { key: "tier",     label: "Tier",                 placeholder: "e.g. Tier III",                       type: "text",   hint: "Uptime / certification level." },
+    { key: "notes",    label: "Notes",                placeholder: "Anything else to remember",           type: "text",   hint: "Free-form context for this site." }
+  ];
+  var grid = mk("div", "env-detail-grid");
+  fields.forEach(function(f) {
+    var grp = mk("div", "form-group env-meta-field");
+    grp.appendChild(mkt("label", "form-label", f.label));
+    var input = mk("input", "form-input env-meta-input");
+    input.type = f.type;
+    input.placeholder = f.placeholder;
+    var current = envEntry[f.key];
+    input.value = (current === undefined || current === null) ? "" : String(current);
+    input.setAttribute("data-env-meta", f.key);
+    input.addEventListener("change", function() {
+      var v = (input.value || "").trim();
+      if (f.type === "number") {
+        var n = parseFloat(v);
+        envEntry[f.key] = isNaN(n) ? undefined : n;
+      } else {
+        envEntry[f.key] = v.length === 0 ? undefined : v;
+      }
+      if (envEntry[f.key] === undefined) delete envEntry[f.key];
+      saveToLocalStorage();
+      paintEnvironmentsCard(card, session, right);
+      // Repaint detail too so the eyebrow + title pick up new alias.
+      renderEnvDetail(right, session, envEntry, card, canHide);
+      // Keep this tile selected.
+      var t = card.querySelector(".env-tile[data-env-id='" + envEntry.id + "']");
+      if (t) {
+        card.querySelectorAll(".env-tile").forEach(function(x) { x.classList.remove("selected"); });
+        t.classList.add("selected");
+      }
+    });
+    grp.appendChild(input);
+    if (f.hint) grp.appendChild(mkt("div", "form-hint muted", f.hint));
+    grid.appendChild(grp);
+  });
+  panel.appendChild(grid);
+
+  // Hide / Restore action lives in the detail footer.
+  var footer = mk("div", "env-detail-footer");
+  if (envEntry.hidden) {
+    var rest = mk("button", "btn-primary env-restore-btn-detail");
+    rest.type = "button";
+    rest.textContent = "Restore environment";
+    rest.setAttribute("data-env-restore", envEntry.id);
+    rest.addEventListener("click", function() {
+      envEntry.hidden = false;
+      saveToLocalStorage();
+      emitSessionChanged("env-restore", "Restore environment");
+      paintEnvironmentsCard(card, session, right);
+      renderWelcomePanel(right);
+    });
+    footer.appendChild(rest);
   } else {
-    var hide = mk("button", "env-hide-btn btn-link");
+    var hide = mk("button", "btn-secondary env-hide-btn");
     hide.type = "button";
-    hide.textContent = "Hide";
+    hide.textContent = "Hide environment";
     hide.setAttribute("data-env-hide", envEntry.id);
     if (!canHide) {
       hide.disabled = true;
@@ -256,51 +302,99 @@ function buildEnvRow(envEntry, session, isHidden, canHide) {
       hide.title = "At least one environment must remain active";
     } else {
       hide.addEventListener("click", function() {
-        startHideFlow(envEntry, session, hide);
+        startHideFlow(envEntry, session, hide, function() {
+          paintEnvironmentsCard(card, session, right);
+          renderWelcomePanel(right);
+        });
       });
     }
-    head.appendChild(hide);
+    footer.appendChild(hide);
   }
-  row.appendChild(head);
+  panel.appendChild(footer);
 
-  // Metadata fields only on active rows.
-  if (!isHidden) {
-    var grid = mk("div", "env-row-grid");
-    var fields = [
-      { key: "alias",    label: "Alias",     placeholder: labelText, type: "text" },
-      { key: "location", label: "Location",  placeholder: "City / region",      type: "text" },
-      { key: "sizeKw",   label: "Size (kW)", placeholder: "e.g. 5",             type: "number" },
-      { key: "sqm",      label: "Floor (m²)",placeholder: "e.g. 120",           type: "number" },
-      { key: "tier",     label: "Tier",      placeholder: "e.g. Tier III",      type: "text" },
-      { key: "notes",    label: "Notes",     placeholder: "Anything to remember", type: "text" }
-    ];
-    fields.forEach(function(f) {
-      var grp = mk("div", "form-group env-meta-field");
-      grp.appendChild(mkt("label", "form-label", f.label));
-      var input = mk("input", "form-input env-meta-input");
-      input.type = f.type;
-      input.placeholder = f.placeholder;
-      var current = envEntry[f.key];
-      input.value = (current === undefined || current === null) ? "" : String(current);
-      input.setAttribute("data-env-meta", f.key);
-      input.addEventListener("change", function() {
-        var v = (input.value || "").trim();
-        if (f.type === "number") {
-          var n = parseFloat(v);
-          envEntry[f.key] = isNaN(n) ? undefined : n;
-        } else {
-          envEntry[f.key] = v.length === 0 ? undefined : v;
-        }
-        if (envEntry[f.key] === undefined) delete envEntry[f.key];
-        saveToLocalStorage();
-      });
-      grp.appendChild(input);
-      grid.appendChild(grp);
+  right.appendChild(panel);
+}
+
+function openEnvPalette(session, card, right) {
+  var existing = document.getElementById("env-palette");
+  if (existing) existing.remove();
+
+  var overlay = mk("div", "cmd-overlay");
+  overlay.id = "env-palette";
+  var box = mk("div", "cmd-box");
+  box.appendChild(mkt("div", "cmd-context", "Add an environment"));
+  var srch = document.createElement("input");
+  srch.className = "cmd-search";
+  srch.placeholder = "Search environment types…";
+  srch.setAttribute("autocomplete", "off");
+  box.appendChild(srch);
+  var results = mk("div", "cmd-results");
+  box.appendChild(results);
+  box.appendChild(mkt("div", "cmd-hint", "Arrows navigate · Enter selects · Esc closes"));
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  setTimeout(function() { srch.focus(); }, 0);
+
+  var activeIdx = -1;
+  function inSessionIds() {
+    var s = {};
+    (session.environments || []).forEach(function(e) { s[e.id] = true; });
+    return s;
+  }
+  function render(q) {
+    results.innerHTML = ""; activeIdx = -1;
+    var taken = inSessionIds();
+    var qlc = (q || "").toLowerCase();
+    var filtered = ENV_CATALOG.filter(function(c) {
+      if (taken[c.id]) return false;
+      if (!qlc) return true;
+      return (c.label + " " + c.hint).toLowerCase().indexOf(qlc) >= 0;
     });
-    row.appendChild(grid);
+    if (filtered.length === 0) {
+      results.appendChild(mkt("div", "cmd-empty",
+        Object.keys(taken).length >= ENV_CATALOG.length
+          ? "All catalog environments are already in this session."
+          : "No environments match your search."));
+      return;
+    }
+    filtered.forEach(function(c) {
+      var item = mk("div", "cmd-item");
+      item.appendChild(mkt("span", "cmd-item-name", c.label));
+      item.appendChild(mkt("span", "cmd-item-vendor", c.hint));
+      item.addEventListener("click", function() {
+        if (!Array.isArray(session.environments)) session.environments = [];
+        session.environments.push({ id: c.id, hidden: false });
+        saveToLocalStorage();
+        emitSessionChanged("env-add", "Add environment");
+        close();
+        // Auto-open the new env's detail panel.
+        var newEntry = session.environments[session.environments.length - 1];
+        renderEnvDetail(right, session, newEntry, card, true);
+      });
+      item.addEventListener("mouseenter", function() {
+        var items = Array.from(results.querySelectorAll(".cmd-item"));
+        items.forEach(function(el, i) {
+          el.classList.toggle("active", el === item);
+          if (el === item) activeIdx = i;
+        });
+      });
+      results.appendChild(item);
+    });
   }
-
-  return row;
+  function close() {
+    overlay.remove();
+    paintEnvironmentsCard(card, session, right);
+  }
+  srch.addEventListener("input", function() { render(srch.value.trim()); });
+  srch.addEventListener("keydown", function(e) {
+    var items = Array.from(results.querySelectorAll(".cmd-item"));
+    if (e.key === "Escape") { close(); return; }
+    if (e.key === "ArrowDown") { activeIdx = Math.min(activeIdx + 1, items.length - 1); items.forEach(function(el, i) { el.classList.toggle("active", i === activeIdx); }); e.preventDefault(); }
+    if (e.key === "ArrowUp")   { activeIdx = Math.max(activeIdx - 1, 0); items.forEach(function(el, i) { el.classList.toggle("active", i === activeIdx); }); e.preventDefault(); }
+    if (e.key === "Enter" && activeIdx >= 0) { items[activeIdx].click(); }
+  });
+  overlay.addEventListener("click", function(e) { if (e.target === overlay) close(); });
+  render("");
 }
 
 function countInstancesForEnv(session, envId) {
@@ -314,17 +408,17 @@ function countInstancesForEnv(session, envId) {
 // ---------------------------------------------------------------------------
 // Hide flow · save-guard (when a save is in flight) -> confirmation -> commit.
 // ---------------------------------------------------------------------------
-function startHideFlow(envEntry, session, anchorBtn) {
+function startHideFlow(envEntry, session, anchorBtn, onAfterHide) {
   var status = (typeof getSaveStatus === "function") ? getSaveStatus() : null;
   var dirty = status && status.status === "saving";
   if (dirty) {
-    openSaveGuardModal(envEntry, session, anchorBtn);
+    openSaveGuardModal(envEntry, session, anchorBtn, onAfterHide);
   } else {
-    openHideConfirmModal(envEntry, session, anchorBtn);
+    openHideConfirmModal(envEntry, session, anchorBtn, onAfterHide);
   }
 }
 
-function openSaveGuardModal(envEntry, session, anchorBtn) {
+function openSaveGuardModal(envEntry, session, anchorBtn, onAfterHide) {
   closeAnyHideModal();
   var modal = buildModalShell("save-guard-modal hide-env-modal", {
     title: "Save before hiding?",
@@ -334,11 +428,11 @@ function openSaveGuardModal(envEntry, session, anchorBtn) {
   var saveAndHide = mkBtn("Save & Hide", "btn-primary save-and-hide", function() {
     saveToLocalStorage();
     closeAnyHideModal();
-    openHideConfirmModal(envEntry, session, anchorBtn);
+    openHideConfirmModal(envEntry, session, anchorBtn, onAfterHide);
   });
   var hideOnly = mkBtn("Hide without saving", "btn-secondary hide-without-save", function() {
     closeAnyHideModal();
-    openHideConfirmModal(envEntry, session, anchorBtn);
+    openHideConfirmModal(envEntry, session, anchorBtn, onAfterHide);
   });
   var cancel = mkBtn("Cancel", "btn-link btn-cancel", closeAnyHideModal);
   modal.querySelector(".modal-actions").appendChild(saveAndHide);
@@ -347,7 +441,7 @@ function openSaveGuardModal(envEntry, session, anchorBtn) {
   document.body.appendChild(modal);
 }
 
-function openHideConfirmModal(envEntry, session, anchorBtn) {
+function openHideConfirmModal(envEntry, session, anchorBtn, onAfterHide) {
   closeAnyHideModal();
   var catalog = ENV_CATALOG.find(function(c) { return c.id === envEntry.id; });
   var displayName = (envEntry.alias && envEntry.alias.length > 0)
@@ -366,8 +460,11 @@ function openHideConfirmModal(envEntry, session, anchorBtn) {
     saveToLocalStorage();
     emitSessionChanged("env-hide", "Hide environment");
     closeAnyHideModal();
-    var card = anchorBtn && anchorBtn.closest ? anchorBtn.closest(".env-card") : null;
-    if (card) paintEnvironmentsCard(card, session);
+    if (typeof onAfterHide === "function") onAfterHide();
+    else {
+      var card = anchorBtn && anchorBtn.closest ? anchorBtn.closest(".env-card") : null;
+      if (card) paintEnvironmentsCard(card, session, document.getElementById("right"));
+    }
   });
   confirm.setAttribute("data-hide-env-confirm", "true");
   var cancel = mkBtn("Cancel", "btn-link btn-cancel", closeAnyHideModal);

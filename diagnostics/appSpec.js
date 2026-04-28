@@ -7117,7 +7117,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       "DE5 · legacy environmentAliases field must be deleted post-migrate");
   });
 
-  it("DE6 · ContextView Environments card lists active envs + + Add picker excludes already-in-session ids", () => {
+  it("DE6 · ContextView Environments card lists active envs + + Add control excludes already-in-session ids", () => {
     var s = makeEnvSession([
       { id: "coreDc", hidden: false, alias: "Riyadh DC" },
       { id: "drDc",   hidden: false, alias: "Jeddah DR" }
@@ -7126,50 +7126,54 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     renderContextView(l, r, s);
     document.body.appendChild(l);
     try {
-      var rows = l.querySelectorAll(".env-row, [data-env-row]");
-      assert(rows.length >= 2,
-        "DE6 · ContextView must render >= one .env-row per active env (got " + rows.length + ")");
-      var picker = l.querySelector(".env-picker, [data-env-picker], .env-add-picker");
-      assert(picker,
-        "DE6 · ContextView must include an env-picker / + Add control");
-      // Picker must not offer ids already in session.
-      var pickerHtml = picker.outerHTML;
-      assert(!/data-env-id="coreDc"|value="coreDc"/.test(pickerHtml) ||
-             /disabled|aria-disabled="true"/.test(pickerHtml),
-        "DE6 · picker must NOT offer 'coreDc' as a selectable option (already in session). Got: " + pickerHtml.slice(0, 200));
+      var tiles = l.querySelectorAll("[data-env-row], .env-tile");
+      assert(tiles.length >= 2,
+        "DE6 · ContextView must render >= one tile per active env (got " + tiles.length + ")");
+      var addBtn = l.querySelector(".env-add-btn");
+      assert(addBtn,
+        "DE6 · ContextView must include a `+ Add environment` button (env-add-btn)");
+      // Tiles must be clickable (the click handler opens the right-panel detail).
+      var coreTile = l.querySelector("[data-env-id='coreDc']");
+      assert(coreTile, "DE6 · coreDc tile must exist when coreDc is in session");
+      // The catalog palette opens on click of the Add btn; until then there's
+      // no selectable picker option on screen for ids already in session.
+      assert(!l.querySelector("[data-env-picker-option='coreDc']"),
+        "DE6 · before opening the palette, no picker option for 'coreDc' must be visible");
     } finally {
       document.body.removeChild(l);
     }
   });
 
-  it("DE7 · Add new env via picker appends to session.environments", () => {
+  it("DE7 · Add new env via palette appends to session.environments", () => {
     var s = makeEnvSession([{ id: "coreDc", hidden: false }]);
     var l = document.createElement("div"); var r = document.createElement("div");
     renderContextView(l, r, s);
     document.body.appendChild(l);
     try {
-      // Select a new env type (e.g. archiveSite) via the picker UI and trigger add.
-      var picker = l.querySelector(".env-picker select, [data-env-picker] select, .env-add-picker select");
-      var addBtn = l.querySelector(".env-add-btn, [data-env-add-btn], .env-picker button, .env-add-picker button");
-      assert(picker || addBtn,
-        "DE7 · need either a picker <select> or an add button to drive the add flow");
-      if (picker) {
-        picker.value = "archiveSite";
-        picker.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-      if (addBtn) dispatchClick(addBtn);
+      var addBtn = l.querySelector(".env-add-btn");
+      assert(addBtn, "DE7 · need an `+ Add environment` button");
+      dispatchClick(addBtn);
+      var palette = document.getElementById("env-palette");
+      assert(palette, "DE7 · clicking + Add must open the env palette overlay");
+      // Find the "Archive Site" item and click it.
+      var items = [...palette.querySelectorAll(".cmd-item")];
+      var archive = items.find(function(it) { return /Archive Site/i.test(it.textContent); });
+      assert(archive, "DE7 · palette must include an 'Archive Site' option");
+      dispatchClick(archive);
       var added = findEnv(s, "archiveSite");
       assert(added,
-        "DE7 · session.environments must contain a new archiveSite entry after add (got " +
+        "DE7 · session.environments must contain a new archiveSite entry after palette select (got " +
         JSON.stringify(s.environments) + ")");
       assertEqual(added.hidden, false,
         "DE7 · newly added env must default hidden:false");
     } finally {
       document.body.removeChild(l);
+      var leftoverPalette = document.getElementById("env-palette");
+      if (leftoverPalette && leftoverPalette.parentNode) leftoverPalette.parentNode.removeChild(leftoverPalette);
     }
   });
 
-  it("DE8 · Hide button (replaces prior Remove) flips env.hidden to true; entry remains in environments", () => {
+  it("DE8 · Click env tile opens detail panel; Hide button there flips env.hidden to true (entry remains)", () => {
     _markSaved({ isDemo: false }); // ensure clean (not "saving") state so save-guard does NOT fire
     var s = makeEnvSession([
       { id: "coreDc", hidden: false },
@@ -7178,12 +7182,15 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     var l = document.createElement("div"); var r = document.createElement("div");
     renderContextView(l, r, s);
     document.body.appendChild(l);
+    document.body.appendChild(r);
     try {
-      var hideBtn = l.querySelector(".env-row[data-env-id='coreDc'] .env-hide-btn, [data-env-hide='coreDc'], .env-row.coreDc .hide-btn");
+      var tile = l.querySelector("[data-env-id='coreDc']");
+      assert(tile, "DE8 · need a coreDc tile to click");
+      dispatchClick(tile); // opens right-panel detail
+      var hideBtn = r.querySelector(".env-hide-btn, [data-env-hide='coreDc']");
       assert(hideBtn,
-        "DE8 · must render a Hide button per active env (looked for .env-hide-btn / [data-env-hide])");
+        "DE8 · clicking the tile must render a Hide button in the right-panel detail");
       dispatchClick(hideBtn);
-      // Confirmation modal opens. Click its Hide action to confirm.
       var confirmBtn = document.querySelector(".hide-env-modal .confirm-hide, [data-hide-env-confirm]");
       if (confirmBtn) dispatchClick(confirmBtn);
       var coreEntry = findEnv(s, "coreDc");
@@ -7194,6 +7201,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
         JSON.stringify(coreEntry) + ")");
     } finally {
       document.body.removeChild(l);
+      document.body.removeChild(r);
       closeAnyModal();
     }
   });
@@ -7295,20 +7303,21 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
   });
 
   it("DE-INT5 · ≥1 active env invariant: cannot hide the last active env", () => {
-    _markSaved({ isDemo: false }); // clean state so save-guard does NOT fire if button clicks
+    _markSaved({ isDemo: false });
     var s = makeEnvSession([
       { id: "coreDc", hidden: false }
     ]);
     var l = document.createElement("div"); var r = document.createElement("div");
     renderContextView(l, r, s);
     document.body.appendChild(l);
+    document.body.appendChild(r);
     try {
-      var hideBtn = l.querySelector(".env-row[data-env-id='coreDc'] .env-hide-btn, [data-env-hide='coreDc'], .env-row.coreDc .hide-btn");
-      // Either: button is disabled, or clicking it does NOT change hidden state.
+      var tile = l.querySelector("[data-env-id='coreDc']");
+      dispatchClick(tile);
+      var hideBtn = r.querySelector(".env-hide-btn");
       var disabled = hideBtn && (hideBtn.disabled === true || hideBtn.getAttribute("aria-disabled") === "true");
       if (!disabled && hideBtn) {
         dispatchClick(hideBtn);
-        // Confirm if a modal opened
         var confirmBtn = document.querySelector(".hide-env-modal .confirm-hide, [data-hide-env-confirm]");
         if (confirmBtn) dispatchClick(confirmBtn);
       }
@@ -7316,7 +7325,9 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
         "DE-INT5 · with one active env, hide must be blocked (button disabled or click no-op). " +
         "session.environments[0].hidden = " + findEnv(s, "coreDc").hidden);
     } finally {
+      closeAnyModal();
       document.body.removeChild(l);
+      document.body.removeChild(r);
     }
   });
 
@@ -7356,7 +7367,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       "SD1 · getHiddenEnvironments must return [drDc] (got " + hidIds.join(",") + ")");
   });
 
-  it("SD2 · ContextView renders separate Active + Hidden sub-sections with hidden envs in the Hidden section", () => {
+  it("SD2 · ContextView renders Active tile row + separate Hidden tile row with hidden envs in the Hidden section", () => {
     var s = makeEnvSession([
       { id: "coreDc", hidden: false },
       { id: "drDc",   hidden: true }
@@ -7368,10 +7379,9 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       var hiddenSection = l.querySelector(".env-hidden-section, [data-env-hidden-section], .hidden-environments");
       assert(hiddenSection,
         "SD2 · ContextView must include a Hidden environments sub-section when hidden envs exist");
-      var hiddenRows = hiddenSection.querySelectorAll(".env-row, [data-env-row]");
-      assert(hiddenRows.length >= 1,
-        "SD2 · Hidden sub-section must include >= one row (got " + hiddenRows.length + ")");
-      // The hidden row must include a Restore button.
+      var hiddenTiles = hiddenSection.querySelectorAll("[data-env-row], .env-tile");
+      assert(hiddenTiles.length >= 1,
+        "SD2 · Hidden sub-section must include >= one tile (got " + hiddenTiles.length + ")");
       var restoreBtn = hiddenSection.querySelector(".env-restore-btn, [data-env-restore]");
       assert(restoreBtn,
         "SD2 · Hidden sub-section must include a Restore button per hidden env");
@@ -7388,13 +7398,14 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     var l = document.createElement("div"); var r = document.createElement("div");
     renderContextView(l, r, s);
     document.body.appendChild(l);
+    document.body.appendChild(r);
     try {
-      // Force a dirty state ahead of the click. markSaving sets the save-status
-      // bus to "saving"; the Hide flow consults this to decide whether to open
-      // the save-guard modal first.
+      // Click tile to open right-panel detail, then dirty + click Hide.
+      var tile = l.querySelector("[data-env-id='coreDc']");
+      dispatchClick(tile);
       _markSaving();
-      var hideBtn = l.querySelector(".env-row[data-env-id='coreDc'] .env-hide-btn, [data-env-hide='coreDc']");
-      assert(hideBtn, "SD3 · need a Hide button on coreDc");
+      var hideBtn = r.querySelector(".env-hide-btn");
+      assert(hideBtn, "SD3 · need a Hide button on coreDc detail panel");
       dispatchClick(hideBtn);
       var saveGuard = document.querySelector(".save-guard-modal, [data-save-guard='true']");
       assert(saveGuard,
@@ -7402,7 +7413,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     } finally {
       closeAnyModal();
       document.body.removeChild(l);
-      // Restore clean state so subsequent tests don't see a dirty banner.
+      document.body.removeChild(r);
       _markSaved({ isDemo: false });
     }
   });
@@ -7420,9 +7431,12 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     var l = document.createElement("div"); var r = document.createElement("div");
     renderContextView(l, r, s);
     document.body.appendChild(l);
+    document.body.appendChild(r);
     try {
-      var hideBtn = l.querySelector(".env-row[data-env-id='coreDc'] .env-hide-btn, [data-env-hide='coreDc']");
-      assert(hideBtn, "SD4 · need a Hide button on coreDc");
+      var tile = l.querySelector("[data-env-id='coreDc']");
+      dispatchClick(tile);
+      var hideBtn = r.querySelector(".env-hide-btn");
+      assert(hideBtn, "SD4 · need a Hide button in the right-panel detail");
       dispatchClick(hideBtn);
       var modal = document.querySelector(".hide-env-modal, [data-hide-env-modal]");
       assert(modal,
@@ -7439,9 +7453,8 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       if (cancelAction) dispatchClick(cancelAction);
     } finally {
       document.body.removeChild(l);
-      // Cleanup any leftover modal.
-      var leftover = document.querySelector(".hide-env-modal, [data-hide-env-modal]");
-      if (leftover && leftover.parentNode) leftover.parentNode.removeChild(leftover);
+      document.body.removeChild(r);
+      closeAnyModal();
     }
   });
 
@@ -7454,13 +7467,16 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     var l = document.createElement("div"); var r = document.createElement("div");
     renderContextView(l, r, s);
     document.body.appendChild(l);
+    document.body.appendChild(r);
     var captured = null;
     var unsub = onSessionChanged(function(ev) {
       if (!captured) captured = ev;
     });
     try {
-      var hideBtn = l.querySelector(".env-row[data-env-id='coreDc'] .env-hide-btn, [data-env-hide='coreDc']");
-      assert(hideBtn, "SD5 · need a Hide button on coreDc");
+      var tile = l.querySelector("[data-env-id='coreDc']");
+      dispatchClick(tile);
+      var hideBtn = r.querySelector(".env-hide-btn");
+      assert(hideBtn, "SD5 · need a Hide button in the right-panel detail");
       dispatchClick(hideBtn);
       var confirmBtn = document.querySelector(".hide-env-modal .confirm-hide, [data-hide-env-confirm]");
       if (confirmBtn) dispatchClick(confirmBtn);
@@ -7475,10 +7491,11 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       unsub();
       closeAnyModal();
       document.body.removeChild(l);
+      document.body.removeChild(r);
     }
   });
 
-  it("SD6 · Restore button on a hidden env flips hidden flag back to false (no confirmation)", () => {
+  it("SD6 · Restore button on a hidden env tile flips hidden flag back to false (no confirmation)", () => {
     var s = makeEnvSession([
       { id: "coreDc", hidden: false },
       { id: "drDc",   hidden: true }
@@ -7487,7 +7504,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     renderContextView(l, r, s);
     document.body.appendChild(l);
     try {
-      var restoreBtn = l.querySelector(".env-row[data-env-id='drDc'] .env-restore-btn, [data-env-restore='drDc'], .env-hidden-section .env-row .env-restore-btn");
+      var restoreBtn = l.querySelector("[data-env-restore='drDc']");
       assert(restoreBtn,
         "SD6 · must render a Restore button on hidden env drDc");
       dispatchClick(restoreBtn);
@@ -7544,7 +7561,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
   // Section VB · VB1-VB3 · Vendor mix segmented bar
   // ===================================================================
 
-  it("VB1 · Vendor bar renders 3 proportional segments summing to >= 99% width", () => {
+  it("VB1 · Headline overview bar renders ONE 100%-stacked bar with 3 proportional segments summing to ~100%", () => {
     var s = makeEnvSession([
       { id: "coreDc", hidden: false }
     ]);
@@ -7560,13 +7577,14 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     renderSummaryVendorView(l, r, s);
     document.body.appendChild(l);
     try {
-      var bars = l.querySelectorAll(".vendor-bar");
-      assert(bars.length >= 1,
-        "VB1 · SummaryVendorView must render at least one .vendor-bar (got " + bars.length + ")");
-      var firstBar = bars[0];
-      var segs = firstBar.querySelectorAll(".vendor-bar-segment");
+      // v2.4.15-polish . the overview shows ONE headline bar (was: 3
+      // stacked Combined/Current/Desired). Per-layer bars stack below.
+      var overviewBars = l.querySelectorAll(".vm-overview-bars .vendor-bar");
+      assertEqual(overviewBars.length, 1,
+        "VB1 · overview must render exactly ONE headline .vendor-bar (got " + overviewBars.length + ")");
+      var segs = overviewBars[0].querySelectorAll(".vendor-bar-segment");
       assertEqual(segs.length, 3,
-        "VB1 · vendor bar must have 3 segments (Dell / non-Dell / custom). Got " + segs.length);
+        "VB1 · headline bar must have 3 segments (Dell / non-Dell / custom). Got " + segs.length);
       var totalPct = 0;
       Array.prototype.forEach.call(segs, function(seg) {
         var w = seg.style.width || "";
@@ -7574,7 +7592,13 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
         if (!isNaN(pct)) totalPct += pct;
       });
       assert(totalPct >= 99 && totalPct <= 101,
-        "VB1 · sum of segment widths must be 99-101% (got " + totalPct + "%)");
+        "VB1 · sum of headline segment widths must be 99-101% (got " + totalPct + "%)");
+      // v2.4.15-polish . a clean color-key legend renders below the bar.
+      var legend = l.querySelector(".vm-overview-legend");
+      assert(legend, "VB1 · overview must include a .vm-overview-legend");
+      var legendItems = legend.querySelectorAll(".vendor-legend-item");
+      assertEqual(legendItems.length, 3,
+        "VB1 · legend must have exactly 3 items (Dell / Other vendors / Custom). Got " + legendItems.length);
     } finally {
       document.body.removeChild(l);
     }

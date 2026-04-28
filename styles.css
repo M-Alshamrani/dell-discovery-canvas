@@ -722,29 +722,43 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   margin: 0 10px;
 }
 
-/* v2.4.15 . SC2 . session-strip "Updated HH:MM" segment. Hidden
-   when there's no savedAt; otherwise reads as a quiet meta line in
-   ink-mute color. */
+/* v2.4.15-polish . session-strip "Updated …" segment. Eyebrow ("Updated")
+   is mono caps in ink-mute matching the rest of the topbar meta;
+   the value reads in normal weight + tabular-nums for the time. */
 .session-strip-updated {
-  font-size: 11px;
-  color: var(--ink-mute, #6b7280);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-variant-numeric: tabular-nums;
 }
-.session-strip-updated[data-empty="true"] { display: none; }
-.session-strip-updated[data-empty="true"] + *,
-.session-strip-divider-2 { /* divider before Updated HH:MM */
-  display: inline-block;
+.session-strip-updated-label {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 9px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--ink-mute, #6b7280);
 }
+.session-strip-updated-value {
+  font-size: 11px;
+  color: var(--ink, #111827);
+  font-weight: 500;
+}
+.session-strip-updated[data-empty="true"] { display: none; }
 .session-strip-divider-2 {
+  display: inline-block;
   width: 1px;
   height: 11px;
   background: var(--rule, #e5e7eb);
-  margin: 0 6px;
+  margin: 0 8px;
+  vertical-align: middle;
 }
 .session-strip-wrap[data-empty="true"] .session-strip-divider-2,
 .session-strip-updated[data-empty="true"] ~ .session-strip-divider-2 {
   display: none;
 }
+/* When the wrap is at idle (no name, no demo), hide both the second
+   divider AND the updated segment so the strip stays compact. */
+.session-strip-wrap[data-empty="true"] .session-strip-updated { display: none; }
 
 /* ── Buttons ────────────────────────────────────────────────── */
 button { font-family: var(--font); cursor: pointer; border: none; border-radius: 999px; font-size: 12px; font-weight: 500; transition: all 0.15s; }
@@ -1258,6 +1272,158 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
    than the 6px row-gap so rows remain the dominant scan direction. */
 .matrix-grid, .heatmap-grid { column-gap: 3px; }
 
+/* v2.4.15 . Environments tile + detail UX. Mirrors the driver-tile +
+   right-panel pattern used elsewhere in Tab 1. Active tiles are
+   tappable cards in a wrap row + an "+ Add environment" tile triggers
+   the env command palette overlay. Hidden tiles render in a separate
+   muted row below. Click any tile -> right panel opens with the full
+   metadata form + Hide / Restore action in the footer. */
+.env-tiles-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.env-tiles-row-hidden { margin-top: 4px; }
+.env-tile {
+  position: relative;
+  flex: 0 1 calc(50% - 4px);
+  min-width: 220px;
+  background: var(--canvas, #ffffff);
+  border: 1px solid var(--rule, #e5e7eb);
+  border-radius: 10px;
+  padding: 12px 14px 14px 14px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+.env-tile:hover {
+  background: var(--dell-blue-soft, #f5f9fd);
+  border-color: var(--dell-blue, #0076CE);
+  transform: translateY(-1px);
+}
+.env-tile.selected {
+  border-color: var(--dell-blue, #0076CE);
+  box-shadow: inset 3px 0 0 var(--dell-blue, #0076CE);
+}
+.env-tile-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink, #111827);
+  line-height: 1.25;
+  margin-bottom: 2px;
+}
+.env-tile-sublabel {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+  color: var(--dell-blue, #0076CE);
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  margin-bottom: 6px;
+}
+.env-tile-meta {
+  font-size: 11px;
+  color: var(--ink-mute, #6b7280);
+  font-variant-numeric: tabular-nums;
+}
+.env-tile-tag {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: 9px;
+  letter-spacing: 1.2px;
+  padding: 1px 6px;
+  border: 1px solid var(--ink-mute, #6b7280);
+  border-radius: 999px;
+  text-transform: uppercase;
+  color: var(--ink-mute, #6b7280);
+  background: transparent;
+}
+.env-tile-hidden {
+  background: var(--canvas-soft, #f9fafb);
+  opacity: 0.78;
+}
+.env-tile-hidden .env-tile-sublabel { color: var(--ink-mute, #6b7280); }
+.env-tile-hidden .env-restore-btn {
+  margin-top: 8px;
+  font-size: 11px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--dell-blue, #0076CE);
+  cursor: pointer;
+}
+.env-tile-hidden .env-restore-btn:hover { text-decoration: underline; }
+
+.env-add-btn {
+  flex: 0 1 calc(50% - 4px);
+  min-width: 220px;
+  background: transparent;
+  border: 1.5px dashed var(--rule-strong, #cbd5e1);
+  border-radius: 10px;
+  padding: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-mute, #6b7280);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.env-add-btn:hover {
+  background: var(--dell-blue-soft, #f5f9fd);
+  border-color: var(--dell-blue, #0076CE);
+  color: var(--dell-blue, #0076CE);
+}
+.env-hidden-section { margin-top: 14px; }
+.env-section-heading {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+  color: var(--ink-mute, #6b7280);
+  margin-bottom: 4px;
+}
+
+/* Right-panel detail view. Mirrors the driver / gap detail pattern. */
+.env-detail-panel { padding: 22px 24px; }
+.env-detail-panel .panel-eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--dell-blue, #0076CE);
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  margin-bottom: 6px;
+}
+.env-detail-panel .panel-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--ink, #111827);
+  line-height: 1.2;
+  margin-bottom: 4px;
+}
+.env-detail-panel .panel-lede {
+  font-size: 12px;
+  color: var(--ink-mute, #6b7280);
+  margin-bottom: 18px;
+  line-height: 1.5;
+}
+.env-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 16px;
+}
+.env-detail-grid .env-meta-field { margin-bottom: 0; }
+.env-detail-grid .form-hint {
+  font-size: 10px;
+  color: var(--ink-mute, #6b7280);
+  margin-top: 3px;
+}
+.env-detail-footer {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule, #e5e7eb);
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* v2.4.15 . VB1-VB3 . vendor mix segmented bar. Single horizontal bar
    with 3 proportional segments (Dell / non-Dell / custom). 16px tall
    on the overview, 12px on per-layer mini bars. Inline percentage
@@ -1294,6 +1460,58 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 .vendor-bar-segment-dell    { background: var(--dell-blue, #0076CE); }
 .vendor-bar-segment-nonDell { background: var(--ink-mute, #6b7280); }
 .vendor-bar-segment-custom  { background: var(--amber, #f59e0b); }
+
+/* v2.4.15 polish . headline bar bumped to 28px tall + larger inline %
+   labels. The overview bar is the single most important visual on the
+   page; the per-layer bars stay 12px. */
+.vendor-bar-overview { margin-bottom: 18px; }
+.vendor-bar-overview .vendor-bar-label {
+  font-size: 12px;
+  color: var(--ink, #111827);
+  font-weight: 600;
+  margin-bottom: 8px;
+  letter-spacing: 0.2px;
+}
+.vendor-bar-large { height: 28px; border-radius: 14px; }
+.vendor-bar-large .vendor-bar-segment { font-size: 12px; padding: 0 6px; }
+
+.vm-overview-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: var(--canvas-soft, #f9fafb);
+  border: 1px solid var(--rule, #e5e7eb);
+  border-radius: 10px;
+}
+.vendor-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.vendor-legend-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.vendor-legend-swatch-dell    { background: var(--dell-blue, #0076CE); }
+.vendor-legend-swatch-nonDell { background: var(--ink-mute, #6b7280); }
+.vendor-legend-swatch-custom  { background: var(--amber, #f59e0b); }
+.vendor-legend-label { color: var(--ink, #111827); }
+.vendor-legend-count {
+  color: var(--ink-mute, #6b7280);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  margin-left: 4px;
+  padding: 1px 6px;
+  background: var(--canvas, #ffffff);
+  border-radius: 999px;
+  font-size: 11px;
+}
 /* v2.4.13 polish iter-2 . old single-line .matrix-env-head removed;
    the structured rule below (line ~1100) carries the new GPLC code +
    name pattern. */

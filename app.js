@@ -343,17 +343,32 @@ function renderSessionStripStatus() {
   var updatedEl = document.querySelector(".session-strip-updated");
   if (updatedEl) {
     if (snap.savedAt) {
-      updatedEl.textContent = "Updated " + formatUpdatedAt(snap.savedAt);
+      // Compact eyebrow + value pattern matches the rest of the topbar
+      // capsule (mono caps for the meta label, regular weight for value).
+      updatedEl.innerHTML = "";
+      var lbl = document.createElement("span");
+      lbl.className = "session-strip-updated-label";
+      lbl.textContent = "Updated";
+      var val = document.createElement("span");
+      val.className = "session-strip-updated-value";
+      val.textContent = formatUpdatedAt(snap.savedAt);
+      updatedEl.appendChild(lbl);
+      updatedEl.appendChild(val);
+      updatedEl.setAttribute("title", "Last saved " + formatUpdatedAtFull(snap.savedAt));
       updatedEl.setAttribute("data-empty", "false");
     } else {
       updatedEl.textContent = "";
+      updatedEl.removeAttribute("title");
       updatedEl.setAttribute("data-empty", "true");
     }
   }
 }
 
-// v2.4.15 . SC2 helper. Formats a timestamp as "HH:MM" if savedAt is on
-// the current calendar day, "MMM DD HH:MM" otherwise.
+// v2.4.15-polish . SC2 helper. Formats a timestamp into the session
+// strip's "Updated …" segment. Same-day saves show only the time so
+// the line doesn't get noisy; older saves spell out the date in
+// human-readable form. Hover (title) always shows the full date+time
+// for precise reference.
 function formatUpdatedAt(ts) {
   var d = new Date(ts);
   var now = new Date();
@@ -362,9 +377,19 @@ function formatUpdatedAt(ts) {
                 d.getDate()     === now.getDate();
   var hh = String(d.getHours()).padStart(2, "0");
   var mm = String(d.getMinutes()).padStart(2, "0");
-  if (sameDay) return hh + ":" + mm;
   var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  return months[d.getMonth()] + " " + d.getDate() + " " + hh + ":" + mm;
+  if (sameDay) return "Today " + hh + ":" + mm;
+  var thisYear = d.getFullYear() === now.getFullYear();
+  if (thisYear) return months[d.getMonth()] + " " + d.getDate() + " · " + hh + ":" + mm;
+  return months[d.getMonth()] + " " + d.getDate() + " " + d.getFullYear() + " · " + hh + ":" + mm;
+}
+
+function formatUpdatedAtFull(ts) {
+  var d = new Date(ts);
+  var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  var hh = String(d.getHours()).padStart(2, "0");
+  var mm = String(d.getMinutes()).padStart(2, "0");
+  return months[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear() + " at " + hh + ":" + mm;
 }
 
 // v2.4.14 . browser tab title carries a `•` prefix while the canvas is

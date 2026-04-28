@@ -74,11 +74,14 @@ export function renderSummaryVendorView(left, right, sessionArg) {
   // detail bars remain below.
   const overviewCard = mk("div", "card");
   overviewCard.innerHTML = `<div class="card-title">Mix overview</div>
-    <div class="vm-overview-bars"></div>`;
+    <div class="card-hint">A 100% horizontal bar showing how Dell, non-Dell, and custom-built platforms split across the estate. Use the View toggle above to switch between Combined / Current / Desired.</div>
+    <div class="vm-overview-bars"></div>
+    <div class="vm-overview-legend"></div>`;
   left.appendChild(overviewCard);
   // v2.4.15 . hold direct refs (don't rely on document.getElementById,
   // which doesn't see elements until the parent is in document).
   const overviewBarsHost = overviewCard.querySelector(".vm-overview-bars");
+  const overviewLegendHost = overviewCard.querySelector(".vm-overview-legend");
 
   const layerCard = mk("div", "card"); layerCard.innerHTML = `<div class="card-title">Mix by layer</div><div class="vm-by-layer"></div>`; left.appendChild(layerCard);
   const layerHost = layerCard.querySelector(".vm-by-layer");
@@ -107,26 +110,23 @@ export function renderSummaryVendorView(left, right, sessionArg) {
       <span class="chip-stat">Non-Dell: ${n}</span>
       <span class="chip-stat">Custom: ${c}</span>`;
 
-    // v2.4.15 . VB1-VB2 . overview bars: Combined / Current / Desired.
-    // Each is a single .vendor-bar with 3 .vendor-bar-segment children
-    // sized proportionally; segments wider than 6% show inline %.
-    var overviewItems = [
-      { label: "Combined",     stateFilter: "combined" },
-      { label: "Current state", stateFilter: "current"  },
-      { label: "Desired state", stateFilter: "desired"  }
-    ];
-    var overviewMix = overviewItems.map(function(item) {
-      var byLayer = computeMixByLayer({ stateFilter: item.stateFilter, layerIds: ids() });
-      var totals = { dell: 0, nonDell: 0, custom: 0, total: 0 };
-      Object.keys(byLayer).forEach(function(lid) {
-        totals.dell    += byLayer[lid].dell    || 0;
-        totals.nonDell += byLayer[lid].nonDell || 0;
-        totals.custom  += byLayer[lid].custom  || 0;
-        totals.total   += byLayer[lid].total   || 0;
-      });
-      return { label: item.label, counts: totals };
+    // v2.4.15 polish . ONE 100%-stacked overview bar driven by the
+    // existing Combined / Current / Desired segmented control. Single
+    // bar reads as one chart; the legend underneath spells out the
+    // colors in plain English with counts. Per-layer mini bars stay.
+    var byLayerOverview = computeMixByLayer({ stateFilter: stateFilter, layerIds: ids() });
+    var totals = { dell: 0, nonDell: 0, custom: 0, total: 0 };
+    Object.keys(byLayerOverview).forEach(function(lid) {
+      totals.dell    += byLayerOverview[lid].dell    || 0;
+      totals.nonDell += byLayerOverview[lid].nonDell || 0;
+      totals.custom  += byLayerOverview[lid].custom  || 0;
+      totals.total   += byLayerOverview[lid].total   || 0;
     });
-    renderOverviewBars(overviewBarsHost, overviewMix);
+    var stateLabel = stateFilter === "current"  ? "Current state"
+                  : stateFilter === "desired"   ? "Desired state"
+                  :                                "Combined (current + desired)";
+    renderOverviewBars(overviewBarsHost, [{ label: stateLabel, counts: totals }]);
+    renderOverviewLegend(overviewLegendHost, totals);
 
     var visibleEnvs = getVisibleEnvironments(liveSession);
     renderBars(layerHost,
@@ -155,26 +155,48 @@ export function renderSummaryVendorView(left, right, sessionArg) {
       var cp = 100 - dp - np;
       if (cp < 0) cp = 0;
 
-      var grp = mk("div", "vendor-bar-group");
+      var grp = mk("div", "vendor-bar-group vendor-bar-overview");
       var lbl = mk("div", "vendor-bar-label metric");
-      lbl.textContent = item.label + " (" + counts.total + " " +
-        (counts.total === 1 ? "instance" : "instances") + ")";
+      lbl.textContent = item.label + " · " + counts.total + " " +
+        (counts.total === 1 ? "instance" : "instances");
       grp.appendChild(lbl);
 
-      var bar = mk("div", "vendor-bar");
+      var bar = mk("div", "vendor-bar vendor-bar-large");
       [["dell", dp], ["nonDell", np], ["custom", cp]].forEach(function(pair) {
         var seg = mk("div", "vendor-bar-segment vendor-bar-segment-" + pair[0]);
         seg.setAttribute("data-vendor-group", pair[0]);
         seg.style.width = pair[1] + "%";
         seg.title = pair[0] + ": " + pair[1] + "%";
-        if (pair[1] >= 6) {
-          // Inline % label only when the segment is wide enough to read.
-          seg.textContent = pair[1] + "%";
-        }
+        if (pair[1] >= 6) seg.textContent = pair[1] + "%";
         bar.appendChild(seg);
       });
       grp.appendChild(bar);
       c.appendChild(grp);
+    });
+  }
+
+  // v2.4.15 polish . clean legend with color swatches + counts. Reads
+  // like a key under the headline bar so users don't need to hover
+  // segments to know what each color means.
+  function renderOverviewLegend(c, counts) {
+    if (!c) return;
+    c.innerHTML = "";
+    var rows = [
+      { id: "dell",    label: "Dell Technologies", count: counts.dell    || 0 },
+      { id: "nonDell", label: "Other vendors",     count: counts.nonDell || 0 },
+      { id: "custom",  label: "Custom / in-house", count: counts.custom  || 0 }
+    ];
+    rows.forEach(function(r) {
+      var item = mk("div", "vendor-legend-item");
+      var sw = mk("span", "vendor-legend-swatch vendor-legend-swatch-" + r.id);
+      item.appendChild(sw);
+      var lbl = mk("span", "vendor-legend-label");
+      lbl.textContent = r.label;
+      item.appendChild(lbl);
+      var cnt = mk("span", "vendor-legend-count metric");
+      cnt.textContent = r.count;
+      item.appendChild(cnt);
+      c.appendChild(item);
     });
   }
 
