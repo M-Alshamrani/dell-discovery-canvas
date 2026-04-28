@@ -99,11 +99,45 @@ export function openOverlay(opts) {
   headExtras.className = "overlay-head-extras";
   head.appendChild(headExtras);
 
+  // v2.4.15-polish . persist-mode hint replaces the previous blue-dot
+  // ::before pseudo (which read as a notification glitch). A small
+  // Lucide lock icon appears INSIDE the close button's title slot when
+  // persist=true, with a native tooltip explaining "click outside is
+  // locked". The X glyph itself stays the same so users still recognize
+  // the close affordance.
   var closeBtn = document.createElement("button");
   closeBtn.type = "button";
   closeBtn.className = "overlay-close";
   closeBtn.setAttribute("aria-label", "Close");
-  closeBtn.textContent = "✕"; // x mark
+  if (persist) {
+    closeBtn.setAttribute("title",
+      "Click-outside is locked for this dialog. Use Esc or this button to close.");
+    var lock = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    lock.setAttribute("class", "overlay-close-lock");
+    lock.setAttribute("width", "11");
+    lock.setAttribute("height", "11");
+    lock.setAttribute("viewBox", "0 0 24 24");
+    lock.setAttribute("fill", "none");
+    lock.setAttribute("stroke", "currentColor");
+    lock.setAttribute("stroke-width", "2");
+    lock.setAttribute("stroke-linecap", "round");
+    lock.setAttribute("stroke-linejoin", "round");
+    lock.setAttribute("aria-hidden", "true");
+    [
+      "M7 11V7a5 5 0 0 1 10 0v4",
+      "M5 11h14v10H5z"
+    ].forEach(function(d) {
+      var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      p.setAttribute("d", d);
+      lock.appendChild(p);
+    });
+    closeBtn.appendChild(lock);
+  }
+  var x = document.createElement("span");
+  x.className = "overlay-close-x";
+  x.setAttribute("aria-hidden", "true");
+  x.textContent = "✕";
+  closeBtn.appendChild(x);
   closeBtn.addEventListener("click", function() { closeOverlay(); });
   head.appendChild(closeBtn);
 

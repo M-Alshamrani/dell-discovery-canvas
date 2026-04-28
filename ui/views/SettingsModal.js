@@ -281,19 +281,59 @@ function buildSettingsFooter(section) {
   cancelBtn.type = "button";
   cancelBtn.addEventListener("click", function() { closeOverlay(); });
 
-  var saveBtn = mkt("button", "btn-primary", "Save");
+  // v2.4.15-polish . robust Save with visible feedback.
+  // Previous: silent return when refs were missing; "Saved" flash so brief
+  // it was easy to miss. New behaviour: walk every plausible body host
+  // (more than one overlay can co-exist), surface a clear error if refs
+  // can't be resolved, and use the standard btn-feedback states.
+  var saveBtn = mkt("button", "btn-primary btn-with-feedback", "Save");
   saveBtn.type = "button";
   saveBtn.addEventListener("click", function() {
-    var body = document.querySelector(".overlay[data-kind='settings'] .overlay-body");
-    var refs = body && body._settings;
-    if (!refs) return;
-    refs.config.providers[refs.activeKey].baseUrl        = refs.urlInput.value.trim();
-    refs.config.providers[refs.activeKey].model          = refs.modelInput.value.trim();
-    refs.config.providers[refs.activeKey].apiKey         = refs.keyInput.value;
-    refs.config.providers[refs.activeKey].fallbackModels = parseFallbackModels(refs.fbInput.value);
-    saveAiConfig(refs.config);
-    saveBtn.textContent = "Saved";
-    setTimeout(function() { saveBtn.textContent = "Save"; }, 800);
+    if (saveBtn.disabled) return;
+    saveBtn.classList.add("is-loading");
+    saveBtn.disabled = true;
+    var bodies = document.querySelectorAll(".overlay-body");
+    var refs = null;
+    for (var i = 0; i < bodies.length; i++) {
+      if (bodies[i]._settings) { refs = bodies[i]._settings; break; }
+    }
+    if (!refs || !refs.config || !refs.activeKey ||
+        !refs.config.providers || !refs.config.providers[refs.activeKey]) {
+      saveBtn.classList.remove("is-loading");
+      saveBtn.classList.add("is-error");
+      saveBtn.textContent = "Couldn't save — reopen Settings";
+      setTimeout(function() {
+        saveBtn.classList.remove("is-error");
+        saveBtn.textContent = "Save";
+        saveBtn.disabled = false;
+      }, 2000);
+      return;
+    }
+    try {
+      refs.config.providers[refs.activeKey].baseUrl        = refs.urlInput.value.trim();
+      refs.config.providers[refs.activeKey].model          = refs.modelInput.value.trim();
+      refs.config.providers[refs.activeKey].apiKey         = refs.keyInput.value;
+      refs.config.providers[refs.activeKey].fallbackModels = parseFallbackModels(refs.fbInput.value);
+      saveAiConfig(refs.config);
+      saveBtn.classList.remove("is-loading");
+      saveBtn.classList.add("is-success");
+      saveBtn.textContent = "✓ Saved";
+      setTimeout(function() {
+        saveBtn.classList.remove("is-success");
+        saveBtn.textContent = "Save";
+        saveBtn.disabled = false;
+      }, 1500);
+    } catch (e) {
+      saveBtn.classList.remove("is-loading");
+      saveBtn.classList.add("is-error");
+      saveBtn.textContent = "Save failed — see console";
+      console.error("[SettingsModal] saveAiConfig failed:", e);
+      setTimeout(function() {
+        saveBtn.classList.remove("is-error");
+        saveBtn.textContent = "Save";
+        saveBtn.disabled = false;
+      }, 2000);
+    }
   });
 
   foot.appendChild(cancelBtn);

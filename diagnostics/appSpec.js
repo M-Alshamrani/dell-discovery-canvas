@@ -37,6 +37,10 @@ import { markSaved as _markSaved, markIdle as _markIdle, markSaving as _markSavi
 // v2.4.15 · Suite 46 · synchronous filterState + FilterBar imports for FB tests.
 import * as filterState from "../state/filterState.js";
 import { renderFilterBar } from "../ui/components/FilterBar.js";
+// v2.4.15-polish · Hide modal now goes through Overlay.js; tests need
+// closeOverlay to clean up between cases without relying on Suite 45's
+// scoped import.
+import { closeOverlay as _closeOverlay } from "../ui/components/Overlay.js";
 
 import {
   LAYERS, ENVIRONMENTS, CATALOG,
@@ -6995,7 +6999,11 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
   }
 
   function closeAnyModal() {
-    document.querySelectorAll(".hide-env-modal, .save-guard-modal, .modal-overlay").forEach(function(m) {
+    // v2.4.15-polish . hide modal now uses Overlay.js, so call its
+    // closer too. Fall back to manual removal of any leftover legacy
+    // modal nodes.
+    try { _closeOverlay(); } catch (e) { /* ignore */ }
+    document.querySelectorAll(".hide-env-modal, .save-guard-modal, .modal-overlay, .overlay-backdrop, .overlay.open").forEach(function(m) {
       if (m.parentNode) m.parentNode.removeChild(m);
     });
   }
@@ -7515,7 +7523,11 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     }
   });
 
-  it("SD7 · MatrixView column for a hidden env renders greyed-out (opacity ≤ 0.5, pointer-events: none)", () => {
+  it("SD7 · MatrixView excludes a hidden env's column entirely (was: greyed-out top-to-bottom)", () => {
+    // v2.4.15-polish . per user redirect 2026-04-28, hidden envs drop
+    // from Tab 2/3 entirely instead of rendering greyed. One mental model:
+    // hide = remove from view; the only place a hidden env shows is the
+    // Tab 1 Hidden sub-section.
     var s = makeEnvSession([
       { id: "coreDc", hidden: false },
       { id: "drDc",   hidden: true }
@@ -7526,15 +7538,13 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     renderMatrixView(l, r, s, { stateFilter: "current" });
     document.body.appendChild(l);
     try {
-      var hiddenHead = l.querySelector(".matrix-env-head[data-env-hidden='true'], .matrix-env-header[data-env-hidden='true'], .matrix-env-head[data-env='drDc'][data-env-hidden]");
-      assert(hiddenHead,
-        "SD7 · MatrixView must render a hidden env header with data-env-hidden='true' when env.hidden===true");
-      var cs = getComputedStyle(hiddenHead);
-      var opacity = parseFloat(cs.opacity);
-      assert(opacity <= 0.5,
-        "SD7 · hidden env header must render at opacity <= 0.5 (got " + cs.opacity + ")");
-      assertEqual(cs.pointerEvents, "none",
-        "SD7 · hidden env header must be non-interactive (pointer-events: none, got '" + cs.pointerEvents + "')");
+      var hiddenHead = l.querySelector(".matrix-env-head[data-env='drDc']");
+      assert(!hiddenHead,
+        "SD7 · MatrixView must NOT render a header for hidden envs (got " +
+        (hiddenHead && hiddenHead.outerHTML.slice(0, 100)) + ")");
+      var visibleHeads = l.querySelectorAll(".matrix-env-head");
+      assertEqual(visibleHeads.length, 1,
+        "SD7 · MatrixView must render only the visible env count (1: coreDc), got " + visibleHeads.length);
     } finally {
       document.body.removeChild(l);
     }

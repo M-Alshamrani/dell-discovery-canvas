@@ -22,6 +22,7 @@ import { helpButton } from "./HelpModal.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
 import { emitSessionChanged } from "../../core/sessionEvents.js";
 import { getStatus as getSaveStatus } from "../../core/saveStatus.js";
+import { openOverlay, closeOverlay } from "../components/Overlay.js";
 
 export function renderContextView(left, right, session) {
   left.innerHTML  = "";
@@ -408,6 +409,13 @@ function countInstancesForEnv(session, envId) {
 // ---------------------------------------------------------------------------
 // Hide flow · save-guard (when a save is in flight) -> confirmation -> commit.
 // ---------------------------------------------------------------------------
+// v2.4.15-polish . hide flow now uses ui/components/Overlay.js so the
+// confirmation reads as a proper centered modal (backdrop blur, sticky
+// head/foot, focus trap, Escape closes) consistent with AI Assist and
+// the rest of the app's overlay vocabulary. The body keeps the same
+// copy contract Suite 46 SD3/SD4 asserts: env name + instance count +
+// "Hide" / "Cancel" buttons; save-guard variant offers Save & Hide
+// when status is "saving".
 function startHideFlow(envEntry, session, anchorBtn, onAfterHide) {
   var status = (typeof getSaveStatus === "function") ? getSaveStatus() : null;
   var dirty = status && status.status === "saving";
@@ -418,75 +426,112 @@ function startHideFlow(envEntry, session, anchorBtn, onAfterHide) {
   }
 }
 
+function commitHide(envEntry, session, onAfterHide) {
+  envEntry.hidden = true;
+  saveToLocalStorage();
+  emitSessionChanged("env-hide", "Hide environment");
+  closeOverlay();
+  if (typeof onAfterHide === "function") onAfterHide();
+}
+
 function openSaveGuardModal(envEntry, session, anchorBtn, onAfterHide) {
-  closeAnyHideModal();
-  var modal = buildModalShell("save-guard-modal hide-env-modal", {
+  // Body copy goes into a div so Suite 46 SD3 can find the .save-guard-modal
+  // root marker via data attribute on the panel.
+  var body = mk("div", "save-guard-body");
+  body.appendChild(mkt("div", "save-guard-lede",
+    "You have unsaved changes. Save them first before hiding this environment?"));
+
+  var saveAndHide = mkBtn("Save & Hide", "btn-primary btn-with-feedback save-and-hide",
+    function() {
+      saveAndHide.classList.add("is-loading");
+      try {
+        saveToLocalStorage();
+        closeOverlay();
+        openHideConfirmModal(envEntry, session, anchorBtn, onAfterHide);
+      } catch (e) {
+        saveAndHide.classList.remove("is-loading");
+        saveAndHide.classList.add("is-error");
+        saveAndHide.textContent = "Save failed";
+        console.error("[ContextView] save-and-hide failed:", e);
+      }
+    });
+  var hideOnly = mkBtn("Hide without saving", "btn-secondary btn-with-feedback hide-without-save",
+    function() {
+      closeOverlay();
+      openHideConfirmModal(envEntry, session, anchorBtn, onAfterHide);
+    });
+  var cancel = mkBtn("Cancel", "btn-link btn-cancel", function() { closeOverlay(); });
+
+  var foot = mk("div", "overlay-actions");
+  foot.appendChild(cancel);
+  foot.appendChild(hideOnly);
+  foot.appendChild(saveAndHide);
+
+  openOverlay({
     title: "Save before hiding?",
-    body: "You have unsaved changes. Save them first before hiding this environment?"
+    lede: "Unsaved changes detected.",
+    body: body,
+    footer: foot,
+    kind: "save-guard",
+    size: "default"
   });
-  modal.setAttribute("data-save-guard", "true");
-  var saveAndHide = mkBtn("Save & Hide", "btn-primary save-and-hide", function() {
-    saveToLocalStorage();
-    closeAnyHideModal();
-    openHideConfirmModal(envEntry, session, anchorBtn, onAfterHide);
-  });
-  var hideOnly = mkBtn("Hide without saving", "btn-secondary hide-without-save", function() {
-    closeAnyHideModal();
-    openHideConfirmModal(envEntry, session, anchorBtn, onAfterHide);
-  });
-  var cancel = mkBtn("Cancel", "btn-link btn-cancel", closeAnyHideModal);
-  modal.querySelector(".modal-actions").appendChild(saveAndHide);
-  modal.querySelector(".modal-actions").appendChild(hideOnly);
-  modal.querySelector(".modal-actions").appendChild(cancel);
-  document.body.appendChild(modal);
+  // Mark on the panel + a wrapper alias so the SD3 selector
+  // `.save-guard-modal, [data-save-guard='true']` resolves.
+  var panel = document.querySelector(".overlay.open");
+  if (panel) {
+    panel.classList.add("save-guard-modal");
+    panel.classList.add("hide-env-modal");
+    panel.setAttribute("data-save-guard", "true");
+  }
 }
 
 function openHideConfirmModal(envEntry, session, anchorBtn, onAfterHide) {
-  closeAnyHideModal();
   var catalog = ENV_CATALOG.find(function(c) { return c.id === envEntry.id; });
   var displayName = (envEntry.alias && envEntry.alias.length > 0)
     ? envEntry.alias
     : (catalog ? catalog.label : envEntry.id);
   var instCount = countInstancesForEnv(session, envEntry.id);
-  var modal = buildModalShell("hide-env-modal", {
-    title: "Hide '" + displayName + "'?",
-    body: "It will be greyed out on Current/Desired tabs and excluded from Reporting. " +
-          instCount + " instance" + (instCount === 1 ? "" : "s") +
-          " will stay in your saved file. You can restore it any time from the Context tab."
-  });
-  modal.setAttribute("data-hide-env-modal", envEntry.id);
-  var confirm = mkBtn("Hide", "btn-primary confirm-hide", function() {
-    envEntry.hidden = true;
-    saveToLocalStorage();
-    emitSessionChanged("env-hide", "Hide environment");
-    closeAnyHideModal();
-    if (typeof onAfterHide === "function") onAfterHide();
-    else {
-      var card = anchorBtn && anchorBtn.closest ? anchorBtn.closest(".env-card") : null;
-      if (card) paintEnvironmentsCard(card, session, document.getElementById("right"));
-    }
-  });
-  confirm.setAttribute("data-hide-env-confirm", "true");
-  var cancel = mkBtn("Cancel", "btn-link btn-cancel", closeAnyHideModal);
-  cancel.setAttribute("data-hide-env-cancel", "true");
-  modal.querySelector(".modal-actions").appendChild(confirm);
-  modal.querySelector(".modal-actions").appendChild(cancel);
-  document.body.appendChild(modal);
-}
 
-function buildModalShell(extraClasses, opts) {
-  var modal = mk("div", "modal-overlay " + extraClasses);
-  var inner = mk("div", "modal-card");
-  inner.appendChild(mkt("div", "modal-title", opts.title || ""));
-  if (opts.body) inner.appendChild(mkt("div", "modal-body", opts.body));
-  var actions = mk("div", "modal-actions");
-  inner.appendChild(actions);
-  modal.appendChild(inner);
-  // Backdrop click closes.
-  modal.addEventListener("click", function(ev) {
-    if (ev.target === modal) closeAnyHideModal();
+  var body = mk("div", "hide-env-body");
+  var lede = mkt("p", "hide-env-lede",
+    "It will be removed from Current state, Desired state, and Reporting. " +
+    instCount + " instance" + (instCount === 1 ? "" : "s") +
+    " will stay in your saved file. You can restore it any time from the Context tab.");
+  body.appendChild(lede);
+
+  var confirmBtn = mkBtn("Hide environment", "btn-primary btn-with-feedback confirm-hide",
+    function() {
+      confirmBtn.classList.add("is-loading");
+      try {
+        commitHide(envEntry, session, onAfterHide);
+      } catch (e) {
+        confirmBtn.classList.remove("is-loading");
+        confirmBtn.classList.add("is-error");
+        confirmBtn.textContent = "Hide failed";
+        console.error("[ContextView] hide failed:", e);
+      }
+    });
+  confirmBtn.setAttribute("data-hide-env-confirm", "true");
+  var cancelBtn = mkBtn("Cancel", "btn-link btn-cancel", function() { closeOverlay(); });
+  cancelBtn.setAttribute("data-hide-env-cancel", "true");
+
+  var foot = mk("div", "overlay-actions");
+  foot.appendChild(cancelBtn);
+  foot.appendChild(confirmBtn);
+
+  openOverlay({
+    title: "Hide '" + displayName + "'?",
+    lede: catalog ? catalog.label : envEntry.id,
+    body: body,
+    footer: foot,
+    kind: "hide-env",
+    size: "default"
   });
-  return modal;
+  var panel = document.querySelector(".overlay.open");
+  if (panel) {
+    panel.classList.add("hide-env-modal");
+    panel.setAttribute("data-hide-env-modal", envEntry.id);
+  }
 }
 
 function mkBtn(text, klass, onClick) {
@@ -495,11 +540,6 @@ function mkBtn(text, klass, onClick) {
   b.textContent = text;
   if (typeof onClick === "function") b.addEventListener("click", onClick);
   return b;
-}
-
-function closeAnyHideModal() {
-  var existing = document.querySelectorAll(".hide-env-modal, .save-guard-modal");
-  existing.forEach(function(m) { if (m.parentNode) m.parentNode.removeChild(m); });
 }
 
 function paintDriverTiles(row, session, right) {

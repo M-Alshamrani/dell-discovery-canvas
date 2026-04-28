@@ -282,10 +282,16 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 1px 2px rgba(11, 42, 74, 0.04);
   min-width: 0;
-  max-width: 420px;
+  /* v2.4.15-polish . capsule scales gracefully. Was a hard 420px cap
+     that crowded the AI Assist button on narrow viewports + cramped
+     long customer names. Now: cap at 50% of the topbar so it always
+     coexists with the AI Assist button + the workshop name truncates
+     before the saved-status meta. */
+  max-width: min(50vw, 520px);
   justify-self: start;
   transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
 }
+.session-strip-wrap > * { min-width: 0; }
 .session-strip-wrap:hover {
   border-color: var(--dell-blue);
   background: rgba(255, 255, 255, 1);
@@ -1405,16 +1411,45 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   margin-bottom: 18px;
   line-height: 1.5;
 }
+/* v2.4.15-polish . right-panel detail uses an auto-fit grid so the
+   form repacks 1 / 2 / 3 columns based on available width. Each field
+   reads as a GPLC-style "info row" (mono-caps eyebrow + value below).
+   A categorical value renders as an inline `.tag` per the GPLC vocab. */
 .env-detail-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 14px 16px;
 }
-.env-detail-grid .env-meta-field { margin-bottom: 0; }
+.env-detail-grid .env-meta-field { margin-bottom: 0; min-width: 0; }
+.env-detail-grid .form-label {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 9px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--ink-mute, #6b7280);
+  margin-bottom: 4px;
+  display: block;
+}
+.env-detail-grid .form-input {
+  width: 100%;
+  background: var(--canvas, #ffffff);
+  border: 1px solid var(--rule, #e5e7eb);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--ink, #111827);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.env-detail-grid .form-input:focus {
+  outline: none;
+  border-color: var(--dell-blue, #0076CE);
+  box-shadow: 0 0 0 3px var(--dell-blue-soft, #e8f2fb);
+}
 .env-detail-grid .form-hint {
   font-size: 10px;
   color: var(--ink-mute, #6b7280);
-  margin-top: 3px;
+  margin-top: 4px;
+  line-height: 1.4;
 }
 .env-detail-footer {
   margin-top: 22px;
@@ -3805,15 +3840,88 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   justify-content: flex-end;
   gap: 8px;
 }
-/* Persist mode: subtle pin indicator next to the close button so users
-   know "outside click won't close this; use Escape or x." */
-.overlay[data-persist="true"] .overlay-close::before {
-  content: "•";
-  color: var(--dell-blue);
-  margin-right: 2px;
-  font-size: 18px;
-  line-height: 1;
-  vertical-align: middle;
+/* v2.4.15-polish . persist-mode hint . a small Lucide lock icon inline
+   inside the close button (was: a blue ::before "•" that read as a
+   notification glitch). Stays adjacent to the X with a native tooltip
+   explaining the "locked outside click" behaviour. */
+.overlay-close {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.overlay-close-lock {
+  color: var(--ink-mute);
+  flex-shrink: 0;
+}
+.overlay-close:hover .overlay-close-lock { color: var(--ink); }
+
+/* v2.4.15-polish . hide / save-guard overlay actions row. The Overlay
+   wraps the supplied `footer` element in `.overlay-footer`; this is the
+   inner row that holds the buttons left-to-right with consistent gap. */
+.overlay-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  align-items: center;
+  width: 100%;
+}
+.overlay-actions .btn-link {
+  margin-right: auto;
+  background: transparent;
+  border: none;
+  color: var(--ink-mute, #6b7280);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 6px 8px;
+}
+.overlay-actions .btn-link:hover { color: var(--ink, #111827); text-decoration: underline; }
+
+/* Hide / save-guard panel content. Light, calm, sentence-case body copy
+   matching the rest of the overlay vocabulary. */
+.hide-env-body, .save-guard-body { padding: 6px 4px 0 4px; }
+.hide-env-lede, .save-guard-lede {
+  font-size: 13px;
+  color: var(--ink-soft, #4b5563);
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* v2.4.15-polish . T2.A3 . consistent button feedback states. Any button
+   with class .btn-with-feedback can transition through:
+       idle      -> default style
+       :active   -> 0.97 scale (the press)
+       .is-loading  -> dimmed, "Saving..." spinner-style
+       .is-success -> green tick state for ~1.5s
+       .is-error   -> red flash with subtle shake
+   The feedback states apply across .btn-primary / .btn-secondary so
+   every save / delete / close action looks the same. */
+.btn-with-feedback {
+  position: relative;
+  transition: background-color 0.18s ease, color 0.18s ease,
+              border-color 0.18s ease, transform 0.08s ease,
+              box-shadow 0.18s ease;
+}
+.btn-with-feedback:active { transform: scale(0.97); }
+.btn-with-feedback.is-loading {
+  opacity: 0.8;
+  cursor: progress;
+  pointer-events: none;
+}
+.btn-with-feedback.is-success {
+  background: var(--green, #00843D) !important;
+  color: #fff !important;
+  border-color: var(--green, #00843D) !important;
+}
+.btn-with-feedback.is-error {
+  background: var(--red, #C8102E) !important;
+  color: #fff !important;
+  border-color: var(--red, #C8102E) !important;
+  animation: btn-shake 0.32s ease-in-out;
+}
+@keyframes btn-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-2px); }
+  40%, 80% { transform: translateX(2px); }
 }
 
 /* ── AI Assist overlay (v2.4.13 S4) ──────────────────────────────

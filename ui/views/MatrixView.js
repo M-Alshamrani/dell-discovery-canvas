@@ -1,6 +1,6 @@
 // ui/views/MatrixView.js -- current / desired state matrix (fixed disposition workflow)
 
-import { LAYERS, ENVIRONMENTS, CATALOG, getEnvLabel, getActiveEnvironments } from "../../core/config.js";
+import { LAYERS, ENVIRONMENTS, CATALOG, getEnvLabel, getVisibleEnvironments } from "../../core/config.js";
 import { addInstance, updateInstance, deleteInstance,
          mapAsset, unmapAsset, proposeCriticalityUpgrades } from "../../interactions/matrixCommands.js";
 import { createGap } from "../../interactions/gapsCommands.js";
@@ -45,12 +45,12 @@ export function renderMatrixView(left, right, session, opts) {
     left.appendChild(header);
   }
 
-  // v2.4.15 . dynamic environment list. Render every active env (visible
-  // + hidden); hidden columns get data-env-hidden="true" + a CSS rule
-  // greys them out top-to-bottom so the user can still see the structure
-  // but can't edit. Tab 5 reporting uses getVisibleEnvironments and
-  // excludes hidden envs entirely (see SummaryHealthView etc.).
-  var activeEnvs = getActiveEnvironments(session);
+  // v2.4.15-polish . hidden envs drop entirely from Tab 2/3 (was: greyed
+  // top-to-bottom). The single mental model is: hide = remove from view
+  // everywhere except Tab 1's Hidden sub-section, which is the only place
+  // a user sees + restores them. Reduces visual noise + keeps the grid
+  // honest with what the report will show.
+  var activeEnvs = getVisibleEnvironments(session);
 
   // Grid
   var wrap = mk("div", "matrix-scroll-wrap");
@@ -66,18 +66,12 @@ export function renderMatrixView(left, right, session, opts) {
     var h = mk("div", "matrix-env-head");
     h.setAttribute("data-env-id", env.id);
     h.setAttribute("data-env",    env.id);
-    if (env.hidden) h.setAttribute("data-env-hidden", "true");
     var code = mk("span", "matrix-env-code");
     code.textContent = "E." + ("0" + (eIdx + 1)).slice(-2);
     var name = mk("span", "matrix-env-name");
     name.textContent = getEnvLabel(env.id, session);
     h.appendChild(code);
     h.appendChild(name);
-    if (env.hidden) {
-      var tag = mk("span", "env-hidden-tag tag");
-      tag.textContent = "HIDDEN";
-      h.appendChild(tag);
-    }
     grid.appendChild(h);
   });
 
@@ -104,7 +98,6 @@ export function renderMatrixView(left, right, session, opts) {
       cell.setAttribute("data-matrix-cell", "");
       cell.setAttribute("data-layer-id", layer.id);
       cell.setAttribute("data-env-id",   env.id);
-      if (env.hidden) cell.setAttribute("data-env-hidden", "true");
       renderCell(cell, layer.id, env.id);
       grid.appendChild(cell);
     });
