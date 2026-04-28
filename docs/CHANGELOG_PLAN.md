@@ -932,7 +932,76 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
-## v2.4.15 · Dynamic environments + UX polish bundle · LOCKED 2026-04-27 (NEXT UP)
+## v2.4.15 · Dynamic environments + UX polish bundle · LOCKED 2026-04-27 / RE-LOCKED 2026-04-28 (NEXT UP)
+
+### Post-decision amendments · 2026-04-28
+
+User signed off on 5 of the 6 open decisions, with two material spec changes vs. the 2026-04-27 lock:
+
+1. **Catalog labels**: cleaner, exec-readable labels (drop consultancy jargon). IDs stay backward-compat with v2.4.14 instance references.
+   | id | label (NEW · v2 lock) | hint |
+   |---|---|---|
+   | `coreDc` | Primary Data Center | The main on-premises site |
+   | `drDc` | Disaster Recovery Site | Active or warm standby for failover |
+   | `archiveSite` | Archive Site | Compliance archive, immutable backups, tertiary tier |
+   | `publicCloud` | Public Cloud | AWS, Azure, GCP, Oracle |
+   | `edge` | Branch & Edge Sites | Retail, factory floor, remote offices |
+   | `coLo` | Co-location | Third-party data center space |
+   | `managedHosting` | Managed Hosting | Provider-operated dedicated hosting |
+   | `sovereignCloud` | Sovereign Cloud | In-region regulated cloud (UAE, KSA, EU) |
+2. **Default-enabled set**: original 4 (`coreDc`, `drDc`, `publicCloud`, `edge`) — confirmed.
+3. **Metadata fields**: keep simple, no jargon — `alias`, `location`, `sizeKw`, `sqm`, `tier`, `notes`. No additions. Confirmed.
+4. **Removal behaviour**: REPLACED hard-warn-and-remove with **soft-delete (hide pattern)**. Adds `session.environments[].hidden: boolean` (default `false`). Save-guard + confirmation modal + grey-out on Tabs 2/3, exclude from Tab 5 Reporting, restore from Tab 1. New section §SD below; supersedes prior §DE5 remove-button + §R4 guard.
+5. **Demo scope**: minimal §DE9 only (metadata for the existing 4 envs); full demo refresh stays in v2.4.17. Confirmed.
+6. **Filter dimensions**: wire ALL 4 dimensions (Layer, Service, Domain, Urgency) end-to-end in v2.4.15 (was: services only). Adds 3 body data attributes + 3 CSS dim rules. New §FB7 below; supersedes prior FB5 "services only" caveat.
+
+### Section SD · Soft-delete (hide) pattern (SD1-SD9) · NEW 2026-04-28
+
+Replaces the previous "warn-and-remove" model. The standard pattern in enterprise tools (Trello / Notion / GitHub archive): **Hide is reversible; data is never lost.**
+
+| # | Item | Files |
+|---|---|---|
+| **SD1** | Schema: add `hidden: boolean` (default `false`) to every entry in `session.environments[]`. Migrator backfills `hidden: false` on every legacy entry. | `state/sessionStore.js`, `core/config.js` |
+| **SD2** | NEW `getVisibleEnvironments(session)` helper · returns `getActiveEnvironments(session).filter(e => !e.hidden)`. NEW `getHiddenEnvironments(session)` · returns the inverse. | `core/config.js` |
+| **SD3** | Hide button per env in Tab 1 ContextView "Active environments" sub-section. Click flow: (a) save-guard if `getSaveStatus().dirty === true` → modal "Save unsaved changes before hiding [env]?" with `[Save & Hide]` `[Hide without saving]` `[Cancel]`; (b) confirmation modal "Hide '[alias \|\| label]'? It will be greyed out on Current/Desired tabs and excluded from Reporting. [N] instances will stay in your saved file. You can restore it any time from the Context tab." with `[Hide]` `[Cancel]`. | `ui/views/ContextView.js`, NEW `ui/components/HideEnvDialog.js` (or inline modal) |
+| **SD4** | Tab 1 Context renders TWO sub-sections: **Active environments** (editable list with metadata fields + Hide button) and **Hidden environments** (collapsed by default; one-line entry per hidden env with mono-caps "HIDDEN" tag, "[N] instances tied · saved file preserved" pill, and a `[Restore]` button). Restore is one-click (no confirmation; low-stakes reverse). | `ui/views/ContextView.js` |
+| **SD5** | Render rules for hidden envs across canvas tabs: |  |
+|     | • **Tab 2 Current state · Tab 3 Desired state**: column renders, full top-to-bottom grey-out (`opacity: 0.35`, `filter: grayscale(1)`, `pointer-events: none`, dashed border, header tag "hidden"). Cells inside are non-interactive. | `ui/views/MatrixView.js`, `styles.css` |
+|     | • **Tab 4 GapsEditView**: env-select dropdown for new gaps excludes hidden envs; existing gaps with hidden env in `affectedEnvironments` show a greyed env chip (read-only). | `ui/views/GapsEditView.js` |
+|     | • **Tab 5 Reporting (all sub-tabs)**: SummaryHealthView, vendor mix, services scope, roadmap project cards — hidden envs **excluded entirely** (use `getVisibleEnvironments`). | `ui/views/SummaryHealthView.js`, `ui/views/SummaryVendorView.js`, `ui/views/SummaryGapsView.js`, etc. |
+| **SD6** | Hide invariant: ≥1 active (non-hidden) env at all times. Hide button is disabled (with tooltip "At least one environment must remain active") if hiding would leave zero. | `ui/views/ContextView.js` |
+| **SD7** | `.canvas` save/load round-trip: `hidden` field persists. Existing v2.4.14 `.canvas` files load with all envs `hidden: false` (backfill). | `state/sessionStore.js` (saveToFile / loadFromFile) |
+| **SD8** | Demo session `state/demoSession.js` has zero hidden envs (`hidden: false` for all 4). | `state/demoSession.js` |
+| **SD9** | Data-integrity tests: see Suite 46 DE-INT1-6 in the test section. Cover instance-preservation, save round-trip, restore-after-hide, taxonomy preservation across `gap.affectedEnvironments`, ≥1 active invariant, migrator backfill. | `diagnostics/appSpec.js` |
+
+### Section FB7 · Filter dimensions wired in v2.4.15 (full set) · NEW 2026-04-28
+
+Supersedes the prior FB5 "services only" caveat. All 4 dimensions get full body-data-attribute + CSS-dim-rule treatment.
+
+| # | Dimension | body data attr | filter-state key | Card class match attribute |
+|---|---|---|---|---|
+| **FB7a** | Service | `data-filter-services` | `services` | `data-services` (already in v2.4.14) |
+| **FB7b** | Layer | `data-filter-layer` | `layer` | `data-layer` (already on `.gap-card`) |
+| **FB7c** | Domain | `data-filter-domain` | `domain` | `data-domain` (added in v2.4.14 CD3) |
+| **FB7d** | Urgency | `data-filter-urgency` | `urgency` | `data-urgency` (NEW: add to `.gap-card` render in this release) |
+
+CSS pattern (single rule per dim, mirrors v2.4.14 services rule):
+```css
+body[data-filter-services] .gap-card:not(.filter-match-services),
+body[data-filter-layer] .gap-card:not(.filter-match-layer),
+body[data-filter-domain] .gap-card:not(.filter-match-domain),
+body[data-filter-urgency] .gap-card:not(.filter-match-urgency) {
+  opacity: 0.22;
+  filter: grayscale(0.5);
+  transition: opacity 200ms, filter 200ms;
+}
+```
+
+`filterState.js` API extended: `setActiveFilters(dimension, valuesArray)`, `getActiveFilters(dimension)`, persisted to `localStorage`.
+
+`FilterBar.js` `applyFilters(scope)`: for each active dimension, sets body data attribute + computes match class on each card. Multi-dim AND combine (a card must match ALL active dimensions).
+
+
 
 ### Theme
 
@@ -966,7 +1035,7 @@ The structural change (item 1) lands first; the polish items follow in the same 
 | **DE2** | NEW `getActiveEnvironments(session)` helper in `core/config.js`. Returns `session.environments` if non-empty, else returns the DEFAULT_ENABLED_ENV_IDS list as catalog entries (so a fresh session that hasn't been migrated still renders sensibly). | same |
 | **DE3** | Schema change in `state/sessionStore.js createEmptySession`: `environments: []` (empty default; populated either by demo or by migrator on first load of a legacy session). Drop the `environmentAliases` field from createEmptySession (replaced by per-env `alias`). | `state/sessionStore.js` |
 | **DE4** | Migrator (`migrateLegacySession`) auto-enables environments referenced by any instance.environmentId or gap.affectedEnvironments. For each enabled env, drains `session.environmentAliases[envId]` into `environments[N].alias`. Old field deleted post-migrate. Idempotent. | same |
-| **DE5** | Tab 1 ContextView "Environments" card rebuilt: list of enabled envs with metadata fields (alias, location, sizeKw, sqm, tier, notes), per-env Remove button, "+ Add environment" picker showing only unenabled catalog entries. Each metadata input saves on blur via saveToLocalStorage. | `ui/views/ContextView.js` |
+| **DE5** | **(SUPERSEDED 2026-04-28 by §SD3 + §SD4)** Originally: Tab 1 ContextView Environments card with per-env Remove button. Now: "Active environments" + "Hidden environments" sub-sections with Hide/Restore actions per §SD. Metadata fields (alias, location, sizeKw, sqm, tier, notes) save on blur via saveToLocalStorage; "+ Add environment" picker shows only catalog entries that are not yet in `session.environments` (regardless of hidden state). | `ui/views/ContextView.js` |
 | **DE6** | Every render site that loops `ENVIRONMENTS` swaps to `getActiveEnvironments(session)`: MatrixView (env headers + cell loops), SummaryHealthView (env headers + heatmap cells), GapsEditView (env-select dropdown + env-checkbox row), services / roadmap / vendor mix services. | all view files + services |
 | **DE7** | `getEnvLabel(envId, session)` (v2.4.14) updated to read alias from `session.environments[].alias` instead of `session.environmentAliases[envId]`. | `core/config.js` |
 | **DE8** | Tests update: Suite 5 sessionStore migrator tests cover the auto-enable + alias drain. Suite 12 ContextView DOM tests include the new metadata fields. Suite 15 summary-view tests reflect dynamic env count (where they assumed exactly 4). | `diagnostics/appSpec.js` |
@@ -988,7 +1057,7 @@ The structural change (item 1) lands first; the polish items follow in the same 
 | **FB2** | Click button -> expands inline panel (smooth 200ms cubic-bezier). Panel groups dimensions: Layer, Service, Domain, Urgency. Each dimension is a multi-select chip group. Selected chips have check-icon + Dell-blue-soft background. | same |
 | **FB3** | Active filter strip above the kanban: removable chip pills (`.tag[data-variant="filled"]` style with ✕ button). Click ✕ removes that filter. "Clear all" link at the right end of the strip when 2+ filters active. | same + `ui/views/GapsEditView.js` |
 | **FB4** | Underlying state stays in `state/filterState.js` (v2.4.14). FilterBar reads/writes via existing API. localStorage persistence stays. | `state/filterState.js` (no change), FilterBar.js |
-| **FB5** | Replace the v2.4.14 services chip-row in GapsEditView with the new FilterBar (same dimension; expanded UI). Services dimension stays as the only one wired in v2.4.15; layer/domain/urgency dimensions reserved (chips render but body data attribute + CSS dim rule extension is v2.4.16+). | `ui/views/GapsEditView.js` |
+| **FB5** | **(SUPERSEDED 2026-04-28 by §FB7)** Replace the v2.4.14 services chip-row in GapsEditView with the new FilterBar. ALL 4 dimensions (Service / Layer / Domain / Urgency) wired end-to-end per §FB7 (was: services only). | `ui/views/GapsEditView.js` |
 | **FB6** | Same FilterBar mounted in SummaryGapsView (Tab 5 Gaps Board) read-only kanban. Same dimension set. | `ui/views/SummaryGapsView.js` |
 
 ### Section 4 · Session capsule polish (SC1-SC2)
@@ -1012,38 +1081,58 @@ The structural change (item 1) lands first; the polish items follow in the same 
 | **MT2** | `.matrix-corner` and `.hm-corner` go visually invisible: `background: transparent; border: none;`. Cell stays in the grid for layout alignment but no longer draws as an empty box. | `styles.css` |
 | **MT3** | Load demo button icon swap: replace `rotate-cw` (read as "deformed circular arrow") with Lucide `play-circle` (triangle inside a circle). | `index.html` (footer button SVG) |
 
-### Tests · Suite 46 (DE1-DE10 + VB1-VB3 + FB1-FB6)
+### Tests · Suite 46 (DE1-DE10 + DE-INT1-6 + SD1-SD8 + VB1-VB3 + FB1-FB6 + FB7a-d)
 
 | # | Test | Asserts |
 |---|---|---|
-| **DE1** | ENV_CATALOG present with 8 entries | `core/config.js` exports ENV_CATALOG with id+label+hint shape; length === 8. |
-| **DE2** | getActiveEnvironments fallback | Empty session.environments returns the 4 default-enabled entries. |
+| **DE1** | ENV_CATALOG present with 8 entries (new labels) | `core/config.js` exports ENV_CATALOG with id+label+hint shape; length === 8. Labels: "Primary Data Center", "Disaster Recovery Site", "Archive Site", "Public Cloud", "Branch & Edge Sites", "Co-location", "Managed Hosting", "Sovereign Cloud". |
+| **DE2** | getActiveEnvironments fallback | Empty session.environments returns the 4 default-enabled entries (`coreDc`, `drDc`, `publicCloud`, `edge`). |
 | **DE3** | createEmptySession schema | New empty session has `environments: []`, no `environmentAliases` field. |
 | **DE4** | Migrator auto-enables referenced envs | Legacy session with instances pointing at coreDc + edge migrates to environments containing those two ids only. |
 | **DE5** | Migrator drains aliases | Legacy session.environmentAliases.coreDc = "Riyadh DC" lands as session.environments[i].alias = "Riyadh DC"; environmentAliases field is deleted. |
-| **DE6** | ContextView Environments card lists enabled + offers picker | Render returns >= one .env-row element per enabled env; + Add picker excludes already-enabled types. |
-| **DE7** | Add new env via picker | Click "+ Add" -> select Vault from dropdown -> session.environments includes a vault entry. Picker no longer offers Vault. |
-| **DE8** | Remove env via X button | Click remove on coreDc -> session.environments no longer contains coreDc. Picker offers Main again. |
-| **DE9** | MatrixView env headers reflect dynamic count | Session with environments=[coreDc, edge] renders exactly 2 .matrix-env-head elements. |
+| **DE6** | ContextView Environments card lists enabled + offers picker | Render returns >= one .env-row element per active env; + Add picker excludes already-in-session types (regardless of hidden state). |
+| **DE7** | Add new env via picker | Click "+ Add" -> select Archive Site from dropdown -> session.environments includes an archiveSite entry with `hidden: false`. Picker no longer offers Archive Site. |
+| **DE8** | Hide env via Hide button (replaces prior Remove) | Click hide on coreDc -> session.environments[i].hidden becomes true. coreDc still present in session.environments (NOT spliced out). Picker still does not offer coreDc (already in session). |
+| **DE9** | MatrixView env headers reflect dynamic count | Session with environments=[coreDc{hidden:false}, edge{hidden:false}] renders exactly 2 .matrix-env-head elements. |
 | **DE10** | getEnvLabel reads from session.environments | Set session.environments[0].alias = "Riyadh DC" -> getEnvLabel("coreDc", session) returns "Riyadh DC". |
+| **DE-INT1** | Hide preserves instance count | Before hide: session.instances.length = N. Hide an env that has linked instances. After hide: session.instances.length === N (zero data loss). |
+| **DE-INT2** | Hide round-trips through .canvas | Hide env, exportToCanvas, importFromCanvas -> hidden state preserved. |
+| **DE-INT3** | Restore restores rendering | Hide env, restore env -> getVisibleEnvironments returns the env again; MatrixView re-renders the column. |
+| **DE-INT4** | Hide preserves gap.affectedEnvironments taxonomy | Gap with `affectedEnvironments: ["coreDc", "publicCloud"]` -> hide coreDc -> gap.affectedEnvironments still contains "coreDc" (unchanged). |
+| **DE-INT5** | ≥1 active env invariant | Session with one non-hidden env: attempt to hide it -> hide rejected (button disabled) and session.environments unchanged. |
+| **DE-INT6** | Migrator backfills hidden:false | Legacy v2.4.14 session migrated -> every entry in session.environments has `hidden: false`. |
+| **SD1** | getVisibleEnvironments helper | Session with 3 envs (1 hidden) -> getVisibleEnvironments returns 2; getHiddenEnvironments returns 1. |
+| **SD2** | Tab 1 renders Active + Hidden sub-sections | ContextView with 2 active + 1 hidden env -> 2 .env-row.active elements + 1 .env-row.hidden element + a `.hidden-section` heading. |
+| **SD3** | Hide button save-guard fires when dirty | Mock `getSaveStatus` returns dirty -> click Hide -> save-prompt modal appears with "Save & Hide" button. |
+| **SD4** | Hide confirmation modal copy | Modal contains the env alias/label + the "[N] instances will stay in your saved file" line + Hide + Cancel buttons. |
+| **SD5** | Confirmed hide flips hidden flag + dispatches session-changed | Click Hide on confirmation -> session.environments[i].hidden = true + session-changed event emitted with reason "env-hide". |
+| **SD6** | Restore button restores | Click Restore on hidden env -> session.environments[i].hidden = false + session-changed emitted with reason "env-restore". No confirmation modal. |
+| **SD7** | Tab 2/3 hidden env column greyed out | Render MatrixView with one hidden env -> `.matrix-env-head[data-env-hidden="true"]` exists with computed opacity ≤ 0.5 + pointer-events: none. |
+| **SD8** | Tab 5 reporting excludes hidden envs | SummaryHealthView render with hidden coreDc -> zero `.heatmap-env-head[data-env="coreDc"]` cells. |
 | **VB1** | Vendor bar renders with proportional segments | SummaryVendorView with mixed Dell/non-Dell/custom data renders 3 .vendor-bar-segment children with width sum >= 99%. |
 | **VB2** | Vendor bar inline percentages | Segments wider than 6% have visible percentage label inside. |
 | **VB3** | Per-layer bars stack vertically | At least 6 .vendor-bar elements in the per-layer breakdown (one per layer). |
 | **FB1** | FilterBar renders single button | renderFilterBar produces one .filter-bar-toggle element with text matching /Filters/. |
 | **FB2** | FilterBar expands on click | Click toggle -> .filter-bar-panel becomes display !== "none". Re-click collapses. |
-| **FB3** | Multi-select chip toggles | Click a service chip in the panel -> body[data-filter-services] set + chip gets is-active class. |
+| **FB3** | Multi-select chip toggles (services) | Click a service chip in the panel -> body[data-filter-services] set + chip gets is-active class. |
 | **FB4** | Active filter strip renders pills | One active filter -> one .active-filter-pill element with the value text + ✕ button. |
 | **FB5** | Pill ✕ removes filter | Click ✕ -> body data attr cleared + pill removed from DOM. |
 | **FB6** | Filter count badge | "Filters . 2 active" text appears when 2 filters active. |
+| **FB7a** | Layer dim wired | Click a layer chip -> body[data-filter-layer] set + matching `.gap-card[data-layer="X"]` gets `.filter-match-layer` class + non-matching cards get computed opacity ≤ 0.3. |
+| **FB7b** | Domain dim wired | Click a domain chip -> body[data-filter-domain] set + matching cards get `.filter-match-domain`. |
+| **FB7c** | Urgency dim wired | Click an urgency chip -> body[data-filter-urgency] set + `.gap-card[data-urgency]` attribute present + matching cards get `.filter-match-urgency`. |
+| **FB7d** | Multi-dim AND combine | Activate Layer=compute AND Urgency=high -> only cards matching BOTH stay un-dimmed. Cards matching only one are dimmed. |
 
 ### Section R · Regression guards (smoke checklist)
 
 | Guard | Check |
 |---|---|
-| **R1** | v2.4.14 tests stay GREEN. 547 -> ~570+ depending on how many new Suite 46 tests land + any deletions from updated Suite 12/15. |
+| **R1** | v2.4.14 tests stay GREEN. 547 -> ~590+ (Suite 46 lands DE1-DE10 + DE-INT1-6 + SD1-SD8 + VB1-3 + FB1-6 + FB7a-d = ~37 new tests, minus any deletions from updated Suite 12/15). |
 | **R2** | Load demo -> 4 envs render with city aliases + metadata. Tab 2 + Tab 3 + Heatmap show "Riyadh DC", "Jeddah DR", "AWS me-south-1", "Branch sites x14". |
-| **R3** | Add new env via Tab 1 (e.g. Vault) -> immediately shows up as a 5th column in MatrixView + Heatmap + GapsEditView env-select. |
-| **R4** | Remove env -> column disappears. Existing instances tied to that env stay in session.instances but become orphaned (visible in JSON; not rendered). Show user a warning at remove-time. |
+| **R3** | Add new env via Tab 1 (e.g. Archive Site) -> immediately shows up as a 5th column in MatrixView + Heatmap + GapsEditView env-select. New labels read on screen exactly as catalog: "Primary Data Center", "Disaster Recovery Site", etc. |
+| **R4** | **(REPLACED 2026-04-28 by SD-flow)** Hide env via Tab 1: (a) save-guard fires when dirty; (b) confirmation modal lists env + instance count; (c) on confirm, env column on Tab 2/3 greys out top-to-bottom (opacity ≤ 0.5, not editable, dashed border, "hidden" tag in header); (d) Tab 5 Reporting (heatmap, vendor bars) excludes the env entirely; (e) Tab 1 Hidden envs sub-section shows the env with a Restore button; (f) click Restore -> env reverts to active everywhere with one click, no confirmation. |
+| **R4b** | ≥1 active env invariant: in a session with one active + one hidden env, the Hide button on the active env is disabled with tooltip. |
+| **R4c** | Hide preserves data: hide an env with linked instances + gaps -> session.instances and session.gaps counts unchanged; gap.affectedEnvironments still references the hidden env id. |
 | **R5** | Vendor mix shows 3 stacked horizontal bars (Combined / Current / Desired) + per-layer mini bars stacked. No tables. |
 | **R6** | Filter button on Tab 4 says "Filters" when nothing active, "Filters . 1 active" when 1 chip selected. Click ✕ on the active pill above kanban -> filter clears. |
 | **R7** | Session capsule shows building-2 icon + workshop name + "Updated HH:MM" timestamp. |
@@ -1053,13 +1142,17 @@ The structural change (item 1) lands first; the polish items follow in the same 
 | **R11** | No em dashes in any source file (re-run VT20 sweep). |
 | **R12** | No console errors during the full tour. |
 
-### Effort: ~14 hours, single tag
+### Effort: ~17 hours, single tag (2026-04-28 revision: +3 hr for soft-delete + all-4-filter-dims)
 
-- **Day 1 morning** (~3 hr): DE1-DE4 schema + catalog + migrator + Suite 46 DE tests RED first.
-- **Day 1 afternoon** (~3 hr): DE5 ContextView Environments card + DE6-DE7 render-site sweep + DE8-DE9 demo update.
-- **Day 2 morning** (~3 hr): VB1-VB3 vendor mix rebuild + FB1-FB6 modern filter bar.
-- **Day 2 afternoon** (~3 hr): SC1-SC2 session capsule polish + FT1 footer + MT1-MT3 matrix tweaks + Suite 46 remaining tests GREEN.
-- **Day 2 wrap** (~2 hr): browser smoke + APP_VERSION bump + tag protocol.
+- **Stage 1** (~2 hr): Suite 46 RED tests written first (DE1-10 + DE-INT1-6 + SD1-8 + VB1-3 + FB1-6 + FB7a-d). All assertions defined; many fail RED until code lands.
+- **Stage 2** (~3 hr): DE1-DE4 schema + ENV_CATALOG + getActiveEnvironments + getVisibleEnvironments + getHiddenEnvironments + migrator (auto-enable + alias drain + hidden-backfill).
+- **Stage 3** (~3 hr): SD3-SD4 ContextView Environments card with Active + Hidden sub-sections + Hide flow (save-guard + confirmation modal) + Restore flow + DE5/DE6 metadata fields + "+ Add" picker.
+- **Stage 4** (~2 hr): SD5 render rules across MatrixView/Heatmap/GapsEditView/SummaryHealthView/SummaryVendorView + DE7 getEnvLabel update + DE9 demo metadata.
+- **Stage 5** (~2 hr): VB1-VB3 vendor mix segmented bar.
+- **Stage 6** (~3 hr): FB1-FB6 + FB7a-d full-dim FilterBar (Service/Layer/Domain/Urgency wired).
+- **Stage 7** (~1 hr): SC1-SC2 session capsule (building-2 + Updated HH:MM) + FT1 footer + MT1-MT3 matrix tweaks.
+- **Stage 8** (~1 hr): APP_VERSION bump + SPEC.md §9 phase block + RULES.md updates + DEMO_CHANGELOG entry + RELEASE_NOTES entry + HANDOFF refresh.
+- **Stage 9** (~1 hr): Browser smoke vs §R guards via Chrome MCP. Pause for "tag it" approval.
 
 ### Tag protocol (per locked discipline)
 
