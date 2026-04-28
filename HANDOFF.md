@@ -123,6 +123,27 @@ User reviewed v2.4.14 ship + raised 9 follow-up items (env model + vendor bar + 
 
 Effort: ~14 hours, single tag, ~2 focused days.
 
+### Bucket B1.5 · v2.4.16 user feedback backlog (CAPTURED 2026-04-29 · MUST READ before scoping next release)
+
+User raised the following items in the iter-5 review. **They are not in v2.4.15** — captured here so the next release scopes them deliberately. Listed in the user's own ordering:
+
+1. **Spec + tests discipline drift** · "testing cases and specifications documents don't seem to be updated and keep up to date with what we have been doing." This is a `feedback_spec_and_test_first.md` violation observed across iter-2 → iter-5. The user wants spec-and-test-first **enforced at the top of every iteration**, not as a backfill. Action for next release: mandate the pre-flight checklist (`SPEC.md §9` block + `RULES.md` updates + `Suite N` red tests committed BEFORE code; checklist box ticked at tag time). Hygiene-pass `.dNN` after v2.4.15 ships should audit the v2.4.15 polish iter-2 → iter-5 SPEC §9 coverage and pay back the gap.
+
+2. **AI builder rendering bug** · "I see some data capsules when I click on it spits half text half capsule in the builder textbox." Pill-editor regression — clicking a binding pill in the prompt template doesn't transform cleanly; the half-text/half-pill state implies a malformed contenteditable replacement. Reproduce via Skill Builder → click any field-pointer pill in the template box. Likely culprit: `ui/components/PillEditor.js` selection range handling when the pill is at a word boundary. Logged for v2.4.16 investigation.
+
+3. **Tag + right-panel theme inconsistency app-wide** · "the right panel of the gaps tab is not consistent with the rest of the app theme. Tags also on the tiles and in the main tabs are old style — they need to match what we did for the env styling." Concretely: gap-card tags (`.urgency-badge`, `.gap-card-meta`, etc.), MatrixView tile pills, ReportingView chips all still use pre-iter-3 chip / badge / pill classes. Migrate to the GPLC `.tag[data-t="…"]` primitive everywhere. Right-panel detail across MatrixView / GapsEditView / SummaryHealthView / SummaryRoadmapView / SkillAdmin migrates to the `.detail-panel-v2` shape used today on the env detail. **Single coherent pass** — sprinkling causes drift.
+
+4. **Data taxonomy + relationships catalog** · "Data taxonomy, relationships, integrity, structure hierarchy, labeling — needs end-to-end catalog and validation. Reporting may be reporting wrong figures because of misconfigurations or undefined links. The definition table for the gaps how they link has to be validated, for example we need one disposition from 'as-is' and nothing when we do retire." User wants:
+   - A human-readable **relationships table** (probably `docs/RULES.md §X` or a new `docs/TAXONOMY.md`) showing every entity, every link, every cardinality, every disposition rule per gap type, every "what triggers what" relationship.
+   - End-to-end validation that what reporting shows matches the underlying counts. Likely an audit of `services/healthMetrics.js`, `services/gapsService.js`, `services/vendorMixService.js`, `services/roadmapService.js` against the live demo session to catch off-by-one / wrong-grouping bugs.
+   - Specific ask: per-gapType disposition rules table (replace = 1 from + 1 to; retire = 1 from + 0 to; consolidate = N from + 1 to; ops = 0 + 0; enhance = 1 + same; newCap = 0 + N). Validate each in code.
+
+5. **Crown-jewel reporting redesign (vendor mix + heatmap)** · already captured in iter-3 as items 4 + 7. The user reaffirms: "the reporting that we have not done yet has to be redesigned to provide tangible value, in both vendors mix and heatmap." Plan was Option A KPI tiles for vendor mix + new "Executive summary" sub-tab. **v2.4.16 still owns this.**
+
+6. **Right-panel utilization optimization** · "Use of the right panel has to be optimized and utilized to provide most value for the user." Tied to item 3 (the unified detail-panel-v2). Each tab's right-panel default state should pull its weight: stats / next-best-action prompts / quick-add CTAs when nothing is selected, not just an empty placeholder.
+
+7. **Single-site preset bug** · FIXED in iter-5 hotfix (commit cd15b53). Materialization fired at click time fixed the empty-`session.environments[]` early-return.
+
 ### Bucket B2 · v2.4.16 printable workshop report · QUEUED after v2.4.15
 
 Continuous-page HTML/PDF deliverable for Dell exec audiences. Was originally v2.4.15 in the previous session's plan; reordered because the env model needs to land first so the report can show city-named DCs + metadata ("Riyadh DC . 5 MW . Tier III"). Browser-print-to-PDF via `@media print`. Sections: cover -> drivers -> matrix -> pipeline -> per-project -> exec summary. Visual language matches canvas. Effort: 6-8 hours.
