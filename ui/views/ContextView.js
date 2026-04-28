@@ -202,6 +202,17 @@ function buildPresetChip(label, hint, keepFn, session, card, right) {
   chip.textContent = label;
   chip.title = hint;
   chip.addEventListener("click", function() {
+    // v2.4.15-polish iter-5 hotfix . on a fresh session, displayList
+    // comes from the default-4 fallback (getActiveEnvironments) but
+    // session.environments[] is still empty. Materialize the default-4
+    // into session.environments first so we have real entries to flip
+    // hidden flags on. Idempotent -- a no-op if entries already exist.
+    if (!Array.isArray(session.environments) || session.environments.length === 0) {
+      var defaults = getActiveEnvironments(session); // default-4 catalog entries
+      session.environments = defaults.map(function(e) {
+        return { id: e.id, hidden: false };
+      });
+    }
     var keep = keepFn(session) || [];
     var keepSet = {};
     keep.forEach(function(id) { keepSet[id] = true; });
@@ -215,7 +226,7 @@ function buildPresetChip(label, hint, keepFn, session, card, right) {
     confirmAction({
       title: label + " preset",
       lede:  hint,
-      body:  "Will hide: " + willHide.join(", ") + ". Each one stays in your saved file and can be restored from the Hidden environments section. Active envs not yet added to the session are unaffected."
+      body:  "Will hide: " + willHide.join(", ") + ". Each one stays in your saved file and can be restored from the Hidden environments section."
     }).then(function(yes) {
       if (!yes) return;
       (session.environments || []).forEach(function(e) {
@@ -359,6 +370,19 @@ var LUCIDE_ICONS = {
 };
 
 function renderEnvDetail(right, session, envEntry, card, canHide) {
+  // v2.4.15-polish iter-5 hotfix . envEntry may be a fallback catalog
+  // entry (when session.environments[] is still empty on a fresh
+  // session). Materialize the default-4 + re-resolve envEntry to the
+  // real record so metadata typing actually persists.
+  if (!Array.isArray(session.environments) || session.environments.length === 0) {
+    var defaults = getActiveEnvironments(session);
+    session.environments = defaults.map(function(e) {
+      return { id: e.id, hidden: false };
+    });
+  }
+  var realEntry = (session.environments || []).find(function(e) { return e.id === envEntry.id; });
+  if (realEntry) envEntry = realEntry;
+
   var catalog = ENV_CATALOG.find(function(c) { return c.id === envEntry.id; });
   var displayName = (envEntry.alias && envEntry.alias.trim()) || (catalog ? catalog.label : envEntry.id);
   right.innerHTML = "";
@@ -587,6 +611,20 @@ function countInstancesForEnv(session, envId) {
 // "Hide" / "Cancel" buttons; save-guard variant offers Save & Hide
 // when status is "saving".
 function startHideFlow(envEntry, session, anchorBtn, onAfterHide) {
+  // v2.4.15-polish iter-5 hotfix . if the env we're about to hide is a
+  // fallback catalog entry (not yet materialized in session.environments)
+  // then session.environments[] is empty + flipping envEntry.hidden has
+  // no effect on the real list. Materialize the default-4 first +
+  // re-resolve envEntry by id so the hide-flow operates on the real
+  // record.
+  if (!Array.isArray(session.environments) || session.environments.length === 0) {
+    var defaults = getActiveEnvironments(session);
+    session.environments = defaults.map(function(e) {
+      return { id: e.id, hidden: false };
+    });
+    var real = session.environments.find(function(e) { return e.id === envEntry.id; });
+    if (real) envEntry = real;
+  }
   var status = (typeof getSaveStatus === "function") ? getSaveStatus() : null;
   var dirty = status && status.status === "saving";
   if (dirty) {
