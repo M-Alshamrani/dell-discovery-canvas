@@ -932,7 +932,22 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
-## v2.4.15 · Dynamic environments + UX polish bundle · LOCKED 2026-04-27 / RE-LOCKED 2026-04-28 (NEXT UP)
+## v2.4.15 · Dynamic environments + UX polish bundle · IMPLEMENTED + TAGGED 2026-04-29 (5 polish iterations + 1 hotfix)
+
+**Status**: SHIPPED. Tag `v2.4.15` on origin/main. 584/0/584 GREEN.
+
+**Iterations from spec-lock to tag** (full as-shipped detail in `SPEC.md §9 Phase 19m / v2.4.15 As-shipped addendum`):
+- **Iter-1** · core implementation . dynamic env model + soft-delete + vendor segmented bar + collapsible FilterBar + capsule polish + footer + matrix tweaks. Suite 46 RED-first then GREEN.
+- **Iter-2** · Tier 1 (bugs/regressions) + Tier 2 (design system): blue-dot glitch → Lucide lock; AI provider Save robustness + visible feedback; hidden envs DROP from Tab 2/3 (was greyed); Hide modal moves to Overlay.js; capsule scaling; right-panel auto-fit grid; GPLC `.tag[data-t]` primitive; `.btn-with-feedback` button-feedback contract; FilterBar accordion with persistent collapse; vendor-mix dimension picker + slow shimmer + click-to-cross-filter.
+- **Iter-3** · Gaps filters consolidated (legacy filter-row → FilterBar Quick toggles); vendor-mix Option A KPI tiles (3 click-to-drill insights replace per-layer + per-env standing cards); AI Assist capsule-morph (overlay shrinks to top-right pill with heartbeat in pick mode); env-tile pick-selector bug fix.
+- **Iter-4** · multi-select filters (filterState dim values become arrays, within-dim OR + multi-dim AND combine); Domain dim retired, Gap type added; AI Assist envelope enrichment (`context.picked.entity` carries the full session record so skill templates can reference structured fields); SharedFilterBar mounted on Tab 5 Gaps board for cross-tab filter consistency; Notify.js (confirmAction / notifyError / notifyInfo / notifySuccess) sweeps every native `confirm()` / `alert()` (13 sites).
+- **Iter-5 + hotfix** · Single-site preset chip (one-click hide all but Primary DC); typed env detail fields (Capacity stepper, Floor stepper, Tier datalist); HOTFIX for fresh-session preset that materializes default-4 envs into `session.environments` on first user interaction.
+
+**Backlog captured for v2.4.16** (`HANDOFF.md` Bucket B1.5): spec/tests discipline reassertion · AI builder pill-editor bug · tag + right-panel consistency app-wide · data taxonomy + relationships catalog · crown-jewel reporting redesign · right-panel utilization optimization.
+
+---
+
+## v2.4.15 · Dynamic environments + UX polish bundle · LOCKED 2026-04-27 / RE-LOCKED 2026-04-28 (originally-locked spec, kept below for audit trail)
 
 ### Post-decision amendments · 2026-04-28
 

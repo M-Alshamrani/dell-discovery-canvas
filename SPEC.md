@@ -794,6 +794,58 @@ Also queued for this slice or follow-up:
 
 **Discipline**: spec-first (CHANGELOG_PLAN § v2.4.15 LOCKED 2026-04-27, post-decision amendments 2026-04-28); tests RED first; code third; browser smoke + tag-it pause before push, per `feedback_browser_smoke_required.md` and `feedback_no_push_without_approval.md`.
 
+#### As-shipped addendum · v2.4.15 polish iters 2-5 + hotfix · 2026-04-29
+
+User-feedback-driven polish landed across five iterations between the iter-1 lock and the v2.4.15 tag. Captured as-shipped here so the SPEC matches reality at tag time.
+
+**Iter-2 (Tier 1 + Tier 2 user-feedback bundle)**
+- F1 SettingsModal AI-provider Save: robust refs lookup + `.btn-with-feedback` (idle / is-loading / is-success / is-error with shake animation). Replaces the silent-failure path.
+- F2 Overlay close-button persist hint: replaced the `::before "•"` blue-dot glitch with an inline Lucide lock icon + native title tooltip.
+- E1 Hidden envs DROP from Tab 2 + Tab 3 entirely (was: greyed top-to-bottom). MatrixView swaps `getActiveEnvironments` → `getVisibleEnvironments`. One mental model: hide = remove from view; the only place a hidden env shows is the Tab 1 Hidden sub-section.
+- E2 Hide confirmation moves to `ui/components/Overlay.js` (centered modal with backdrop + focus trap + sticky head/foot).
+- G1 Session capsule `max-width: min(50vw, 520px)` + `min-width: 0` cascade so long names truncate before crowding the AI Assist button.
+- B1 Right-panel env detail uses `repeat(auto-fit, minmax(180px, 1fr))` grid so the metadata form repacks to 1 / 2 / 3 columns based on panel width.
+- A1 GPLC `.tag[data-t="biz|app|data|tech|sec|ops|env"]` primitive shipped + `data-t="urg"[data-level]` for urgency. Calibrated to the GPLC reference HTML at `Downloads/GPLC Digital Unified Platform v1.0.html`.
+- A3 `.btn-with-feedback` button-feedback contract (idle / pressed / loading / success / error with @keyframes btn-shake).
+- D1 FilterBar redesigned: compact Lucide-sliders pill + count badge; panel becomes per-dim accordion; per-dim collapse + panel-open state both persist to `localStorage` (`dd_filter_panel_open_v1`, `dd_filter_dim_open_v1`).
+- C1 Vendor-mix dimension picker (Vendor / Layer / Environment) + slow shimmer + click-to-cross-filter on the Layer dimension.
+
+**Iter-3 (Gaps consolidation + vendor KPI tiles + AI Assist capsule-morph)**
+- Gaps filters consolidated: legacy filter-row in GapsEditView (Layer chips + env `<select>` + needs-review checkbox + show-closed checkbox) REMOVED; everything moves into the FilterBar with a "Quick toggles" sub-section.
+- `state/filterState.js` gains a toggles sub-store (`needsReviewOnly` + `showClosedGaps`) with `setToggle` / `getToggle` / `getToggles` API + body `data-toggle-<key>` attributes.
+- "+ Add gap" CTA rides as the FilterBar's `trailing` slot.
+- Vendor mix Option A redesign: per-layer + per-env standing cards REMOVED; replaced with a single "Headline insights" card containing 3 click-to-drill KPI tiles (Dell density / Most diverse layer / Top non-Dell concentration) + a collapsible "All instances by vendor" table at the bottom.
+- AI Assist capsule-morph: pick mode no longer ghosts the overlay at 10% opacity + adds a separate pick-mode-pill. Instead, the overlay panel itself MORPHS into a 220-320px wide capsule pinned at top-right, with a 1.4s heartbeat animation and a single live-text label. Esc restores. Respects `prefers-reduced-motion`.
+- AI Assist `PICK_SELECTORS` extended to include `.env-tile`, `[data-env-id]`, `[data-service-id]`. Bug fix — env tile clicks now register as `kind: "environment"`.
+
+**Iter-4 (multi-select filters + Notify.js + AI envelope + Reporting consistency)**
+- `state/filterState.js` dim values are now `Array<string>` (was: single string). User can combine within a dim (`replace + ops`, `compute + storage`, `Main + DR`). New API: `getActiveValues(dim)`, `isActive(dim, value)`, `setValues(dim, values)`. `getActiveValue` kept as legacy single-value getter for backward compat. body `data-filter-<dim>` is the space-joined list. `applyMatchClasses` intersects card values vs active values (within-dim OR + multi-dim AND combine).
+- Domain dim retired from the FilterBar accordion per user direction. Gap type dim added with options `replace / enhance / ops / newCap / consolidate`.
+- AI Assist envelope enrichment: `state.context.picked` carries `.entity` = full session record looked up by `(kind, id)` via `lookupEntity(session, kind, id)`. Skill templates can reference structured fields directly (`{{context.picked.entity.alias}}`, `{{context.picked.entity.tier}}`, `{{context.picked.entity.urgency}}`, etc.). Post-pick status row in the AI Assist body lists the live template paths.
+- Shared FilterBar component: NEW `ui/components/SharedFilterBar.js` exporting `mountSharedFilterBar(host, opts)` with the canonical dimension + toggles list. SummaryGapsView (Tab 5) migrates from its legacy filter-row to the shared FilterBar with state bridge, so the user's filter view follows them across Tab 4 → Tab 5.
+- NEW `ui/components/Notify.js` with three primitives: `confirmAction(opts) -> Promise<boolean>`, `notifyError(opts)`, `notifyInfo(opts)` / `notifySuccess(opts)` (top-right toasts with auto-dismiss + slide animation). Replaces every native `confirm()` / `alert()` (13 sites swept across `app.js`, `GapsEditView.js`, `ContextView.js`, `UseAiButton.js`).
+
+**Iter-5 (Single-site preset + typed env detail fields + hotfix)**
+- "Quick shape" preset chip row above env tiles in Tab 1. Single-site chip → Notify confirm modal lists what gets hidden → on confirm, all envs except `coreDc` flip `hidden=true` in one shot. `buildPresetChip(label, hint, keepFn, ...)` is generic so additional presets drop in as one-line additions.
+- Env detail field types upgraded: Capacity (MW) becomes `number` stepper (min 0, max 200, step 0.5); Floor area (m²) becomes `number` stepper (min 0, max 100000, step 50); Tier becomes a `<datalist>` with 8 standard options (Tier I / II / III / IV / Public / Sovereign / Edge / Branch / N/A) + free-typing still works. Alias / Location / Notes stay free-form text.
+- HOTFIX: Single-site preset on a fresh session `session.environments[]` was empty → `willHide.filter` early-returned → modal never opened. Three call-sites (`buildPresetChip`, `startHideFlow`, `renderEnvDetail`) now materialize the default-4 fallback into `session.environments` on first interaction, then operate on real records. Idempotent. Doesn't reintroduce the iter-2 round-trip regression because mutations only fire from user clicks.
+
+**Tests at tag time**: 584/0/584 GREEN (547 prior + 37 Suite 46 + ~0 net since Suite 14/15/20/22/41 contracts were updated as the rendered surfaces evolved). Three contract updates went into the polish iters:
+- Suite 14 layer/env tests use `.filter-chip[data-filter-dim='layer']` / `[data-filter-dim='environment']` (was `.chip-filter` outside FilterBar).
+- Suite 14 needs-review test drives `[data-filter-toggle='needsReviewOnly']` (was `.needs-review-check`).
+- Suite 41 CL2 asserts the `notify-modal` Overlay opens (was `window.confirm` stub).
+- Suite 46 VB3 asserts 3 KPI tiles in the headline-insights card (was ≥6 per-layer `.vendor-bar`).
+- Suite 46 FB7b retired the Domain dim test, replaced with Gap type contract.
+- Three legacy "Core DC" string assertions in Suites 15 / 20 / 22 updated to "Primary Data Center" matching the new catalog label.
+
+**Backlog captured for v2.4.16** (per user iter-5 review, in `HANDOFF.md` Bucket B1.5):
+1. Spec + tests discipline reassertion at every iteration's top + a `.dNN` hygiene pass after v2.4.15 ships to pay back any iter-2-5 SPEC §9 gaps caught.
+2. AI builder pill-editor rendering bug (half-text/half-pill state).
+3. Tag + right-panel theme consistency app-wide (migrate every chip / pill / badge to `.tag[data-t]` + every detail panel to a unified `.detail-panel-v2` in one coherent pass).
+4. Data taxonomy + relationships catalog (human-readable table; per-gapType disposition rules audit; reporting-figures-vs-underlying-counts validation across the four service modules).
+5. Crown-jewel reporting redesign (vendor mix + heatmap; Option A KPI tiles + new "Executive summary" sub-tab).
+6. Right-panel utilization optimization across every tab.
+
 ### Phase 20+ · v3 · Multi-user platform (Item 2)
 
 Separate architectural workstream. Out of scope for incremental v2.x phases.
