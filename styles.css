@@ -702,7 +702,49 @@ h1, h2, h3, h4, h5, .card-title, .detail-title, .dialog-title, .header-title {
   flex-shrink: 0;
 }
 .footer-actions { display: flex; gap: 8px; align-items: center; }
-.footer-hint    { font-size: 10px; color: var(--text-3); flex: 1; text-align: center; }
+/* v2.4.15 . FT1 . footer hint right-aligned with a vertical divider
+   before the version capsule. Was: flex:1 + text-align:center, which
+   made the hint feel out of place. New layout: actions on the left,
+   spacer pushes hint+divider+version to the right. */
+.footer-hint    {
+  font-size: 10px;
+  color: var(--text-3);
+  margin-left: auto;
+  text-align: right;
+}
+.footer-hint::after {
+  content: "";
+  display: inline-block;
+  width: 1px;
+  height: 12px;
+  background: var(--rule, #e5e7eb);
+  vertical-align: middle;
+  margin: 0 10px;
+}
+
+/* v2.4.15 . SC2 . session-strip "Updated HH:MM" segment. Hidden
+   when there's no savedAt; otherwise reads as a quiet meta line in
+   ink-mute color. */
+.session-strip-updated {
+  font-size: 11px;
+  color: var(--ink-mute, #6b7280);
+  font-variant-numeric: tabular-nums;
+}
+.session-strip-updated[data-empty="true"] { display: none; }
+.session-strip-updated[data-empty="true"] + *,
+.session-strip-divider-2 { /* divider before Updated HH:MM */
+  display: inline-block;
+}
+.session-strip-divider-2 {
+  width: 1px;
+  height: 11px;
+  background: var(--rule, #e5e7eb);
+  margin: 0 6px;
+}
+.session-strip-wrap[data-empty="true"] .session-strip-divider-2,
+.session-strip-updated[data-empty="true"] ~ .session-strip-divider-2 {
+  display: none;
+}
 
 /* ── Buttons ────────────────────────────────────────────────── */
 button { font-family: var(--font); cursor: pointer; border: none; border-radius: 999px; font-size: 12px; font-weight: 500; transition: all 0.15s; }

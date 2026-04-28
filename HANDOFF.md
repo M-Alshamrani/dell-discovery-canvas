@@ -1,6 +1,6 @@
 # Dell Discovery Canvas , Session Handoff
 
-**Last session end**: 2026-04-27. **v2.4.14 SHIPPED** (hygiene + polish + filter system + Lucide icons + env aliases + obsolete-test cleanup). 547 GREEN / 0 RED / 547 total. **v2.4.15 spec LOCKED locally** but implementation not started: dynamic environments + UX polish bundle (vendor mix segmented bar, modern filter bar, session capsule polish, footer + matrix tweaks). User redirected v2.5.0 (drawer-everywhere) -> parked indefinitely. Awaiting user sign-off on 6 spec decisions before Suite 46 RED tests + code land.
+**Last session end**: 2026-04-28. **v2.4.15 IMPLEMENTED locally** (dynamic environments + soft-delete + vendor mix segmented bar + modern collapsible FilterBar with all 4 dims wired + session capsule polish + footer alignment + matrix tweaks). 584 GREEN / 0 RED / 584 total (547 prior + 37 new Suite 46). **NOT pushed** per `feedback_no_push_without_approval.md` — awaiting user "tag it" approval after browser smoke. v2.4.14 was the previous tag (origin/main HEAD `dd6974b`).
 
 **File purpose**: anyone (human or a fresh Claude Code session) opening this folder should read this file first to know exactly where work stopped, what's shipped, what's queued, and how to pick up.
 

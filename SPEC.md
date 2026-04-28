@@ -744,6 +744,56 @@ Three user-requested items bundled (2026-04-19 evening):
 Also queued for this slice or follow-up:
 - **VLM second local provider** on `:8001` — deferred until there's a skill that sends images (no current use case). When needed: extend `fieldManifest.js` for image bindings, add `/api/llm/local-vlm/` proxy, add second "Local LLM (Vision)" provider in settings.
 
+### Phase 19m · v2.4.15 · Dynamic environments + soft-delete + UX polish — IMPLEMENTED 2026-04-28
+
+**Status**: shipped. Suite 46 (37 tests) GREEN; total 584/0/584.
+
+**§1 Dynamic environment model (DE1-DE9)**
+- `core/config.js` exports `ENV_CATALOG` (8 entries: `coreDc`, `drDc`, `archiveSite`, `publicCloud`, `edge`, `coLo`, `managedHosting`, `sovereignCloud`) with cleaner exec-readable labels ("Primary Data Center" / "Disaster Recovery Site" / "Archive Site" / "Public Cloud" / "Branch & Edge Sites" / "Co-location" / "Managed Hosting" / "Sovereign Cloud"). Internal IDs unchanged for backward compat with v2.4.14 instance refs.
+- `DEFAULT_ENABLED_ENV_IDS = ["coreDc","drDc","publicCloud","edge"]`.
+- `getActiveEnvironments(session)` returns `session.environments` (with catalog metadata merged) OR fallback to default-4 as catalog entries when empty. Read-only — never mutates session.
+- `getVisibleEnvironments` / `getHiddenEnvironments` partition helpers.
+- `getEnvLabel(envId, session)` reads from `session.environments[].alias` first, falling back to legacy `environmentAliases` (transitional) and then catalog label.
+- Schema: `session.environments: [{ id, hidden:boolean, alias?, location?, sizeKw?, sqm?, tier?, notes? }]`. The `id` IS the catalog typeId.
+- Migrator (1) auto-enables env ids referenced by `instances` or `gap.affectedEnvironments`, (2) drains legacy `environmentAliases` into per-env `alias`, (3) backfills `hidden:false` on every entry, (4) deletes the legacy field. Idempotent.
+
+**§SD Soft-delete (hide pattern, SD1-SD9)**
+- ContextView Environments card has two sub-sections: **Active environments** with metadata fields (alias / location / sizeKw / sqm / tier / notes save on blur) + per-env Hide button (disabled when only 1 active env left per the ≥1-active invariant) + `+ Add environment` picker excluding ids already in session. **Hidden environments** sub-section renders a one-line entry per hidden env with mono-caps "HIDDEN" tag, instance-count pill, and one-click `Restore` button.
+- Hide flow: save-guard modal (when `getSaveStatus().status === "saving"`) -> confirmation modal with env name + instance count + Hide / Cancel.
+- Render rules: Tab 2 / Tab 3 MatrixView renders hidden columns greyed top-to-bottom (`opacity 0.35`, `grayscale`, `pointer-events: none`, dashed outline, "HIDDEN" tag). Tab 5 reporting (SummaryHealthView, vendor mix, services scope) excludes hidden envs entirely via `getVisibleEnvironments`.
+- Data integrity: hidden envs preserve `session.instances` and `session.gaps` shape exactly; `gap.affectedEnvironments` taxonomy unchanged. JSON round-trip stable.
+
+**§2 Vendor mix segmented bar (VB1-VB3)**
+- `SummaryVendorView` adds a "Mix overview" card with 3 stacked `.vendor-bar` (Combined / Current state / Desired state). Each bar has 3 `.vendor-bar-segment` children (Dell / non-Dell / custom) sized proportionally; segments wider than 6% show inline percentage labels.
+- Per-layer breakdown also emits `.vendor-bar` so 6 layer bars stack vertically.
+
+**§3 Modern collapsible FilterBar (FB1-FB6 + FB7a-d)**
+- NEW `ui/components/FilterBar.js exporting renderFilterBar(target, opts)`.
+- Single `.filter-bar-toggle` ("Filters · N active") + collapsible `.filter-bar-panel` with multi-dim chip groups + `.filter-active-pill-strip` above the kanban with removable pills + "Clear all" link when ≥2 active.
+- All 4 dimensions wired end-to-end: services / layer / domain / urgency. body[data-filter-<dim>] CSS rules dim non-matching cards. Multi-dim AND combine via `:not` chain (a card stays un-dimmed only if it carries ALL active match classes).
+- Mounted in GapsEditView; replaces the v2.4.14 services-only chip row.
+- `state/filterState.js DIMS` extended to include `domain` + `urgency`; persisted via existing `applyToBody` / `localStorage` writeback.
+- Gap-cards now also carry `data-layer` + `data-urgency` attributes for FB7a/c match-class targeting.
+
+**§4 Session capsule polish (SC1-SC2)**
+- Lucide `building-2` icon (corporate office tower) replaces the v2.4.14 briefcase glyph.
+- "Updated HH:MM" segment after the save indicator (HH:MM same-day, "MMM DD HH:MM" otherwise).
+
+**§5 Footer alignment (FT1)**
+- Footer hint right-aligned with a 1px vertical divider before the version capsule.
+
+**§6 Matrix tweaks (MT1-MT3)**
+- MatrixView + heatmap `column-gap: 3px` (was 1px) so rows remain dominant.
+- `.matrix-corner` + `.hm-corner` go visually invisible (transparent + no border).
+- Load demo button icon: Lucide `play-circle` (was `rotate-cw`).
+
+**Demo update (DE9 minimal)**
+- `state/demoSession.js` populates `session.environments` with realistic metadata: Riyadh DC · 5 MW · Tier III, Jeddah DR · 2 MW · Tier II, AWS me-south-1, Branch sites x14. Full demo refresh (new gaps / personas / exec-grade narrative) stays scheduled for v2.4.17.
+
+**Tests**: Suite 46 in `diagnostics/appSpec.js` covers DE1-DE10 + DE-INT1-6 + SD1-SD8 + VB1-VB3 + FB1-FB6 + FB7a-d (37 assertions, all GREEN). Three legacy-label tests (Suites 15 / 20 / 22) updated from "Core DC" to "Primary Data Center" to match the new catalog label.
+
+**Discipline**: spec-first (CHANGELOG_PLAN § v2.4.15 LOCKED 2026-04-27, post-decision amendments 2026-04-28); tests RED first; code third; browser smoke + tag-it pause before push, per `feedback_browser_smoke_required.md` and `feedback_no_push_without_approval.md`.
+
 ### Phase 20+ · v3 · Multi-user platform (Item 2)
 
 Separate architectural workstream. Out of scope for incremental v2.x phases.

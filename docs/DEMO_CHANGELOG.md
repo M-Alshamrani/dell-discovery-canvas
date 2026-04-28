@@ -18,6 +18,40 @@ gaps, drivers, or session metadata) must, in the **same commit**:
 
 ---
 
+## v2.4.15 · 2026-04-28 · Dynamic environments (city-named demo + metadata)
+
+**Status**: shipped (Phase 19m / v2.4.15).
+
+### What changed for the demo surface
+
+The dynamic environment model lands in this release. The demo session's
+4 environments are now first-class entries in `session.environments[]`
+with realistic metadata so the matrix / heatmap / report read like a
+customer document instead of a template.
+
+| envId | alias | location | sizeKw | sqm | tier | notes |
+|---|---|---|---|---|---|---|
+| `coreDc` | Riyadh DC | Riyadh, KSA | 5 | 320 | Tier III | Primary on-prem site. Hosts core banking + most compute + storage. |
+| `drDc` | Jeddah DR | Jeddah, KSA | 2 | 140 | Tier II | Warm-standby DR with replicated storage + cyber recovery vault. |
+| `publicCloud` | AWS me-south-1 | Bahrain region | – | – | Public | AWS region for non-regulated burst workloads + cloud-only services. |
+| `edge` | Branch sites x14 | KSA + GCC | – | – | N/A | 14 branch / retail edge sites running ruggedized infra + SD-WAN. |
+
+All four envs ship with `hidden: false`. Existing instance / gap refs
+to `coreDc` / `drDc` / `publicCloud` / `edge` are unchanged — only
+the labels users see flip from the legacy "Core DC" / "DR / Secondary
+DC" / "Public Cloud" / "Edge / Remote" to the cleaner v2.4.15 catalog
+labels via `getEnvLabel`.
+
+The migrator drains any v2.4.14 `environmentAliases` map into the new
+per-env `alias` field on first load, so saved `.canvas` files from
+v2.4.14 will display "Riyadh DC" etc. without manual intervention.
+
+This is the **minimal §DE9 demo update** — content overhaul (new
+gaps, refreshed personas, exec-grade narrative) stays scheduled for
+v2.4.17 per the v2.4.15 spec.
+
+---
+
 ## v2.4.12 · 2026-04-26 · Services scope + pre-flight regression fixes
 
 **Status**: shipped (Phase 19l).

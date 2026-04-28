@@ -219,25 +219,33 @@ function renderHeaderMeta() {
   el.innerHTML = "";
   el.setAttribute("data-empty", hasName || isDemo ? "false" : "true");
 
-  // Icon (briefcase / workshop glyph)
+  // v2.4.15 . SC1 . Lucide building-2 (corporate office tower) replaces
+  // the v2.4.14 briefcase, which read as a shopping bag.
   var iconNS = "http://www.w3.org/2000/svg";
   var icon = document.createElementNS(iconNS, "svg");
   icon.setAttribute("class", "session-strip-icon");
   icon.setAttribute("width", "14");
   icon.setAttribute("height", "14");
-  icon.setAttribute("viewBox", "0 0 16 16");
+  icon.setAttribute("viewBox", "0 0 24 24");
   icon.setAttribute("fill", "none");
   icon.setAttribute("stroke", "currentColor");
-  icon.setAttribute("stroke-width", "1.5");
+  icon.setAttribute("stroke-width", "1.6");
   icon.setAttribute("stroke-linecap", "round");
   icon.setAttribute("stroke-linejoin", "round");
   icon.setAttribute("aria-hidden", "true");
-  var p1 = document.createElementNS(iconNS, "path");
-  p1.setAttribute("d", "M2.5 5.5h11l-.5 7.5a1.5 1.5 0 0 1-1.5 1.4H4.5A1.5 1.5 0 0 1 3 13L2.5 5.5z");
-  var p2 = document.createElementNS(iconNS, "path");
-  p2.setAttribute("d", "M5.5 5.5V4a1.5 1.5 0 0 1 1.5-1.5h2A1.5 1.5 0 0 1 10.5 4v1.5");
-  icon.appendChild(p1);
-  icon.appendChild(p2);
+  [
+    "M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z",
+    "M6 12H4a2 2 0 0 0-2 2v8h4",
+    "M18 9h2a2 2 0 0 1 2 2v11h-4",
+    "M10 6h4",
+    "M10 10h4",
+    "M10 14h4",
+    "M10 18h4"
+  ].forEach(function(d) {
+    var p = document.createElementNS(iconNS, "path");
+    p.setAttribute("d", d);
+    icon.appendChild(p);
+  });
   el.appendChild(icon);
 
   // Name
@@ -265,6 +273,17 @@ function renderHeaderMeta() {
   statusText.className = "session-strip-status-text";
   statusLine.appendChild(statusText);
   el.appendChild(statusLine);
+
+  // v2.4.15 . SC2 . "Updated HH:MM" segment after the save indicator.
+  // Rendered by renderSessionStripStatus once the session has a savedAt.
+  var divider2 = document.createElement("span");
+  divider2.className = "session-strip-divider session-strip-divider-2";
+  divider2.setAttribute("aria-hidden", "true");
+  el.appendChild(divider2);
+  var updatedEl = document.createElement("span");
+  updatedEl.className = "session-strip-updated";
+  updatedEl.setAttribute("data-empty", "true");
+  el.appendChild(updatedEl);
 
   renderSessionStripStatus();
 
@@ -313,6 +332,35 @@ function renderSessionStripStatus() {
 
   dot.setAttribute("data-state", state);
   text.textContent = label;
+
+  // v2.4.15 . SC2 . "Updated HH:MM" segment after the save indicator.
+  // Format: HH:MM if savedAt is today; "MMM DD HH:MM" otherwise. Hidden
+  // when there's no savedAt (idle / fresh canvas).
+  var updatedEl = document.querySelector(".session-strip-updated");
+  if (updatedEl) {
+    if (snap.savedAt) {
+      updatedEl.textContent = "Updated " + formatUpdatedAt(snap.savedAt);
+      updatedEl.setAttribute("data-empty", "false");
+    } else {
+      updatedEl.textContent = "";
+      updatedEl.setAttribute("data-empty", "true");
+    }
+  }
+}
+
+// v2.4.15 . SC2 helper. Formats a timestamp as "HH:MM" if savedAt is on
+// the current calendar day, "MMM DD HH:MM" otherwise.
+function formatUpdatedAt(ts) {
+  var d = new Date(ts);
+  var now = new Date();
+  var sameDay = d.getFullYear() === now.getFullYear() &&
+                d.getMonth()    === now.getMonth() &&
+                d.getDate()     === now.getDate();
+  var hh = String(d.getHours()).padStart(2, "0");
+  var mm = String(d.getMinutes()).padStart(2, "0");
+  if (sameDay) return hh + ":" + mm;
+  var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return months[d.getMonth()] + " " + d.getDate() + " " + hh + ":" + mm;
 }
 
 // v2.4.14 . browser tab title carries a `•` prefix while the canvas is

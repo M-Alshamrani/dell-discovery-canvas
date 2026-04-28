@@ -62,6 +62,20 @@ function buildAcmeFinancialServices() {
       status:        "In Progress",
       version:       "2.0"
     },
+    // v2.4.15 . dynamic environment model with realistic metadata so the
+    // matrix / heatmap / report read like a customer document, not a
+    // template (Riyadh DC . 5 MW . Tier III instead of "Core DC"). Env
+    // ids stay backward-compat with all v2.4.14 instance / gap refs.
+    environments: [
+      { id: "coreDc",      hidden: false, alias: "Riyadh DC",      location: "Riyadh, KSA",     sizeKw: 5,   sqm: 320, tier: "Tier III",
+        notes: "Primary on-prem site. Hosts core banking + most compute + storage." },
+      { id: "drDc",        hidden: false, alias: "Jeddah DR",      location: "Jeddah, KSA",     sizeKw: 2,   sqm: 140, tier: "Tier II",
+        notes: "Warm-standby DR with replicated storage + cyber recovery vault." },
+      { id: "publicCloud", hidden: false, alias: "AWS me-south-1", location: "Bahrain region",  tier: "Public",
+        notes: "AWS region for non-regulated burst workloads + cloud-only services." },
+      { id: "edge",        hidden: false, alias: "Branch sites x14", location: "KSA + GCC",     tier: "N/A",
+        notes: "14 branch / retail edge sites running ruggedized infra + SD-WAN." }
+    ],
     instances: [
       // ── Workload layer (Phase 16) ─────────────────────────────────
       // Core-banking workload maps N-to-N onto compute + storage + DP.
