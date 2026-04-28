@@ -6587,6 +6587,10 @@ describe("44 · Phase 19m · v2.5.0 crown-jewel UI rework", () => {
   });
 
   it("VT18 · F2 filter chip click sets body data attribute; re-click clears", () => {
+    // v2.4.15 . reset filterState first so the test starts from a clean
+    // slate (otherwise localStorage-restored state leaks in via the
+    // module-load IIFE and skews the toggle direction).
+    filterState._resetForTests();
     document.body.removeAttribute("data-filter-services");
     var s = fixtureSession();
     var l = document.createElement("div"); var r = document.createElement("div");
@@ -6600,6 +6604,7 @@ describe("44 · Phase 19m · v2.5.0 crown-jewel UI rework", () => {
     assert(!document.body.getAttribute("data-filter-services"),
       "VT18 re-click must clear body[data-filter-services]");
     document.body.removeAttribute("data-filter-services");
+    filterState._resetForTests();
   });
 
   // ──────────────────────────────────────────────────────────────────────
@@ -7940,6 +7945,10 @@ export function runAllTests() {
       // No saved session in localStorage → fresh-start state.
       resetSession();
     }
+    // v2.4.15 . FB test cleanup also resets filterState in-memory; after
+    // localStorage restore, re-load the filter snapshot so the body
+    // data attributes match the user's pre-test filter view.
+    if (typeof filterState._reloadFromStorage === "function") filterState._reloadFromStorage();
     emitSessionChanged("session-replace", "Tests complete");
     // v2.4.13 S2A · the test pass leaves the saveStatus bus in whatever
     // state the last test landed (often "saving" because every emit goes

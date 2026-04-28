@@ -97,6 +97,17 @@ export function _resetForTests() {
   applyToBody();
 }
 
+// v2.4.15 . re-read state from localStorage + re-apply to body. Used by
+// the diagnostics test runner's afterRestore callback so that, after
+// runIsolated restores the snapshotted localStorage, the filter
+// in-memory state and body data attributes follow suit. Without this,
+// _resetForTests calls in tests leave filterState in {} even though
+// localStorage has been restored to the user's pre-test snapshot.
+export function _reloadFromStorage() {
+  state = loadState();
+  applyToBody();
+}
+
 function persist() {
   try {
     if (Object.keys(state).length === 0) {

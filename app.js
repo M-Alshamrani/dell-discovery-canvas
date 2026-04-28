@@ -9,6 +9,10 @@ import { APP_VERSION }               from "./core/version.js";
 import { loadAiConfig, saveAiConfig } from "./core/aiConfig.js";
 import { loadSkills, saveSkills }    from "./core/skillStore.js";
 import { getStatus as getSaveStatus, onStatusChange as onSaveStatusChange } from "./core/saveStatus.js";
+// v2.4.15 . eagerly load filterState so its module-init applyToBody()
+// restores the user's saved body[data-filter-<dim>] attributes on app
+// boot, before the user navigates to a tab that uses FilterBar.
+import "./state/filterState.js";
 import { buildSaveEnvelope, parseFileEnvelope, applyEnvelope, suggestFilename, FILE_MIME } from "./services/sessionFile.js";
 import { renderContextView }         from "./ui/views/ContextView.js";
 import { renderMatrixView }          from "./ui/views/MatrixView.js";
