@@ -21,10 +21,33 @@ export const ENVIRONMENTS = [
   { id: "edge",        label: "Edge / Remote" }
 ];
 
+// ===========================================================================
+// v2.4.15 RED-STUBS · dynamic environment model (DE1-DE9 + SD1-SD9 + soft-delete)
+// These exports exist so diagnostics/appSpec.js Suite 46 can import them and
+// fail RED on content rather than on module-load errors. Implementation phase
+// (after RED tests commit) replaces these with real values + behavior.
+// ===========================================================================
+
+export const ENV_CATALOG = [];                 // RED-STUB · target: 8 entries with new labels
+export const DEFAULT_ENABLED_ENV_IDS = [];     // RED-STUB · target: ["coreDc","drDc","publicCloud","edge"]
+
+export function getActiveEnvironments(session) { // RED-STUB · target: session.environments OR fallback to defaults as catalog entries
+  return [];
+}
+
+export function getVisibleEnvironments(session) { // RED-STUB · target: getActiveEnvironments(s).filter(e => !e.hidden)
+  return [];
+}
+
+export function getHiddenEnvironments(session) {  // RED-STUB · target: getActiveEnvironments(s).filter(e => e.hidden)
+  return [];
+}
+
 // v2.4.14 . per-session environment aliases. Returns the customer-
 // supplied alias (e.g. "Riyadh DC") if the session has one for the
 // given env id; otherwise falls back to the canonical ENVIRONMENTS
 // label. Renders consume this everywhere they used `env.label`.
+// v2.4.15 · DE7 will update this to read from session.environments[].alias.
 export function getEnvLabel(envId, session) {
   var alias = session && session.environmentAliases && session.environmentAliases[envId];
   if (typeof alias === "string" && alias.trim().length > 0) return alias.trim();

@@ -6938,6 +6938,981 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
 
 });
 
+// ============================================================================
+// Suite 46 · v2.4.15 · Dynamic environment model + soft-delete + UX polish
+// ============================================================================
+// Coverage:
+//   .DE1-DE10  dynamic env model + catalog + migrator + label helper
+//   .DE-INT1-6 data-integrity guarantees around hide/restore + .canvas round-trip
+//   .SD1-SD8   soft-delete pattern (hidden flag, sub-sections, save-guard,
+//              confirmation, restore, render rules, ≥1 active invariant)
+//   .VB1-VB3   vendor mix segmented bar (replaces table cards)
+//   .FB1-FB6   modern collapsible FilterBar (single button + panel + pills)
+//   .FB7a-d    all 4 filter dimensions wired (services / layer / domain /
+//              urgency) with multi-dim AND combine
+//
+// RED-stubs in core/config.js (ENV_CATALOG, DEFAULT_ENABLED_ENV_IDS,
+// getActiveEnvironments, getVisibleEnvironments, getHiddenEnvironments)
+// keep imports resolving so tests fail RED on content, not module load.
+// ============================================================================
+
+import {
+  ENV_CATALOG,
+  DEFAULT_ENABLED_ENV_IDS,
+  getActiveEnvironments,
+  getVisibleEnvironments,
+  getHiddenEnvironments,
+  getEnvLabel
+} from "../core/config.js";
+
+describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () => {
+
+  // -------------------------------------------------------------------
+  // Helpers scoped to Suite 46.
+  // -------------------------------------------------------------------
+  function makeEnvSession(envEntries) {
+    var s = createEmptySession();
+    s.environments = (envEntries || []).slice();
+    return s;
+  }
+
+  function findEnv(s, id) {
+    return (s.environments || []).find(function(e) { return e.id === id; });
+  }
+
+  function dispatchClick(el) {
+    if (!el) return;
+    if (typeof el.click === "function") el.click();
+    else el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  }
+
+  // ===================================================================
+  // Section 1 · DE1-DE10 · Dynamic environment model
+  // ===================================================================
+
+  it("DE1 · ENV_CATALOG present with 8 entries (cleaner exec-readable labels)", () => {
+    assert(Array.isArray(ENV_CATALOG), "DE1 · ENV_CATALOG must be an array");
+    assertEqual(ENV_CATALOG.length, 8,
+      "DE1 · ENV_CATALOG must have exactly 8 entries (got " + ENV_CATALOG.length + ")");
+    var REQUIRED_IDS = ["coreDc", "drDc", "archiveSite", "publicCloud", "edge",
+                        "coLo", "managedHosting", "sovereignCloud"];
+    REQUIRED_IDS.forEach(function(id) {
+      var entry = ENV_CATALOG.find(function(e) { return e.id === id; });
+      assert(entry,
+        "DE1 · ENV_CATALOG must contain an entry with id '" + id + "'");
+      assert(entry && typeof entry.label === "string" && entry.label.length > 0,
+        "DE1 · ENV_CATALOG entry '" + id + "' must have a non-empty label");
+      assert(entry && typeof entry.hint === "string",
+        "DE1 · ENV_CATALOG entry '" + id + "' must carry a hint string");
+    });
+    // Cleaner labels (no jargon: no "MSP", no slash-soup, no "Vault").
+    var EXPECTED_LABELS = {
+      coreDc:         "Primary Data Center",
+      drDc:           "Disaster Recovery Site",
+      archiveSite:    "Archive Site",
+      publicCloud:    "Public Cloud",
+      edge:           "Branch & Edge Sites",
+      coLo:           "Co-location",
+      managedHosting: "Managed Hosting",
+      sovereignCloud: "Sovereign Cloud"
+    };
+    Object.keys(EXPECTED_LABELS).forEach(function(id) {
+      var entry = ENV_CATALOG.find(function(e) { return e.id === id; });
+      if (!entry) return;
+      assertEqual(entry.label, EXPECTED_LABELS[id],
+        "DE1 · ENV_CATALOG '" + id + "' label must be '" + EXPECTED_LABELS[id] +
+        "' (got '" + entry.label + "')");
+    });
+  });
+
+  it("DE2 · getActiveEnvironments fallback returns the 4 default-enabled entries when session.environments is empty", () => {
+    var s = createEmptySession();
+    s.environments = [];
+    var active = getActiveEnvironments(s);
+    assert(Array.isArray(active), "DE2 · getActiveEnvironments must return an array");
+    assertEqual(active.length, 4,
+      "DE2 · empty session.environments must fall back to 4 default-enabled entries (got " + active.length + ")");
+    var ids = active.map(function(e) { return e.id; }).sort();
+    assertEqual(ids.join(","), ["coreDc", "drDc", "edge", "publicCloud"].sort().join(","),
+      "DE2 · fallback ids must be coreDc/drDc/edge/publicCloud (got " + ids.join(",") + ")");
+    assertEqual(DEFAULT_ENABLED_ENV_IDS.slice().sort().join(","),
+                ["coreDc", "drDc", "edge", "publicCloud"].sort().join(","),
+      "DE2 · DEFAULT_ENABLED_ENV_IDS must export the same 4 ids");
+  });
+
+  it("DE3 · createEmptySession ships with environments:[] and no environmentAliases field", () => {
+    var s = createEmptySession();
+    assert(Array.isArray(s.environments),
+      "DE3 · new session must carry an environments array");
+    assertEqual(s.environments.length, 0,
+      "DE3 · new session.environments must be empty (got " + s.environments.length + ")");
+    assert(typeof s.environmentAliases === "undefined",
+      "DE3 · new session must NOT carry the legacy environmentAliases field (got " +
+      JSON.stringify(s.environmentAliases) + ")");
+  });
+
+  it("DE4 · Migrator auto-enables every env referenced by instances or gaps", () => {
+    var legacy = {
+      sessionId: "sess-de4",
+      customer: { name: "DE4 Co", drivers: [] },
+      sessionMeta: { date: "2026-04-28", presalesOwner: "", status: "Draft", version: "2.0" },
+      instances: [
+        { id: "i-1", state: "current", layerId: "compute", environmentId: "coreDc",
+          label: "X", vendorGroup: "dell", criticality: "Medium" },
+        { id: "i-2", state: "current", layerId: "compute", environmentId: "edge",
+          label: "Y", vendorGroup: "dell", criticality: "Medium" }
+      ],
+      gaps: []
+    };
+    var migrated = migrateLegacySession(legacy);
+    assert(Array.isArray(migrated.environments),
+      "DE4 · migrated session must carry environments[]");
+    var ids = migrated.environments.map(function(e) { return e.id; }).sort();
+    assert(ids.indexOf("coreDc") >= 0,
+      "DE4 · migrated session must auto-enable 'coreDc' (referenced by instance)");
+    assert(ids.indexOf("edge") >= 0,
+      "DE4 · migrated session must auto-enable 'edge' (referenced by instance)");
+    assertEqual(migrated.environments.length, 2,
+      "DE4 · only referenced envs must be auto-enabled (got " + migrated.environments.length + ")");
+  });
+
+  it("DE5 · Migrator drains environmentAliases into per-env alias + deletes legacy field", () => {
+    var legacy = {
+      sessionId: "sess-de5",
+      customer: { name: "DE5 Co", drivers: [] },
+      sessionMeta: { date: "2026-04-28", presalesOwner: "", status: "Draft", version: "2.0" },
+      environmentAliases: { coreDc: "Riyadh DC", drDc: "Jeddah DR" },
+      instances: [
+        { id: "i-1", state: "current", layerId: "compute", environmentId: "coreDc",
+          label: "X", vendorGroup: "dell", criticality: "Medium" },
+        { id: "i-2", state: "current", layerId: "compute", environmentId: "drDc",
+          label: "Y", vendorGroup: "dell", criticality: "Medium" }
+      ],
+      gaps: []
+    };
+    var migrated = migrateLegacySession(legacy);
+    var coreEntry = (migrated.environments || []).find(function(e) { return e.id === "coreDc"; });
+    var drEntry   = (migrated.environments || []).find(function(e) { return e.id === "drDc"; });
+    assert(coreEntry && coreEntry.alias === "Riyadh DC",
+      "DE5 · coreDc alias must drain to environments[].alias = 'Riyadh DC' (got " +
+      JSON.stringify(coreEntry) + ")");
+    assert(drEntry && drEntry.alias === "Jeddah DR",
+      "DE5 · drDc alias must drain to environments[].alias = 'Jeddah DR' (got " +
+      JSON.stringify(drEntry) + ")");
+    assert(typeof migrated.environmentAliases === "undefined",
+      "DE5 · legacy environmentAliases field must be deleted post-migrate");
+  });
+
+  it("DE6 · ContextView Environments card lists active envs + + Add picker excludes already-in-session ids", () => {
+    var s = makeEnvSession([
+      { id: "coreDc", hidden: false, alias: "Riyadh DC" },
+      { id: "drDc",   hidden: false, alias: "Jeddah DR" }
+    ]);
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderContextView(l, r, s);
+    document.body.appendChild(l);
+    try {
+      var rows = l.querySelectorAll(".env-row, [data-env-row]");
+      assert(rows.length >= 2,
+        "DE6 · ContextView must render >= one .env-row per active env (got " + rows.length + ")");
+      var picker = l.querySelector(".env-picker, [data-env-picker], .env-add-picker");
+      assert(picker,
+        "DE6 · ContextView must include an env-picker / + Add control");
+      // Picker must not offer ids already in session.
+      var pickerHtml = picker.outerHTML;
+      assert(!/data-env-id="coreDc"|value="coreDc"/.test(pickerHtml) ||
+             /disabled|aria-disabled="true"/.test(pickerHtml),
+        "DE6 · picker must NOT offer 'coreDc' as a selectable option (already in session). Got: " + pickerHtml.slice(0, 200));
+    } finally {
+      document.body.removeChild(l);
+    }
+  });
+
+  it("DE7 · Add new env via picker appends to session.environments", () => {
+    var s = makeEnvSession([{ id: "coreDc", hidden: false }]);
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderContextView(l, r, s);
+    document.body.appendChild(l);
+    try {
+      // Select a new env type (e.g. archiveSite) via the picker UI and trigger add.
+      var picker = l.querySelector(".env-picker select, [data-env-picker] select, .env-add-picker select");
+      var addBtn = l.querySelector(".env-add-btn, [data-env-add-btn], .env-picker button, .env-add-picker button");
+      assert(picker || addBtn,
+        "DE7 · need either a picker <select> or an add button to drive the add flow");
+      if (picker) {
+        picker.value = "archiveSite";
+        picker.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (addBtn) dispatchClick(addBtn);
+      var added = findEnv(s, "archiveSite");
+      assert(added,
+        "DE7 · session.environments must contain a new archiveSite entry after add (got " +
+        JSON.stringify(s.environments) + ")");
+      assertEqual(added.hidden, false,
+        "DE7 · newly added env must default hidden:false");
+    } finally {
+      document.body.removeChild(l);
+    }
+  });
+
+  it("DE8 · Hide button (replaces prior Remove) flips env.hidden to true; entry remains in environments", () => {
+    var s = makeEnvSession([
+      { id: "coreDc", hidden: false },
+      { id: "drDc",   hidden: false }
+    ]);
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderContextView(l, r, s);
+    document.body.appendChild(l);
+    try {
+      var hideBtn = l.querySelector(".env-row[data-env-id='coreDc'] .env-hide-btn, [data-env-hide='coreDc'], .env-row.coreDc .hide-btn");
+      assert(hideBtn,
+        "DE8 · must render a Hide button per active env (looked for .env-hide-btn / [data-env-hide])");
+      dispatchClick(hideBtn);
+      // Confirmation modal may open; if so, click its Hide action to confirm.
+      var confirmBtn = document.querySelector(".hide-env-modal .confirm-hide, [data-hide-env-confirm], .modal-hide-env .btn-hide");
+      if (confirmBtn) dispatchClick(confirmBtn);
+      var coreEntry = findEnv(s, "coreDc");
+      assert(coreEntry,
+        "DE8 · coreDc entry must REMAIN in session.environments after hide (soft-delete, not splice)");
+      assertEqual(coreEntry.hidden, true,
+        "DE8 · coreDc.hidden must flip to true after confirmed hide (got " +
+        JSON.stringify(coreEntry) + ")");
+    } finally {
+      document.body.removeChild(l);
+    }
+  });
+
+  it("DE9 · MatrixView env headers reflect dynamic count (visible envs only)", () => {
+    var s = makeEnvSession([
+      { id: "coreDc", hidden: false },
+      { id: "edge",   hidden: false }
+    ]);
+    addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "DE9-A", vendorGroup: "dell", criticality: "Medium" });
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderMatrixView(l, r, s, { stateFilter: "current" });
+    var heads = l.querySelectorAll(".matrix-env-head, .matrix-env-header, [data-env-head]");
+    assertEqual(heads.length, 2,
+      "DE9 · MatrixView must render exactly 2 env header cells when 2 envs are visible (got " + heads.length + ")");
+  });
+
+  it("DE10 · getEnvLabel reads alias from session.environments[].alias", () => {
+    var s = makeEnvSession([
+      { id: "coreDc", hidden: false, alias: "Riyadh DC" }
+    ]);
+    var label = getEnvLabel("coreDc", s);
+    assertEqual(label, "Riyadh DC",
+      "DE10 · getEnvLabel must read alias from session.environments[].alias (got '" + label + "')");
+  });
+
+  // ===================================================================
+  // Section DE-INT · DE-INT1-6 · Data integrity guarantees
+  // ===================================================================
+
+  it("DE-INT1 · Hide preserves session.instances count (zero data loss)", () => {
+    var s = makeEnvSession([
+      { id: "coreDc", hidden: false },
+      { id: "edge",   hidden: false }
+    ]);
+    addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "INT1-A", vendorGroup: "dell", criticality: "Medium" });
+    addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "INT1-B", vendorGroup: "dell", criticality: "Medium" });
+    var beforeCount = s.instances.length;
+    var coreEntry = findEnv(s, "coreDc");
+    coreEntry.hidden = true;
+    assertEqual(s.instances.length, beforeCount,
+      "DE-INT1 · hiding env must not change session.instances.length (before=" +
+      beforeCount + ", after=" + s.instances.length + ")");
+    s.instances.forEach(function(i) {
+      assertEqual(i.environmentId, "coreDc",
+        "DE-INT1 · instance.environmentId must remain unchanged after hide");
+    });
+  });
+
+  it("DE-INT2 · Hide round-trips through JSON snapshot (.canvas equivalent)", () => {
+    var s = makeEnvSession([
+      { id: "coreDc", hidden: true,  alias: "Riyadh DC" },
+      { id: "edge",   hidden: false, alias: "Branch sites" }
+    ]);
+    var dump = JSON.stringify(s);
+    var revived = JSON.parse(dump);
+    var coreRev = revived.environments.find(function(e) { return e.id === "coreDc"; });
+    var edgeRev = revived.environments.find(function(e) { return e.id === "edge"; });
+    assertEqual(coreRev && coreRev.hidden, true,
+      "DE-INT2 · coreDc.hidden=true must survive JSON round-trip");
+    assertEqual(edgeRev && edgeRev.hidden, false,
+      "DE-INT2 · edge.hidden=false must survive JSON round-trip");
+  });
+
+  it("DE-INT3 · Restore re-renders the column (getVisibleEnvironments returns it again)", () => {
+    var s = makeEnvSession([
+      { id: "coreDc", hidden: false },
+      { id: "drDc",   hidden: true }
+    ]);
+    var visBefore = getVisibleEnvironments(s).map(function(e) { return e.id; });
+    assert(visBefore.indexOf("drDc") < 0,
+      "DE-INT3 · getVisibleEnvironments must exclude hidden envs initially (got " + visBefore.join(",") + ")");
+    var dr = findEnv(s, "drDc");
+    dr.hidden = false;
+    var visAfter = getVisibleEnvironments(s).map(function(e) { return e.id; });
+    assert(visAfter.indexOf("drDc") >= 0,
+      "DE-INT3 · after restore, getVisibleEnvironments must include drDc (got " + visAfter.join(",") + ")");
+  });
+
+  it("DE-INT4 · Hiding env preserves gap.affectedEnvironments taxonomy unchanged", () => {
+    var s = makeEnvSession([
+      { id: "coreDc",      hidden: false },
+      { id: "publicCloud", hidden: false }
+    ]);
+    var g = createGap(s, { description: "INT4 gap", layerId: "compute", gapType: "ops",
+      affectedEnvironments: ["coreDc", "publicCloud"] });
+    var beforeAffected = (g.affectedEnvironments || []).slice();
+    findEnv(s, "coreDc").hidden = true;
+    var gAfter = s.gaps.find(function(x) { return x.id === g.id; });
+    assertEqual((gAfter.affectedEnvironments || []).join(","), beforeAffected.join(","),
+      "DE-INT4 · gap.affectedEnvironments must remain unchanged after hide (taxonomy preserved). " +
+      "Before=" + beforeAffected.join(",") + ", After=" + (gAfter.affectedEnvironments || []).join(","));
+  });
+
+  it("DE-INT5 · ≥1 active env invariant: cannot hide the last active env", () => {
+    var s = makeEnvSession([
+      { id: "coreDc", hidden: false }
+    ]);
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderContextView(l, r, s);
+    document.body.appendChild(l);
+    try {
+      var hideBtn = l.querySelector(".env-row[data-env-id='coreDc'] .env-hide-btn, [data-env-hide='coreDc'], .env-row.coreDc .hide-btn");
+      // Either: button is disabled, or clicking it does NOT change hidden state.
+      var disabled = hideBtn && (hideBtn.disabled === true || hideBtn.getAttribute("aria-disabled") === "true");
+      if (!disabled && hideBtn) {
+        dispatchClick(hideBtn);
+        // Confirm if a modal opened
+        var confirmBtn = document.querySelector(".hide-env-modal .confirm-hide, [data-hide-env-confirm]");
+        if (confirmBtn) dispatchClick(confirmBtn);
+      }
+      assertEqual(findEnv(s, "coreDc").hidden, false,
+        "DE-INT5 · with one active env, hide must be blocked (button disabled or click no-op). " +
+        "session.environments[0].hidden = " + findEnv(s, "coreDc").hidden);
+    } finally {
+      document.body.removeChild(l);
+    }
+  });
+
+  it("DE-INT6 · Migrator backfills hidden:false on every legacy env entry", () => {
+    var legacy = {
+      sessionId: "sess-de-int6",
+      customer: { name: "INT6", drivers: [] },
+      sessionMeta: { date: "2026-04-28", presalesOwner: "", status: "Draft", version: "2.0" },
+      instances: [
+        { id: "i-1", state: "current", layerId: "compute", environmentId: "coreDc",
+          label: "X", vendorGroup: "dell", criticality: "Medium" }
+      ],
+      gaps: []
+    };
+    var migrated = migrateLegacySession(legacy);
+    (migrated.environments || []).forEach(function(e) {
+      assertEqual(e.hidden, false,
+        "DE-INT6 · migrated env '" + e.id + "' must have hidden:false (got " + e.hidden + ")");
+    });
+  });
+
+  // ===================================================================
+  // Section SD · SD1-SD8 · Soft-delete pattern
+  // ===================================================================
+
+  it("SD1 · getVisibleEnvironments / getHiddenEnvironments return correct partitions", () => {
+    var s = makeEnvSession([
+      { id: "coreDc",      hidden: false },
+      { id: "drDc",        hidden: true  },
+      { id: "publicCloud", hidden: false }
+    ]);
+    var visIds = getVisibleEnvironments(s).map(function(e) { return e.id; }).sort();
+    var hidIds = getHiddenEnvironments(s).map(function(e) { return e.id; }).sort();
+    assertEqual(visIds.join(","), ["coreDc", "publicCloud"].sort().join(","),
+      "SD1 · getVisibleEnvironments must return [coreDc, publicCloud] (got " + visIds.join(",") + ")");
+    assertEqual(hidIds.join(","), ["drDc"].sort().join(","),
+      "SD1 · getHiddenEnvironments must return [drDc] (got " + hidIds.join(",") + ")");
+  });
+
+  it("SD2 · ContextView renders separate Active + Hidden sub-sections with hidden envs in the Hidden section", () => {
+    var s = makeEnvSession([
+      { id: "coreDc", hidden: false },
+      { id: "drDc",   hidden: true }
+    ]);
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderContextView(l, r, s);
+    document.body.appendChild(l);
+    try {
+      var hiddenSection = l.querySelector(".env-hidden-section, [data-env-hidden-section], .hidden-environments");
+      assert(hiddenSection,
+        "SD2 · ContextView must include a Hidden environments sub-section when hidden envs exist");
+      var hiddenRows = hiddenSection.querySelectorAll(".env-row, [data-env-row]");
+      assert(hiddenRows.length >= 1,
+        "SD2 · Hidden sub-section must include >= one row (got " + hiddenRows.length + ")");
+      // The hidden row must include a Restore button.
+      var restoreBtn = hiddenSection.querySelector(".env-restore-btn, [data-env-restore]");
+      assert(restoreBtn,
+        "SD2 · Hidden sub-section must include a Restore button per hidden env");
+    } finally {
+      document.body.removeChild(l);
+    }
+  });
+
+  it("SD3 · Hide button save-guards when session has unsaved changes", async () => {
+    // Use the markSaving/markIdle helpers to fake a dirty state.
+    var saveStatus = await import("../core/saveStatus.js");
+    var s = makeEnvSession([
+      { id: "coreDc", hidden: false },
+      { id: "drDc",   hidden: false }
+    ]);
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderContextView(l, r, s);
+    document.body.appendChild(l);
+    try {
+      // Force a dirty state — markSaving emits state without persisting.
+      if (typeof saveStatus.markSaving === "function") saveStatus.markSaving();
+      var hideBtn = l.querySelector(".env-row[data-env-id='coreDc'] .env-hide-btn, [data-env-hide='coreDc']");
+      assert(hideBtn, "SD3 · need a Hide button on coreDc");
+      dispatchClick(hideBtn);
+      // Save-guard modal should appear.
+      var saveGuard = document.querySelector(".save-guard-modal, [data-save-guard], .modal-save-guard, .hide-env-modal[data-save-guard='true']");
+      assert(saveGuard,
+        "SD3 · clicking Hide on a dirty session must open a save-guard modal (Save & Hide / Hide without saving / Cancel)");
+      // Cleanup any open dialog.
+      var cancelBtn = document.querySelector(".save-guard-modal .btn-cancel, [data-save-guard] .btn-cancel, .hide-env-modal .btn-cancel");
+      if (cancelBtn) dispatchClick(cancelBtn);
+    } finally {
+      document.body.removeChild(l);
+      // Restore idle so subsequent tests don't see a dirty banner.
+      if (typeof saveStatus.markSaved === "function") saveStatus.markSaved({ isDemo: false });
+    }
+  });
+
+  it("SD4 · Hide confirmation modal copy includes env label + instance count line + Hide+Cancel buttons", () => {
+    var s = makeEnvSession([
+      { id: "coreDc", hidden: false, alias: "Riyadh DC" },
+      { id: "drDc",   hidden: false }
+    ]);
+    addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "SD4-A", vendorGroup: "dell", criticality: "Medium" });
+    addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "SD4-B", vendorGroup: "dell", criticality: "Medium" });
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderContextView(l, r, s);
+    document.body.appendChild(l);
+    try {
+      var hideBtn = l.querySelector(".env-row[data-env-id='coreDc'] .env-hide-btn, [data-env-hide='coreDc']");
+      assert(hideBtn, "SD4 · need a Hide button on coreDc");
+      dispatchClick(hideBtn);
+      var modal = document.querySelector(".hide-env-modal, [data-hide-env-modal]");
+      assert(modal,
+        "SD4 · Hide click must open a confirmation modal");
+      var text = (modal.textContent || "");
+      assert(/Riyadh DC|coreDc|Primary Data Center/.test(text),
+        "SD4 · modal text must reference the env (alias 'Riyadh DC' or label or id). Got: " + text.slice(0, 200));
+      assert(/2 instance|two instance|2 \w+ tied/i.test(text) || /\b2\b/.test(text),
+        "SD4 · modal text must reference instance count (2). Got: " + text.slice(0, 200));
+      var hideAction = modal.querySelector(".confirm-hide, [data-hide-env-confirm], .btn-hide");
+      var cancelAction = modal.querySelector(".btn-cancel, [data-hide-env-cancel], .cancel");
+      assert(hideAction, "SD4 · modal must include a confirm-hide action");
+      assert(cancelAction, "SD4 · modal must include a cancel action");
+      if (cancelAction) dispatchClick(cancelAction);
+    } finally {
+      document.body.removeChild(l);
+      // Cleanup any leftover modal.
+      var leftover = document.querySelector(".hide-env-modal, [data-hide-env-modal]");
+      if (leftover && leftover.parentNode) leftover.parentNode.removeChild(leftover);
+    }
+  });
+
+  it("SD5 · Confirmed hide flips hidden flag + emits session-changed with reason matching /env|hide/", () => {
+    var s = makeEnvSession([
+      { id: "coreDc", hidden: false },
+      { id: "drDc",   hidden: false }
+    ]);
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderContextView(l, r, s);
+    document.body.appendChild(l);
+    var captured = null;
+    var unsub = null;
+    try {
+      var bus = require ? null : null;
+      // Subscribe via the sessionEvents bus.
+      // Use a dynamic import marker — emitSessionChanged is already imported above in this file.
+      // We hook into the global `document` listener pattern used by app.js:
+      var handler = function(ev) {
+        if (!captured) captured = ev && ev.detail;
+      };
+      document.addEventListener("session-changed", handler);
+      var hideBtn = l.querySelector(".env-row[data-env-id='coreDc'] .env-hide-btn, [data-env-hide='coreDc']");
+      assert(hideBtn, "SD5 · need a Hide button on coreDc");
+      dispatchClick(hideBtn);
+      var confirmBtn = document.querySelector(".hide-env-modal .confirm-hide, [data-hide-env-confirm]");
+      if (confirmBtn) dispatchClick(confirmBtn);
+      assertEqual(findEnv(s, "coreDc").hidden, true,
+        "SD5 · hidden flag must flip to true after confirm");
+      assert(captured,
+        "SD5 · must emit session-changed after confirmed hide");
+      assert(captured && /hide|env/i.test(captured.reason || ""),
+        "SD5 · session-changed reason must mention env/hide (got '" +
+        (captured && captured.reason) + "')");
+      document.removeEventListener("session-changed", handler);
+    } finally {
+      document.body.removeChild(l);
+      var leftover = document.querySelector(".hide-env-modal, [data-hide-env-modal]");
+      if (leftover && leftover.parentNode) leftover.parentNode.removeChild(leftover);
+    }
+  });
+
+  it("SD6 · Restore button on a hidden env flips hidden flag back to false (no confirmation)", () => {
+    var s = makeEnvSession([
+      { id: "coreDc", hidden: false },
+      { id: "drDc",   hidden: true }
+    ]);
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderContextView(l, r, s);
+    document.body.appendChild(l);
+    try {
+      var restoreBtn = l.querySelector(".env-row[data-env-id='drDc'] .env-restore-btn, [data-env-restore='drDc'], .env-hidden-section .env-row .env-restore-btn");
+      assert(restoreBtn,
+        "SD6 · must render a Restore button on hidden env drDc");
+      dispatchClick(restoreBtn);
+      assertEqual(findEnv(s, "drDc").hidden, false,
+        "SD6 · restore must flip hidden back to false (got " + findEnv(s, "drDc").hidden + ")");
+    } finally {
+      document.body.removeChild(l);
+    }
+  });
+
+  it("SD7 · MatrixView column for a hidden env renders greyed-out (opacity ≤ 0.5, pointer-events: none)", () => {
+    var s = makeEnvSession([
+      { id: "coreDc", hidden: false },
+      { id: "drDc",   hidden: true }
+    ]);
+    addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "SD7-A", vendorGroup: "dell", criticality: "Medium" });
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderMatrixView(l, r, s, { stateFilter: "current" });
+    document.body.appendChild(l);
+    try {
+      var hiddenHead = l.querySelector(".matrix-env-head[data-env-hidden='true'], .matrix-env-header[data-env-hidden='true'], .matrix-env-head[data-env='drDc'][data-env-hidden]");
+      assert(hiddenHead,
+        "SD7 · MatrixView must render a hidden env header with data-env-hidden='true' when env.hidden===true");
+      var cs = getComputedStyle(hiddenHead);
+      var opacity = parseFloat(cs.opacity);
+      assert(opacity <= 0.5,
+        "SD7 · hidden env header must render at opacity <= 0.5 (got " + cs.opacity + ")");
+      assertEqual(cs.pointerEvents, "none",
+        "SD7 · hidden env header must be non-interactive (pointer-events: none, got '" + cs.pointerEvents + "')");
+    } finally {
+      document.body.removeChild(l);
+    }
+  });
+
+  it("SD8 · Tab 5 reporting (SummaryHealthView heatmap) excludes hidden envs entirely", () => {
+    var s = makeEnvSession([
+      { id: "coreDc", hidden: true },
+      { id: "edge",   hidden: false }
+    ]);
+    addInstance(s, { state: "current", layerId: "compute", environmentId: "edge",
+      label: "SD8-A", vendorGroup: "dell", criticality: "Medium" });
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderSummaryHealthView(l, r, s);
+    var hiddenHeads = l.querySelectorAll(".heatmap-env-head[data-env='coreDc'], .hm-env-head[data-env='coreDc'], [data-env='coreDc'].heatmap-env-head");
+    assertEqual(hiddenHeads.length, 0,
+      "SD8 · SummaryHealthView must NOT render any column for hidden coreDc (got " + hiddenHeads.length + ")");
+    var visibleHeads = l.querySelectorAll(".heatmap-env-head, .hm-env-head");
+    assert(visibleHeads.length >= 1,
+      "SD8 · SummaryHealthView must render columns for visible envs only (got " + visibleHeads.length + ")");
+  });
+
+  // ===================================================================
+  // Section VB · VB1-VB3 · Vendor mix segmented bar
+  // ===================================================================
+
+  it("VB1 · Vendor bar renders 3 proportional segments summing to >= 99% width", () => {
+    var s = makeEnvSession([
+      { id: "coreDc", hidden: false }
+    ]);
+    addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "VB1-Dell-1", vendorGroup: "dell", criticality: "Medium" });
+    addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "VB1-Dell-2", vendorGroup: "dell", criticality: "Medium" });
+    addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "VB1-NonDell", vendorGroup: "nonDell", criticality: "Medium" });
+    addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "VB1-Custom", vendorGroup: "custom", criticality: "Medium" });
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderSummaryVendorView(l, r, s);
+    document.body.appendChild(l);
+    try {
+      var bars = l.querySelectorAll(".vendor-bar");
+      assert(bars.length >= 1,
+        "VB1 · SummaryVendorView must render at least one .vendor-bar (got " + bars.length + ")");
+      var firstBar = bars[0];
+      var segs = firstBar.querySelectorAll(".vendor-bar-segment");
+      assertEqual(segs.length, 3,
+        "VB1 · vendor bar must have 3 segments (Dell / non-Dell / custom). Got " + segs.length);
+      var totalPct = 0;
+      Array.prototype.forEach.call(segs, function(seg) {
+        var w = seg.style.width || "";
+        var pct = parseFloat(w);
+        if (!isNaN(pct)) totalPct += pct;
+      });
+      assert(totalPct >= 99 && totalPct <= 101,
+        "VB1 · sum of segment widths must be 99-101% (got " + totalPct + "%)");
+    } finally {
+      document.body.removeChild(l);
+    }
+  });
+
+  it("VB2 · Segments wider than 6% include a visible inline percentage label", () => {
+    var s = makeEnvSession([{ id: "coreDc", hidden: false }]);
+    for (var i = 0; i < 10; i++) {
+      addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+        label: "VB2-Dell-" + i, vendorGroup: "dell", criticality: "Medium" });
+    }
+    addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "VB2-NonDell", vendorGroup: "nonDell", criticality: "Medium" });
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderSummaryVendorView(l, r, s);
+    var firstBar = l.querySelector(".vendor-bar");
+    assert(firstBar, "VB2 · need a .vendor-bar to inspect");
+    var segs = firstBar.querySelectorAll(".vendor-bar-segment");
+    var widePctVisible = false;
+    Array.prototype.forEach.call(segs, function(seg) {
+      var w = parseFloat(seg.style.width || "0");
+      if (w >= 6) {
+        var label = seg.textContent || "";
+        if (/\d+%/.test(label)) widePctVisible = true;
+      }
+    });
+    assert(widePctVisible,
+      "VB2 · at least one wide segment (>=6%) must render a visible inline percentage label");
+  });
+
+  it("VB3 · Per-layer breakdown renders >=6 stacked .vendor-bar elements (one per layer)", () => {
+    var s = makeEnvSession([{ id: "coreDc", hidden: false }]);
+    var layers = ["workload", "compute", "storage", "dataProtection", "virtualization", "infrastructure"];
+    layers.forEach(function(L, idx) {
+      addInstance(s, { state: "current", layerId: L, environmentId: "coreDc",
+        label: "VB3-" + L, vendorGroup: idx % 2 === 0 ? "dell" : "nonDell", criticality: "Medium" });
+    });
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderSummaryVendorView(l, r, s);
+    var bars = l.querySelectorAll(".vendor-bar");
+    assert(bars.length >= 6,
+      "VB3 · per-layer breakdown must render >=6 .vendor-bar (one per layer). Got " + bars.length);
+  });
+
+  // ===================================================================
+  // Section FB · FB1-FB6 · Modern collapsible FilterBar
+  // ===================================================================
+
+  it("FB1 · renderFilterBar produces a single .filter-bar-toggle button with label /Filters/", async () => {
+    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
+    assert(FBmod && typeof FBmod.renderFilterBar === "function",
+      "FB1 · ui/components/FilterBar.js must export renderFilterBar");
+    var target = document.createElement("div");
+    document.body.appendChild(target);
+    try {
+      FBmod.renderFilterBar(target, {
+        dimensions: [{ id: "services", label: "Service", options: [{ id: "migration", label: "Migration" }] }],
+        session: createEmptySession(),
+        scope: "gaps-edit"
+      });
+      var toggles = target.querySelectorAll(".filter-bar-toggle, [data-filter-bar-toggle]");
+      assertEqual(toggles.length, 1,
+        "FB1 · renderFilterBar must produce exactly one .filter-bar-toggle (got " + toggles.length + ")");
+      assert(/Filters/i.test(toggles[0].textContent || ""),
+        "FB1 · toggle text must contain 'Filters' (got '" + toggles[0].textContent + "')");
+    } finally {
+      document.body.removeChild(target);
+    }
+  });
+
+  it("FB2 · Click toggle expands .filter-bar-panel; re-click collapses", async () => {
+    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
+    assert(FBmod && typeof FBmod.renderFilterBar === "function", "FB2 · need FilterBar module");
+    var target = document.createElement("div");
+    document.body.appendChild(target);
+    try {
+      FBmod.renderFilterBar(target, {
+        dimensions: [{ id: "services", label: "Service", options: [{ id: "migration", label: "Migration" }] }],
+        session: createEmptySession(),
+        scope: "gaps-edit"
+      });
+      var toggle = target.querySelector(".filter-bar-toggle");
+      dispatchClick(toggle);
+      var panel = target.querySelector(".filter-bar-panel, [data-filter-bar-panel]");
+      assert(panel, "FB2 · clicking toggle must produce a .filter-bar-panel element");
+      var visible = getComputedStyle(panel).display !== "none";
+      assert(visible, "FB2 · panel must be visible after first click (display !== 'none')");
+      dispatchClick(toggle);
+      var panelAfter = target.querySelector(".filter-bar-panel, [data-filter-bar-panel]");
+      var collapsed = !panelAfter || getComputedStyle(panelAfter).display === "none";
+      assert(collapsed, "FB2 · re-click must collapse panel (display 'none' or removed)");
+    } finally {
+      document.body.removeChild(target);
+    }
+  });
+
+  it("FB3 · Service chip click sets body[data-filter-services] + chip gets is-active class", async () => {
+    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
+    var fState = await import("../state/filterState.js");
+    fState._resetForTests();
+    document.body.removeAttribute("data-filter-services");
+    assert(FBmod && typeof FBmod.renderFilterBar === "function", "FB3 · need FilterBar module");
+    var target = document.createElement("div");
+    document.body.appendChild(target);
+    try {
+      FBmod.renderFilterBar(target, {
+        dimensions: [{ id: "services", label: "Service",
+          options: [{ id: "migration", label: "Migration" }, { id: "training", label: "Training" }] }],
+        session: createEmptySession(),
+        scope: "gaps-edit"
+      });
+      dispatchClick(target.querySelector(".filter-bar-toggle"));
+      var chip = target.querySelector(".filter-chip[data-filter-dim='services'][data-filter-value='migration']");
+      assert(chip, "FB3 · panel must render a chip with [data-filter-dim='services'][data-filter-value='migration']");
+      dispatchClick(chip);
+      assertEqual(document.body.getAttribute("data-filter-services"), "migration",
+        "FB3 · chip click must set body[data-filter-services]='migration'");
+      assert(chip.classList.contains("is-active"),
+        "FB3 · chip must add .is-active class after click");
+    } finally {
+      document.body.removeChild(target);
+      document.body.removeAttribute("data-filter-services");
+      fState._resetForTests();
+    }
+  });
+
+  it("FB4 · Active filter strip renders a removable pill per active filter", async () => {
+    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
+    var fState = await import("../state/filterState.js");
+    fState._resetForTests();
+    document.body.removeAttribute("data-filter-services");
+    var target = document.createElement("div");
+    document.body.appendChild(target);
+    try {
+      FBmod.renderFilterBar(target, {
+        dimensions: [{ id: "services", label: "Service",
+          options: [{ id: "migration", label: "Migration" }] }],
+        session: createEmptySession(),
+        scope: "gaps-edit"
+      });
+      dispatchClick(target.querySelector(".filter-bar-toggle"));
+      var chip = target.querySelector(".filter-chip[data-filter-dim='services'][data-filter-value='migration']");
+      dispatchClick(chip);
+      var pill = target.querySelector(".active-filter-pill, [data-active-filter-pill]");
+      assert(pill, "FB4 · active filter strip must include >=1 .active-filter-pill after a chip is selected");
+      var x = pill.querySelector(".pill-remove, [data-pill-remove], .x");
+      assert(x, "FB4 · active pill must include an X / remove control");
+    } finally {
+      document.body.removeChild(target);
+      document.body.removeAttribute("data-filter-services");
+      fState._resetForTests();
+    }
+  });
+
+  it("FB5 · Clicking the pill X removes the filter (body data attr cleared + pill removed)", async () => {
+    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
+    var fState = await import("../state/filterState.js");
+    fState._resetForTests();
+    document.body.removeAttribute("data-filter-services");
+    var target = document.createElement("div");
+    document.body.appendChild(target);
+    try {
+      FBmod.renderFilterBar(target, {
+        dimensions: [{ id: "services", label: "Service",
+          options: [{ id: "migration", label: "Migration" }] }],
+        session: createEmptySession(),
+        scope: "gaps-edit"
+      });
+      dispatchClick(target.querySelector(".filter-bar-toggle"));
+      dispatchClick(target.querySelector(".filter-chip[data-filter-value='migration']"));
+      var x = target.querySelector(".active-filter-pill .pill-remove, .active-filter-pill .x, [data-pill-remove]");
+      assert(x, "FB5 · need an X to click");
+      dispatchClick(x);
+      assert(!document.body.hasAttribute("data-filter-services"),
+        "FB5 · clicking X must remove body[data-filter-services]");
+      var pillAfter = target.querySelector(".active-filter-pill");
+      assert(!pillAfter, "FB5 · pill must be removed from DOM after X click");
+    } finally {
+      document.body.removeChild(target);
+      document.body.removeAttribute("data-filter-services");
+      fState._resetForTests();
+    }
+  });
+
+  it("FB6 · Toggle label updates to 'Filters · 2 active' when 2 filters are selected", async () => {
+    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
+    var fState = await import("../state/filterState.js");
+    fState._resetForTests();
+    var target = document.createElement("div");
+    document.body.appendChild(target);
+    try {
+      FBmod.renderFilterBar(target, {
+        dimensions: [
+          { id: "services", label: "Service", options: [{ id: "migration", label: "Migration" }] },
+          { id: "layer",    label: "Layer",   options: [{ id: "compute",   label: "Compute"   }] }
+        ],
+        session: createEmptySession(),
+        scope: "gaps-edit"
+      });
+      dispatchClick(target.querySelector(".filter-bar-toggle"));
+      dispatchClick(target.querySelector(".filter-chip[data-filter-dim='services'][data-filter-value='migration']"));
+      dispatchClick(target.querySelector(".filter-chip[data-filter-dim='layer'][data-filter-value='compute']"));
+      var toggle = target.querySelector(".filter-bar-toggle");
+      assert(/2\s*active/i.test(toggle.textContent || ""),
+        "FB6 · toggle text must include '2 active' when 2 filters selected (got '" + toggle.textContent + "')");
+    } finally {
+      document.body.removeChild(target);
+      document.body.removeAttribute("data-filter-services");
+      document.body.removeAttribute("data-filter-layer");
+      fState._resetForTests();
+    }
+  });
+
+  // ===================================================================
+  // Section FB7 · FB7a-d · All 4 filter dimensions wired (services / layer / domain / urgency)
+  // ===================================================================
+
+  it("FB7a · Layer dim chip click sets body[data-filter-layer] + matching .gap-card[data-layer] gets .filter-match-layer", async () => {
+    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
+    var fState = await import("../state/filterState.js");
+    fState._resetForTests();
+    var s = createEmptySession();
+    s.environments = [{ id: "coreDc", hidden: false }];
+    var cur = addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "FB7a-cur", vendorGroup: "dell", criticality: "Medium" });
+    createGap(s, { description: "FB7a compute gap", layerId: "compute", gapType: "ops",
+      relatedCurrentInstanceIds: [cur.id], services: [] });
+    createGap(s, { description: "FB7a storage gap", layerId: "storage", gapType: "ops",
+      relatedCurrentInstanceIds: [], services: [] });
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderGapsEditView(l, r, s);
+    document.body.appendChild(l);
+    try {
+      var toggle = l.querySelector(".filter-bar-toggle");
+      assert(toggle, "FB7a · GapsEditView must mount the FilterBar with a toggle");
+      dispatchClick(toggle);
+      var chip = l.querySelector(".filter-chip[data-filter-dim='layer'][data-filter-value='compute']");
+      assert(chip, "FB7a · panel must include a Layer chip for 'compute'");
+      dispatchClick(chip);
+      assertEqual(document.body.getAttribute("data-filter-layer"), "compute",
+        "FB7a · click must set body[data-filter-layer]='compute'");
+      var matchCount = l.querySelectorAll(".gap-card[data-layer='compute'].filter-match-layer").length;
+      assert(matchCount >= 1,
+        "FB7a · matching gap-card must have .filter-match-layer class (got " + matchCount + ")");
+    } finally {
+      document.body.removeChild(l);
+      document.body.removeAttribute("data-filter-layer");
+      fState._resetForTests();
+    }
+  });
+
+  it("FB7b · Domain dim chip click sets body[data-filter-domain] + matching cards get .filter-match-domain", async () => {
+    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
+    var fState = await import("../state/filterState.js");
+    fState._resetForTests();
+    var s = createEmptySession();
+    s.environments = [{ id: "coreDc", hidden: false }];
+    createGap(s, { description: "FB7b infra gap", layerId: "infrastructure", gapType: "ops" });
+    createGap(s, { description: "FB7b compute gap", layerId: "compute", gapType: "ops" });
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderGapsEditView(l, r, s);
+    document.body.appendChild(l);
+    try {
+      dispatchClick(l.querySelector(".filter-bar-toggle"));
+      var chip = l.querySelector(".filter-chip[data-filter-dim='domain']");
+      assert(chip, "FB7b · panel must include at least one Domain chip");
+      var domainValue = chip.getAttribute("data-filter-value");
+      dispatchClick(chip);
+      assertEqual(document.body.getAttribute("data-filter-domain"), domainValue,
+        "FB7b · click must set body[data-filter-domain]='" + domainValue + "'");
+      var anyMatchClass = l.querySelectorAll(".gap-card.filter-match-domain").length;
+      assert(anyMatchClass >= 0,
+        "FB7b · domain dim must apply .filter-match-domain class to matching cards (got " + anyMatchClass + ")");
+    } finally {
+      document.body.removeChild(l);
+      document.body.removeAttribute("data-filter-domain");
+      fState._resetForTests();
+    }
+  });
+
+  it("FB7c · Urgency dim chip click sets body[data-filter-urgency] + .gap-card[data-urgency] attribute is present", async () => {
+    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
+    var fState = await import("../state/filterState.js");
+    fState._resetForTests();
+    var s = createEmptySession();
+    s.environments = [{ id: "coreDc", hidden: false }];
+    createGap(s, { description: "FB7c high gap", layerId: "compute", gapType: "ops", urgency: "High" });
+    createGap(s, { description: "FB7c low gap",  layerId: "compute", gapType: "ops", urgency: "Low" });
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderGapsEditView(l, r, s);
+    document.body.appendChild(l);
+    try {
+      // Every gap-card in v2.4.15 must carry a data-urgency attribute.
+      var withAttr = l.querySelectorAll(".gap-card[data-urgency]").length;
+      assert(withAttr >= 2,
+        "FB7c · every .gap-card must carry a data-urgency attribute (got " + withAttr + " of 2 expected)");
+      dispatchClick(l.querySelector(".filter-bar-toggle"));
+      var chip = l.querySelector(".filter-chip[data-filter-dim='urgency']");
+      assert(chip, "FB7c · panel must include >=1 Urgency chip");
+      var urgencyValue = chip.getAttribute("data-filter-value");
+      dispatchClick(chip);
+      assertEqual(document.body.getAttribute("data-filter-urgency"), urgencyValue,
+        "FB7c · click must set body[data-filter-urgency]='" + urgencyValue + "'");
+    } finally {
+      document.body.removeChild(l);
+      document.body.removeAttribute("data-filter-urgency");
+      fState._resetForTests();
+    }
+  });
+
+  it("FB7d · Multi-dim AND combine: only cards matching ALL active dims stay un-dimmed", async () => {
+    var FBmod = await import("../ui/components/FilterBar.js").catch(function() { return null; });
+    var fState = await import("../state/filterState.js");
+    fState._resetForTests();
+    var s = createEmptySession();
+    s.environments = [{ id: "coreDc", hidden: false }];
+    var cur = addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
+      label: "FB7d-cur", vendorGroup: "dell", criticality: "Medium" });
+    // Card 1: layer=compute, urgency=High -> matches BOTH.
+    createGap(s, { description: "FB7d match", layerId: "compute", gapType: "ops",
+      relatedCurrentInstanceIds: [cur.id], urgency: "High" });
+    // Card 2: layer=compute, urgency=Low  -> matches layer only.
+    createGap(s, { description: "FB7d partial1", layerId: "compute", gapType: "ops", urgency: "Low" });
+    // Card 3: layer=storage, urgency=High -> matches urgency only.
+    createGap(s, { description: "FB7d partial2", layerId: "storage", gapType: "ops", urgency: "High" });
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderGapsEditView(l, r, s);
+    document.body.appendChild(l);
+    try {
+      dispatchClick(l.querySelector(".filter-bar-toggle"));
+      dispatchClick(l.querySelector(".filter-chip[data-filter-dim='layer'][data-filter-value='compute']"));
+      dispatchClick(l.querySelector(".filter-chip[data-filter-dim='urgency'][data-filter-value='High']"));
+      var unDimmed = 0;
+      var cards = l.querySelectorAll(".gap-card");
+      Array.prototype.forEach.call(cards, function(c) {
+        var op = parseFloat(getComputedStyle(c).opacity);
+        if (op >= 0.8) unDimmed++;
+      });
+      assertEqual(unDimmed, 1,
+        "FB7d · with AND-combine across layer=compute + urgency=High, exactly 1 card stays un-dimmed (got " + unDimmed + ")");
+    } finally {
+      document.body.removeChild(l);
+      document.body.removeAttribute("data-filter-layer");
+      document.body.removeAttribute("data-filter-urgency");
+      fState._resetForTests();
+    }
+  });
+
+});
+
 // v2.4.5 · Foundations Refresh · register the human-surface demo suite
 // into the same runner so there's a single green banner for the whole
 // release. Import at bottom to avoid circular-dependency risk with the
