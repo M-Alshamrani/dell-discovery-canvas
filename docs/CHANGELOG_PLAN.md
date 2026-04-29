@@ -932,9 +932,19 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
-## v2.4.16 · Foundations: Taxonomy + Reporting Audit + PillEditor fix · QUEUED + LOCKED 2026-04-29
+## v2.4.16 · Foundations: Taxonomy + Reporting Audit + PillEditor fix · IMPLEMENTED + TAGGED 2026-04-29
 
-**Status**: spec locked 2026-04-29. Sequenced spec → tests → code → smoke per `feedback_spec_and_test_first.md`. Backlog source: `HANDOFF.md` Bucket B1.5 items 1 + 4 + 2.
+**Status**: SHIPPED. Tag `v2.4.16` on origin/main. 616/616 GREEN ✅. Sequenced spec → tests → code → smoke per `feedback_spec_and_test_first.md`. Backlog source: `HANDOFF.md` Bucket B1.5 items 1 + 4 + 2.
+
+### Outcomes shipped
+
+- **Discipline reassertion (item 1)**: spec-lock-before-code demonstrator. 5-commit sequence enforces pre-flight checklist at every step. Locked at `e21f36f` BEFORE any audit code; tests RED-first at `0fd8d47`; audit + real-bug fix at `053647f`; PillEditor investigation at `7935b30`; tag-time docs sync at this commit.
+- **Foundational doc (item 4)**: NEW `docs/TAXONOMY.md` (single source of truth, 8 sections, ≤30-min readable). Cross-referenced by RULES.md by rule id.
+- **Per-gapType disposition table + asset lifecycle table (item 4)**: canonical in TAXONOMY §4-5; mirrored in RULES §13-14.
+- **Reporting derivation audit (item 4)**: 5 service files marked `// Last audited v2.4.16`. 9 divergences logged in TAXONOMY §9 (KD1-KD9). One real bug fixed: `getHealthSummary.highRiskGaps` now excludes closed gaps (live-verified at tag time).
+- **PillEditor user concern (item 2)**: investigated. Half-text/half-pill is by-design parser behavior when template label-text doesn't match field-manifest exactly (Suite 47 PE4 pins). UX clarity question (highlight bare-pills with amber underline + tooltip) DEFERRED to v2.4.17 awaiting user direction.
+
+### Banner: 584/0/584 (v2.4.15 ship) → 616/616 GREEN (v2.4.16 ship; +32 net assertions)
 
 **Goal**: foundations release — single-source-of-truth taxonomy + relationships catalog + per-gapType disposition rules table + asset lifecycle by action + reporting derivation audit + pill-editor bug. Visible UX change is intentionally minimal; the payoff is that v2.4.17 (theme + right-panel pass) and v2.4.18 (crown-jewel reporting redesign) ride on a validated data architecture.
 

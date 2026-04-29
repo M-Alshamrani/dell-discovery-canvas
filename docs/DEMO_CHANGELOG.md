@@ -18,6 +18,20 @@ gaps, drivers, or session metadata) must, in the **same commit**:
 
 ---
 
+## v2.4.16 · 2026-04-29 · Foundations release (no data-model change)
+
+**Status**: shipped (Phase 19n / v2.4.16).
+
+### What changed for the demo surface
+
+**Nothing.** v2.4.16 is a foundations release: NEW `docs/TAXONOMY.md` (entity catalog + relationships + dispositions + lifecycles + reporting derivations + presentation rules), refresh of `docs/RULES.md` to v2.4.15 baseline + new §13 + §14, line-by-line audit of `services/{healthMetrics,gapsService,vendorMixService,roadmapService,programsService}.js` with `// Last audited v2.4.16` markers, one real bug fix (`getHealthSummary.highRiskGaps` now excludes closed gaps), and Suite 47 RED-first tests pinning the audited contract (`616/616 GREEN ✅`). No fields added / renamed / removed on instances, gaps, drivers, environments, or session metadata.
+
+This entry exists for traceability per `feedback_foundational_testing.md`: every release logs its demo-surface impact (or explicit no-change), so future audits can verify discipline.
+
+**No demo refresh required.** `state/demoSession.js` and `core/seedSkills.js` unchanged.
+
+---
+
 ## v2.4.15 · 2026-04-28 · Dynamic environments (city-named demo + metadata)
 
 **Status**: shipped (Phase 19m / v2.4.15).

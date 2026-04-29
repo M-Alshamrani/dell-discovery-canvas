@@ -846,9 +846,15 @@ User-feedback-driven polish landed across five iterations between the iter-1 loc
 5. Crown-jewel reporting redesign (vendor mix + heatmap; Option A KPI tiles + new "Executive summary" sub-tab).
 6. Right-panel utilization optimization across every tab.
 
-### Phase 19n · v2.4.16 · Foundations: Taxonomy + Reporting Audit + PillEditor fix — PENDING IMPLEMENTATION 2026-04-29
+### Phase 19n · v2.4.16 · Foundations: Taxonomy + Reporting Audit + PillEditor fix — IMPLEMENTED 2026-04-29
 
-**Status**: spec locked 2026-04-29; targets `v2.4.16` tag. Sequenced spec → tests → code → smoke per `feedback_spec_and_test_first.md`.
+**Status**: shipped. Tag `v2.4.16` on origin/main. 616/616 GREEN ✅.
+
+**Discipline confirmed**: spec → tests → code → smoke sequence followed. Spec locked at commit `e21f36f` BEFORE any audit code touched the tree. Suite 47 RED-first at `0fd8d47`. Service audit + real-bug fix at `053647f`. PillEditor investigation at `7935b30`. Browser smoke at tag time confirmed:
+- Footer chip reads "Canvas v2.4.16" ✓
+- Test banner auto-dismisses ✓
+- highRiskGaps closed-gap fix verified live (closed-but-High probe excluded; open-High probe included; delta = 1) ✓
+- Demo banner + 5-step stepper + AI Assist + Settings all present ✓
 
 **Goal**: Bucket B1.5 items 1 (discipline) + 4 (taxonomy + relationships catalog + reporting audit) + 2 (pill-editor bug). Visible UX change is intentionally minimal; the payoff is that subsequent releases (v2.4.17 theme + right-panel pass, v2.4.18 reporting redesign) ride on a validated data architecture and audited counts.
 
