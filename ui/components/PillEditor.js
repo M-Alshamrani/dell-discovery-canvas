@@ -173,6 +173,16 @@ function serializeNode(node) {
 
 // Parse a stored plain-text template into pills + text nodes.
 // Exported for tests so we can assert round-trip fidelity without DOM.
+//
+// v2.4.16 · investigated parser behavior re: "half text / half capsule" UX
+// concern (iter-5 review · Bucket B1.5 item 2). When the preceding text
+// doesn't EXACTLY match `{label}: ` for the binding's field-manifest label,
+// the look-behind below leaves the text alone and the pill is rendered as
+// bare (textContent === "{{path}}"). Visually: plain text + capsule. This
+// is the documented contract — see `docs/TAXONOMY.md §9 KD9` and Suite 47
+// PE4. A future v2.4.17 polish pass may add a UX hint (amber underline +
+// tooltip) so users distinguish "bare-pill-by-design" from "wrong template".
+// Behavior change deferred pending user direction.
 export function parseToSegments(template, labelByPath) {
   var segments = [];
   var cursor = 0;

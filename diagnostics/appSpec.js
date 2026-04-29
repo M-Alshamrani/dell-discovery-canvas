@@ -8542,6 +8542,30 @@ describe("47 · v2.4.16 · Foundations: Taxonomy + Reporting + PillEditor", () =
       "PE3 · serialize(create(input)) === input (got '" + roundTrip + "')");
   });
 
+  it("PE4 · half-text/half-pill render is by-design when template's preceding label doesn't match field-manifest canonical label", () => {
+    // v2.4.16 PillEditor investigation · the user-reported "half text half
+    // capsule" visual is the documented parser behavior: when a template
+    // has e.g. "Customer na: {{path}}" (mismatched label), the look-behind
+    // in parseToSegments doesn't consume the preceding text → pill becomes
+    // BARE → visually plain-text-plus-capsule. Pin this contract here so any
+    // future change to the parser is intentional. See TAXONOMY.md §9 KD9.
+    var manifest = [{ path: "session.customer.name", label: "Customer name", kind: "scalar" }];
+    var editor = peCreatePillEditor({
+      manifest: manifest,
+      initialValue: "Hello Customer na: {{session.customer.name}} please."
+    });
+    var pills = editor.querySelectorAll(".binding-pill");
+    assertEqual(pills.length, 1, "PE4.a · template parses to exactly 1 pill");
+    assertEqual(pills[0].dataset.bare, "true",
+      "PE4.b · mismatched-label preceding text → pill is BARE (renders as `{{path}}`)");
+    assertEqual(pills[0].textContent, "{{session.customer.name}}",
+      "PE4.c · bare pill displays the path expression");
+    // Preceding sibling carries the literal mismatched-label text → "half text" half.
+    var preceding = pills[0].previousSibling;
+    assert(preceding && /Customer na: $/.test(preceding.textContent || ""),
+      "PE4.d · preceding text includes the mismatched 'Customer na: ' (preserved verbatim)");
+  });
+
 });
 
 // v2.4.5 · Foundations Refresh · register the human-surface demo suite
