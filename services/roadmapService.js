@@ -11,6 +11,25 @@
 //   3. Within cluster: sort by urgency (High first)
 //
 // V2 hook: AI agent replaces buildProjects() with smarter clustering.
+//
+// Last audited v2.4.16 · 2026-04-29 · per docs/TAXONOMY.md §6.4.
+// Closed-gap behavior:
+//   - filterGaps (internal helper): does NOT filter by gap.status. All gap-
+//     consuming functions below inherit this — closed gaps influence
+//     project urgency aggregation, layer impact, risk posture, exec summary.
+//   - buildProjects: services rollup excludes closed gaps (v2.4.12 P2 hot-
+//     patch). Other rollups (urgency, phase, dellSolutions, layerIds,
+//     constituent gap list) currently INCLUDE closed gaps.
+//   - computeLayerImpact: includes closed gaps in counts.
+//   - computeDiscoveryCoverage: instance-side; not affected.
+//   - computeRiskPosture: includes closed gaps in urgency aggregation.
+//   - computeAccountHealthScore: composite; closed-gap influence inherited.
+// Divergence vs TAXONOMY.md §6 contract documented at §9 Known divergences;
+// behavior fix deferred to v2.4.18 crown-jewel reporting redesign so the
+// user can decide per-metric whether closed gaps count.
+// Hidden-env behavior: not filtered here either; caller passes filter via
+// envId option. Tab 5 reporting views pass getVisibleEnvironments output
+// at the FilterBar layer, not at this service layer.
 
 import { LAYERS, ENVIRONMENTS, BUSINESS_DRIVERS } from "../core/config.js";
 import { effectiveDriverId, effectiveDellSolutions } from "./programsService.js";

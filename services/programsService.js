@@ -1,5 +1,15 @@
 // services/programsService.js — pure functions, no session mutation.
 // SPEC §5.2.1 · Programs-hierarchy helpers for Tab 5 Roadmap and Tab 4 UI.
+//
+// Last audited v2.4.16 · 2026-04-29 · per docs/TAXONOMY.md §6.5.
+// Driver suggestion ladder D1-D9 (RULES §8): regex-on-text-fields fallback
+// when gap.driverId is absent. Deterministic; only wins if proposed driver
+// is in session.customer.drivers[] (no ghost programs).
+// Closed-gap behavior: NONE of these helpers filter by gap.status — they
+// resolve a driver for any gap passed in. Caller-side filtering (Tab 5
+// reporting views) determines which gaps reach these functions.
+// Hidden-env behavior: ladder rule D4 ("touches publicCloud") inspects
+// gap.affectedEnvironments + linked instances; doesn't consider visibility.
 
 import { BUSINESS_DRIVERS } from "../core/config.js";
 

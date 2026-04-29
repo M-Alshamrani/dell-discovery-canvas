@@ -1,4 +1,15 @@
 // services/healthMetrics.js — pure scoring logic for the health heatmap
+//
+// Last audited v2.4.16 · 2026-04-29 · per docs/TAXONOMY.md §6.1.
+// Closed-gap behavior:
+//   - highRiskGaps: EXCLUDES closed (closed gaps are no longer "current risk")
+//                   — bug fix v2.4.16; previously included closed-but-High urgency.
+//   - totalGaps:    INCLUDES closed (counts every gap that exists in the session;
+//                   workshop-friendly summary number).
+//   - computeBucketMetrics.gapScore: INCLUDES closed (deferred to v2.4.18 crown-
+//                   jewel reporting redesign — see TAXONOMY.md §9 known divergence).
+// Hidden envs are caller-responsibility: caller passes getVisibleEnvironments output
+// via the `environments` param.
 
 export function getHealthSummary(session, layers, environments) {
   return {
@@ -6,7 +17,10 @@ export function getHealthSummary(session, layers, environments) {
     totalCurrent:  (session.instances || []).filter(i => i.state === "current").length,
     totalDesired:  (session.instances || []).filter(i => i.state === "desired").length,
     totalGaps:     (session.gaps || []).length,
-    highRiskGaps:  (session.gaps || []).filter(g => g.urgency === "High").length
+    // v2.4.16 · §RA audit · exclude closed gaps from highRiskGaps. Closed
+    // gaps represent completed work, not current risk; counting them here
+    // overstated the headline urgency in the Tab 5 Overview header.
+    highRiskGaps:  (session.gaps || []).filter(g => g.urgency === "High" && g.status !== "closed").length
   };
 }
 

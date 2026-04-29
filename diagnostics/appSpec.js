@@ -8310,19 +8310,36 @@ describe("47 · v2.4.16 · Foundations: Taxonomy + Reporting + PillEditor", () =
   //  `// Last audited v2.4.16` markers and any drift fixes land)
   // -------------------------------------------------------------------
 
-  it("RA1 · getHealthSummary on demo returns positive instance + gap counts", () => {
+  it("RA1 · getHealthSummary on demo returns audited shape with closed-aware highRiskGaps", () => {
     var demo = txCreateDemoSession();
     var summary = getHealthSummary(demo, LAYERS, ENVIRONMENTS);
     assert(summary && typeof summary === "object",
       "RA1.a · getHealthSummary returns an object");
-    assert(typeof summary.instances === "number" && summary.instances > 0,
-      "RA1.b · demo has >0 instances (got " + summary.instances + ")");
-    assert(typeof summary.gaps === "number" && summary.gaps > 0,
-      "RA1.c · demo has >0 gaps (got " + summary.gaps + ")");
-    assert(typeof summary.highRisk === "number" && summary.highRisk >= 0,
-      "RA1.d · highRisk count is a non-negative number (got " + summary.highRisk + ")");
-    assert(summary.highRisk <= summary.gaps,
-      "RA1.e · highRisk <= total gaps (got " + summary.highRisk + " > " + summary.gaps + ")");
+    assert(typeof summary.totalCurrent === "number" && summary.totalCurrent > 0,
+      "RA1.b · demo has >0 totalCurrent (got " + summary.totalCurrent + ")");
+    assert(typeof summary.totalDesired === "number" && summary.totalDesired >= 0,
+      "RA1.c · totalDesired is a non-negative number (got " + summary.totalDesired + ")");
+    assert(typeof summary.totalGaps === "number" && summary.totalGaps > 0,
+      "RA1.d · demo has >0 totalGaps (got " + summary.totalGaps + ")");
+    assert(typeof summary.highRiskGaps === "number" && summary.highRiskGaps >= 0,
+      "RA1.e · highRiskGaps is a non-negative number (got " + summary.highRiskGaps + ")");
+    assert(summary.highRiskGaps <= summary.totalGaps,
+      "RA1.f · highRiskGaps <= totalGaps (got " + summary.highRiskGaps + " > " + summary.totalGaps + ")");
+
+    // RA1.g · v2.4.16 audit fix · closed-but-High urgency gaps EXCLUDED from
+    // highRiskGaps (closed work isn't current risk). Construct a session with
+    // exactly one open-High and one closed-High gap; assert highRiskGaps === 1.
+    var s = createEmptySession();
+    s.instances = [];
+    s.gaps = [
+      { id: "g-open-high", description: "open high", layerId: "compute", affectedLayers: ["compute"], affectedEnvironments: ["coreDc"], gapType: "replace", urgency: "High", phase: "now", status: "open", reviewed: true, relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [] },
+      { id: "g-closed-high", description: "closed high", layerId: "compute", affectedLayers: ["compute"], affectedEnvironments: ["coreDc"], gapType: "replace", urgency: "High", phase: "now", status: "closed", reviewed: true, relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [] }
+    ];
+    var sumExclusion = getHealthSummary(s, LAYERS, ENVIRONMENTS);
+    assertEqual(sumExclusion.highRiskGaps, 1,
+      "RA1.g · closed-but-High gap excluded from highRiskGaps (got " + sumExclusion.highRiskGaps + ", expected 1)");
+    assertEqual(sumExclusion.totalGaps, 2,
+      "RA1.h · closed gap STILL counted in totalGaps (got " + sumExclusion.totalGaps + ", expected 2)");
   });
 
   it("RA2 · getAllGaps returns all session.gaps regardless of status (raw access)", () => {
@@ -8386,14 +8403,15 @@ describe("47 · v2.4.16 · Foundations: Taxonomy + Reporting + PillEditor", () =
     }
   });
 
-  it("RA5 · getFilteredGaps with default opts excludes closed gaps (AUDIT)", () => {
-    // RED until §RA audit confirms the contract is upheld; if current
-    // behavior includes closed gaps in default rollups, the audit fixes it.
+  it("RA5 · getFilteredGaps default opts INCLUDES closed gaps (caller-side filter contract per TAXONOMY §6.2 / §9 KD3)", () => {
+    // Audited 2026-04-29 · §6.2 + §9 KD3 · getFilteredGaps does NOT filter
+    // by gap.status by design. Closed-gap exclusion happens caller-side
+    // (Tab 4 + Tab 5 SharedFilterBar `showClosedGaps` toggle + body data
+    // attribute + CSS dim rule). This test pins the documented behavior
+    // so a future refactor that silently changes it gets caught.
     var demo = txCreateDemoSession();
-    // Ensure ≥1 closed gap is present.
     var closedFound = demo.gaps.some(function(g) { return g.status === "closed"; });
     if (!closedFound && demo.gaps.length > 0) {
-      // Mark the last gap closed to exercise the contract.
       demo.gaps[demo.gaps.length - 1] = Object.assign({}, demo.gaps[demo.gaps.length - 1], {
         status: "closed", closeReason: "test fixture", closedAt: new Date().toISOString()
       });
@@ -8402,27 +8420,36 @@ describe("47 · v2.4.16 · Foundations: Taxonomy + Reporting + PillEditor", () =
     session.gaps = demo.gaps.slice();
     try {
       var filtered = getFilteredGaps({});
+      // Per audited contract: closed gaps DO appear in default result.
       var closedInResult = filtered.filter(function(g) { return g.status === "closed"; });
-      assert(closedInResult.length === 0,
-        "RA5 · getFilteredGaps default opts excludes closed gaps (got " +
+      assert(closedInResult.length >= 1,
+        "RA5.a · getFilteredGaps default opts INCLUDES closed gaps (audited contract; got " +
         closedInResult.length + " closed in result of " + filtered.length + ")");
+      // Caller-side exclusion works as expected when chained.
+      var openOnly = filtered.filter(function(g) { return g.status !== "closed"; });
+      assert(openOnly.length === filtered.length - closedInResult.length,
+        "RA5.b · caller-side `.filter(g => g.status !== \"closed\")` removes exactly the closed entries");
     } finally {
       session.gaps = prev;
     }
   });
 
-  it("RA6 · buildProjects on demo returns ≥1 project with derived metadata", () => {
+  it("RA6 · buildProjects on demo returns { projects: [...] } with derived metadata", () => {
+    // Audited 2026-04-29 · §6.4 · buildProjects returns `{ projects: [...] }`
+    // (Suite 20 also pins this shape; v2.4.16 documents the contract).
     var demo = txCreateDemoSession();
-    var projects = raBuildProjects(demo);
-    assert(Array.isArray(projects), "RA6.a · buildProjects returns an array");
-    assert(projects.length >= 1, "RA6.b · demo produces ≥1 project (got " + projects.length + ")");
+    var result = raBuildProjects(demo);
+    assert(result && typeof result === "object", "RA6.a · buildProjects returns an object");
+    assert(Array.isArray(result.projects), "RA6.b · result.projects is an array");
+    var projects = result.projects;
+    assert(projects.length >= 1, "RA6.c · demo produces ≥1 project (got " + projects.length + ")");
     projects.forEach(function(p, i) {
       assert(typeof p.id === "string" && p.id.length > 0,
-        "RA6.c · project[" + i + "] has non-empty id");
+        "RA6.d · project[" + i + "] has non-empty id");
       assert(typeof p.name === "string" && p.name.length > 0,
-        "RA6.d · project[" + i + "] has derived name");
+        "RA6.e · project[" + i + "] has derived name");
       assert(["High", "Medium", "Low"].indexOf(p.urgency) >= 0,
-        "RA6.e · project[" + i + "] urgency in {High,Medium,Low} (got " + p.urgency + ")");
+        "RA6.f · project[" + i + "] urgency in {High,Medium,Low} (got " + p.urgency + ")");
     });
   });
 

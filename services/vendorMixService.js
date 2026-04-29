@@ -1,4 +1,17 @@
 // services/vendorMixService.js — pure vendor composition analytics
+//
+// Last audited v2.4.16 · 2026-04-29 · per docs/TAXONOMY.md §6.3.
+// Closed-gap behavior: not applicable — these helpers operate on
+// session.instances (vendor counts), not session.gaps.
+// Hidden-env behavior: caller passes the visible env list via the
+// `environments` param. computeMixByEnv DOES initialize per-env
+// buckets only from the supplied list, BUT line 32's `if (!result[...])`
+// auto-create still creates buckets for envs whose instances are in
+// session.instances but whose env ids are NOT in `environments`.
+// In practice this only leaks if a caller iterates Object.keys(result)
+// directly; views iterate the supplied env list. Behavior preserved
+// in v2.4.16 (no regression risk window for the foundations release);
+// see TAXONOMY.md §9 known divergences for the v2.4.18 follow-up.
 
 import { session } from "../state/sessionStore.js";
 

@@ -1,4 +1,13 @@
 // services/gapsService.js — pure read-side gap queries
+//
+// Last audited v2.4.16 · 2026-04-29 · per docs/TAXONOMY.md §6.2.
+// Closed-gap behavior: NONE of these helpers filter by gap.status.
+// Caller is responsible for closed-gap exclusion (Tab 4 GapsEditView
+// applies the user's `showClosedGaps` toggle via state/filterState.js
+// + body data-attribute + CSS dim rule; Tab 5 SummaryGapsView shares
+// the same filter via SharedFilterBar). This is by-design — these
+// functions are reusable across "show all" and "active only" contexts.
+// Hidden envs: not filtered here either (envId="all" returns everything).
 
 import { session } from "../state/sessionStore.js";
 
