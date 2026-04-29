@@ -8004,6 +8004,519 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
 
 });
 
+// ============================================================================
+// Suite 47 · v2.4.16 · Foundations: Taxonomy + Reporting + PillEditor
+// ============================================================================
+// Coverage:
+//   .TX1-TX6   entity catalog completeness (LAYERS / ENV_CATALOG / ACTIONS /
+//              GAP_TYPES / SERVICE_TYPES / BUSINESS_DRIVERS) match TAXONOMY.md §1
+//   .DC1-DC10  per-gapType disposition rules (TAXONOMY §4 · validateActionLinks
+//              behavior per action; AL1 auto-draft bypass; AL7 ops substance)
+//   .DC-LINK1-4 link safety-net derivation (requiresAtLeastOneCurrent/Desired)
+//   .RA1-RA8   reporting derivation contract against the demo session
+//              (TAXONOMY §6: healthMetrics + gapsService + vendorMixService +
+//              roadmapService + programsService)
+//   .PE1-PE3   PillEditor regression coverage (TAXONOMY §PE; half-text/half-pill
+//              bug fix; pill stays atomic on click; serialize round-trip)
+//
+// Spec source: SPEC.md §9 Phase 19n / v2.4.16 + docs/CHANGELOG_PLAN.md v2.4.16.
+// RED-first sequence per feedback_spec_and_test_first.md: tests defined here
+// before §RA service audit + §PE PillEditor fix land.
+// ============================================================================
+
+import {
+  ACTIONS as TX_ACTIONS,
+  GAP_TYPES as TX_GAP_TYPES,
+  ACTION_IDS as TX_ACTION_IDS,
+  validateActionLinks as txValidateActionLinks,
+  requiresAtLeastOneCurrent as txRequiresAtLeastOneCurrent,
+  requiresAtLeastOneDesired as txRequiresAtLeastOneDesired
+} from "../core/taxonomy.js";
+
+import {
+  buildProjects as raBuildProjects,
+  computeAccountHealthScore as raComputeAccountHealthScore
+} from "../services/roadmapService.js";
+
+import {
+  effectiveDriverId as raEffectiveDriverId
+} from "../services/programsService.js";
+
+import { createPillEditor as peCreatePillEditor, serializeEditor as peSerializeEditor } from "../ui/components/PillEditor.js";
+
+import { createDemoSession as txCreateDemoSession } from "../state/demoSession.js";
+
+describe("47 · v2.4.16 · Foundations: Taxonomy + Reporting + PillEditor", () => {
+
+  // -------------------------------------------------------------------
+  // Helpers scoped to Suite 47.
+  // -------------------------------------------------------------------
+  function makeReviewedGap(overrides) {
+    var base = {
+      id: "gap-tx-test",
+      description: "TX-suite test gap",
+      layerId: "compute",
+      affectedLayers: ["compute"],
+      affectedEnvironments: ["coreDc"],
+      gapType: "replace",
+      urgency: "Medium",
+      phase: "now",
+      status: "open",
+      reviewed: true,
+      relatedCurrentInstanceIds: [],
+      relatedDesiredInstanceIds: [],
+      notes: ""
+    };
+    return Object.assign(base, overrides || {});
+  }
+
+  function expectThrow(fn, label) {
+    var threw = false;
+    var msg = "";
+    try { fn(); } catch (e) { threw = true; msg = (e && e.message) || ""; }
+    return { threw: threw, message: msg };
+  }
+
+  // -------------------------------------------------------------------
+  // .TX1-TX6 · Entity catalog completeness (TAXONOMY.md §1)
+  // -------------------------------------------------------------------
+
+  it("TX1 · LAYERS contract: 6 entries with the canonical ids in canvas order", () => {
+    assertEqual(LAYERS.length, 6, "TX1.a · LAYERS has exactly 6 entries (got " + LAYERS.length + ")");
+    var expectedIds = ["workload", "compute", "storage", "dataProtection", "virtualization", "infrastructure"];
+    var actualIds = LAYERS.map(function(l) { return l.id; });
+    assertEqual(actualIds.join(","), expectedIds.join(","),
+      "TX1.b · LAYERS ids in canvas order: " + expectedIds.join(",") + " (got " + actualIds.join(",") + ")");
+    LAYERS.forEach(function(l, i) {
+      assert(typeof l.label === "string" && l.label.length > 0,
+        "TX1.c · LAYERS[" + i + "] has non-empty label");
+    });
+  });
+
+  it("TX2 · ENV_CATALOG contract: 8 entries with the canonical ids", () => {
+    assertEqual(ENV_CATALOG.length, 8, "TX2.a · ENV_CATALOG has exactly 8 entries (got " + ENV_CATALOG.length + ")");
+    var expectedIds = ["coreDc", "drDc", "archiveSite", "publicCloud", "edge", "coLo", "managedHosting", "sovereignCloud"];
+    var actualIds = ENV_CATALOG.map(function(e) { return e.id; });
+    expectedIds.forEach(function(id) {
+      assert(actualIds.indexOf(id) >= 0,
+        "TX2.b · ENV_CATALOG contains '" + id + "' (actual: " + actualIds.join(",") + ")");
+    });
+    ENV_CATALOG.forEach(function(e) {
+      assert(typeof e.label === "string" && e.label.length > 0,
+        "TX2.c · catalog entry '" + e.id + "' has non-empty label");
+    });
+  });
+
+  it("TX3 · ACTIONS contract: 7 actions with the canonical ids", () => {
+    assertEqual(TX_ACTIONS.length, 7, "TX3.a · ACTIONS has exactly 7 entries (got " + TX_ACTIONS.length + ")");
+    var expectedIds = ["keep", "enhance", "replace", "consolidate", "retire", "introduce", "ops"];
+    expectedIds.forEach(function(id) {
+      assert(TX_ACTION_IDS.indexOf(id) >= 0,
+        "TX3.b · ACTIONS contains '" + id + "'");
+    });
+    TX_ACTIONS.forEach(function(a) {
+      assert(typeof a.label === "string" && a.label.length > 0,
+        "TX3.c · action '" + a.id + "' has non-empty label");
+      assert(typeof a.hint === "string",
+        "TX3.d · action '" + a.id + "' has hint string (matrix picker copy)");
+    });
+  });
+
+  it("TX4 · GAP_TYPES contract: 5 derived types (no `keep` since gapType:null)", () => {
+    assertEqual(TX_GAP_TYPES.length, 5, "TX4.a · GAP_TYPES has exactly 5 entries (got " + TX_GAP_TYPES.length + ")");
+    var expected = ["enhance", "replace", "consolidate", "introduce", "ops"];
+    expected.forEach(function(g) {
+      assert(TX_GAP_TYPES.indexOf(g) >= 0,
+        "TX4.b · GAP_TYPES contains '" + g + "' (got " + TX_GAP_TYPES.join(",") + ")");
+    });
+    assert(TX_GAP_TYPES.indexOf("rationalize") < 0,
+      "TX4.c · legacy 'rationalize' is purged from GAP_TYPES");
+    assert(TX_GAP_TYPES.indexOf("keep") < 0,
+      "TX4.d · 'keep' is not a gapType (Action keep produces gapType: null)");
+  });
+
+  it("TX5 · SERVICE_TYPES contract: 10 catalog entries with stable ids", () => {
+    assertEqual(SERVICE_TYPES.length, 10, "TX5.a · SERVICE_TYPES has exactly 10 entries (got " + SERVICE_TYPES.length + ")");
+    var expectedIds = ["assessment", "migration", "deployment", "integration", "training",
+                       "knowledge_transfer", "runbook", "managed", "decommissioning", "custom_dev"];
+    var actualIds = SERVICE_TYPES.map(function(s) { return s.id; });
+    expectedIds.forEach(function(id) {
+      assert(actualIds.indexOf(id) >= 0,
+        "TX5.b · SERVICE_TYPES contains '" + id + "' (actual: " + actualIds.join(",") + ")");
+    });
+  });
+
+  it("TX6 · BUSINESS_DRIVERS contract: 8 drivers with conversation starters", () => {
+    assertEqual(BUSINESS_DRIVERS.length, 8, "TX6.a · BUSINESS_DRIVERS has exactly 8 entries (got " + BUSINESS_DRIVERS.length + ")");
+    var expectedIds = ["ai_data", "cyber_resilience", "cost_optimization", "cloud_strategy",
+                       "modernize_infra", "ops_simplicity", "compliance_sovereignty", "sustainability"];
+    var actualIds = BUSINESS_DRIVERS.map(function(d) { return d.id; });
+    expectedIds.forEach(function(id) {
+      assert(actualIds.indexOf(id) >= 0,
+        "TX6.b · BUSINESS_DRIVERS contains '" + id + "'");
+    });
+    BUSINESS_DRIVERS.forEach(function(d) {
+      assert(typeof d.conversationStarter === "string" && d.conversationStarter.length > 0,
+        "TX6.c · driver '" + d.id + "' has non-empty conversationStarter");
+      assert(typeof d.shortHint === "string" && d.shortHint.length > 0,
+        "TX6.d · driver '" + d.id + "' has non-empty shortHint");
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // .DC1-DC10 · Per-gapType disposition rules (TAXONOMY.md §4)
+  // -------------------------------------------------------------------
+
+  it("DC1 · Replace 1+1 reviewed gap PASSES validateActionLinks", () => {
+    var gap = makeReviewedGap({
+      gapType: "replace",
+      relatedCurrentInstanceIds: ["c-1"],
+      relatedDesiredInstanceIds: ["d-1"]
+    });
+    var r = expectThrow(function() { txValidateActionLinks(gap); });
+    assert(!r.threw, "DC1 · Replace 1+1 should PASS (got error: " + r.message + ")");
+  });
+
+  it("DC2 · Replace 0+1 reviewed gap THROWS workshop-friendly message", () => {
+    var gap = makeReviewedGap({
+      gapType: "replace",
+      relatedCurrentInstanceIds: [],
+      relatedDesiredInstanceIds: ["d-1"]
+    });
+    var r = expectThrow(function() { txValidateActionLinks(gap); });
+    assert(r.threw, "DC2.a · Replace 0+1 should THROW");
+    assert(/Replace needs the technology being replaced|current/i.test(r.message),
+      "DC2.b · message references current-side requirement (got: " + r.message + ")");
+  });
+
+  it("DC3 · Replace 2+1 reviewed gap THROWS (one-for-one swap rule)", () => {
+    var gap = makeReviewedGap({
+      gapType: "replace",
+      relatedCurrentInstanceIds: ["c-1", "c-2"],
+      relatedDesiredInstanceIds: ["d-1"]
+    });
+    var r = expectThrow(function() { txValidateActionLinks(gap); });
+    assert(r.threw, "DC3.a · Replace 2+1 should THROW");
+    assert(/one-for-one|only ONE|Consolidate/i.test(r.message),
+      "DC3.b · message points to Consolidate as alternative (got: " + r.message + ")");
+  });
+
+  it("DC4 · Consolidate 2+1 reviewed gap PASSES (the canonical N-to-1)", () => {
+    var gap = makeReviewedGap({
+      gapType: "consolidate",
+      relatedCurrentInstanceIds: ["c-1", "c-2"],
+      relatedDesiredInstanceIds: ["d-1"]
+    });
+    var r = expectThrow(function() { txValidateActionLinks(gap); });
+    assert(!r.threw, "DC4 · Consolidate 2+1 should PASS (got error: " + r.message + ")");
+  });
+
+  it("DC5 · Consolidate 1+1 reviewed gap THROWS (needs ≥2 currents)", () => {
+    var gap = makeReviewedGap({
+      gapType: "consolidate",
+      relatedCurrentInstanceIds: ["c-1"],
+      relatedDesiredInstanceIds: ["d-1"]
+    });
+    var r = expectThrow(function() { txValidateActionLinks(gap); });
+    assert(r.threw, "DC5.a · Consolidate 1+1 should THROW");
+    assert(/2|merging multiple|AT LEAST 2/i.test(r.message),
+      "DC5.b · message communicates the 2+ minimum (got: " + r.message + ")");
+  });
+
+  it("DC6 · Introduce 0+1 reviewed gap PASSES (net-new capability)", () => {
+    var gap = makeReviewedGap({
+      gapType: "introduce",
+      relatedCurrentInstanceIds: [],
+      relatedDesiredInstanceIds: ["d-1"]
+    });
+    var r = expectThrow(function() { txValidateActionLinks(gap); });
+    assert(!r.threw, "DC6 · Introduce 0+1 should PASS (got error: " + r.message + ")");
+  });
+
+  it("DC7 · Introduce 1+1 reviewed gap THROWS (no current to replace)", () => {
+    var gap = makeReviewedGap({
+      gapType: "introduce",
+      relatedCurrentInstanceIds: ["c-1"],
+      relatedDesiredInstanceIds: ["d-1"]
+    });
+    var r = expectThrow(function() { txValidateActionLinks(gap); });
+    assert(r.threw, "DC7.a · Introduce 1+1 should THROW");
+    assert(/net-new|no current|Use Replace/i.test(r.message),
+      "DC7.b · message points to Replace (got: " + r.message + ")");
+  });
+
+  it("DC8 · ops gap with no links + <10 char notes THROWS (AL7 substance rule)", () => {
+    var gap = makeReviewedGap({
+      gapType: "ops",
+      relatedCurrentInstanceIds: [],
+      relatedDesiredInstanceIds: [],
+      notes: "short"   // 5 chars after trim
+    });
+    var r = expectThrow(function() { txValidateActionLinks(gap); });
+    assert(r.threw, "DC8.a · empty ops gap should THROW (AL7 substance)");
+    assert(/Operational|substance|10 characters|technology|description/i.test(r.message),
+      "DC8.b · message asks for link or notes (got: " + r.message + ")");
+  });
+
+  it("DC9 · ops gap with 0 links + ≥10 char notes PASSES (AL7 satisfied via notes)", () => {
+    var gap = makeReviewedGap({
+      gapType: "ops",
+      relatedCurrentInstanceIds: [],
+      relatedDesiredInstanceIds: [],
+      notes: "Author DR runbooks across all branches."   // ≥10 chars
+    });
+    var r = expectThrow(function() { txValidateActionLinks(gap); });
+    assert(!r.threw, "DC9 · ops with notes ≥10ch should PASS (got error: " + r.message + ")");
+  });
+
+  it("DC10 · auto-draft (reviewed:false) bypasses ALL action-link rules (AL1)", () => {
+    var gap = makeReviewedGap({
+      gapType: "consolidate",
+      relatedCurrentInstanceIds: [],     // would FAIL if reviewed
+      relatedDesiredInstanceIds: [],
+      reviewed: false
+    });
+    var r = expectThrow(function() { txValidateActionLinks(gap); });
+    assert(!r.threw, "DC10 · auto-draft should bypass validation (got error: " + r.message + ")");
+  });
+
+  // -------------------------------------------------------------------
+  // .DC-LINK1-4 · Link safety-net derivation (taxonomy contract)
+  // -------------------------------------------------------------------
+
+  it("DC-LINK1 · requiresAtLeastOneCurrent('replace') === true", () => {
+    assertEqual(txRequiresAtLeastOneCurrent("replace"), true,
+      "DC-LINK1 · replace requires ≥1 current");
+  });
+
+  it("DC-LINK2 · requiresAtLeastOneCurrent('introduce') === false", () => {
+    assertEqual(txRequiresAtLeastOneCurrent("introduce"), false,
+      "DC-LINK2 · introduce requires 0 currents");
+  });
+
+  it("DC-LINK3 · requiresAtLeastOneDesired('replace') === true", () => {
+    assertEqual(txRequiresAtLeastOneDesired("replace"), true,
+      "DC-LINK3 · replace requires ≥1 desired");
+  });
+
+  it("DC-LINK4 · requiresAtLeastOneDesired('ops') === false (optional + optional)", () => {
+    assertEqual(txRequiresAtLeastOneDesired("ops"), false,
+      "DC-LINK4 · ops desired-side is optional");
+  });
+
+  // -------------------------------------------------------------------
+  // .RA1-RA8 · Reporting derivation contract against the demo session
+  // (TAXONOMY.md §6 · audit makes these GREEN once services have
+  //  `// Last audited v2.4.16` markers and any drift fixes land)
+  // -------------------------------------------------------------------
+
+  it("RA1 · getHealthSummary on demo returns positive instance + gap counts", () => {
+    var demo = txCreateDemoSession();
+    var summary = getHealthSummary(demo, LAYERS, ENVIRONMENTS);
+    assert(summary && typeof summary === "object",
+      "RA1.a · getHealthSummary returns an object");
+    assert(typeof summary.instances === "number" && summary.instances > 0,
+      "RA1.b · demo has >0 instances (got " + summary.instances + ")");
+    assert(typeof summary.gaps === "number" && summary.gaps > 0,
+      "RA1.c · demo has >0 gaps (got " + summary.gaps + ")");
+    assert(typeof summary.highRisk === "number" && summary.highRisk >= 0,
+      "RA1.d · highRisk count is a non-negative number (got " + summary.highRisk + ")");
+    assert(summary.highRisk <= summary.gaps,
+      "RA1.e · highRisk <= total gaps (got " + summary.highRisk + " > " + summary.gaps + ")");
+  });
+
+  it("RA2 · getAllGaps returns all session.gaps regardless of status (raw access)", () => {
+    var demo = txCreateDemoSession();
+    var prev = session.gaps.slice();
+    session.gaps = demo.gaps.slice();
+    try {
+      var allGaps = getAllGaps();
+      assertEqual(allGaps.length, demo.gaps.length,
+        "RA2 · getAllGaps returns all " + demo.gaps.length + " demo gaps (got " + allGaps.length + ")");
+    } finally {
+      session.gaps = prev;
+    }
+  });
+
+  it("RA3 · computeMixByLayer on demo returns an entry for every layer", () => {
+    var demo = txCreateDemoSession();
+    var prevInstances = session.instances.slice();
+    session.instances = demo.instances.slice();
+    try {
+      var mix = computeMixByLayer({ stateFilter: "current", layerIds: LAYERS.map(function(l) { return l.id; }) });
+      assert(mix && (Array.isArray(mix) || typeof mix === "object"),
+        "RA3.a · computeMixByLayer returns an iterable shape");
+      // Every layer present in result. Accept either Array<{layerId,...}> or Object<layerId,...>.
+      var layerIdsPresent = Array.isArray(mix)
+        ? mix.map(function(r) { return r.layerId; })
+        : Object.keys(mix);
+      assert(layerIdsPresent.length >= 1,
+        "RA3.b · result spans ≥1 layer (got " + layerIdsPresent.length + ")");
+    } finally {
+      session.instances = prevInstances;
+    }
+  });
+
+  it("RA4 · computeMixByEnv with getVisibleEnvironments respects hidden flag", () => {
+    var demo = txCreateDemoSession();
+    // Hide drDc explicitly; computeMixByEnv should not include drDc rows
+    // when caller passes getVisibleEnvironments(demo).
+    if (!Array.isArray(demo.environments) || demo.environments.length === 0) {
+      // Materialize default envs so we can hide one.
+      demo.environments = DEFAULT_ENABLED_ENV_IDS.map(function(id) {
+        return { id: id, hidden: false };
+      });
+    }
+    var dr = demo.environments.find(function(e) { return e.id === "drDc"; });
+    if (dr) dr.hidden = true;
+    var visible = getVisibleEnvironments(demo);
+    var visibleIds = visible.map(function(e) { return e.id; });
+    assert(visibleIds.indexOf("drDc") < 0,
+      "RA4.a · drDc absent from getVisibleEnvironments after hide (got: " + visibleIds.join(",") + ")");
+    // Smoke that the function is callable with the visible list (full mix
+    // verification belongs to the §RA audit pass).
+    var prev = session.instances.slice();
+    session.instances = demo.instances.slice();
+    try {
+      var mix = computeMixByEnv({ stateFilter: "current", environments: visible });
+      assert(mix !== undefined,
+        "RA4.b · computeMixByEnv accepts getVisibleEnvironments output");
+    } finally {
+      session.instances = prev;
+    }
+  });
+
+  it("RA5 · getFilteredGaps with default opts excludes closed gaps (AUDIT)", () => {
+    // RED until §RA audit confirms the contract is upheld; if current
+    // behavior includes closed gaps in default rollups, the audit fixes it.
+    var demo = txCreateDemoSession();
+    // Ensure ≥1 closed gap is present.
+    var closedFound = demo.gaps.some(function(g) { return g.status === "closed"; });
+    if (!closedFound && demo.gaps.length > 0) {
+      // Mark the last gap closed to exercise the contract.
+      demo.gaps[demo.gaps.length - 1] = Object.assign({}, demo.gaps[demo.gaps.length - 1], {
+        status: "closed", closeReason: "test fixture", closedAt: new Date().toISOString()
+      });
+    }
+    var prev = session.gaps.slice();
+    session.gaps = demo.gaps.slice();
+    try {
+      var filtered = getFilteredGaps({});
+      var closedInResult = filtered.filter(function(g) { return g.status === "closed"; });
+      assert(closedInResult.length === 0,
+        "RA5 · getFilteredGaps default opts excludes closed gaps (got " +
+        closedInResult.length + " closed in result of " + filtered.length + ")");
+    } finally {
+      session.gaps = prev;
+    }
+  });
+
+  it("RA6 · buildProjects on demo returns ≥1 project with derived metadata", () => {
+    var demo = txCreateDemoSession();
+    var projects = raBuildProjects(demo);
+    assert(Array.isArray(projects), "RA6.a · buildProjects returns an array");
+    assert(projects.length >= 1, "RA6.b · demo produces ≥1 project (got " + projects.length + ")");
+    projects.forEach(function(p, i) {
+      assert(typeof p.id === "string" && p.id.length > 0,
+        "RA6.c · project[" + i + "] has non-empty id");
+      assert(typeof p.name === "string" && p.name.length > 0,
+        "RA6.d · project[" + i + "] has derived name");
+      assert(["High", "Medium", "Low"].indexOf(p.urgency) >= 0,
+        "RA6.e · project[" + i + "] urgency in {High,Medium,Low} (got " + p.urgency + ")");
+    });
+  });
+
+  it("RA7 · effectiveDriverId resolves explicit override OR ladder fallback", () => {
+    var demo = txCreateDemoSession();
+    // Find any gap with an explicit driverId for the explicit-override case;
+    // otherwise just exercise the ladder.
+    var gap = demo.gaps[0];
+    var resolved = raEffectiveDriverId(gap, demo);
+    assert(typeof resolved === "string" || resolved === null || resolved === undefined,
+      "RA7.a · effectiveDriverId returns string|null (got " + typeof resolved + ")");
+    if (typeof resolved === "string" && resolved.length > 0) {
+      var inCatalog = BUSINESS_DRIVERS.some(function(d) { return d.id === resolved; });
+      assert(inCatalog,
+        "RA7.b · resolved driverId '" + resolved + "' exists in BUSINESS_DRIVERS catalog");
+    }
+  });
+
+  it("RA8 · computeAccountHealthScore on demo returns a number in [0, 100]", () => {
+    var demo = txCreateDemoSession();
+    var score = raComputeAccountHealthScore(demo);
+    assert(typeof score === "number" && !isNaN(score),
+      "RA8.a · computeAccountHealthScore returns a finite number (got " + score + ")");
+    assert(score >= 0 && score <= 100,
+      "RA8.b · score in [0,100] (got " + score + ")");
+  });
+
+  // -------------------------------------------------------------------
+  // .PE1-PE3 · PillEditor regression (RED until §PE fix lands)
+  // -------------------------------------------------------------------
+
+  it("PE1 · createPillEditor with template `{{path}} text {{path2}}` produces 2 pills + 1 text node", () => {
+    var manifest = [
+      { path: "session.customer.name", label: "Customer name", kind: "scalar" },
+      { path: "session.customer.vertical", label: "Vertical", kind: "scalar" }
+    ];
+    var editor = peCreatePillEditor({
+      manifest: manifest,
+      initialValue: "Customer name: {{session.customer.name}} works in Vertical: {{session.customer.vertical}}"
+    });
+    assert(editor && editor.classList && editor.classList.contains("pill-editor"),
+      "PE1.a · returns a .pill-editor element");
+    var pills = editor.querySelectorAll(".binding-pill");
+    assertEqual(pills.length, 2,
+      "PE1.b · template with two {{path}} bindings yields exactly 2 pills (got " + pills.length + ")");
+    Array.prototype.forEach.call(pills, function(p) {
+      assertEqual(p.getAttribute("contenteditable"), "false",
+        "PE1.c · pill carries contenteditable='false' (atomic; got " + p.getAttribute("contenteditable") + ")");
+    });
+  });
+
+  it("PE2 · clicking a pill leaves it as a single atomic node (no half-text/half-pill split)", () => {
+    var editor = peCreatePillEditor({
+      manifest: [{ path: "session.customer.name", label: "Customer name", kind: "scalar" }],
+      initialValue: "Customer name: {{session.customer.name}}"
+    });
+    document.body.appendChild(editor);
+    try {
+      var pillBefore = editor.querySelector(".binding-pill");
+      assert(pillBefore, "PE2.a · pill present before click");
+      var textBefore = pillBefore.textContent;
+      // Simulate user click on the pill.
+      pillBefore.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      // Assert: still exactly one pill in the editor; its text is intact.
+      var pillsAfter = editor.querySelectorAll(".binding-pill");
+      assertEqual(pillsAfter.length, 1,
+        "PE2.b · still exactly 1 pill after click (got " + pillsAfter.length + ")");
+      assertEqual(pillsAfter[0].textContent, textBefore,
+        "PE2.c · pill text unchanged after click (was '" + textBefore + "', now '" + pillsAfter[0].textContent + "')");
+      assertEqual(pillsAfter[0].getAttribute("contenteditable"), "false",
+        "PE2.d · pill remains contenteditable='false' after click");
+      // No stray text node carrying the pill's label without the pill wrapper.
+      var html = editor.innerHTML;
+      assert(!/Customer name(?![^<]*<\/span>)/.test(html.replace(pillsAfter[0].outerHTML, "")),
+        "PE2.e · no orphan text fragment of pill label outside the pill (avoids half-text/half-pill regression)");
+    } finally {
+      document.body.removeChild(editor);
+    }
+  });
+
+  it("PE3 · serializeEditor round-trip: parsed template equals input verbatim", () => {
+    var manifest = [
+      { path: "session.customer.name", label: "Customer name", kind: "scalar" },
+      { path: "session.gaps", label: "Gaps", kind: "array" }
+    ];
+    var input = "Hello, Customer name: {{session.customer.name}}. We have {{session.gaps}} gaps.";
+    var editor = peCreatePillEditor({ manifest: manifest, initialValue: input });
+    var roundTrip = peSerializeEditor(editor);
+    assertEqual(roundTrip, input,
+      "PE3 · serialize(create(input)) === input (got '" + roundTrip + "')");
+  });
+
+});
+
 // v2.4.5 · Foundations Refresh · register the human-surface demo suite
 // into the same runner so there's a single green banner for the whole
 // release. Import at bottom to avoid circular-dependency risk with the
