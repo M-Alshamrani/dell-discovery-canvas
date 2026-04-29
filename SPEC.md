@@ -846,6 +846,114 @@ User-feedback-driven polish landed across five iterations between the iter-1 loc
 5. Crown-jewel reporting redesign (vendor mix + heatmap; Option A KPI tiles + new "Executive summary" sub-tab).
 6. Right-panel utilization optimization across every tab.
 
+### Phase 19n · v2.4.16 · Foundations: Taxonomy + Reporting Audit + PillEditor fix — PENDING IMPLEMENTATION 2026-04-29
+
+**Status**: spec locked 2026-04-29; targets `v2.4.16` tag. Sequenced spec → tests → code → smoke per `feedback_spec_and_test_first.md`.
+
+**Goal**: Bucket B1.5 items 1 (discipline) + 4 (taxonomy + relationships catalog + reporting audit) + 2 (pill-editor bug). Visible UX change is intentionally minimal; the payoff is that subsequent releases (v2.4.17 theme + right-panel pass, v2.4.18 reporting redesign) ride on a validated data architecture and audited counts.
+
+**§DR Discipline reassertion (DR1-DR5)**
+- DR1 — This SPEC §9 phase block + `docs/CHANGELOG_PLAN.md § v2.4.16` + `core/version.js` bump committed BEFORE any audit / fix code touches the tree. Spec-lock commit message: `Spec · v2.4.16 · LOCKED`.
+- DR2 — Suite 47 RED tests committed BEFORE service audit code lands. Tests pin the contract; audit makes them green.
+- DR3 — `.dNN` hygiene-pass audit (post-tag) of v2.4.15 iter-2-5 SPEC §9 coverage. Confirms every iter-2-5 surface has a corresponding As-shipped-addendum entry; pays back any drift discovered.
+- DR4 — Pre-flight checklist (in `feedback_spec_and_test_first.md`) ticks every box at tag time: APP_VERSION bumped, SPEC §9 status flipped, RULES updates landed, Suite 47 green, all suites green, browser smoke clean evidence reported, RELEASE_NOTES + HANDOFF flipped.
+- DR5 — This v2.4.16 release IS the discipline demonstrator — written in spec-first sequence and recorded as the post-v2.4.15 corrective.
+
+**§TX Taxonomy + relationships catalog (TX1-TX12) — NEW `docs/TAXONOMY.md`**
+- TX1 — NEW file `docs/TAXONOMY.md` is the single source of truth for the data architecture. Eight sections: Entity Catalog · Relationships · Cardinalities · Per-gapType Disposition Rules · Asset Lifecycle by Action · Reporting Derivations · Validation Contract · Presentation Rules.
+- TX2 — Entity Catalog enumerates every persisted entity with fields, lifecycle states, validation rules, source file. Eight types: **Driver · Layer · Environment · Current Instance · Desired Instance · Gap · Project (derived) · Service**.
+- TX3 — Relationships catalog tabulates every link between entities (Driver→Gap, Gap→Current, Gap→Desired, Gap→Service, Gap→Project, Workload→Asset via `mappedAssetIds`, etc.) with cardinality, direction, optionality, what triggers the link, what enforces it (file:line citation).
+- TX4 — Per-gapType Disposition Rules — the canonical table:
+  | Action | gapType | currents | desireds | Asset lifecycle |
+  |---|---|---|---|---|
+  | Keep | (no gap) | 1 | 0 | 1 stays |
+  | Enhance | enhance | 1 | optional | 1 stays + uplift |
+  | Replace | replace | 1 | 1 | 1 retired + 1 introduced (1-for-1 swap) |
+  | Consolidate | consolidate | 2+ | 1 | N retired + 1 introduced (N-to-1 merge) |
+  | Retire | ops | 1 | 0 | 1 retired (no replacement) |
+  | Introduce | introduce | 0 | 1 | 0 + 1 introduced (net new) |
+  | Operational/Services | ops | optional | optional | 0 asset change · process/services work · ≥10 chars notes OR ≥1 link required |
+- TX5 — Asset Lifecycle by Action expands TX4: explicit semantics for what happens to each underlying asset when the gap ships, including originId tracking on desired tiles, soft-deprecation of replaced currents, and how the matrix renders pre/post-transition state.
+- TX6 — Reporting Derivations contract: for each export in `services/healthMetrics.js`, `gapsService.js`, `vendorMixService.js`, `roadmapService.js`, `programsService.js`, document data read, count formula, edge cases. Used as the §RA audit contract.
+- TX7 — Validation Contract: every `assert` in `validateInstance` / `validateGap` / `validateActionLinks` linked to a numbered rule with tier (HARD/SOFT/AUTO/MIGRATE) — mirrors RULES.md §1-2.
+- TX8 — Presentation Rules: how each entity should appear per tab (Tab 1 driver tile · Tab 2/3 matrix tile · Tab 4 gap card · Tab 5 reporting · drawer detail). Action-verb badge + cardinality ("1 → 1" / "2 → 1" / "ø → 1") on gap cards driven by TX4 (visible-implementation deferred to v2.4.17 per OUT-OF-SCOPE; doc captures the intent).
+- TX9 — TAXONOMY.md cross-references RULES.md by rule id (G1, AL2, P3, M10, etc.) so the two docs stay coupled and any future rule add/edit updates both surfaces.
+- TX10 — Anything in source that contradicts TAXONOMY.md after this release is a bug; the doc is the contract.
+- TX11 — TAXONOMY.md carries a "Last validated against vN.N.N" stamp updated each release where reporting derivations or rules change.
+- TX12 — Document is human-readable in ≤30 minutes. Tables + bullet lists + one-paragraph intros per section. No prose essays.
+
+**§RU `docs/RULES.md` refresh to v2.4.15 baseline (RU1-RU8)**
+- RU1 — Header bumped from "v2.4.11" to "v2.4.15".
+- RU2 — Add v2.4.12 SVC rules (`gap.services` validation + 10-entry `SERVICE_TYPES` + Reporting Services-scope sub-tab — annotate "sub-tab dropped in v2.4.13 §0; field retained").
+- RU3 — Add v2.4.13 §0 entries (sub-tab drop, app-version chip in footer, AI Assist global button, Overlay.js, AiAssistOverlay, demo banner all-tabs, stepper hover, layer-name treatment).
+- RU4 — Add v2.4.14 entries (env aliases — superseded by v2.4.15 dynamic env model; A3 brand-alias sweep; CD3 gap-card domain hue bars; tabular-nums utility; Cmd+K shortcut; F1-F6 services dim — superseded by FilterBar in v2.4.15; Lucide icons).
+- RU5 — Add v2.4.15 entries (DE1-DE9 dynamic env model + SD1-SD9 soft-delete + VB1-VB3 vendor segmented bar + FB1-FB7 modern FilterBar with all 4 dims + SC1-SC2 session capsule + FT1 footer + MT1-MT3 matrix + A1 GPLC tag primitive + iter-2-5 polish entries).
+- RU6 — Annotate every superseded rule with `(superseded by …)`; never delete history.
+- RU7 — NEW §13 Per-gapType Disposition Rules (TX4 mirrored, with linkbacks to AL2-AL10).
+- RU8 — NEW §14 Asset Lifecycle by Action (TX5 mirrored).
+
+**§RA Reporting derivation audit (RA1-RA10)**
+- RA1 — `services/healthMetrics.js`: `getHealthSummary` + `computeBucketMetrics` + `scoreToRiskLabel` + `scoreToClass`. Verify bucket scores match the H1/H2/H3/H4 rules exactly against the live demo session. Trace each count to its source records.
+- RA2 — `services/gapsService.js`: `getAllGaps` + `getFilteredGaps` + `getGapsByPhase`. Verify phase swimlane filtering, closed-gap exclusion (`gap.status !== "closed"`), and envless-gap inclusion (H3 rule).
+- RA3 — `services/vendorMixService.js`: `computeMixByLayer` + `computeMixByEnv` + `computeVendorTableData`. Verify Dell density % calculation (current-state-only vs combined documented), "Top non-Dell concentration" KPI tile derivation, hidden-env exclusion via `getVisibleEnvironments`.
+- RA4 — `services/roadmapService.js` (largest surface, 554 LOC): `groupGapsIntoInitiatives`, `buildProjects`, `computeLayerImpact`, `computeDiscoveryCoverage`, `computeRiskPosture`, `computeAccountHealthScore`, `generateSessionBrief`, `generateExecutiveSummary`. Each function's formula traced; risk posture matches gap-urgency aggregation; account health-score formula transparent and TAXONOMY.md-documented.
+- RA5 — `services/programsService.js`: driver-suggestion ladder D1-D9 + `effectiveDriverId` + `effectiveDellSolutions` + `groupProjectsByProgram`. Validated against demo: each gap's effective driver matches the rule that fires.
+- RA6 — Each audited function gets a `// Last audited v2.4.16 · {date}` comment so future hygiene passes can detect drift.
+- RA7 — Hidden envs uniformly excluded from reporting per v2.4.15 SD spec — verify each service applies `getVisibleEnvironments`, not `getActiveEnvironments`.
+- RA8 — Closed gaps uniformly excluded from default rollups per v2.4.12 — verify each service filters `gap.status !== "closed"`.
+- RA9 — Soft-deleted envs that retain instances: behavior documented (instances persist in JSON, hidden from views). No count divergence between rendered KPI tiles and underlying data.
+- RA10 — Any bug found is fixed in this release. Unfixable items (e.g. require demo refresh in v2.4.17) deferred with explicit note in `docs/TAXONOMY.md § Known divergences`.
+
+**§DC Disposition rules code-level validation (Suite 47, DC1-DC7)**
+- DC1 — Replace gap (1+1): RED test constructs a synthetic `gap.gapType: "replace"` reviewed gap with violating link counts; asserts the user-readable error message from `friendlyMessage`.
+- DC2 — Consolidate gap (2+ + 1): same shape; tests "1 current" and "0 desired" violations.
+- DC3 — Retire (1+0) and Introduce (0+1) coverage.
+- DC4 — Auto-draft bypass (AL1): `reviewed: false` skips link validation regardless of shape.
+- DC5 — ops-substance rule (AL7): reviewed `ops` gap with no links + <10 chars notes throws; with ≥1 link OR ≥10 chars notes passes.
+- DC6 — Metadata-patch bypass (AL9): `urgencyOverride` change on a bad-shape gap doesn't throw; `gapType` change does.
+- DC7 — `requiresAtLeastOneCurrent` / `requiresAtLeastOneDesired` derive correctly from the table for every gapType.
+
+**§PE Pill-editor bug investigation + fix (PE1-PE5)**
+- PE1 — Reproduce the "half-text / half-pill" state via Skill Builder (Tab 4 Reporting → Skill Admin → edit a skill → click a binding pill in the prompt-template box). Capture pre-fix evidence in browser-smoke notes.
+- PE2 — Root-cause analysis. Likely candidates in `ui/components/PillEditor.js` (224 LOC): selection-range handling at word boundaries, `<span class="binding-pill" contenteditable="false">` boundary cases, pill-click event handler not converting to a clean atomic replacement.
+- PE3 — Fix is one isolated change in `ui/components/PillEditor.js`. Inline comment IF the root cause is non-obvious from the diff.
+- PE4 — Suite 47 PE1 regression test asserts the fixed contract.
+- PE5 — Browser smoke covers: (a) clicking each pill leaves it as a clean atomic pill (no half-text / half-capsule); (b) typing in the gap between two pills inserts text without corrupting either; (c) Backspace at a pill boundary deletes the entire pill, not a character; (d) saving + reopening the skill round-trips pill structure intact.
+
+**§T Tests (Suite 47 — RED first)**
+- T1 — Suite name: `Foundations: Taxonomy + Reporting + PillEditor`.
+- T2 — TX1-TX5 smoke: TAXONOMY.md presence + canonical section headers (≥8) + disposition table row count.
+- T3 — RU1-RU8: RULES.md header version + new §13 + §14 sections present + new rule-id ranges.
+- T4 — RA1-RA8: derived-count-matches-source assertions for each reporting function against the demo session. Each test loads demo, calls function, asserts exact count tied to a demo invariant.
+- T5 — DC1-DC7: disposition rule contract validation per the table (negative + positive cases per action).
+- T6 — PE1-PE3: pill-editor regression coverage.
+- T7 — Target: ~30-40 new assertions in Suite 47. Banner: 584/0/584 → ~620/0/620.
+
+**§R Regression guards**
+- R1 — All 584 existing assertions remain GREEN (no contract changes from v2.4.16 to existing suites). If any contract assertion needs an update, document the why in this addendum.
+- R2 — `APP_VERSION = "2.4.16"` in `core/version.js` (bumped at spec-lock time, not at code-lands time, so debug logs always match the release in flight).
+- R3 — SPEC.md §9 Phase 19n status flips PENDING IMPLEMENTATION → IMPLEMENTED at tag time; this addendum becomes the canonical record.
+- R4 — `HANDOFF.md` Bucket B1.5: items 1, 2, 4 marked SHIPPED; items 3, 5, 6 stay queued for v2.4.17 / v2.4.18.
+
+**§OUT-OF-SCOPE (explicitly deferred)**
+- Item 3 of Bucket B1.5 (theme + tag consistency app-wide) → v2.4.17.
+- Item 5 (crown-jewel reporting redesign — Executive summary sub-tab + KPI mix + heatmap) → v2.4.18 (rides on .16 audit + .17 visual primitives).
+- Item 6 (right-panel utilization across every tab) → v2.4.17 (tightly coupled with theme migration).
+- Gap-card asset-lifecycle visualization (1 → 1 / 2 → 1 / ø → 1 hint per TX8) — visible UX, deferred to v2.4.17 polish pass; TAXONOMY.md captures the intent so .17 implements rather than re-derives.
+
+**§DELIVERABLES (artifacts touched)**
+- NEW `docs/TAXONOMY.md` (single source of truth)
+- UPDATED `docs/RULES.md` (header bump + v2.4.12-15 rules + new §13 + §14)
+- UPDATED `SPEC.md` (this Phase 19n block — flips PENDING → IMPLEMENTED at tag)
+- UPDATED `docs/CHANGELOG_PLAN.md` (v2.4.16 entry — flips QUEUED → IMPLEMENTED at tag)
+- UPDATED `core/version.js` (2.4.15 → 2.4.16)
+- UPDATED `ui/components/PillEditor.js` (one isolated fix per §PE)
+- AUDITED + possibly fixed `services/healthMetrics.js` + `gapsService.js` + `vendorMixService.js` + `roadmapService.js` + `programsService.js`
+- NEW Suite 47 in `diagnostics/appSpec.js` (~30-40 assertions)
+- UPDATED `docs/DEMO_CHANGELOG.md` (v2.4.16 no-data-model-change entry for traceability)
+- UPDATED `HANDOFF.md` (backlog status flips at tag time)
+- UPDATED `RELEASE_NOTES.md` (user-facing entry at tag time)
+
 ### Phase 20+ · v3 · Multi-user platform (Item 2)
 
 Separate architectural workstream. Out of scope for incremental v2.x phases.

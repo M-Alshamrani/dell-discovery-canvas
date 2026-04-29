@@ -932,6 +932,89 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
+## v2.4.16 · Foundations: Taxonomy + Reporting Audit + PillEditor fix · QUEUED + LOCKED 2026-04-29
+
+**Status**: spec locked 2026-04-29. Sequenced spec → tests → code → smoke per `feedback_spec_and_test_first.md`. Backlog source: `HANDOFF.md` Bucket B1.5 items 1 + 4 + 2.
+
+**Goal**: foundations release — single-source-of-truth taxonomy + relationships catalog + per-gapType disposition rules table + asset lifecycle by action + reporting derivation audit + pill-editor bug. Visible UX change is intentionally minimal; the payoff is that v2.4.17 (theme + right-panel pass) and v2.4.18 (crown-jewel reporting redesign) ride on a validated data architecture.
+
+**Rationale for the split** (user-approved 2026-04-29): items 3 (theme), 5 (reporting redesign), 6 (right-panel) all rest on a locked taxonomy + audited counts. Doing them on top of drifted docs / unvalidated services would amplify any latent bugs into the visible redesign. v2.4.16 = foundations; v2.4.17 = visible polish; v2.4.18 = reporting redesign.
+
+### Sections
+
+**§DR · Discipline reassertion (DR1-DR5)** — spec-lock commit BEFORE code; Suite 47 RED commit BEFORE service audit; pre-flight checklist box-by-box at tag; `.dNN` post-tag hygiene pass on v2.4.15 iter-2-5 SPEC §9 coverage.
+
+**§TX · Taxonomy + relationships catalog (TX1-TX12)** — NEW `docs/TAXONOMY.md`. Eight sections: Entity Catalog (Driver / Layer / Environment / Current / Desired / Gap / Project / Service) · Relationships · Cardinalities · **Per-gapType Disposition Rules** · **Asset Lifecycle by Action** · Reporting Derivations · Validation Contract · Presentation Rules. Cross-references RULES.md by rule id. ≤30-min readable.
+
+| Action | gapType | currents | desireds | Asset lifecycle |
+|---|---|---|---|---|
+| Keep | (no gap) | 1 | 0 | 1 stays |
+| Enhance | enhance | 1 | optional | 1 stays + uplift |
+| Replace | replace | 1 | 1 | 1 retired + 1 introduced (1-for-1 swap) |
+| Consolidate | consolidate | 2+ | 1 | N retired + 1 introduced (N-to-1 merge) |
+| Retire | ops | 1 | 0 | 1 retired (no replacement) |
+| Introduce | introduce | 0 | 1 | 0 + 1 introduced (net new) |
+| Operational/Services | ops | optional | optional | 0 asset change · ≥10 chars notes OR ≥1 link required |
+
+**§RU · `docs/RULES.md` refresh (RU1-RU8)** — header v2.4.11 → v2.4.15. Add v2.4.12 SVC + v2.4.13 §0 + v2.4.14 + v2.4.15 numbered rules. Annotate every superseded rule. NEW §13 Per-gapType Disposition Rules + NEW §14 Asset Lifecycle by Action (mirror TX4 + TX5).
+
+**§RA · Reporting derivation audit (RA1-RA10)** — line-by-line audit of every count across:
+- `services/healthMetrics.js` (54 LOC) — bucket scores, risk labels, summary counts.
+- `services/gapsService.js` (27 LOC) — phase swimlane filtering, closed-gap exclusion, envless-gap inclusion.
+- `services/vendorMixService.js` (54 LOC) — Dell density / Most diverse layer / Top non-Dell KPI tile derivations + hidden-env exclusion.
+- `services/roadmapService.js` (554 LOC) — buildProjects, computeLayerImpact, computeDiscoveryCoverage, computeRiskPosture, computeAccountHealthScore, generateExecutiveSummary.
+- `services/programsService.js` — driver-suggestion ladder D1-D9 + effective driver/Dell solutions.
+
+Each function gets a `// Last audited v2.4.16 · {date}` marker. Hidden envs uniformly excluded (`getVisibleEnvironments`). Closed gaps uniformly excluded from default rollups. Bug fixes ride this release; unfixable items deferred with explicit note in TAXONOMY.md § Known divergences.
+
+**§DC · Disposition rule code-level validation (Suite 47, DC1-DC7)** — RED-first: Replace 1+1 / Consolidate 2++1 / Retire 1+0 / Introduce 0+1 contracts; auto-draft bypass (AL1); ops-substance rule (AL7); metadata-patch bypass (AL9); `requiresAtLeastOneCurrent` / `requiresAtLeastOneDesired` derivation (positive + negative cases).
+
+**§PE · Pill-editor bug (PE1-PE5)** — reproduce → root-cause → isolated fix in `ui/components/PillEditor.js` (224 LOC) → regression test → browser-smoke verify (click each pill, type between pills, Backspace at boundary, save+reopen round-trip).
+
+**§T · Tests (Suite 47 RED-first)** — `Foundations: Taxonomy + Reporting + PillEditor`. Target: ~30-40 new assertions. Banner 584/0/584 → ~620/0/620.
+
+**§R · Regression guards** — all 584 existing GREEN; APP_VERSION = "2.4.16" at spec-lock; SPEC.md flips PENDING → IMPLEMENTED at tag; HANDOFF backlog items 1, 2, 4 → SHIPPED, items 3, 5, 6 stay queued.
+
+### Out-of-scope (explicitly deferred)
+
+- Item 3 (theme + tag consistency app-wide) → **v2.4.17**.
+- Item 6 (right-panel utilization) → **v2.4.17** (coupled with item 3).
+- Item 5 (crown-jewel reporting redesign — Executive summary sub-tab + KPI mix + heatmap) → **v2.4.18**.
+- Gap-card asset-lifecycle visualization (`1 → 1` / `2 → 1` / `ø → 1` hint per TX8) → **v2.4.17** polish pass; doc captures intent, code lands later.
+
+### Files touched
+
+| Artifact | Action | Notes |
+|---|---|---|
+| `docs/TAXONOMY.md` | NEW | Single source of truth; eight sections per §TX. |
+| `docs/RULES.md` | UPDATE | Header bump + v2.4.12-15 rules + NEW §13 + §14. |
+| `SPEC.md` | UPDATE | Phase 19n block (PENDING → IMPLEMENTED at tag). |
+| `docs/CHANGELOG_PLAN.md` | UPDATE | This entry (QUEUED → IMPLEMENTED at tag). |
+| `core/version.js` | UPDATE | 2.4.15 → 2.4.16 (spec-lock commit). |
+| `ui/components/PillEditor.js` | UPDATE | One isolated fix per §PE. |
+| `services/healthMetrics.js` | AUDIT | + fix if drift found. |
+| `services/gapsService.js` | AUDIT | + fix if drift found. |
+| `services/vendorMixService.js` | AUDIT | + fix if drift found. |
+| `services/roadmapService.js` | AUDIT | + fix if drift found. |
+| `services/programsService.js` | AUDIT | + fix if drift found. |
+| `diagnostics/appSpec.js` | UPDATE | NEW Suite 47, ~30-40 assertions. |
+| `docs/DEMO_CHANGELOG.md` | UPDATE | v2.4.16 no-data-model-change entry. |
+| `HANDOFF.md` | UPDATE | Backlog status flip at tag. |
+| `RELEASE_NOTES.md` | UPDATE | User-facing entry at tag. |
+
+### Order of work after spec-lock commit
+
+1. Author `docs/TAXONOMY.md` (foundation; everything else cites it).
+2. Refresh `docs/RULES.md` (§1-12 + new §13 + §14).
+3. Write Suite 47 RED in `diagnostics/appSpec.js`.
+4. Audit `services/*.js` line-by-line; fix any drift; mark each function `// Last audited v2.4.16`.
+5. Fix `ui/components/PillEditor.js` per §PE.
+6. Browser smoke via Chrome MCP per `feedback_browser_smoke_required.md`.
+7. PAUSE for explicit "tag it" approval per `feedback_no_push_without_approval.md`.
+8. On approval: flip SPEC §9 status, flip CHANGELOG_PLAN status, update DEMO_CHANGELOG / HANDOFF / RELEASE_NOTES, tag `v2.4.16`, push tag + main.
+
+---
+
 ## v2.4.15 · Dynamic environments + UX polish bundle · IMPLEMENTED + TAGGED 2026-04-29 (5 polish iterations + 1 hotfix)
 
 **Status**: SHIPPED. Tag `v2.4.15` on origin/main. 584/0/584 GREEN.
