@@ -22,6 +22,11 @@ RUN chmod +x /docker-entrypoint.d/40-setup-auth.sh /docker-entrypoint.d/45-setup
 
 # Static app payload. Copy whitelist of folders, not '. .', so junk like the
 # brace-expansion folder and host-only scripts (start.sh/start.bat) stay out.
+#
+# IMPORTANT: When adding a new top-level folder (e.g. v3.0's schema/, vendor/),
+# add it BOTH to this whitelist AND verify post-build with a real
+# browser-smoke check (page renders, not just "tests pass"). Skipping the
+# whitelist silently 404s the new folder's modules at runtime.
 COPY index.html robots.txt styles.css app.js manifest.json /usr/share/nginx/html/
 COPY core/         /usr/share/nginx/html/core/
 COPY state/        /usr/share/nginx/html/state/
@@ -30,6 +35,9 @@ COPY interactions/ /usr/share/nginx/html/interactions/
 COPY ui/           /usr/share/nginx/html/ui/
 COPY diagnostics/  /usr/share/nginx/html/diagnostics/
 COPY Logo/         /usr/share/nginx/html/Logo/
+# v3.0 additions:
+COPY schema/       /usr/share/nginx/html/schema/
+COPY vendor/       /usr/share/nginx/html/vendor/
 
 # nginx:alpine already EXPOSEs 80 and runs as root for low ports; keep defaults.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
