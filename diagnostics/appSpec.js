@@ -10342,7 +10342,45 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assert(result.log.some(l => l.ruleId === "INT-AI-DRIFT"),
         "INT-AI-DRIFT log entry emitted");
     });
-    it("V-DRIFT-2 · multiple drift detections (same engagement, multiple AI fields, multiple catalog mismatches) all flagged", () => {});
+    it("V-DRIFT-2 · multiple drift detections (same engagement, multiple AI fields, multiple catalog mismatches) all flagged", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      // Two gaps each with a stamped AI field at "2026.04"
+      eng = addGapV3(eng, { description: "g1", gapType: "replace", urgency: "Medium",
+        phase: "now", status: "open", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      eng = addGapV3(eng, { description: "g2", gapType: "enhance", urgency: "Low",
+        phase: "next", status: "open", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      const stamped = { ...eng,
+        gaps: { ...eng.gaps,
+          byId: { ...eng.gaps.byId,
+            [eng.gaps.allIds[0]]: { ...eng.gaps.byId[eng.gaps.allIds[0]],
+              aiMappedDellSolutions: makeStampedAi("2026.04") },
+            [eng.gaps.allIds[1]]: { ...eng.gaps.byId[eng.gaps.allIds[1]],
+              aiMappedDellSolutions: makeStampedAi("2026.04") }
+          }
+        }
+      };
+      const newer = { DELL_PRODUCT_TAXONOMY: { catalogVersion: "2026.07", entries: [] } };
+      const result = runIntegritySweep(stamped, newer);
+      const driftLogs = result.log.filter(l => l.ruleId === "INT-AI-DRIFT");
+      assertEqual(driftLogs.length, 2, "both AI fields flagged as stale");
+    });
+
+    function makeStampedAi(version) {
+      return {
+        value: { products: ["powerstore"] },
+        provenance: {
+          model: "claude-sonnet-4-6", promptVersion: "skill:dellMap@1.0.0",
+          skillId: "skl-001", runId: "run-001",
+          timestamp: "2026-04-01T00:00:00.000Z",
+          catalogVersions: { DELL_PRODUCT_TAXONOMY: version },
+          validationStatus: "valid"
+        }
+      };
+    }
     it("V-DRIFT-3 · validationStatus === 'user-edited' preserved through drift (NOT downgraded to stale)", () => {
       let eng = createEmptyEngagement();
       eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
@@ -10375,8 +10413,80 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assertEqual(sweptGap.aiMappedDellSolutions.provenance.validationStatus, "user-edited",
         "user-edited preserved (NOT downgraded to stale)");
     });
-    it("V-DRIFT-4 · validationStatus === 'invalid' preserved (NOT changed to stale)", () => {});
-    it("V-DRIFT-5 · drift count surfaces on engagement-load screen as a non-blocking banner", () => {});
+    it("V-DRIFT-4 · validationStatus === 'invalid' preserved (NOT changed to stale)", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addGapV3(eng, { description: "g", gapType: "replace", urgency: "Medium",
+        phase: "now", status: "open", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      const gapId = eng.gaps.allIds[0];
+      const stampedEng = { ...eng,
+        gaps: { ...eng.gaps,
+          byId: { ...eng.gaps.byId,
+            [gapId]: { ...eng.gaps.byId[gapId],
+              aiMappedDellSolutions: {
+                value: { products: ["powerstore"] },
+                provenance: {
+                  model: "claude-sonnet-4-6", promptVersion: "skill:dellMap@1.0.0",
+                  skillId: "skl-001", runId: "run-001",
+                  timestamp: "2026-04-01T00:00:00.000Z",
+                  catalogVersions: { DELL_PRODUCT_TAXONOMY: "2026.04" },
+                  validationStatus: "invalid"   // invalid stays invalid
+                }
+              }
+            }
+          }
+        }
+      };
+      const newer = { DELL_PRODUCT_TAXONOMY: { catalogVersion: "2026.07", entries: [] } };
+      const result = runIntegritySweep(stampedEng, newer);
+      assertEqual(result.repaired.gaps.byId[gapId].aiMappedDellSolutions.provenance.validationStatus,
+        "invalid", "invalid preserved (not downgraded to stale)");
+    });
+    it("V-DRIFT-5 · drift count surfaces on engagement-load screen as a non-blocking banner", async () => {
+      // loadCanvas returns { ok, engagement, integrityLog, quarantine }.
+      // Drift count is the integrityLog.filter(INT-AI-DRIFT).length.
+      // The UI consumes this to render the "N AI suggestions are stale"
+      // banner per SPEC sec S8.4.3. Test: build engagement with 1 stale
+      // AI field, save, load, assert integrityLog includes the drift entry.
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addGapV3(eng, { description: "g", gapType: "replace", urgency: "Medium",
+        phase: "now", status: "open", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      const gapId = eng.gaps.allIds[0];
+      // Inject AI field stamped at 2026.03 (older than current 2026.04)
+      const stamped = { ...eng,
+        gaps: { ...eng.gaps,
+          byId: { ...eng.gaps.byId,
+            [gapId]: { ...eng.gaps.byId[gapId],
+              aiMappedDellSolutions: {
+                value: { products: ["powerstore"] },
+                provenance: {
+                  model: "claude-sonnet-4-6", promptVersion: "skill:dellMap@1.0.0",
+                  skillId: "skl-001", runId: "run-001",
+                  timestamp: "2026-03-01T00:00:00.000Z",
+                  catalogVersions: { DELL_PRODUCT_TAXONOMY: "2026.03" },   // older
+                  validationStatus: "valid"
+                }
+              }
+            }
+          }
+        }
+      };
+      const saved = buildSaveEnvelopeV3(stamped);
+      assert(saved.ok, "save ok");
+      const loaded = await loadCanvasV3(saved.envelope);
+      assert(loaded.ok, "load ok");
+      // The integrity sweep should have flipped the AI field to stale.
+      // Surface: integrityLog includes the INT-AI-DRIFT entry that the UI
+      // consumes for the engagement-load banner.
+      const driftEntries = loaded.integrityLog.filter(l => l.ruleId === "INT-AI-DRIFT");
+      assert(driftEntries.length >= 1,
+        "loaded engagement carries INT-AI-DRIFT log entry for the UI banner");
+    });
     it("V-DRIFT-6 · drift NEVER rewrites value field (only validationStatus)", () => {
       let eng = createEmptyEngagement();
       eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
@@ -10443,7 +10553,44 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
                   JSON.stringify(b.repaired.gaps.byId[gapId]),
         "drift detector is deterministic");
     });
-    it("V-DRIFT-8 · drift detector handles model: 'unknown' records (from migration step 9) without errors", () => {});
+    it("V-DRIFT-8 · drift detector handles model: 'unknown' records (from migration step 9) without errors", () => {
+      // Per MIGRATION sec M11 step 9, v2.x plain-string AI fields are
+      // wrapped with model: "unknown", validationStatus: "stale". The
+      // drift detector must handle these without throwing — they're
+      // already stale, so no further state change.
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addGapV3(eng, { description: "g", gapType: "replace", urgency: "Medium",
+        phase: "now", status: "open", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      const gapId = eng.gaps.allIds[0];
+      const legacy = { ...eng,
+        gaps: { ...eng.gaps,
+          byId: { ...eng.gaps.byId,
+            [gapId]: { ...eng.gaps.byId[gapId],
+              aiMappedDellSolutions: {
+                value: { rawLegacy: "PowerStore + PowerProtect", products: [] },
+                provenance: {
+                  model:            "unknown",                             // migration marker
+                  promptVersion:    "legacy:v2.4.x",
+                  skillId:          "unknown",
+                  runId:            "00000000-0000-4000-8000-000000000000",
+                  timestamp:        "2026-01-01T00:00:00.000Z",
+                  catalogVersions:  { DELL_PRODUCT_TAXONOMY: "unknown" },
+                  validationStatus: "stale"
+                }
+              }
+            }
+          }
+        }
+      };
+      const newer = { DELL_PRODUCT_TAXONOMY: { catalogVersion: "2026.07", entries: [] } };
+      let threw = null;
+      try { runIntegritySweep(legacy, newer); }
+      catch (e) { threw = e; }
+      assert(threw === null, "drift detector handles model:'unknown' without throwing");
+    });
   });
 
   // -------------------------------------------------------------------
@@ -10765,7 +10912,34 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assert(result.quarantine.some(q => q.ruleId === "INT-ORPHAN-REQ"),
         "INT-ORPHAN-REQ rule recorded in quarantine");
     });
-    it("V-INT-4 · INT-FILTER-MISS: instance.originId → desired-state instance (filter state='current') → field nulled + log", () => {});
+    it("V-INT-4 · INT-FILTER-MISS: instance.originId → desired-state instance (filter state='current') → field nulled + log", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addInstanceV3(eng, { state:"current", layerId:"compute", environmentId:env1,
+        label:"current", vendor:"Dell", vendorGroup:"dell", criticality:"Medium", disposition:"keep" }).engagement;
+      eng = addInstanceV3(eng, { state:"desired", layerId:"compute", environmentId:env1,
+        label:"desired", vendor:"Dell", vendorGroup:"dell", criticality:"Medium", disposition:"replace" }).engagement;
+      const desiredId = eng.instances.byState.desired[0];
+      const otherDesired = eng.instances.byState.desired[0];
+      // Inject filter-miss: another desired's originId points at a desired instead of current
+      eng = addInstanceV3(eng, { state:"desired", layerId:"compute", environmentId:env1,
+        label:"new-desired", vendor:"Dell", vendorGroup:"dell", criticality:"Medium", disposition:"replace" }).engagement;
+      const newDesiredId = eng.instances.byState.desired[1];
+      const broken = { ...eng,
+        instances: { ...eng.instances,
+          byId: { ...eng.instances.byId,
+            [newDesiredId]: { ...eng.instances.byId[newDesiredId],
+              originId: otherDesired }   // pointing at a desired instead of current
+          }
+        }
+      };
+      const result = runIntegritySweep(broken, {});
+      const swept = result.repaired.instances.byId[newDesiredId];
+      assertEqual(swept.originId, null, "filter-miss originId nulled");
+      assert(result.log.some(l => l.ruleId === "INT-FILTER-MISS"),
+        "INT-FILTER-MISS log entry emitted");
+    });
     it("V-INT-5 · INT-G6-REPAIR: gap.affectedLayers does NOT have layerId at index 0 → mechanical reorder + log", () => {});
     it("V-INT-6 · INT-MAP-NONWL: non-workload instance has populated mappedAssetIds → array emptied + log", () => {});
     it("V-INT-7 · INT-ORIGIN-CUR: current-state instance has originId → nulled + log", () => {});
@@ -10811,11 +10985,84 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-INT-20 · repair log entries shape: ruleId + recordKind + recordId + field + before + after + timestamp", () => {});
 
     // Forbidden behaviors (V-INT-FORBID-1..5)
-    it("V-INT-FORBID-1 · sweep does not call localStorage.*", () => {});
-    it("V-INT-FORBID-2 · sweep does not call document.* or window.*", () => {});
-    it("V-INT-FORBID-3 · sweep does not call fetch or any network", () => {});
-    it("V-INT-FORBID-4 · sweep does not write to console.error for repaired violations", () => {});
-    it("V-INT-FORBID-5 · sweep does not throw on any input shape that passes EngagementSchema", () => {});
+    it("V-INT-FORBID-1 · sweep does not call localStorage.*", async () => {
+      const res = await fetch("/state/integritySweep.js");
+      const src = await res.text();
+      const stripped = src.split("\n")
+        .filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l))
+        .join("\n");
+      assert(!stripped.includes("localStorage"),
+        "integritySweep must not reference localStorage in production code (SPEC sec S10.1.3)");
+    });
+    it("V-INT-FORBID-2 · sweep does not call document.* or window.*", async () => {
+      const res = await fetch("/state/integritySweep.js");
+      const src = await res.text();
+      const stripped = src.split("\n")
+        .filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l))
+        .join("\n");
+      assert(!stripped.includes("document."),
+        "integritySweep must not reference document.*");
+      assert(!stripped.includes("window."),
+        "integritySweep must not reference window.*");
+    });
+    it("V-INT-FORBID-3 · sweep does not call fetch or any network", async () => {
+      const res = await fetch("/state/integritySweep.js");
+      const src = await res.text();
+      const stripped = src.split("\n")
+        .filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l))
+        .join("\n");
+      assert(!/\bfetch\(/.test(stripped),
+        "integritySweep must not call fetch (sweep is pure synchronous)");
+      assert(!stripped.includes("XMLHttpRequest"),
+        "integritySweep must not use XMLHttpRequest");
+    });
+    it("V-INT-FORBID-4 · sweep does not write to console.error for repaired violations", async () => {
+      // Spy on console.error during a sweep run with a repairable
+      // violation. The sweep must log via the result.log array, NOT
+      // console.error (which would clutter the user's devtools).
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addGapV3(eng, { description: "g", gapType: "replace", urgency: "Medium",
+        phase: "now", status: "open", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      const gapId = eng.gaps.allIds[0];
+      // Inject a repairable orphan optional FK (driverId pointing at non-existent driver)
+      const broken = { ...eng,
+        gaps: { ...eng.gaps,
+          byId: { ...eng.gaps.byId,
+            [gapId]: { ...eng.gaps.byId[gapId], driverId: "11111111-2222-3333-4444-555555555555" }
+          }
+        }
+      };
+      const original = console.error;
+      let errorCalls = 0;
+      console.error = function() { errorCalls += 1; };
+      try {
+        runIntegritySweep(broken, {});
+      } finally {
+        console.error = original;
+      }
+      assertEqual(errorCalls, 0,
+        "sweep must not write to console.error during repair (per SPEC sec S10.2.4)");
+    });
+    it("V-INT-FORBID-5 · sweep does not throw on any input shape that passes EngagementSchema", () => {
+      // Smoke check: sweep handles a fresh empty engagement, an engagement
+      // with maximal valid content, and edge-case input shapes without
+      // throwing. Any throw is a sweep defect (it should null/quarantine,
+      // not reject the engagement).
+      const samples = [
+        createEmptyEngagement(),
+        buildReferenceEngagement()
+      ];
+      samples.forEach((sample, idx) => {
+        let threw = null;
+        try { runIntegritySweep(sample, {}); }
+        catch (e) { threw = e; }
+        assert(threw === null,
+          "sweep must not throw on sample " + idx + ": " + (threw && threw.message));
+      });
+    });
   });
 
   // -------------------------------------------------------------------
