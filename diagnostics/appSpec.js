@@ -8584,6 +8584,27 @@ import { EngagementMetaSchema, createEmptyEngagementMeta,
          EngagementSchema,     createEmptyEngagement
        } from "../schema/engagement.js";
 import { addDriver, updateDriver, removeDriver } from "../state/collections/driverActions.js";
+import { updateCustomer } from "../state/collections/customerActions.js";
+import { addEnvironment, updateEnvironment, removeEnvironment, hideEnvironment, unhideEnvironment } from "../state/collections/environmentActions.js";
+// instanceActions: addInstance + updateInstance both collide with v2.x
+// (interactions/matrixCommands.js, line ~80). Alias all to V3 suffix for
+// consistency.
+import {
+  addInstance        as addInstanceV3,
+  updateInstance     as updateInstanceV3,
+  removeInstance,                              // v2.x uses deleteInstance; no collision
+  linkOrigin,
+  mapWorkloadAssets
+} from "../state/collections/instanceActions.js";
+// gapActions: updateGap collides with v2.x interactions/gapsCommands.js
+// (line ~86). addGap is unique (v2.x uses createGap). Alias for safety.
+import {
+  addGap             as addGapV3,
+  updateGap          as updateGapV3,
+  removeGap,                                   // v2.x uses deleteGap; no collision
+  attachServices,
+  attachInstances
+} from "../state/collections/gapActions.js";
 // Aliased to avoid collision with v2.x services/sessionFile.js's
 // buildSaveEnvelope (imported at line ~5533). Both shapes coexist
 // during the v3.0 cutover.
@@ -9018,11 +9039,75 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assertEqual(ids.length, allIds.length, "byId keyset length === allIds length");
       assert(ids.every((k, i) => k === allIds[i]), "byId keys === allIds set after addDriver");
     });
-    it("V-FK-52 · engagement.environments byId keys === allIds set", () => {});
-    it("V-FK-53 · engagement.instances byId keys === allIds set", () => {});
-    it("V-FK-54 · engagement.instances.byState.current ⊆ instances.allIds", () => {});
-    it("V-FK-55 · engagement.instances.byState.desired ⊆ instances.allIds", () => {});
-    it("V-FK-56 · engagement.gaps byId keys === allIds set", () => {});
+    it("V-FK-52 · engagement.environments byId keys === allIds set", () => {
+      const eng = createEmptyEngagement();
+      const next = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+      assert(next.ok === true, "addEnvironment succeeded: " + JSON.stringify(next.errors || ""));
+      const ids = Object.keys(next.engagement.environments.byId).sort();
+      const allIds = [...next.engagement.environments.allIds].sort();
+      assertEqual(ids.length, allIds.length, "keyset length matches");
+      assert(ids.every((k, i) => k === allIds[i]), "byId keys === allIds set");
+    });
+    it("V-FK-53 · engagement.instances byId keys === allIds set", () => {
+      const eng = createEmptyEngagement();
+      // Need an environment first (instance.environmentId is a required FK).
+      const withEnv = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+      assert(withEnv.ok, "addEnvironment ok");
+      const envId = withEnv.engagement.environments.allIds[0];
+      const next = addInstanceV3(withEnv.engagement, {
+        state: "current", layerId: "compute", environmentId: envId,
+        label: "T1", vendor: "Dell", vendorGroup: "dell",
+        criticality: "Medium", disposition: "keep"
+      });
+      assert(next.ok === true, "addInstance succeeded: " + JSON.stringify(next.errors || ""));
+      const ids = Object.keys(next.engagement.instances.byId).sort();
+      const allIds = [...next.engagement.instances.allIds].sort();
+      assertEqual(ids.length, allIds.length, "keyset length matches");
+      assert(ids.every((k, i) => k === allIds[i]), "byId keys === allIds set");
+    });
+    it("V-FK-54 · engagement.instances.byState.current ⊆ instances.allIds", () => {
+      const eng = createEmptyEngagement();
+      const withEnv = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+      const envId = withEnv.engagement.environments.allIds[0];
+      const a = addInstanceV3(withEnv.engagement, { state:"current", layerId:"compute", environmentId:envId, label:"A", vendor:"Dell", vendorGroup:"dell", criticality:"Medium", disposition:"keep" });
+      const b = addInstanceV3(a.engagement,         { state:"desired", layerId:"compute", environmentId:envId, label:"B", vendor:"Dell", vendorGroup:"dell", criticality:"Medium", disposition:"keep" });
+      const inst = b.engagement.instances;
+      const allSet = new Set(inst.allIds);
+      assert(inst.byState.current.every(id => allSet.has(id)),
+        "every byState.current id must be in allIds");
+      assert(inst.byState.current.length === 1, "exactly 1 current instance");
+    });
+    it("V-FK-55 · engagement.instances.byState.desired ⊆ instances.allIds", () => {
+      const eng = createEmptyEngagement();
+      const withEnv = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+      const envId = withEnv.engagement.environments.allIds[0];
+      const a = addInstanceV3(withEnv.engagement, { state:"current", layerId:"compute", environmentId:envId, label:"A", vendor:"Dell", vendorGroup:"dell", criticality:"Medium", disposition:"keep" });
+      const b = addInstanceV3(a.engagement,         { state:"desired", layerId:"compute", environmentId:envId, label:"B", vendor:"Dell", vendorGroup:"dell", criticality:"Medium", disposition:"keep" });
+      const inst = b.engagement.instances;
+      const allSet = new Set(inst.allIds);
+      assert(inst.byState.desired.every(id => allSet.has(id)),
+        "every byState.desired id must be in allIds");
+      assert(inst.byState.desired.length === 1, "exactly 1 desired instance");
+      // Total partition is exhaustive: current+desired === allIds.length
+      assertEqual(inst.byState.current.length + inst.byState.desired.length, inst.allIds.length,
+        "byState partition is exhaustive");
+    });
+    it("V-FK-56 · engagement.gaps byId keys === allIds set", () => {
+      const eng = createEmptyEngagement();
+      const withEnv = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+      const envId = withEnv.engagement.environments.allIds[0];
+      const next = addGapV3(withEnv.engagement, {
+        description: "Need to modernize", gapType: "replace",
+        urgency: "Medium", phase: "now", status: "open",
+        layerId: "compute", affectedLayers: ["compute"],
+        affectedEnvironments: [envId]
+      });
+      assert(next.ok === true, "addGap succeeded: " + JSON.stringify(next.errors || ""));
+      const ids = Object.keys(next.engagement.gaps.byId).sort();
+      const allIds = [...next.engagement.gaps.allIds].sort();
+      assertEqual(ids.length, allIds.length, "keyset length matches");
+      assert(ids.every((k, i) => k === allIds[i]), "byId keys === allIds set");
+    });
   });
 
   // -------------------------------------------------------------------
