@@ -8636,6 +8636,12 @@ import { buildReferenceEngagement } from "../tests/perf/buildReferenceEngagement
 import { measure, measureMin, assertWithinBudget, PERF_BUDGETS } from "../tests/perf/perfHarness.js";
 import { runSkill } from "../services/skillRunner.js";
 import { createMockLLMProvider } from "../tests/mocks/mockLLMProvider.js";
+import {
+  SEED_SKILL_DELL_MAPPING,
+  SEED_SKILL_EXECUTIVE_SUMMARY,
+  SEED_SKILL_CARE_BUILDER,
+  V3_SEED_SKILLS
+} from "../core/v3SeedSkills.js";
 
 // ============================================================================
 // Suite 49 · v3.0 data architecture rebuild · RED-first vector scaffold
@@ -10734,9 +10740,78 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-PROD-5 · dell-mapping output round-trips through save+load byte-equivalent", () => {});
 
     // executive-summary (smoke)
-    it("V-PROD-6 · executive-summary output non-empty string of length >= 100", () => {});
-    it("V-PROD-7 · executive-summary contains customer.name (verbatim or close-match)", () => {});
-    it("V-PROD-8 · executive-summary provenance stamped (validationStatus='valid', catalogVersions populated)", () => {});
+    it("V-PROD-6 · executive-summary output non-empty string of length >= 100", async () => {
+      // Mocked exec-summary skill against the reference engagement.
+      const eng = buildReferenceEngagement();
+      const mockResponse = {
+        model: "mock-claude-sonnet",
+        text: [
+          "Acme Financial Services is at an inflection point. Across 200 instances spanning",
+          "compute, storage, data protection, virtualization, infrastructure, and workload",
+          "layers, the team has identified 12 gaps with mixed urgency. Modernization is the",
+          "dominant theme, with replace and consolidate dispositions concentrated in compute.",
+          "",
+          "Recommend a 90-day kickoff focused on the High-urgency gaps in storage and compute,",
+          "with a parallel discovery track for the workload layer's cross-environment dependencies."
+        ].join("\n")
+      };
+      const provider = createMockLLMProvider({ defaultResponse: mockResponse });
+      const ctx = {
+        customer:        eng.customer,
+        engagementMeta:  eng.meta,
+        catalogVersions: { BUSINESS_DRIVERS: "2026.04", ENV_CATALOG: "2026.04" }
+      };
+      const result = await runSkill(SEED_SKILL_EXECUTIVE_SUMMARY, ctx, provider,
+        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-6" });
+      assert(typeof result.value === "string", "value is a string");
+      assert(result.value.length >= 100,
+        "executive-summary output >= 100 chars (got " + result.value.length + ")");
+    });
+    it("V-PROD-7 · executive-summary contains customer.name (verbatim or close-match)", async () => {
+      const eng = buildReferenceEngagement();
+      // Mock returns a response that explicitly mentions the customer name.
+      const provider = createMockLLMProvider({
+        defaultResponse: {
+          model: "mock-claude-sonnet",
+          text: "Acme Financial Services is positioned for modernization. The customer's " +
+                "Financial Services vertical demands cyber-resilience as a top priority. " +
+                "Recommend a 90-day kickoff with focus on storage and compute."
+        }
+      });
+      const ctx = {
+        customer:        eng.customer,
+        engagementMeta:  eng.meta,
+        catalogVersions: { BUSINESS_DRIVERS: "2026.04" }
+      };
+      const result = await runSkill(SEED_SKILL_EXECUTIVE_SUMMARY, ctx, provider,
+        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-7" });
+      assert(result.value.includes(eng.customer.name),
+        "exec-summary output must contain customer name '" + eng.customer.name + "'");
+    });
+    it("V-PROD-8 · executive-summary provenance stamped (validationStatus='valid', catalogVersions populated)", async () => {
+      const eng = buildReferenceEngagement();
+      const provider = createMockLLMProvider({
+        defaultResponse: { model: "mock-claude-sonnet", text: "summary text" }
+      });
+      const ctx = {
+        customer: eng.customer, engagementMeta: eng.meta,
+        catalogVersions: { BUSINESS_DRIVERS: "2026.04", ENV_CATALOG: "2026.04",
+                           DELL_PRODUCT_TAXONOMY: "2026.04" }
+      };
+      const result = await runSkill(SEED_SKILL_EXECUTIVE_SUMMARY, ctx, provider,
+        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-8" });
+      // Full provenance contract per SPEC sec S8.1
+      assertEqual(result.provenance.validationStatus, "valid", "validationStatus stamped 'valid'");
+      assertEqual(result.provenance.model, "mock-claude-sonnet", "model preserved from LLM response");
+      assertEqual(result.provenance.skillId, "executive-summary", "skillId stamped");
+      assertEqual(result.provenance.promptVersion, "skill:executive-summary@1.0.0",
+        "promptVersion = skill:<id>@<ver>");
+      assert(result.provenance.runId.length > 0, "runId populated");
+      assertEqual(result.provenance.timestamp, "2026-05-01T00:00:00.000Z", "timestamp from opts");
+      assertEqual(result.provenance.catalogVersions.BUSINESS_DRIVERS,      "2026.04", "BUSINESS_DRIVERS stamped");
+      assertEqual(result.provenance.catalogVersions.ENV_CATALOG,           "2026.04", "ENV_CATALOG stamped");
+      assertEqual(result.provenance.catalogVersions.DELL_PRODUCT_TAXONOMY, "2026.04", "DELL_PRODUCT_TAXONOMY stamped");
+    });
 
     // care-builder (strict)
     it("V-PROD-9 · care-builder output is a save-able skill record (passes SkillSchema parse)", () => {});
