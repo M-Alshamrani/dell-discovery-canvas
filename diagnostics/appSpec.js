@@ -8572,6 +8572,11 @@ describe("47 · v2.4.16 · Foundations: Taxonomy + Reporting + PillEditor", () =
 
 });
 
+// v3.0 imports — schema layer (per SPEC sec S2 + sec 3). These imports
+// resolve through the importmap in index.html; "zod" maps to the
+// vendored ./vendor/zod/zod.mjs build (per SPEC sec S2.1.1 LOCKED).
+import { CustomerSchema, createEmptyCustomer } from "../schema/customer.js";
+
 // ============================================================================
 // Suite 49 · v3.0 data architecture rebuild · RED-first vector scaffold
 //
@@ -8598,7 +8603,15 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
   describe("§T2 · V-SCH · Schema property tests", () => {
     // Per-entity acceptance (V-SCH-1..7)
     it("V-SCH-1 · EngagementMetaSchema accepts createEmptyEngagementMeta() output", () => {});
-    it("V-SCH-2 · CustomerSchema accepts createEmptyCustomer() output", () => {});
+    it("V-SCH-2 · CustomerSchema accepts createEmptyCustomer() output", () => {
+      const c = createEmptyCustomer();
+      const result = CustomerSchema.safeParse(c);
+      assert(result.success === true,
+        "createEmptyCustomer must produce a customer that CustomerSchema accepts. Issues: " +
+        (result.success ? "" : JSON.stringify(result.error.issues)));
+      assertEqual(result.data.name, c.name, "name preserved");
+      assertEqual(result.data.vertical, c.vertical, "vertical preserved");
+    });
     it("V-SCH-3 · DriverSchema accepts createEmptyDriver() output", () => {});
     it("V-SCH-4 · EnvironmentSchema accepts createEmptyEnvironment() output", () => {});
     it("V-SCH-5 · InstanceSchema accepts createEmptyInstance({state:'current'})", () => {});
@@ -8609,8 +8622,24 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-SCH-8 · EngagementMetaSchema rejects schemaVersion !== '3.0'", () => {});
     it("V-SCH-9 · EngagementMetaSchema rejects status not in enum (Draft|In review|Locked)", () => {});
     it("V-SCH-10 · EngagementMetaSchema rejects empty ownerId", () => {});
-    it("V-SCH-11 · CustomerSchema rejects empty name", () => {});
-    it("V-SCH-12 · CustomerSchema rejects extra v2.0 fields (segment/industry) under .strict()", () => {});
+    it("V-SCH-11 · CustomerSchema rejects empty name", () => {
+      const c = createEmptyCustomer();
+      c.name = "";
+      const result = CustomerSchema.safeParse(c);
+      assert(result.success === false, "empty name must be rejected (min(1) violated)");
+      assert(result.error.issues.some(i => i.path[0] === "name"),
+        "rejection must point at the name field");
+    });
+    it("V-SCH-12 · CustomerSchema rejects extra v2.0 fields (segment/industry) under .strict()", () => {
+      const c = createEmptyCustomer();
+      const withLegacy = { ...c, segment: "Banking", industry: "Finance" };
+      const result = CustomerSchema.safeParse(withLegacy);
+      assert(result.success === false,
+        "v2.0 legacy fields (segment/industry) must be rejected by .strict() — they are dropped at migration per MIGRATION sec M7");
+      assert(result.error.issues.some(i =>
+        i.code === "unrecognized_keys" || (i.path && (i.path.includes("segment") || i.path.includes("industry")))
+      ), "rejection must flag the unrecognized legacy keys");
+    });
     it("V-SCH-13 · DriverSchema rejects priority not in {High, Medium, Low}", () => {});
     it("V-SCH-14 · DriverSchema rejects missing required businessDriverId", () => {});
     it("V-SCH-15 · DriverSchema rejects empty catalogVersion", () => {});

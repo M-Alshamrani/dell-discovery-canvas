@@ -17,6 +17,17 @@
        association. -->
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#0078D4" />
+
+  <!-- v3.0 · import map for Zod (vendored at vendor/zod/zod.mjs). MUST
+       be parsed before any module script that resolves a bare "zod"
+       specifier. Placed in <head> per HTML spec recommendation. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "zod": "./vendor/zod/zod.mjs"
+      }
+    }
+  </script>
 </head>
 <body>
 

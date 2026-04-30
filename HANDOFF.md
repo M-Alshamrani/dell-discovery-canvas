@@ -71,6 +71,14 @@ All six UX issues from v2.4.4 are resolved, and the two reliability failure mode
 - v2.4.5.1 · per-provider `fallbackModels[]` chain (Gemini defaults to `gemini-2.0-flash, gemini-1.5-flash`).
 - v2.4.5.1 · Settings UI exposes the fallback chain; `Test connection` reports which model answered.
 
+## 4a · KNOWN ISSUE at v3.0 schema-layer beachhead (2026-05-01)
+
+Footer version chip renders as `Canvas v.` (HTML default) instead of `Canvas v3.0.0-alpha` after the schema-layer beachhead landed (commit `<TBD>`). All 1001 tests GREEN (the contract). No console errors. The regression appears purely cosmetic — `renderHeaderMeta()` in [app.js:213](app.js:213) is somehow not reaching its chip-update lines (222-223 + 301-302) despite tests passing and DOMContentLoaded firing. Suspected timing/import-cycle interaction with the new schema imports; needs targeted debugging.
+
+**Investigated and ruled out**: importmap position (head vs body); console errors (none); JS exceptions during init (none trapped); Zod side effects on globals (zero); circular imports (none).
+
+**Workaround**: chip is a UI cosmetic; banner is the contract. Tests pass; doctrine is locked. Debug in a clean slot before flipping more V-SCH bodies to real assertions.
+
 ## 4 · NEXT UP — v3.0 implementation specification (`docs/v3.0/SPEC.md`)
 
 Branch `v3.0-data-architecture` is at scaffold state (founding docs imported + APP_VERSION bumped + CHANGELOG_PLAN entry + this header). The next concrete action is **authoring the v3.0 implementation specification**. Per `data-architecture-directive.md` §0.1:

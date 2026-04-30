@@ -49,7 +49,7 @@ Restatement of directive §1. Every later section traces back to one or more of 
 
 **Forbidden**: ad-hoc `validateX()` functions, JSON Schema files maintained in parallel, JSDoc as the only typing layer.
 
-**Bundled**: Zod loaded as ESM via `<script type="importmap">` mapping `"zod"` → `https://esm.sh/zod@3.x?bundle` for the static-file deployment, OR vendored to `vendor/zod/` if offline LAN deploys can't reach the CDN. **S2.1.1**: the loader resolution is determined at v3.0.0 commit time; the SPEC does not pre-commit either path. (TO RESOLVE: pick one before §2 implementation.)
+**Bundled** ✅ LOCKED 2026-05-01: Zod loaded as ESM via `<script type="importmap">` mapping `"zod"` → `./vendor/zod/zod.mjs` (vendored copy of `zod@3.23.8/lib/index.mjs`, 149KB self-contained, zero internal imports). **S2.1.1**: vendoring chosen over CDN importmap because (a) the deployment target is Dell GB10 on LAN with no guaranteed outbound HTTP, (b) reproducibility — pinned vendor file is byte-stable; CDN endpoints can change or go down, (c) static-file harness has no bundler step where CDN-vs-vendor choice could be normalized later. Bumping Zod = update `vendor/zod/zod.mjs` + bump v3.0.x patch version.
 
 ### S2.2 · Schema artifact contract
 
@@ -1639,7 +1639,7 @@ Items requiring resolution before tests get vectors:
 
 | Item | Section | Tag |
 |---|---|---|
-| Zod loader resolution: importmap CDN vs vendored | §S2.1 | TO RESOLVE |
+| ~~Zod loader resolution: importmap CDN vs vendored~~ | §S2.1 | ✅ RESOLVED 2026-05-01: vendored `vendor/zod/zod.mjs` (zod@3.23.8) |
 | Skill output evaluation framework (formal LLM eval) | §S7.4.4 | TO CONFIRM (v3.1 scope) |
 | Dell Sales Chat structured-output mechanism | §S7.4 (table) | TO CONFIRM with Dell IT contact |
 | Tab component "no view writes back" lint rule (AST check) | §S5.3 F5.3.2 | TO AUTHOR |
