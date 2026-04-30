@@ -8630,6 +8630,8 @@ import { migrateToVersion } from "../migrations/index.js";
 import { makePipelineContext } from "../migrations/helpers/pipelineContext.js";
 import { generateDeterministicId } from "../migrations/helpers/deterministicId.js";
 import { runIntegritySweep } from "../state/integritySweep.js";
+import { generateManifest, serializeManifestStable } from "../services/manifestGenerator.js";
+import { resolveTemplate, resolvePath } from "../services/pathResolver.js";
 
 // ============================================================================
 // Suite 49 · v3.0 data architecture rebuild · RED-first vector scaffold
@@ -9957,14 +9959,35 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
   // -------------------------------------------------------------------
   describe("§T7 · V-MFG · Manifest generation", () => {
     it("V-MFG-1 · generateManifest() byte-equals services/manifest.snapshot.json (drift gate)", () => {});
-    it("V-MFG-2 · manifest.sessionPaths includes customer.name, customer.vertical, engagementMeta.engagementDate", () => {});
-    it("V-MFG-3 · manifest.byEntityKind.driver.ownPaths includes priority + outcomes", () => {});
+    it("V-MFG-2 · manifest.sessionPaths includes customer.name, customer.vertical, engagementMeta.engagementDate", () => {
+      const m = generateManifest();
+      const paths = m.sessionPaths.map(p => p.path);
+      assert(paths.includes("customer.name"),                       "customer.name in sessionPaths");
+      assert(paths.includes("customer.vertical"),                   "customer.vertical in sessionPaths");
+      assert(paths.includes("engagementMeta.engagementDate"),       "engagementMeta.engagementDate in sessionPaths");
+    });
+    it("V-MFG-3 · manifest.byEntityKind.driver.ownPaths includes priority + outcomes", () => {
+      const m = generateManifest();
+      const driverPaths = m.byEntityKind.driver.ownPaths.map(p => p.path);
+      assert(driverPaths.includes("context.driver.priority"), "priority in driver ownPaths");
+      assert(driverPaths.includes("context.driver.outcomes"), "outcomes in driver ownPaths");
+    });
     it("V-MFG-4 · manifest.byEntityKind.driver.linkedPaths includes context.driver.linkedGaps[*].description (composition)", () => {});
     it("V-MFG-5 · manifest.byEntityKind.gap.linkedPaths covers affectedEnvironments + relatedCurrentInstanceIds + relatedDesiredInstanceIds", () => {});
     it("V-MFG-6 · adding a field to schema/driver.js without re-running generateManifest fails V-MFG-1", () => {});
-    it("V-MFG-7 · manifest.sessionPaths does NOT contain entity-internal paths", () => {});
+    it("V-MFG-7 · manifest.sessionPaths does NOT contain entity-internal paths", () => {
+      const m = generateManifest();
+      const sessionPaths = m.sessionPaths.map(p => p.path);
+      // Entity-internal paths start with "context." per v3.0 convention
+      assert(!sessionPaths.some(p => p.startsWith("context.")),
+        "sessionPaths must NOT contain context.* paths (those belong in byEntityKind)");
+    });
     it("V-MFG-8 · catalog-resolved chips emitted with source: 'catalog'", () => {});
-    it("V-MFG-9 · manifest is deterministic (two consecutive generateManifest() byte-equal)", () => {});
+    it("V-MFG-9 · manifest is deterministic (two consecutive generateManifest() byte-equal)", () => {
+      const a = serializeManifestStable(generateManifest());
+      const b = serializeManifestStable(generateManifest());
+      assertEqual(a, b, "manifest serialized identically across two consecutive generateManifest() calls");
+    });
     it("V-MFG-10 · manifest entry count matches SPEC sec S7.2.1 expected size table", () => {});
   });
 
@@ -9990,26 +10013,99 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-PATH-15 · save error envelope sorted by template appearance order", () => {});
 
     // Run-time resolution (V-PATH-16..30)
-    it("V-PATH-16 · resolveTemplate('{{customer.name}}', ctx) returns customer name", () => {});
-    it("V-PATH-17 · resolveTemplate('{{context.driver.outcomes}}', ctx) returns driver outcomes from active entity", () => {});
+    it("V-PATH-16 · resolveTemplate('{{customer.name}}', ctx) returns customer name", () => {
+      const eng = createEmptyEngagement();
+      const ctx = { ...eng, engagement: eng };   // session-wide context
+      const out = resolveTemplate("Customer is {{customer.name}}", ctx, { logUndefined: () => {} });
+      assertEqual(out, "Customer is New customer", "customer.name resolved into prompt");
+    });
+    it("V-PATH-17 · resolveTemplate('{{context.driver.outcomes}}', ctx) returns driver outcomes from active entity", () => {
+      // Click-to-run context: the linkedComposition wraps context.driver.
+      const ctx = {
+        context: {
+          driver: { outcomes: "Drive AI value across 3 BUs", priority: "High" }
+        }
+      };
+      const out = resolveTemplate("Outcomes: {{context.driver.outcomes}}", ctx, { logUndefined: () => {} });
+      assertEqual(out, "Outcomes: Drive AI value across 3 BUs",
+        "active-entity field resolved into prompt");
+    });
     it("V-PATH-18 · linked path '{{context.driver.linkedGaps[*].description}}' returns array joined", () => {});
-    it("V-PATH-19 · catalog path '{{context.driver.catalog.label}}' resolves through catalogSnapshot", () => {});
-    it("V-PATH-20 · undefined value substitutes [?] placeholder", () => {});
-    it("V-PATH-21 · undefined value logs to skillRuntimeLog with skillId + path + engagementSnapshot", () => {});
+    it("V-PATH-19 · catalog path '{{context.driver.catalog.label}}' resolves through catalogSnapshot", () => {
+      const ctx = {
+        context: {
+          driver: {
+            priority: "High",
+            catalog: {
+              label: "AI & Data Platforms",
+              hint:  "Real value from AI and data, fast.",
+              conversationStarter: "Where would AI/data create value?"
+            }
+          }
+        }
+      };
+      const out = resolveTemplate("Driver: {{context.driver.catalog.label}}", ctx, { logUndefined: () => {} });
+      assertEqual(out, "Driver: AI & Data Platforms",
+        "catalog metadata resolved through context.driver.catalog");
+    });
+    it("V-PATH-20 · undefined value substitutes [?] placeholder", () => {
+      const ctx = { customer: { name: "Acme" } };
+      const out = resolveTemplate("Name: {{customer.name}}, Region: {{customer.region}}", ctx,
+        { logUndefined: () => {} });
+      assert(out.includes("Name: Acme"), "defined path resolves");
+      assert(out.includes("Region: [?]"), "undefined path substitutes [?]");
+    });
+    it("V-PATH-21 · undefined value logs to skillRuntimeLog with skillId + path + engagementSnapshot", () => {
+      const logs = [];
+      const ctx = { customer: { name: "Acme" } };
+      resolveTemplate("Region: {{customer.region}}", ctx, {
+        skillId:       "skl-test-001",
+        logUndefined:  (info) => logs.push(info)
+      });
+      assertEqual(logs.length, 1, "logger called once for the undefined path");
+      assertEqual(logs[0].path,    "customer.region", "path captured");
+      assertEqual(logs[0].skillId, "skl-test-001",   "skillId captured");
+    });
     it("V-PATH-22 · empty array linked path → empty string substitution", () => {});
     it("V-PATH-23 · null FK target → [?] substitution + log entry", () => {});
     it("V-PATH-24 · missing catalog entry → [?] substitution + log entry", () => {});
-    it("V-PATH-25 · multi-path template substitutes all paths in single resolve pass", () => {});
-    it("V-PATH-26 · template with no placeholders returns input verbatim", () => {});
+    it("V-PATH-25 · multi-path template substitutes all paths in single resolve pass", () => {
+      const ctx = { customer: { name: "Acme", vertical: "Healthcare" } };
+      const out = resolveTemplate("{{customer.name}} ({{customer.vertical}}) - workshop", ctx,
+        { logUndefined: () => {} });
+      assertEqual(out, "Acme (Healthcare) - workshop",
+        "all placeholders substituted in one pass");
+    });
+    it("V-PATH-26 · template with no placeholders returns input verbatim", () => {
+      const ctx = { customer: { name: "Acme" } };
+      const tpl = "This is a static prompt with no placeholders.";
+      assertEqual(resolveTemplate(tpl, ctx, { logUndefined: () => {} }), tpl, "verbatim");
+    });
     it("V-PATH-27 · template with escaped {{ }} preserves literal", () => {});
     it("V-PATH-28 · resolveTemplate handles 200-character template within budget", () => {});
     it("V-PATH-29 · resolveTemplate handles deep linked-composition path (.driver.linkedGaps[*].relatedInstances[*].label)", () => {});
     it("V-PATH-30 · resolveTemplate stable across invocations (deterministic)", () => {});
 
     // Resolver purity (V-PATH-PURE-*)
-    it("V-PATH-PURE-1 · resolveTemplate is pure (same input → same output across calls)", () => {});
-    it("V-PATH-PURE-2 · resolveTemplate does NOT mutate ctx", () => {});
-    it("V-PATH-PURE-3 · resolveTemplate is synchronous (no Promise)", () => {});
+    it("V-PATH-PURE-1 · resolveTemplate is pure (same input → same output across calls)", () => {
+      const ctx = { customer: { name: "Acme" } };
+      const tpl = "Hi {{customer.name}}!";
+      const a = resolveTemplate(tpl, ctx, { logUndefined: () => {} });
+      const b = resolveTemplate(tpl, ctx, { logUndefined: () => {} });
+      assertEqual(a, b, "same input -> same output");
+    });
+    it("V-PATH-PURE-2 · resolveTemplate does NOT mutate ctx", () => {
+      const ctx = { customer: { name: "Acme", vertical: "Healthcare" } };
+      const snap = JSON.stringify(ctx);
+      resolveTemplate("Hi {{customer.name}}, {{customer.region}}!", ctx, { logUndefined: () => {} });
+      assertEqual(JSON.stringify(ctx), snap, "ctx not mutated");
+    });
+    it("V-PATH-PURE-3 · resolveTemplate is synchronous (no Promise)", () => {
+      const ctx = { customer: { name: "Acme" } };
+      const result = resolveTemplate("Hi {{customer.name}}!", ctx, { logUndefined: () => {} });
+      assert(typeof result === "string", "returns a string, not a Promise");
+      assert(!(result instanceof Promise), "result is not a Promise");
+    });
   });
 
   // -------------------------------------------------------------------
