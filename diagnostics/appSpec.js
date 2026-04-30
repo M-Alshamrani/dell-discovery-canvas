@@ -8572,6 +8572,609 @@ describe("47 · v2.4.16 · Foundations: Taxonomy + Reporting + PillEditor", () =
 
 });
 
+// ============================================================================
+// Suite 49 · v3.0 data architecture rebuild · RED-first vector scaffold
+//
+// Authority: docs/v3.0/TESTS.md  (vector catalogue)
+//          + docs/v3.0/SPEC.md   (R-number contract)
+//          + docs/v3.0/MIGRATION.md (per-step transformation rules)
+//
+// Status: SCAFFOLD. Each it() is a placeholder with an empty body that
+// passes trivially (the test runner counts the it() as PASS when no
+// assertion fires). Bodies fill in as v3.0 implementation lands per
+// directive sec 0.4 ordering. Vector ids appear verbatim in it()
+// descriptions for grep-ability (TESTS.md sec T1.3).
+//
+// Append-only: per TESTS.md sec T1.2, vector ids are PERMANENT. Removing
+// requires explicit deprecation (struck-through entry + reason +
+// replacement vector id). Renumbering is forbidden.
+// ============================================================================
+
+describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", () => {
+
+  // -------------------------------------------------------------------
+  // sec T2 · V-SCH · Schema property tests (per SPEC sec S2.4 + sec 3)
+  // -------------------------------------------------------------------
+  describe("§T2 · V-SCH · Schema property tests", () => {
+    // Per-entity acceptance (V-SCH-1..7)
+    it("V-SCH-1 · EngagementMetaSchema accepts createEmptyEngagementMeta() output", () => {});
+    it("V-SCH-2 · CustomerSchema accepts createEmptyCustomer() output", () => {});
+    it("V-SCH-3 · DriverSchema accepts createEmptyDriver() output", () => {});
+    it("V-SCH-4 · EnvironmentSchema accepts createEmptyEnvironment() output", () => {});
+    it("V-SCH-5 · InstanceSchema accepts createEmptyInstance({state:'current'})", () => {});
+    it("V-SCH-6 · InstanceSchema accepts createEmptyInstance({state:'desired'})", () => {});
+    it("V-SCH-7 · GapSchema accepts createEmptyGap() output", () => {});
+
+    // Per-entity rejection of malformed inputs (V-SCH-8..40)
+    it("V-SCH-8 · EngagementMetaSchema rejects schemaVersion !== '3.0'", () => {});
+    it("V-SCH-9 · EngagementMetaSchema rejects status not in enum (Draft|In review|Locked)", () => {});
+    it("V-SCH-10 · EngagementMetaSchema rejects empty ownerId", () => {});
+    it("V-SCH-11 · CustomerSchema rejects empty name", () => {});
+    it("V-SCH-12 · CustomerSchema rejects extra v2.0 fields (segment/industry) under .strict()", () => {});
+    it("V-SCH-13 · DriverSchema rejects priority not in {High, Medium, Low}", () => {});
+    it("V-SCH-14 · DriverSchema rejects missing required businessDriverId", () => {});
+    it("V-SCH-15 · DriverSchema rejects empty catalogVersion", () => {});
+    it("V-SCH-16 · EnvironmentSchema rejects missing required envCatalogId", () => {});
+    it("V-SCH-17 · EnvironmentSchema rejects sizeKw of wrong type (string)", () => {});
+    it("V-SCH-18 · InstanceSchema rejects state not in {current, desired}", () => {});
+    it("V-SCH-19 · InstanceSchema rejects vendorGroup not in {dell, nonDell, custom}", () => {});
+    it("V-SCH-20 · InstanceSchema rejects criticality not in {High, Medium, Low}", () => {});
+    it("V-SCH-21 · InstanceSchema rejects originId on state==='current' (superRefine)", () => {});
+    it("V-SCH-22 · InstanceSchema rejects priority on state==='current' (superRefine)", () => {});
+    it("V-SCH-23 · InstanceSchema rejects mappedAssetIds non-empty on layerId !== 'workload' (superRefine)", () => {});
+    it("V-SCH-24 · GapSchema rejects urgency not in enum", () => {});
+    it("V-SCH-25 · GapSchema rejects phase not in enum", () => {});
+    it("V-SCH-26 · GapSchema rejects status not in enum", () => {});
+    it("V-SCH-27 · GapSchema rejects empty description", () => {});
+    it("V-SCH-28 · GapSchema rejects empty affectedLayers array", () => {});
+    it("V-SCH-29 · GapSchema rejects empty affectedEnvironments array", () => {});
+    it("V-SCH-30 · GapSchema rejects affectedLayers[0] !== layerId (G6 invariant)", () => {});
+    it("V-SCH-31 · EngagementSchema rejects engagement missing customer", () => {});
+    it("V-SCH-32 · EngagementSchema rejects engagement missing engagementMeta", () => {});
+    it("V-SCH-33 · EngagementSchema rejects collection missing byId", () => {});
+    it("V-SCH-34 · EngagementSchema rejects byId keys != allIds set", () => {});
+    it("V-SCH-35 · all id fields rejected when not UUID-shaped", () => {});
+    it("V-SCH-36 · all engagementId fields rejected when not UUID-shaped", () => {});
+    it("V-SCH-37 · createdAt rejected when not ISO datetime", () => {});
+    it("V-SCH-38 · updatedAt rejected when invalid date", () => {});
+    it("V-SCH-39 · ProvenanceSchema rejects validationStatus not in enum", () => {});
+    it("V-SCH-40 · ProvenanceSchema rejects catalogVersions value of wrong type", () => {});
+
+    // Round-trip property tests (V-SCH-41..50)
+    it("V-SCH-41 · cross-cutting.canvas parses through EngagementSchema cleanly", () => {});
+    it("V-SCH-42 · acme-demo.canvas parses cleanly", () => {});
+    it("V-SCH-43 · minimal.canvas parses cleanly", () => {});
+    it("V-SCH-44 · parse(JSON.stringify(parse(fixture))) byte-equivalent (modulo transient)", () => {});
+    it("V-SCH-45 · save then load round-trips through schema validation cleanly", () => {});
+    it("V-SCH-46 · transient fields (activeEntity, integrityLog) stripped on save", () => {});
+    it("V-SCH-47 · secondary indexes (instances.byState) NOT in persisted shape", () => {});
+    it("V-SCH-48 · secondary indexes ARE rebuilt on load", () => {});
+    it("V-SCH-49 · EngagementSchema is read by exactly 3 boundaries (load, save, action commit)", () => {});
+    it("V-SCH-50 · EngagementSchema is NEVER imported by selectors/*.js (lint rule)", () => {});
+
+    // Per-catalog acceptance (V-SCH-51..58)
+    it("V-SCH-51 · LAYERS catalog parses through CatalogSchema", () => {});
+    it("V-SCH-52 · BUSINESS_DRIVERS catalog parses through CatalogSchema", () => {});
+    it("V-SCH-53 · ENV_CATALOG catalog parses through CatalogSchema", () => {});
+    it("V-SCH-54 · SERVICE_TYPES catalog parses through CatalogSchema", () => {});
+    it("V-SCH-55 · GAP_TYPES catalog parses through CatalogSchema", () => {});
+    it("V-SCH-56 · DISPOSITION_ACTIONS catalog parses through CatalogSchema", () => {});
+    it("V-SCH-57 · CUSTOMER_VERTICALS catalog parses through CatalogSchema", () => {});
+    it("V-SCH-58 · DELL_PRODUCT_TAXONOMY catalog parses through CatalogSchema", () => {});
+  });
+
+  // -------------------------------------------------------------------
+  // sec T3 · V-FK · FK integrity tests (per SPEC sec S4.4 + sec S4.5)
+  // -------------------------------------------------------------------
+  describe("§T3 · V-FK · FK integrity tests", () => {
+    // Per-FK declaration. Suffixes: a=valid, b=orphan-optional-scalar,
+    // c=orphan-required-quarantine, d=orphan-array-element, e=filter-violation.
+
+    // Decl 1: driver.businessDriverId (required, scalar, FK to catalog)
+    it("V-FK-1a · driver.businessDriverId valid catalog reference passes sweep", () => {});
+    it("V-FK-1c · driver.businessDriverId required + dangling → quarantine driver", () => {});
+
+    // Decl 2: environment.envCatalogId (required, scalar, FK to catalog)
+    it("V-FK-2a · environment.envCatalogId valid catalog reference passes sweep", () => {});
+    it("V-FK-2c · environment.envCatalogId required + dangling → quarantine environment", () => {});
+
+    // Decl 3: instance.layerId (required, scalar, FK to catalog)
+    it("V-FK-3a · instance.layerId valid catalog reference passes sweep", () => {});
+    it("V-FK-3c · instance.layerId required + dangling → quarantine instance", () => {});
+
+    // Decl 4: instance.environmentId (required, scalar, FK to environments)
+    it("V-FK-4a · instance.environmentId valid reference passes sweep", () => {});
+    it("V-FK-4c · instance.environmentId required + dangling → quarantine instance", () => {});
+
+    // Decl 5: instance.disposition (required, scalar, FK to catalog)
+    it("V-FK-5a · instance.disposition valid catalog reference passes sweep", () => {});
+    it("V-FK-5c · instance.disposition required + dangling → quarantine instance", () => {});
+
+    // Decl 6: instance.originId (optional, scalar, FK to instances, filter state=current)
+    it("V-FK-6a · instance.originId valid reference (to current-state instance) passes sweep", () => {});
+    it("V-FK-6b · instance.originId optional + dangling → field nulled, log INT-ORPHAN-OPT", () => {});
+    it("V-FK-6e · instance.originId pointing at desired-state instance → field nulled, log INT-FILTER-MISS", () => {});
+
+    // Decl 7: instance.mappedAssetIds[] (optional, array, FK to instances)
+    it("V-FK-7a · instance.mappedAssetIds[] all valid → passes sweep", () => {});
+    it("V-FK-7d · instance.mappedAssetIds[] dangling element → element removed, log INT-ORPHAN-ARR", () => {});
+
+    // Decl 8: gap.gapType (required, scalar, FK to catalog)
+    it("V-FK-8a · gap.gapType valid catalog reference passes sweep", () => {});
+    it("V-FK-8c · gap.gapType required + dangling → quarantine gap", () => {});
+
+    // Decl 9: gap.driverId (optional, scalar, FK to drivers)
+    it("V-FK-9a · gap.driverId valid reference passes sweep", () => {});
+    it("V-FK-9b · gap.driverId optional + dangling → field nulled, log INT-ORPHAN-OPT", () => {});
+
+    // Decl 10: gap.layerId (required, scalar, FK to catalog)
+    it("V-FK-10a · gap.layerId valid catalog reference passes sweep", () => {});
+    it("V-FK-10c · gap.layerId required + dangling → quarantine gap", () => {});
+
+    // Decl 11: gap.affectedLayers[] (required-non-empty, array, FK to catalog)
+    it("V-FK-11a · gap.affectedLayers[] all valid → passes sweep", () => {});
+    it("V-FK-11d · gap.affectedLayers[] dangling element → element removed, log INT-ORPHAN-ARR", () => {});
+
+    // Decl 12: gap.affectedEnvironments[] (required-non-empty, array, FK to environments)
+    it("V-FK-12a · gap.affectedEnvironments[] all valid → passes sweep", () => {});
+    it("V-FK-12c · gap.affectedEnvironments[] all elements dangling → quarantine gap (required min(1) violated)", () => {});
+    it("V-FK-12d · gap.affectedEnvironments[] one dangling element → element removed, log INT-ORPHAN-ARR", () => {});
+
+    // Decl 13: gap.relatedCurrentInstanceIds[] (optional, array, filter state=current)
+    it("V-FK-13a · gap.relatedCurrentInstanceIds[] all valid → passes sweep", () => {});
+    it("V-FK-13d · gap.relatedCurrentInstanceIds[] dangling element → element removed", () => {});
+    it("V-FK-13e · gap.relatedCurrentInstanceIds[] element pointing at desired-state instance → element removed, log INT-FILTER-MISS", () => {});
+
+    // Decl 14: gap.relatedDesiredInstanceIds[] (optional, array, filter state=desired)
+    it("V-FK-14a · gap.relatedDesiredInstanceIds[] all valid → passes sweep", () => {});
+    it("V-FK-14d · gap.relatedDesiredInstanceIds[] dangling element → element removed", () => {});
+    it("V-FK-14e · gap.relatedDesiredInstanceIds[] element pointing at current-state instance → element removed, log INT-FILTER-MISS", () => {});
+
+    // Decl 15: gap.services[] (optional, array, FK to catalog)
+    it("V-FK-15a · gap.services[] all valid catalog references → passes sweep", () => {});
+    it("V-FK-15d · gap.services[] dangling element → element removed", () => {});
+
+    // Cross-cutting integrity: byId keyset matches allIds (V-FK-51..56)
+    it("V-FK-51 · engagement.drivers byId keys === allIds set", () => {});
+    it("V-FK-52 · engagement.environments byId keys === allIds set", () => {});
+    it("V-FK-53 · engagement.instances byId keys === allIds set", () => {});
+    it("V-FK-54 · engagement.instances.byState.current ⊆ instances.allIds", () => {});
+    it("V-FK-55 · engagement.instances.byState.desired ⊆ instances.allIds", () => {});
+    it("V-FK-56 · engagement.gaps byId keys === allIds set", () => {});
+  });
+
+  // -------------------------------------------------------------------
+  // sec T4 · V-INV · Schema invariant tests (per SPEC sec 3 superRefines)
+  // 15 invariants × 2 polarities (a=positive, b=negative) = 30 vectors
+  // -------------------------------------------------------------------
+  describe("§T4 · V-INV · Schema invariant tests", () => {
+    it("V-INV-1a · gap.affectedLayers[0] === gap.layerId accepted (G6)", () => {});
+    it("V-INV-1b · gap.affectedLayers[0] !== gap.layerId rejected (G6)", () => {});
+    it("V-INV-2a · originId on state==='desired' accepted", () => {});
+    it("V-INV-2b · originId on state==='current' rejected", () => {});
+    it("V-INV-3a · priority on state==='desired' accepted", () => {});
+    it("V-INV-3b · priority on state==='current' rejected", () => {});
+    it("V-INV-4a · mappedAssetIds non-empty on layerId==='workload' accepted", () => {});
+    it("V-INV-4b · mappedAssetIds non-empty on layerId !== 'workload' rejected", () => {});
+    it("V-INV-5a · driver.priority in {High, Medium, Low} accepted", () => {});
+    it("V-INV-5b · driver.priority outside enum rejected", () => {});
+    it("V-INV-6a · customer.engagementId === engagementMeta.engagementId accepted", () => {});
+    it("V-INV-6b · customer.engagementId !== engagementMeta.engagementId rejected", () => {});
+    it("V-INV-7a · engagementMeta.schemaVersion === '3.0' accepted", () => {});
+    it("V-INV-7b · engagementMeta.schemaVersion !== '3.0' rejected", () => {});
+    it("V-INV-8a · all id fields UUID-shaped accepted", () => {});
+    it("V-INV-8b · id field not UUID-shaped rejected", () => {});
+    it("V-INV-9a · createdAt + updatedAt ISO datetime accepted", () => {});
+    it("V-INV-9b · createdAt or updatedAt not ISO datetime rejected", () => {});
+    it("V-INV-10a · updatedAt >= createdAt accepted", () => {});
+    it("V-INV-10b · updatedAt < createdAt rejected", () => {});
+    it("V-INV-11a · instances.byState partition exhaustive (every id in current OR desired) accepted", () => {});
+    it("V-INV-11b · instance id missing from byState partition rejected", () => {});
+    it("V-INV-12a · instance.aiSuggestedDellMapping as provenance wrapper accepted", () => {});
+    it("V-INV-12b · instance.aiSuggestedDellMapping as plain string rejected", () => {});
+    it("V-INV-13a · gap.aiMappedDellSolutions as provenance wrapper accepted", () => {});
+    it("V-INV-13b · gap.aiMappedDellSolutions as plain string rejected", () => {});
+    it("V-INV-14a · gap.affectedEnvironments membership ⊆ environments.allIds accepted", () => {});
+    it("V-INV-14b · gap.affectedEnvironments referencing non-existent env rejected by sweep", () => {});
+    it("V-INV-15a · instance.originId !== instance.id (no self-reference) accepted", () => {});
+    it("V-INV-15b · instance.originId === instance.id rejected", () => {});
+  });
+
+  // -------------------------------------------------------------------
+  // sec T5 · V-MIG · Migration round-trip tests (per MIGRATION sec M3-M12)
+  // -------------------------------------------------------------------
+  describe("§T5 · V-MIG · Migration round-trip tests", () => {
+    // Per-fixture forward + validate (V-MIG-1..8)
+    it("V-MIG-1 · empty.canvas migrates forward; validates clean against EngagementSchema", () => {});
+    it("V-MIG-2 · single-env.canvas migrates; 5+5 instances + 3 gaps + 2 drivers survive", () => {});
+    it("V-MIG-3 · multi-env.canvas migrates; 30 instances + 8 gaps + 4 drivers", () => {});
+    it("V-MIG-4 · cross-env-workload.canvas migrates; mappedAssetIds preserved across envs", () => {});
+    it("V-MIG-5 · cross-env-origin.canvas migrates; originId preserved across envs", () => {});
+    it("V-MIG-6 · multi-env-gaps.canvas migrates; gap.affectedEnvironments.length===3 preserved", () => {});
+    it("V-MIG-7 · ai-provenanced.canvas wraps 4 plain-string mappedDellSolutions fields with stale validationStatus", () => {});
+    it("V-MIG-8 · acme-demo.canvas migrates; 200 instances; full migration < 200ms calibrated", () => {});
+
+    // Per-step assertions (V-MIG-S{1..10}-*)
+    it("V-MIG-S1-1 · Step 1: v2.0 input → engagementMeta.schemaVersion === '3.0'", () => {});
+    it("V-MIG-S1-2 · Step 1: idempotent on already-v3.0 input", () => {});
+    it("V-MIG-S1-3 · Step 1: empty engagement → engagementMeta.schemaVersion === '3.0'", () => {});
+
+    it("V-MIG-S2-1 · Step 2: sessionMeta.sessionId preserved as engagementId", () => {});
+    it("V-MIG-S2-2 · Step 2: missing sessionId → deterministic id; same input twice → same id", () => {});
+    it("V-MIG-S2-3 · Step 2: sessionMeta deleted from output", () => {});
+
+    it("V-MIG-S3-1 · Step 3: missing ownerId → 'local-user'", () => {});
+    it("V-MIG-S3-2 · Step 3: empty ownerId → 'local-user'", () => {});
+    it("V-MIG-S3-3 · Step 3: existing ownerId preserved", () => {});
+
+    it("V-MIG-S4-1 · Step 4: sessionMeta.savedAt → both createdAt + updatedAt", () => {});
+    it("V-MIG-S4-2 · Step 4: no v2.0 timestamp → both = ctx.migrationTimestamp", () => {});
+    it("V-MIG-S4-3 · Step 4: existing v3.0 timestamps preserved (idempotent)", () => {});
+
+    it("V-MIG-S5-1 · Step 5: customer.segment + .industry → notes (standard merge)", () => {});
+    it("V-MIG-S5-2 · Step 5: segment redundant with vertical → dropped", () => {});
+    it("V-MIG-S5-3 · Step 5: segment already in notes → dropped", () => {});
+    it("V-MIG-S5-4 · Step 5: empty segment/industry strings treated as absent", () => {});
+
+    it("V-MIG-S6-1 · Step 6: 3-driver v2.4.16 input → 3-driver v3.0 collection in allIds order", () => {});
+    it("V-MIG-S6-2 · Step 6: priority normalization (lowercase, numeric, empty)", () => {});
+    it("V-MIG-S6-3 · Step 6: empty drivers[] → empty collection", () => {});
+    it("V-MIG-S6-4 · Step 6: customer.drivers absent from output (key deleted)", () => {});
+    it("V-MIG-S6-5 · Step 6: catalogVersion stamped from ctx.catalogSnapshot", () => {});
+
+    it("V-MIG-S7-1 · Step 7: v2.0 unified-array instances → Collection<Instance> with byState populated", () => {});
+    it("V-MIG-S7-2 · Step 7: legacy {current, desired} split → unified collection", () => {});
+    it("V-MIG-S7-3 · Step 7: empty arrays → empty collections", () => {});
+    it("V-MIG-S7-4 · Step 7: allIds preserves source array order", () => {});
+
+    it("V-MIG-S8-1 · Step 8: every gap.projectId deleted from output", () => {});
+    it("V-MIG-S8-2 · Step 8: gap.id and other fields preserved", () => {});
+    it("V-MIG-S8-3 · Step 8: idempotent (no projectId in v3.0 input → no change)", () => {});
+
+    it("V-MIG-S9-1 · Step 9: plain-string mappedDellSolutions → provenance wrapper with validationStatus='stale'", () => {});
+    it("V-MIG-S9-2 · Step 9: original string preserved in value.rawLegacy", () => {});
+    it("V-MIG-S9-3 · Step 9: empty string → no wrapper created", () => {});
+    it("V-MIG-S9-4 · Step 9: integrity-log entry emitted with correct count", () => {});
+    it("V-MIG-S9-5 · Step 9: idempotent — already-wrapped field unchanged", () => {});
+
+    it("V-MIG-S10-1 · Step 10: every record post-step10 has engagementId === engagementMeta.engagementId", () => {});
+    it("V-MIG-S10-2 · Step 10: idempotent on already-stamped engagement", () => {});
+
+    // Idempotency + determinism (V-MIG-IDEM-*, V-MIG-DETERM-*, V-MIG-COLLIDE-*, V-MIG-INPUT-IMMUT-*)
+    it("V-MIG-IDEM-1 · migrate(migrate(empty.canvas)) deepEquals migrate(empty.canvas)", () => {});
+    it("V-MIG-IDEM-2 · migrate idempotent on multi-env.canvas", () => {});
+    it("V-MIG-IDEM-3 · migrate idempotent on acme-demo.canvas", () => {});
+    it("V-MIG-IDEM-4 · migrate(v3_0) is no-op (deepEquals input)", () => {});
+    it("V-MIG-DETERM-1 · two runs with same ctx.randomSeed produce byte-equal output", () => {});
+    it("V-MIG-DETERM-2 · generated ids deterministic from stable input fields", () => {});
+    it("V-MIG-COLLIDE-1 · no id collisions across all 8 fixtures", () => {});
+    it("V-MIG-INPUT-IMMUT-1 · migrate does not mutate the input engagement (structuredClone at entry)", () => {});
+
+    // Failure handling (V-MIG-FAIL-*)
+    it("V-MIG-FAIL-1 · throwing step produces MigrationFailure with failing step name + message", () => {});
+    it("V-MIG-FAIL-2 · originalEnvelope deep-equals the input (preserved)", () => {});
+    it("V-MIG-FAIL-3 · no console errors swallowed during failure", () => {});
+    it("V-MIG-FAIL-4 · recovery flow: try-again with verbose ctx logs each step's input/output", () => {});
+  });
+
+  // -------------------------------------------------------------------
+  // sec T6 · V-SEL + V-SEL-PURE · Selectors (per SPEC sec S5.4)
+  // -------------------------------------------------------------------
+  describe("§T6 · V-SEL · Selector correctness + purity", () => {
+    // Correctness — selectMatrixView (V-SEL-1a..1e)
+    it("V-SEL-1a · selectMatrixView({state:'current'}) returns env × layer grid", () => {});
+    it("V-SEL-1b · selectMatrixView({state:'desired'}) returns env × layer grid", () => {});
+    it("V-SEL-1c · hidden envs excluded unless arg.includeHidden", () => {});
+    it("V-SEL-1d · cell.vendorMix counts dell + nonDell + custom correctly", () => {});
+    it("V-SEL-1e · layerIds in catalog order from LAYERS", () => {});
+
+    // Correctness — selectGapsKanban (V-SEL-2a..2c)
+    it("V-SEL-2a · selectGapsKanban groups gaps by phase + status", () => {});
+    it("V-SEL-2b · totalsByStatus.closed populated but downstream excludes from active counts", () => {});
+    it("V-SEL-2c · sort order within (phase, status) deterministic", () => {});
+
+    // Correctness — selectProjects (V-SEL-3a..3e)
+    it("V-SEL-3a · selectProjects assigns deterministic projectId from grouping key", () => {});
+    it("V-SEL-3b · gap → project assignment correct against fixture", () => {});
+    it("V-SEL-3c · unassigned gaps appear in projects.unassigned", () => {});
+    it("V-SEL-3d · project.phase = earliest among constituent gaps", () => {});
+    it("V-SEL-3e · project.mostUrgent = max urgency among constituent gaps", () => {});
+
+    // Correctness — selectVendorMix (V-SEL-4a..4d)
+    it("V-SEL-4a · selectVendorMix.totals matches sum of byLayer + byEnvironment", () => {});
+    it("V-SEL-4b · selectVendorMix.byLayer correct for cross-cutting fixture", () => {});
+    it("V-SEL-4c · selectVendorMix.byEnvironment correct for cross-cutting fixture", () => {});
+    it("V-SEL-4d · 3 KPI tiles (dellDensity, mostDiverseLayer, topNonDellConcentration) computed correctly", () => {});
+
+    // Correctness — selectHealthSummary (V-SEL-5a..5d)
+    it("V-SEL-5a · selectHealthSummary.byLayer scores correct for cross-cutting fixture", () => {});
+    it("V-SEL-5b · highRiskGaps excludes status === 'closed' (KD8 invariant preserved)", () => {});
+    it("V-SEL-5c · overall.score computed deterministically from byLayer", () => {});
+    it("V-SEL-5d · highestRiskLayer correct for fixture", () => {});
+
+    // Correctness — selectExecutiveSummaryInputs (V-SEL-6a..6c)
+    it("V-SEL-6a · selectExecutiveSummaryInputs.engagementMeta passes through verbatim", () => {});
+    it("V-SEL-6b · drivers.topPriority is the High-priority driver (or first if tied)", () => {});
+    it("V-SEL-6c · catalogVersions populated from loaded catalogs (provenance bridge)", () => {});
+
+    // Correctness — selectLinkedComposition (V-SEL-7a..7g)
+    it("V-SEL-7a · selectLinkedComposition({kind:'driver'}) returns entity + catalog + linked.gaps + linked.relatedInstances", () => {});
+    it("V-SEL-7b · selectLinkedComposition({kind:'currentInstance'}) returns entity + linked.desiredCounterparts + linked.gaps", () => {});
+    it("V-SEL-7c · selectLinkedComposition({kind:'desiredInstance'}) returns entity + linked.originInstance + linked.gaps", () => {});
+    it("V-SEL-7d · selectLinkedComposition({kind:'gap'}) returns entity + linked.driver + linked.relatedInstances + linked.affectedEnvironments", () => {});
+    it("V-SEL-7e · selectLinkedComposition({kind:'environment'}) returns entity + linked.instances + linked.gaps", () => {});
+    it("V-SEL-7f · selectLinkedComposition({kind:'project'}) returns entity + linked.gaps + linked.drivers", () => {});
+    it("V-SEL-7g · selectLinkedComposition with non-existent id returns graceful null/error envelope", () => {});
+
+    // Purity (V-SEL-PURE-*)
+    it("V-SEL-PURE-1 · selectMatrixView returns ===-equal output for ===-equal inputs", () => {});
+    it("V-SEL-PURE-2 · selectGapsKanban returns ===-equal output for ===-equal inputs", () => {});
+    it("V-SEL-PURE-3 · selectProjects returns ===-equal output for ===-equal inputs", () => {});
+    it("V-SEL-PURE-4 · selectVendorMix returns ===-equal output for ===-equal inputs", () => {});
+    it("V-SEL-PURE-5 · selectHealthSummary returns ===-equal output for ===-equal inputs", () => {});
+    it("V-SEL-PURE-6 · selectExecutiveSummaryInputs returns ===-equal output for ===-equal inputs", () => {});
+    it("V-SEL-PURE-7 · selectLinkedComposition returns ===-equal output for ===-equal inputs", () => {});
+
+    // Memoization invalidation (V-SEL-INVAL-*)
+    it("V-SEL-INVAL-1 · action addInstance invalidates selectMatrixView memoization", () => {});
+    it("V-SEL-INVAL-2 · action addGap invalidates selectGapsKanban memoization", () => {});
+    it("V-SEL-INVAL-3 · action updateGap invalidates selectProjects memoization", () => {});
+    it("V-SEL-INVAL-4 · action updateInstance invalidates selectVendorMix memoization", () => {});
+    it("V-SEL-INVAL-5 · action addGap invalidates selectHealthSummary memoization", () => {});
+    it("V-SEL-INVAL-6 · action updateCustomer invalidates selectExecutiveSummaryInputs memoization", () => {});
+    it("V-SEL-INVAL-7 · action affecting linked entity invalidates selectLinkedComposition memoization", () => {});
+
+    // Forbidden patterns (V-SEL-FORBID-*)
+    it("V-SEL-FORBID-1 · no selectors/*.js file imports localStorage / document / window / fetch", () => {});
+    it("V-SEL-FORBID-2 · no selectors/*.js file declares module-scope mutable state outside memoize wrapper", () => {});
+    it("V-SEL-FORBID-3 · no selectors/*.js file imports reselect / proxy-memoize / lodash.memoize", () => {});
+  });
+
+  // -------------------------------------------------------------------
+  // sec T7 · V-MFG · Manifest generation (per SPEC sec S7.6)
+  // -------------------------------------------------------------------
+  describe("§T7 · V-MFG · Manifest generation", () => {
+    it("V-MFG-1 · generateManifest() byte-equals services/manifest.snapshot.json (drift gate)", () => {});
+    it("V-MFG-2 · manifest.sessionPaths includes customer.name, customer.vertical, engagementMeta.engagementDate", () => {});
+    it("V-MFG-3 · manifest.byEntityKind.driver.ownPaths includes priority + outcomes", () => {});
+    it("V-MFG-4 · manifest.byEntityKind.driver.linkedPaths includes context.driver.linkedGaps[*].description (composition)", () => {});
+    it("V-MFG-5 · manifest.byEntityKind.gap.linkedPaths covers affectedEnvironments + relatedCurrentInstanceIds + relatedDesiredInstanceIds", () => {});
+    it("V-MFG-6 · adding a field to schema/driver.js without re-running generateManifest fails V-MFG-1", () => {});
+    it("V-MFG-7 · manifest.sessionPaths does NOT contain entity-internal paths", () => {});
+    it("V-MFG-8 · catalog-resolved chips emitted with source: 'catalog'", () => {});
+    it("V-MFG-9 · manifest is deterministic (two consecutive generateManifest() byte-equal)", () => {});
+    it("V-MFG-10 · manifest entry count matches SPEC sec S7.2.1 expected size table", () => {});
+  });
+
+  // -------------------------------------------------------------------
+  // sec T8 · V-PATH · Path resolution (per SPEC sec S7.3 + sec S7.6)
+  // -------------------------------------------------------------------
+  describe("§T8 · V-PATH · Path resolution", () => {
+    // Save-time validation (V-PATH-1..15)
+    it("V-PATH-1 · skill with template '{{customer.name}}' saves cleanly (path in sessionPaths)", () => {});
+    it("V-PATH-2 · skill with '{{context.driver.priority}}' + entityKind:'driver' saves cleanly", () => {});
+    it("V-PATH-3 · skill with '{{nonsense.path}}' blocks save with structured error", () => {});
+    it("V-PATH-4 · skill entityKind:'driver' cannot use context.gap.* paths (cross-kind blocked)", () => {});
+    it("V-PATH-5 · save error envelope includes validPaths list", () => {});
+    it("V-PATH-6 · driver entity kind valid path saves; invalid blocks", () => {});
+    it("V-PATH-7 · currentInstance entity kind valid path saves; invalid blocks", () => {});
+    it("V-PATH-8 · desiredInstance entity kind valid path saves; invalid blocks", () => {});
+    it("V-PATH-9 · gap entity kind valid path saves; invalid blocks", () => {});
+    it("V-PATH-10 · environment entity kind valid path saves; invalid blocks", () => {});
+    it("V-PATH-11 · project entity kind valid path saves; invalid blocks", () => {});
+    it("V-PATH-12 · session-wide skill rejects entityKind-scoped path", () => {});
+    it("V-PATH-13 · click-to-run skill missing entityKind blocks save (superRefine)", () => {});
+    it("V-PATH-14 · session-wide skill with entityKind set blocks save (superRefine)", () => {});
+    it("V-PATH-15 · save error envelope sorted by template appearance order", () => {});
+
+    // Run-time resolution (V-PATH-16..30)
+    it("V-PATH-16 · resolveTemplate('{{customer.name}}', ctx) returns customer name", () => {});
+    it("V-PATH-17 · resolveTemplate('{{context.driver.outcomes}}', ctx) returns driver outcomes from active entity", () => {});
+    it("V-PATH-18 · linked path '{{context.driver.linkedGaps[*].description}}' returns array joined", () => {});
+    it("V-PATH-19 · catalog path '{{context.driver.catalog.label}}' resolves through catalogSnapshot", () => {});
+    it("V-PATH-20 · undefined value substitutes [?] placeholder", () => {});
+    it("V-PATH-21 · undefined value logs to skillRuntimeLog with skillId + path + engagementSnapshot", () => {});
+    it("V-PATH-22 · empty array linked path → empty string substitution", () => {});
+    it("V-PATH-23 · null FK target → [?] substitution + log entry", () => {});
+    it("V-PATH-24 · missing catalog entry → [?] substitution + log entry", () => {});
+    it("V-PATH-25 · multi-path template substitutes all paths in single resolve pass", () => {});
+    it("V-PATH-26 · template with no placeholders returns input verbatim", () => {});
+    it("V-PATH-27 · template with escaped {{ }} preserves literal", () => {});
+    it("V-PATH-28 · resolveTemplate handles 200-character template within budget", () => {});
+    it("V-PATH-29 · resolveTemplate handles deep linked-composition path (.driver.linkedGaps[*].relatedInstances[*].label)", () => {});
+    it("V-PATH-30 · resolveTemplate stable across invocations (deterministic)", () => {});
+
+    // Resolver purity (V-PATH-PURE-*)
+    it("V-PATH-PURE-1 · resolveTemplate is pure (same input → same output across calls)", () => {});
+    it("V-PATH-PURE-2 · resolveTemplate does NOT mutate ctx", () => {});
+    it("V-PATH-PURE-3 · resolveTemplate is synchronous (no Promise)", () => {});
+  });
+
+  // -------------------------------------------------------------------
+  // sec T9 · V-PROV · AI provenance (per SPEC sec S8.5)
+  // -------------------------------------------------------------------
+  describe("§T9 · V-PROV · AI provenance", () => {
+    it("V-PROV-1 · dell-mapping skill structured-output rejects out-of-catalog Dell product id", () => {});
+    it("V-PROV-2 · user edit on aiMappedDellSolutions.value flips validationStatus to 'user-edited'", () => {});
+    it("V-PROV-3 · user edit preserves the original provenance fields (model, promptVersion, runId, timestamp)", () => {});
+    it("V-PROV-4 · re-running a skill on a stale field replaces the entire envelope; new validationStatus === 'valid'", () => {});
+    it("V-PROV-5 · plain-string assignment to instance.aiSuggestedDellMapping rejected by InstanceSchema", () => {});
+    it("V-PROV-6 · plain-string assignment to gap.aiMappedDellSolutions rejected by GapSchema", () => {});
+    it("V-PROV-7 · provenance is set ONLY by services/skillRunner.js (meta-test grep)", () => {});
+    it("V-PROV-8 · UI icon for validationStatus === 'valid' is the default sparkle (no dot)", () => {});
+    it("V-PROV-9 · UI icon for 'stale' carries the amber dot", () => {});
+    it("V-PROV-10 · UI icon for 'invalid' carries the red dot", () => {});
+    it("V-PROV-11 · UI icon for 'user-edited' is the pencil-with-sparkle", () => {});
+    it("V-PROV-12 · tooltip on each icon includes model + skillId + timestamp", () => {});
+    it("V-PROV-13 · catalog-validation retry budget exhausts at 2 retries → validationStatus === 'invalid'", () => {});
+    it("V-PROV-14 · runId is unique across runs (UUID v4 or v8 deterministic)", () => {});
+    it("V-PROV-15 · timestamp matches ctx.runTimestamp for deterministic test mode", () => {});
+  });
+
+  // -------------------------------------------------------------------
+  // sec T10 · V-DRIFT · Catalog drift (per SPEC sec S8.4 + sec S6.3)
+  // -------------------------------------------------------------------
+  describe("§T10 · V-DRIFT · Catalog drift", () => {
+    it("V-DRIFT-1 · engagement stamped against DELL_PRODUCT_TAXONOMY '2026.04' loaded with current '2026.07' flips affected to 'stale'", () => {});
+    it("V-DRIFT-2 · multiple drift detections (same engagement, multiple AI fields, multiple catalog mismatches) all flagged", () => {});
+    it("V-DRIFT-3 · validationStatus === 'user-edited' preserved through drift (NOT downgraded to stale)", () => {});
+    it("V-DRIFT-4 · validationStatus === 'invalid' preserved (NOT changed to stale)", () => {});
+    it("V-DRIFT-5 · drift count surfaces on engagement-load screen as a non-blocking banner", () => {});
+    it("V-DRIFT-6 · drift NEVER rewrites value field (only validationStatus)", () => {});
+    it("V-DRIFT-7 · drift detector is pure (same engagement + catalog → same flips)", () => {});
+    it("V-DRIFT-8 · drift detector handles model: 'unknown' records (from migration step 9) without errors", () => {});
+  });
+
+  // -------------------------------------------------------------------
+  // sec T11 · V-CAT · Catalog snapshot (per SPEC sec S6.3)
+  // -------------------------------------------------------------------
+  describe("§T11 · V-CAT · Catalog snapshot", () => {
+    it("V-CAT-1 · loadCatalog('LAYERS') returns 6-entry catalog parsed through LayerCatalogSchema", () => {});
+    it("V-CAT-2 · loadCatalog('BUSINESS_DRIVERS') returns 8-entry catalog", () => {});
+    it("V-CAT-3 · loadCatalog('ENV_CATALOG') returns 8-entry catalog", () => {});
+    it("V-CAT-4 · loadCatalog('SERVICE_TYPES') returns 10-entry catalog", () => {});
+    it("V-CAT-5 · loadCatalog('GAP_TYPES') returns 5-entry catalog", () => {});
+    it("V-CAT-6 · loadCatalog('DISPOSITION_ACTIONS') returns 7-entry catalog", () => {});
+    it("V-CAT-7 · loadCatalog('CUSTOMER_VERTICALS') returns alphabetised catalog", () => {});
+    it("V-CAT-DELL-1 · DELL_PRODUCT_TAXONOMY does NOT contain 'boomi', 'secureworks-taegis', 'vxrail', 'smartfabric-director'", () => {});
+    it("V-CAT-DELL-2 · DELL_PRODUCT_TAXONOMY DOES contain 'smartfabric-manager', 'dell-private-cloud', 'dell-automation-platform', 'powerflex'", () => {});
+    it("V-CAT-DELL-3 · DELL_PRODUCT_TAXONOMY 'cloudiq' entry has umbrella: 'Dell APEX AIOps'", () => {});
+    it("V-CAT-VER-1 · every catalog snapshot has catalogVersion matching /^\\d{4}\\.\\d{2}$/", () => {});
+    it("V-CAT-VER-2 · all v3.0 catalog snapshots ship with catalogVersion === '2026.04'", () => {});
+  });
+
+  // -------------------------------------------------------------------
+  // sec T12 · V-PERF · Performance regression (per SPEC sec S11.3)
+  // All limits are multiplied by SPEC sec S11.2 calibration multiplier.
+  // -------------------------------------------------------------------
+  describe("§T12 · V-PERF · Performance regression", () => {
+    it("V-PERF-1 · selectMatrixView cold start on acme-demo.canvas < 50ms × calibration", () => {});
+    it("V-PERF-2 · selectMatrixView hot path (memoized) < 1ms × calibration", () => {});
+    it("V-PERF-3 · all 7 selectors cold-start total < 300ms × calibration", () => {});
+    it("V-PERF-4 · full round-trip (load + migrate + integrity + hydrate + Tab 2) < 500ms × calibration", () => {});
+    it("V-PERF-5 · single tab render after engagement loaded < 100ms × calibration", () => {});
+    it("V-PERF-6 · integrity sweep on acme-demo.canvas < 100ms × calibration", () => {});
+    it("V-PERF-7 · migrate_v2_0_to_v3_0 on v2.0 acme-demo equivalent < 200ms × calibration", () => {});
+    it("V-PERF-8 · generateManifest cold < 50ms × calibration", () => {});
+    it("V-PERF-9 · validateSkillSave for 200-char template < 5ms × calibration", () => {});
+    it("V-PERF-SCALE-1 · acme-demo.canvas has exactly 200 instances (regression guard)", () => {});
+  });
+
+  // -------------------------------------------------------------------
+  // sec T13 · V-E2E · End-to-end tab render (per SPEC sec 14.1 cat 12)
+  // -------------------------------------------------------------------
+  describe("§T13 · V-E2E · End-to-end tab render", () => {
+    it("V-E2E-1 · loading acme-demo.canvas renders Tab 1 (Context) without console errors", () => {});
+    it("V-E2E-2 · loading acme-demo.canvas renders Tab 2 (Architecture) without console errors", () => {});
+    it("V-E2E-3 · Tab 3 (Heatmap) renders cleanly", () => {});
+    it("V-E2E-4 · Tab 4 (Gaps) renders cleanly", () => {});
+    it("V-E2E-5 · Tab 5 (Reporting) renders cleanly", () => {});
+    it("V-E2E-6 · engagement Save → Reload round-trip preserves shape", () => {});
+    it("V-E2E-7 · click any driver tile → engagement.activeEntity updates with kind: 'driver'", () => {});
+    it("V-E2E-8 · click outside any entity → activeEntity becomes null", () => {});
+    it("V-E2E-9 · open AI Assist (Ctrl+K) → overlay renders + skill list populated", () => {});
+    it("V-E2E-10 · run a session-wide skill → result panel renders without errors", () => {});
+    it("V-E2E-11 · run a click-to-run skill against active entity → result panel renders", () => {});
+    it("V-E2E-12 · loading a v2.0 fixture triggers migration → migrated engagement renders Tab 1 cleanly", () => {});
+  });
+
+  // -------------------------------------------------------------------
+  // sec T14 · V-INT · Integrity sweep (per SPEC sec S10.4)
+  // -------------------------------------------------------------------
+  describe("§T14 · V-INT · Integrity sweep", () => {
+    // One vector per repair rule (V-INT-1..10)
+    it("V-INT-1 · INT-ORPHAN-OPT: gap.driverId → deleted driver → field nulled + log entry", () => {});
+    it("V-INT-2 · INT-ORPHAN-ARR: gap.affectedEnvironments[] dangling element → removed + log entry", () => {});
+    it("V-INT-3 · INT-ORPHAN-REQ: instance.environmentId → deleted env → record quarantined + log entry", () => {});
+    it("V-INT-4 · INT-FILTER-MISS: instance.originId → desired-state instance (filter state='current') → field nulled + log", () => {});
+    it("V-INT-5 · INT-G6-REPAIR: gap.affectedLayers does NOT have layerId at index 0 → mechanical reorder + log", () => {});
+    it("V-INT-6 · INT-MAP-NONWL: non-workload instance has populated mappedAssetIds → array emptied + log", () => {});
+    it("V-INT-7 · INT-ORIGIN-CUR: current-state instance has originId → nulled + log", () => {});
+    it("V-INT-8 · INT-PRI-CUR: current-state instance has priority → nulled + log", () => {});
+    it("V-INT-9 · INT-EID-STAMP: record has engagementId mismatch → stamped + log", () => {});
+    it("V-INT-10 · INT-AI-DRIFT: AI provenance catalog version mismatch → validationStatus → stale + log", () => {});
+
+    // Sweep contract (V-INT-11..20)
+    it("V-INT-11 · sweep is pure: runIntegritySweep(eng) deepEqual on consecutive calls", () => {});
+    it("V-INT-12 · sweep runs AFTER migration in load harness", () => {});
+    it("V-INT-13 · sweep runs BEFORE UI hydration", () => {});
+    it("V-INT-14 · sweep NEVER creates new entities (V-INT-NOCREATE-1)", () => {});
+    it("V-INT-15 · sweep NEVER edits user-authored content fields — label, notes, description, outcomes", () => {});
+    it("V-INT-16 · quarantined records NOT in engagement.{drivers, environments, instances, gaps}", () => {});
+    it("V-INT-17 · quarantined records ARE in engagement.integrityLog.quarantine", () => {});
+    it("V-INT-18 · integrityLog stripped on save (V-INT-TRANSIENT-1)", () => {});
+    it("V-INT-19 · quarantine stripped on save (V-INT-TRANSIENT-2)", () => {});
+    it("V-INT-20 · repair log entries shape: ruleId + recordKind + recordId + field + before + after + timestamp", () => {});
+
+    // Forbidden behaviors (V-INT-FORBID-1..5)
+    it("V-INT-FORBID-1 · sweep does not call localStorage.*", () => {});
+    it("V-INT-FORBID-2 · sweep does not call document.* or window.*", () => {});
+    it("V-INT-FORBID-3 · sweep does not call fetch or any network", () => {});
+    it("V-INT-FORBID-4 · sweep does not write to console.error for repaired violations", () => {});
+    it("V-INT-FORBID-5 · sweep does not throw on any input shape that passes EngagementSchema", () => {});
+  });
+
+  // -------------------------------------------------------------------
+  // sec T15 · V-XCUT · Cross-cutting relationships (per SPEC sec 3.7 + S14.2)
+  // -------------------------------------------------------------------
+  describe("§T15 · V-XCUT · Cross-cutting relationships", () => {
+    it("V-XCUT-1 · workload mappedAssetIds across 2+ envs survives sweep + matrix view + vendor mix counts once", () => {});
+    it("V-XCUT-2 · desired originId cross-env survives sweep + linked composition pulls cross-env current", () => {});
+    it("V-XCUT-3 · gap with affectedEnvironments.length === 3 appears in all 3 env-filtered selectors + counted once globally", () => {});
+    it("V-XCUT-4 · gap relatedCurrentInstanceIds mixing envs → linked composition pulls all current regardless of env", () => {});
+    it("V-XCUT-5 · gap relatedDesiredInstanceIds mixing envs → linked composition pulls all desired regardless of env", () => {});
+  });
+
+  // -------------------------------------------------------------------
+  // sec T16 · V-PROD · Production-critical regression (per SPEC sec S7.4.3)
+  // -------------------------------------------------------------------
+  describe("§T16 · V-PROD · Production-critical regression suite", () => {
+    // dell-mapping (strict)
+    it("V-PROD-1 · dell-mapping output validates against DellSolutionListSchema", () => {});
+    it("V-PROD-2 · dell-mapping every entry id is in DELL_PRODUCT_TAXONOMY.entries[].id", () => {});
+    it("V-PROD-3 · dell-mapping NO entry id matches boomi/secureworks-taegis/vxrail/smartfabric-director", () => {});
+    it("V-PROD-4 · dell-mapping provenance fully populated (model + promptVersion + skillId + runId + timestamp + catalogVersions + validationStatus='valid')", () => {});
+    it("V-PROD-5 · dell-mapping output round-trips through save+load byte-equivalent", () => {});
+
+    // executive-summary (smoke)
+    it("V-PROD-6 · executive-summary output non-empty string of length >= 100", () => {});
+    it("V-PROD-7 · executive-summary contains customer.name (verbatim or close-match)", () => {});
+    it("V-PROD-8 · executive-summary provenance stamped (validationStatus='valid', catalogVersions populated)", () => {});
+
+    // care-builder (strict)
+    it("V-PROD-9 · care-builder output is a save-able skill record (passes SkillSchema parse)", () => {});
+    it("V-PROD-10 · care-builder output round-trips through validateSkillSave without errors", () => {});
+    it("V-PROD-11 · care-builder output bindings[] reference paths that all exist in the manifest", () => {});
+  });
+
+  // -------------------------------------------------------------------
+  // sec T17 · V-MULTI · Multi-engagement readiness (per SPEC sec S12.4)
+  // -------------------------------------------------------------------
+  describe("§T17 · V-MULTI · Multi-engagement readiness", () => {
+    it("V-MULTI-1 · every record post-action has engagementId === engagementMeta.engagementId", () => {});
+    it("V-MULTI-2 · engagementMeta.ownerId defaults to 'local-user' when not set", () => {});
+    it("V-MULTI-3 · record.updatedAt > record.createdAt after a single update", () => {});
+    it("V-MULTI-4 · record.updatedAt === record.createdAt initially", () => {});
+    it("V-MULTI-5 · action addInstance stamps engagementId from engagement context (not from caller arg)", () => {});
+    it("V-MULTI-6 · saved .canvas includes ownerId", () => {});
+    it("V-MULTI-7 · saved .canvas includes createdAt + updatedAt on every record", () => {});
+    it("V-MULTI-8 · v2.0 fixture without ownerId migrates to 'local-user' (cross-ref V-MIG-S3-1)", () => {});
+  });
+
+  // -------------------------------------------------------------------
+  // sec T18 · V-ANTI · Anti-cheat meta-tests (per SPEC sec S14.5)
+  // These vectors run against TEST + PRODUCTION source code, not runtime.
+  // -------------------------------------------------------------------
+  describe("§T18 · V-ANTI · Anti-cheat meta-tests", () => {
+    it("V-ANTI-1 · no `process.env.NODE_ENV === 'test'` in core/ state/ services/ selectors/ interactions/ ui/", () => {});
+    it("V-ANTI-2 · every try/catch in production code rethrows OR logs (no swallowed catches)", () => {});
+    it("V-ANTI-3 · no `assert(stubReturnValue === stubReturnValue)` patterns in test source", () => {});
+    it("V-ANTI-4 · every R-number in SPEC.md has >=1 matching vector id in TESTS.md (smoke; strict in v3.1)", () => {});
+    it("V-ANTI-5 · no internal modules mocked outside SPEC sec S14.4 closed list", () => {});
+  });
+
+});
+
 // v2.4.5 · Foundations Refresh · register the human-surface demo suite
 // into the same runner so there's a single green banner for the whole
 // release. Import at bottom to avoid circular-dependency risk with the
