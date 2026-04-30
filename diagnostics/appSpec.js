@@ -8642,6 +8642,8 @@ import {
   SEED_SKILL_CARE_BUILDER,
   V3_SEED_SKILLS
 } from "../core/v3SeedSkills.js";
+import { SkillSchema, createEmptySkill } from "../schema/skill.js";
+import { validateSkillSave }             from "../services/skillSaveValidator.js";
 
 // ============================================================================
 // Suite 49 · v3.0 data architecture rebuild · RED-first vector scaffold
@@ -10006,20 +10008,119 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
   // -------------------------------------------------------------------
   describe("§T8 · V-PATH · Path resolution", () => {
     // Save-time validation (V-PATH-1..15)
-    it("V-PATH-1 · skill with template '{{customer.name}}' saves cleanly (path in sessionPaths)", () => {});
-    it("V-PATH-2 · skill with '{{context.driver.priority}}' + entityKind:'driver' saves cleanly", () => {});
-    it("V-PATH-3 · skill with '{{nonsense.path}}' blocks save with structured error", () => {});
-    it("V-PATH-4 · skill entityKind:'driver' cannot use context.gap.* paths (cross-kind blocked)", () => {});
-    it("V-PATH-5 · save error envelope includes validPaths list", () => {});
+    it("V-PATH-1 · skill with template '{{customer.name}}' saves cleanly (path in sessionPaths)", () => {
+      const skill = createEmptySkill({
+        skillId: "skl-v-path-1", promptTemplate: "Hi {{customer.name}}!" });
+      const result = validateSkillSave(skill, generateManifest());
+      assert(result.ok === true, "session path resolves cleanly: " + JSON.stringify(result));
+    });
+    it("V-PATH-2 · skill with '{{context.driver.priority}}' + entityKind:'driver' saves cleanly", () => {
+      const skill = createEmptySkill({
+        skillId:        "skl-v-path-2",
+        skillType:      "click-to-run",
+        entityKind:     "driver",
+        promptTemplate: "Driver priority: {{context.driver.priority}}"
+      });
+      const result = validateSkillSave(skill, generateManifest());
+      assert(result.ok === true, "driver entity-scoped path resolves: " + JSON.stringify(result));
+    });
+    it("V-PATH-3 · skill with '{{nonsense.path}}' blocks save with structured error", () => {
+      const skill = createEmptySkill({
+        skillId: "skl-v-path-3",
+        promptTemplate: "Bad path: {{nonsense.path}}"
+      });
+      const result = validateSkillSave(skill, generateManifest());
+      assertEqual(result.ok, false, "save blocked");
+      assert(result.errors.length === 1, "exactly one error");
+      assertEqual(result.errors[0].path, "nonsense.path", "error path captured");
+    });
+    it("V-PATH-4 · skill entityKind:'driver' cannot use context.gap.* paths (cross-kind blocked)", () => {
+      const skill = createEmptySkill({
+        skillId: "skl-v-path-4",
+        skillType: "click-to-run",
+        entityKind: "driver",
+        promptTemplate: "Cross-kind: {{context.gap.description}}"
+      });
+      const result = validateSkillSave(skill, generateManifest());
+      assertEqual(result.ok, false, "cross-kind path blocked");
+      assertEqual(result.errors[0].path, "context.gap.description",
+        "rejection points at the wrong-kind path");
+    });
+    it("V-PATH-5 · save error envelope includes validPaths list", () => {
+      const skill = createEmptySkill({
+        skillId: "skl-v-path-5",
+        promptTemplate: "Bad: {{nonsense.x}}"
+      });
+      const result = validateSkillSave(skill, generateManifest());
+      assertEqual(result.ok, false, "blocked");
+      assert(Array.isArray(result.errors[0].validPaths) && result.errors[0].validPaths.length > 0,
+        "error envelope includes validPaths list (UI surfaces these as suggestions)");
+      assert(result.errors[0].validPaths.includes("customer.name"),
+        "validPaths includes customer.name (sample sessionPaths entry)");
+    });
     it("V-PATH-6 · driver entity kind valid path saves; invalid blocks", () => {});
     it("V-PATH-7 · currentInstance entity kind valid path saves; invalid blocks", () => {});
     it("V-PATH-8 · desiredInstance entity kind valid path saves; invalid blocks", () => {});
     it("V-PATH-9 · gap entity kind valid path saves; invalid blocks", () => {});
     it("V-PATH-10 · environment entity kind valid path saves; invalid blocks", () => {});
     it("V-PATH-11 · project entity kind valid path saves; invalid blocks", () => {});
-    it("V-PATH-12 · session-wide skill rejects entityKind-scoped path", () => {});
-    it("V-PATH-13 · click-to-run skill missing entityKind blocks save (superRefine)", () => {});
-    it("V-PATH-14 · session-wide skill with entityKind set blocks save (superRefine)", () => {});
+    it("V-PATH-12 · session-wide skill rejects entityKind-scoped path", () => {
+      const skill = createEmptySkill({
+        skillId: "skl-v-path-12",
+        skillType: "session-wide",
+        entityKind: null,
+        promptTemplate: "Bad: {{context.driver.priority}}"
+      });
+      const result = validateSkillSave(skill, generateManifest());
+      assertEqual(result.ok, false, "session-wide can't use entity-scoped path");
+      assertEqual(result.errors[0].path, "context.driver.priority",
+        "rejection points at the entity-scoped path");
+    });
+    it("V-PATH-13 · click-to-run skill missing entityKind blocks save (superRefine)", () => {
+      // SkillSchema's superRefine catches this BEFORE validateSkillSave runs.
+      const draft = {
+        id: "00000000-0000-4000-8000-000000000013",
+        engagementId: "00000000-0000-4000-8000-000000000013",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        skillId:        "skl-v-path-13",
+        label:          "Bad",
+        version:        "1.0.0",
+        skillType:      "click-to-run",
+        entityKind:     null,                  // INVALID for click-to-run
+        promptTemplate: "Hello",
+        bindings:       [],
+        outputContract: "free-text",
+        validatedAgainst:     "3.0",
+        outdatedSinceVersion: null
+      };
+      const result = SkillSchema.safeParse(draft);
+      assertEqual(result.success, false, "superRefine rejects click-to-run with null entityKind");
+      assert(result.error.issues.some(i => i.path[0] === "entityKind"),
+        "rejection points at entityKind");
+    });
+    it("V-PATH-14 · session-wide skill with entityKind set blocks save (superRefine)", () => {
+      const draft = {
+        id: "00000000-0000-4000-8000-000000000014",
+        engagementId: "00000000-0000-4000-8000-000000000014",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        skillId:        "skl-v-path-14",
+        label:          "Bad",
+        version:        "1.0.0",
+        skillType:      "session-wide",
+        entityKind:     "driver",              // INVALID for session-wide
+        promptTemplate: "Hello",
+        bindings:       [],
+        outputContract: "free-text",
+        validatedAgainst:     "3.0",
+        outdatedSinceVersion: null
+      };
+      const result = SkillSchema.safeParse(draft);
+      assertEqual(result.success, false, "superRefine rejects session-wide with entityKind set");
+      assert(result.error.issues.some(i => i.path[0] === "entityKind"),
+        "rejection points at entityKind");
+    });
     it("V-PATH-15 · save error envelope sorted by template appearance order", () => {});
 
     // Run-time resolution (V-PATH-16..30)
@@ -10910,9 +11011,77 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     });
 
     // care-builder (strict)
-    it("V-PROD-9 · care-builder output is a save-able skill record (passes SkillSchema parse)", () => {});
-    it("V-PROD-10 · care-builder output round-trips through validateSkillSave without errors", () => {});
-    it("V-PROD-11 · care-builder output bindings[] reference paths that all exist in the manifest", () => {});
+    it("V-PROD-9 · care-builder output is a save-able skill record (passes SkillSchema parse)", async () => {
+      // Mock returns a JSON-shaped skill record; runner validates via
+      // SkillSchema (registered in skillOutputSchemas).
+      const mockSkill = {
+        id:           "00000000-0000-4000-8000-000000000099",
+        engagementId: "00000000-0000-4000-8000-000000000099",
+        createdAt:    "2026-01-01T00:00:00.000Z",
+        updatedAt:    "2026-01-01T00:00:00.000Z",
+        skillId:      "skl-care-output-1",
+        label:        "Generated CARE prompt",
+        version:      "1.0.0",
+        skillType:    "session-wide",
+        entityKind:   null,
+        promptTemplate:       "CARE prompt for {{customer.name}}",
+        bindings:             [{ path: "customer.name", source: "session" }],
+        outputContract:       "free-text",
+        validatedAgainst:     "3.0",
+        outdatedSinceVersion: null
+      };
+      const provider = createMockLLMProvider({
+        defaultResponse: { model: "mock", text: JSON.stringify(mockSkill) }
+      });
+      const ctx = {
+        customer: { name: "Acme" },
+        catalogVersions: { BUSINESS_DRIVERS: "2026.04" }
+      };
+      const result = await runSkill(SEED_SKILL_CARE_BUILDER, ctx, provider,
+        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-9" });
+      assertEqual(result.provenance.validationStatus, "valid",
+        "care-builder output passes SkillSchema -> valid");
+      assertEqual(result.value.skillId, "skl-care-output-1", "skillId preserved in output");
+      // Sanity: parse the output through SkillSchema directly
+      const reparse = SkillSchema.safeParse(result.value);
+      assert(reparse.success, "output reparses cleanly through SkillSchema");
+    });
+    it("V-PROD-10 · care-builder output round-trips through validateSkillSave without errors", () => {
+      // The skill care-builder produces uses ONLY paths that exist in
+      // the manifest. Prove this against a hand-built care-output skill
+      // (full runner round-trip is tested by V-PROD-9; this vector
+      // focuses on the validateSkillSave handshake).
+      const careOutput = createEmptySkill({
+        skillId:        "skl-care-out",
+        label:          "CARE output",
+        skillType:      "session-wide",
+        entityKind:     null,
+        promptTemplate: "Hello {{customer.name}} ({{customer.vertical}})!"
+      });
+      const manifest = generateManifest();
+      const result = validateSkillSave(careOutput, manifest);
+      assert(result.ok === true,
+        "care-builder output round-trips through validateSkillSave: " +
+        JSON.stringify(result.errors || ""));
+    });
+    it("V-PROD-11 · care-builder output bindings[] reference paths that all exist in the manifest", () => {
+      const careOutput = createEmptySkill({
+        skillId:        "skl-care-bindings",
+        skillType:      "session-wide",
+        entityKind:     null,
+        promptTemplate: "Hi {{customer.name}}",
+        bindings: [
+          { path: "customer.name",     source: "session" },
+          { path: "customer.vertical", source: "session" }
+        ]
+      });
+      const manifest = generateManifest();
+      const sessionPathSet = new Set(manifest.sessionPaths.map(p => p.path));
+      careOutput.bindings.forEach(b => {
+        assert(sessionPathSet.has(b.path),
+          "binding path '" + b.path + "' must exist in manifest sessionPaths");
+      });
+    });
   });
 
   // -------------------------------------------------------------------

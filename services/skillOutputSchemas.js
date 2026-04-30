@@ -9,11 +9,11 @@
 //   2. Importing + registering here
 
 import { DellSolutionListSchema } from "../schema/aiOutputs/dellSolutionList.js";
+import { SkillSchema }            from "../schema/skill.js";
 
 const REGISTRY = Object.freeze({
-  DellSolutionListSchema
-  // SkillSchema (for care-builder) lands when SkillSchema is authored
-  // in schema/skill.js per SPEC sec S7.1
+  DellSolutionListSchema,
+  SkillSchema    // care-builder generates save-able skill records
 });
 
 export function getOutputSchema(schemaRef) {
