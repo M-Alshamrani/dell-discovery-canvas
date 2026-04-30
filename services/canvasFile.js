@@ -20,6 +20,7 @@ import { EngagementSchema, CURRENT_SCHEMA_VERSION } from "../schema/engagement.j
 import { migrateToVersion, MigrationError, MigrationStepError } from "../migrations/index.js";
 import { makePipelineContext } from "../migrations/helpers/pipelineContext.js";
 import { loadAllCatalogs } from "./catalogLoader.js";
+import { runIntegritySweep } from "../state/integritySweep.js";
 
 export const FILE_FORMAT_VERSION = "v3-1";   // bump from v2.x's "v2-x" formats
 export const FILE_MIME = "application/x-dell-discovery-canvas";
@@ -159,11 +160,28 @@ export async function loadCanvas(envelope) {
     };
   }
 
-  // Integrity sweep — stub today. Real implementation (state/integritySweep.js)
-  // ships per SPEC sec S10. Until then, we return the engagement as-is.
+  // Integrity sweep per SPEC sec S10. Wired here: validated engagement
+  // -> sweep handles FK orphans (Zod doesn't check existence in the
+  // target collection) + AI catalog-version drift detection.
+  let sweptEngagement = validation.data;
+  let sweepLog = [];
+  let sweepQuarantine = [];
+  try {
+    const catalogs = await loadAllCatalogs();
+    const sweep = runIntegritySweep(validation.data, catalogs);
+    sweptEngagement = sweep.repaired;
+    sweepLog = sweep.log;
+    sweepQuarantine = sweep.quarantine;
+  } catch (e) {
+    // Sweep failure is non-fatal: surface but proceed with un-swept engagement.
+    sweepLog = [{ ruleId: "INT-SWEEP-ERROR", message: e.message }];
+  }
+
   return {
-    ok:         true,
-    engagement: validation.data
+    ok:           true,
+    engagement:   sweptEngagement,
+    integrityLog: sweepLog,
+    quarantine:   sweepQuarantine
   };
 }
 

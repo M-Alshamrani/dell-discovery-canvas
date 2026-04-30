@@ -8629,6 +8629,7 @@ import { migrate_v2_0_to_v3_0, MigrationStepError } from "../migrations/v2-0_to_
 import { migrateToVersion } from "../migrations/index.js";
 import { makePipelineContext } from "../migrations/helpers/pipelineContext.js";
 import { generateDeterministicId } from "../migrations/helpers/deterministicId.js";
+import { runIntegritySweep } from "../state/integritySweep.js";
 
 // ============================================================================
 // Suite 49 · v3.0 data architecture rebuild · RED-first vector scaffold
@@ -10036,13 +10037,147 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
   // sec T10 · V-DRIFT · Catalog drift (per SPEC sec S8.4 + sec S6.3)
   // -------------------------------------------------------------------
   describe("§T10 · V-DRIFT · Catalog drift", () => {
-    it("V-DRIFT-1 · engagement stamped against DELL_PRODUCT_TAXONOMY '2026.04' loaded with current '2026.07' flips affected to 'stale'", () => {});
+    it("V-DRIFT-1 · engagement stamped against DELL_PRODUCT_TAXONOMY '2026.04' loaded with current '2026.07' flips affected to 'stale'", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addGapV3(eng, { description: "g1", gapType: "replace", urgency: "Medium",
+        phase: "now", status: "open", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      const gapId = eng.gaps.allIds[0];
+      // Inject a valid AI-provenanced field stamped against 2026.04
+      const stampedEng = { ...eng,
+        gaps: { ...eng.gaps,
+          byId: { ...eng.gaps.byId,
+            [gapId]: { ...eng.gaps.byId[gapId],
+              aiMappedDellSolutions: {
+                value: { products: ["powerstore"] },
+                provenance: {
+                  model: "claude-sonnet-4-6",
+                  promptVersion: "skill:dellMap@1.0.0",
+                  skillId: "skl-001",
+                  runId: "run-001",
+                  timestamp: "2026-04-01T00:00:00.000Z",
+                  catalogVersions: { DELL_PRODUCT_TAXONOMY: "2026.04" },
+                  validationStatus: "valid"
+                }
+              }
+            }
+          }
+        }
+      };
+      // Newer catalog version in the loaded catalogs
+      const newerCatalogs = {
+        DELL_PRODUCT_TAXONOMY: { catalogVersion: "2026.07", entries: [] }
+      };
+      const result = runIntegritySweep(stampedEng, newerCatalogs);
+      const sweptGap = result.repaired.gaps.byId[gapId];
+      assertEqual(sweptGap.aiMappedDellSolutions.provenance.validationStatus, "stale",
+        "valid -> stale on catalog version mismatch");
+      assert(result.log.some(l => l.ruleId === "INT-AI-DRIFT"),
+        "INT-AI-DRIFT log entry emitted");
+    });
     it("V-DRIFT-2 · multiple drift detections (same engagement, multiple AI fields, multiple catalog mismatches) all flagged", () => {});
-    it("V-DRIFT-3 · validationStatus === 'user-edited' preserved through drift (NOT downgraded to stale)", () => {});
+    it("V-DRIFT-3 · validationStatus === 'user-edited' preserved through drift (NOT downgraded to stale)", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addGapV3(eng, { description: "g1", gapType: "replace", urgency: "Medium",
+        phase: "now", status: "open", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      const gapId = eng.gaps.allIds[0];
+      const stampedEng = { ...eng,
+        gaps: { ...eng.gaps,
+          byId: { ...eng.gaps.byId,
+            [gapId]: { ...eng.gaps.byId[gapId],
+              aiMappedDellSolutions: {
+                value: { products: ["powerstore"] },
+                provenance: {
+                  model: "claude-sonnet-4-6", promptVersion: "skill:dellMap@1.0.0",
+                  skillId: "skl-001", runId: "run-001",
+                  timestamp: "2026-04-01T00:00:00.000Z",
+                  catalogVersions: { DELL_PRODUCT_TAXONOMY: "2026.04" },
+                  validationStatus: "user-edited"   // user already edited
+                }
+              }
+            }
+          }
+        }
+      };
+      const newerCatalogs = { DELL_PRODUCT_TAXONOMY: { catalogVersion: "2026.07", entries: [] } };
+      const result = runIntegritySweep(stampedEng, newerCatalogs);
+      const sweptGap = result.repaired.gaps.byId[gapId];
+      assertEqual(sweptGap.aiMappedDellSolutions.provenance.validationStatus, "user-edited",
+        "user-edited preserved (NOT downgraded to stale)");
+    });
     it("V-DRIFT-4 · validationStatus === 'invalid' preserved (NOT changed to stale)", () => {});
     it("V-DRIFT-5 · drift count surfaces on engagement-load screen as a non-blocking banner", () => {});
-    it("V-DRIFT-6 · drift NEVER rewrites value field (only validationStatus)", () => {});
-    it("V-DRIFT-7 · drift detector is pure (same engagement + catalog → same flips)", () => {});
+    it("V-DRIFT-6 · drift NEVER rewrites value field (only validationStatus)", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addGapV3(eng, { description: "g1", gapType: "replace", urgency: "Medium",
+        phase: "now", status: "open", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      const gapId = eng.gaps.allIds[0];
+      const originalValue = { products: ["powerstore", "powerprotect_dd"] };
+      const stampedEng = { ...eng,
+        gaps: { ...eng.gaps,
+          byId: { ...eng.gaps.byId,
+            [gapId]: { ...eng.gaps.byId[gapId],
+              aiMappedDellSolutions: {
+                value: originalValue,
+                provenance: {
+                  model: "claude-sonnet-4-6", promptVersion: "skill:dellMap@1.0.0",
+                  skillId: "skl-001", runId: "run-001",
+                  timestamp: "2026-04-01T00:00:00.000Z",
+                  catalogVersions: { DELL_PRODUCT_TAXONOMY: "2026.04" },
+                  validationStatus: "valid"
+                }
+              }
+            }
+          }
+        }
+      };
+      const newerCatalogs = { DELL_PRODUCT_TAXONOMY: { catalogVersion: "2026.07", entries: [] } };
+      const result = runIntegritySweep(stampedEng, newerCatalogs);
+      const sweptValue = result.repaired.gaps.byId[gapId].aiMappedDellSolutions.value;
+      assertEqual(JSON.stringify(sweptValue), JSON.stringify(originalValue),
+        "value field unchanged after drift detection");
+    });
+    it("V-DRIFT-7 · drift detector is pure (same engagement + catalog → same flips)", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addGapV3(eng, { description: "g1", gapType: "replace", urgency: "Medium",
+        phase: "now", status: "open", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      const gapId = eng.gaps.allIds[0];
+      const stampedEng = { ...eng,
+        gaps: { ...eng.gaps,
+          byId: { ...eng.gaps.byId,
+            [gapId]: { ...eng.gaps.byId[gapId],
+              aiMappedDellSolutions: {
+                value: { products: ["powerstore"] },
+                provenance: {
+                  model: "claude-sonnet-4-6", promptVersion: "skill:dellMap@1.0.0",
+                  skillId: "skl-001", runId: "run-001",
+                  timestamp: "2026-04-01T00:00:00.000Z",
+                  catalogVersions: { DELL_PRODUCT_TAXONOMY: "2026.04" },
+                  validationStatus: "valid"
+                }
+              }
+            }
+          }
+        }
+      };
+      const newerCatalogs = { DELL_PRODUCT_TAXONOMY: { catalogVersion: "2026.07", entries: [] } };
+      const a = runIntegritySweep(stampedEng, newerCatalogs);
+      const b = runIntegritySweep(stampedEng, newerCatalogs);
+      assertEqual(JSON.stringify(a.repaired.gaps.byId[gapId]),
+                  JSON.stringify(b.repaired.gaps.byId[gapId]),
+        "drift detector is deterministic");
+    });
     it("V-DRIFT-8 · drift detector handles model: 'unknown' records (from migration step 9) without errors", () => {});
   });
 
@@ -10204,9 +10339,79 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
   // -------------------------------------------------------------------
   describe("§T14 · V-INT · Integrity sweep", () => {
     // One vector per repair rule (V-INT-1..10)
-    it("V-INT-1 · INT-ORPHAN-OPT: gap.driverId → deleted driver → field nulled + log entry", () => {});
-    it("V-INT-2 · INT-ORPHAN-ARR: gap.affectedEnvironments[] dangling element → removed + log entry", () => {});
-    it("V-INT-3 · INT-ORPHAN-REQ: instance.environmentId → deleted env → record quarantined + log entry", () => {});
+    it("V-INT-1 · INT-ORPHAN-OPT: gap.driverId → deleted driver → field nulled + log entry", () => {
+      // Helper: minimal engagement with a gap pointing at a non-existent driver.
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addGapV3(eng, { description: "g1", gapType: "replace", urgency: "Medium",
+        phase: "now", status: "open", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      const gapId = eng.gaps.allIds[0];
+      // Manually inject a non-existent driverId (simulate post-load orphan)
+      const broken = { ...eng,
+        gaps: { ...eng.gaps,
+          byId: { ...eng.gaps.byId,
+            [gapId]: { ...eng.gaps.byId[gapId], driverId: "11111111-2222-3333-4444-555555555555" }
+          }
+        }
+      };
+      const result = runIntegritySweep(broken, {});
+      const swept = result.repaired.gaps.byId[gapId];
+      assertEqual(swept.driverId, null, "orphan optional FK -> nulled");
+      assert(result.log.some(l => l.ruleId === "INT-ORPHAN-OPT" && l.field === "driverId"),
+        "INT-ORPHAN-OPT log entry emitted");
+    });
+    it("V-INT-2 · INT-ORPHAN-ARR: gap.affectedEnvironments[] dangling element → removed + log entry", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      const phantomEnv = "11111111-2222-3333-4444-555555555555";
+      eng = addGapV3(eng, { description: "g1", gapType: "replace", urgency: "Medium",
+        phase: "now", status: "open", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      const gapId = eng.gaps.allIds[0];
+      // Inject a dangling env id into the array
+      const broken = { ...eng,
+        gaps: { ...eng.gaps,
+          byId: { ...eng.gaps.byId,
+            [gapId]: { ...eng.gaps.byId[gapId],
+              affectedEnvironments: [env1, phantomEnv] }
+          }
+        }
+      };
+      const result = runIntegritySweep(broken, {});
+      const swept = result.repaired.gaps.byId[gapId];
+      assertEqual(swept.affectedEnvironments.length, 1, "dangling element removed");
+      assertEqual(swept.affectedEnvironments[0], env1, "valid element preserved");
+      assert(result.log.some(l => l.ruleId === "INT-ORPHAN-ARR"),
+        "INT-ORPHAN-ARR log entry emitted");
+    });
+    it("V-INT-3 · INT-ORPHAN-REQ: instance.environmentId → deleted env → record quarantined + log entry", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addInstanceV3(eng, { state:"current", layerId:"compute", environmentId:env1,
+        label:"T1", vendor:"Dell", vendorGroup:"dell", criticality:"Medium", disposition:"keep" }).engagement;
+      const instId = eng.instances.allIds[0];
+      // Re-point environmentId at a deleted env
+      const broken = { ...eng,
+        instances: { ...eng.instances,
+          byId: { ...eng.instances.byId,
+            [instId]: { ...eng.instances.byId[instId],
+              environmentId: "11111111-2222-3333-4444-555555555555" }
+          }
+        }
+      };
+      const result = runIntegritySweep(broken, {});
+      assert(!result.repaired.instances.byId[instId],
+        "instance with dangling required FK removed from active engagement");
+      assertEqual(result.repaired.instances.allIds.length, 0, "instances collection emptied");
+      assert(result.quarantine.some(q => q.recordKind === "instance" && q.recordId === instId),
+        "instance is in quarantine");
+      assert(result.quarantine.some(q => q.ruleId === "INT-ORPHAN-REQ"),
+        "INT-ORPHAN-REQ rule recorded in quarantine");
+    });
     it("V-INT-4 · INT-FILTER-MISS: instance.originId → desired-state instance (filter state='current') → field nulled + log", () => {});
     it("V-INT-5 · INT-G6-REPAIR: gap.affectedLayers does NOT have layerId at index 0 → mechanical reorder + log", () => {});
     it("V-INT-6 · INT-MAP-NONWL: non-workload instance has populated mappedAssetIds → array emptied + log", () => {});
@@ -10216,11 +10421,36 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-INT-10 · INT-AI-DRIFT: AI provenance catalog version mismatch → validationStatus → stale + log", () => {});
 
     // Sweep contract (V-INT-11..20)
-    it("V-INT-11 · sweep is pure: runIntegritySweep(eng) deepEqual on consecutive calls", () => {});
+    it("V-INT-11 · sweep is pure: runIntegritySweep(eng) deepEqual on consecutive calls", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const a = runIntegritySweep(eng, {});
+      const b = runIntegritySweep(eng, {});
+      assertEqual(JSON.stringify(a.repaired), JSON.stringify(b.repaired),
+        "consecutive sweeps produce deep-equal repaired engagement");
+      assertEqual(JSON.stringify(a.log), JSON.stringify(b.log),
+        "consecutive sweeps produce deep-equal log");
+    });
     it("V-INT-12 · sweep runs AFTER migration in load harness", () => {});
     it("V-INT-13 · sweep runs BEFORE UI hydration", () => {});
     it("V-INT-14 · sweep NEVER creates new entities (V-INT-NOCREATE-1)", () => {});
-    it("V-INT-15 · sweep NEVER edits user-authored content fields — label, notes, description, outcomes", () => {});
+    it("V-INT-15 · sweep NEVER edits user-authored content fields — label, notes, description, outcomes", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addGapV3(eng, { description: "User-authored description", gapType: "replace",
+        urgency: "Medium", phase: "now", status: "open", layerId: "compute",
+        notes: "User notes that must be preserved verbatim",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      eng = addDriver(eng, { businessDriverId: "ai_data", priority: "High",
+        outcomes: "User-authored outcomes" }).engagement;
+      const result = runIntegritySweep(eng, {});
+      const gap = result.repaired.gaps.byId[result.repaired.gaps.allIds[0]];
+      const driver = result.repaired.drivers.byId[result.repaired.drivers.allIds[0]];
+      assertEqual(gap.description, "User-authored description", "gap.description preserved");
+      assertEqual(gap.notes, "User notes that must be preserved verbatim", "gap.notes preserved");
+      assertEqual(driver.outcomes, "User-authored outcomes", "driver.outcomes preserved");
+    });
     it("V-INT-16 · quarantined records NOT in engagement.{drivers, environments, instances, gaps}", () => {});
     it("V-INT-17 · quarantined records ARE in engagement.integrityLog.quarantine", () => {});
     it("V-INT-18 · integrityLog stripped on save (V-INT-TRANSIENT-1)", () => {});
