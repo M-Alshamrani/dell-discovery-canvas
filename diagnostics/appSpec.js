@@ -8632,6 +8632,8 @@ import { generateDeterministicId } from "../migrations/helpers/deterministicId.j
 import { runIntegritySweep } from "../state/integritySweep.js";
 import { generateManifest, serializeManifestStable } from "../services/manifestGenerator.js";
 import { resolveTemplate, resolvePath } from "../services/pathResolver.js";
+import { buildReferenceEngagement } from "../tests/perf/buildReferenceEngagement.js";
+import { measure, measureMin, assertWithinBudget, PERF_BUDGETS } from "../tests/perf/perfHarness.js";
 
 // ============================================================================
 // Suite 49 · v3.0 data architecture rebuild · RED-first vector scaffold
@@ -10400,16 +10402,104 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
   // All limits are multiplied by SPEC sec S11.2 calibration multiplier.
   // -------------------------------------------------------------------
   describe("§T12 · V-PERF · Performance regression", () => {
-    it("V-PERF-1 · selectMatrixView cold start on acme-demo.canvas < 50ms × calibration", () => {});
-    it("V-PERF-2 · selectMatrixView hot path (memoized) < 1ms × calibration", () => {});
-    it("V-PERF-3 · all 7 selectors cold-start total < 300ms × calibration", () => {});
-    it("V-PERF-4 · full round-trip (load + migrate + integrity + hydrate + Tab 2) < 500ms × calibration", () => {});
-    it("V-PERF-5 · single tab render after engagement loaded < 100ms × calibration", () => {});
-    it("V-PERF-6 · integrity sweep on acme-demo.canvas < 100ms × calibration", () => {});
+    it("V-PERF-1 · selectMatrixView cold start on acme-demo.canvas < 50ms × calibration", () => {
+      const eng = buildReferenceEngagement();
+      // Cold start: best of 3 runs (jitter tolerant). Each call uses a
+      // fresh memo cache because we vary args.
+      const { wallMs } = measureMin("selectMatrixView cold", () =>
+        selectMatrixView(eng, { state: "current", _key: Date.now() }));
+      assertWithinBudget(wallMs, PERF_BUDGETS.selectorColdStart,
+        "V-PERF-1 selectMatrixView cold");
+    });
+    it("V-PERF-2 · selectMatrixView hot path (memoized) < 1ms × calibration", () => {
+      const eng = buildReferenceEngagement();
+      const args = { state: "current" };
+      // Prime the memo cache
+      selectMatrixView(eng, args);
+      // Hot path: best of 5 calls with same (engagement, args) — should
+      // hit memoizeOne's cache and return immediately.
+      const { wallMs } = measureMin("selectMatrixView hot", () =>
+        selectMatrixView(eng, args), 5);
+      assertWithinBudget(wallMs, PERF_BUDGETS.selectorHotPath,
+        "V-PERF-2 selectMatrixView hot");
+    });
+    it("V-PERF-3 · all 7 selectors cold-start total < 300ms × calibration", () => {
+      const eng = buildReferenceEngagement();
+      const { wallMs } = measure("all-7-selectors-cold", () => {
+        selectMatrixView(eng,             { state: "current", _key: 1 });
+        selectGapsKanban(eng);
+        selectProjects(eng);
+        selectVendorMix(eng);
+        selectHealthSummary(eng);
+        selectExecutiveSummaryInputs(eng);
+        // selectLinkedComposition needs a kind+id; pick the first driver.
+        const drvId = eng.drivers.allIds[0];
+        selectLinkedComposition(eng, { kind: "driver", id: drvId });
+      });
+      assertWithinBudget(wallMs, PERF_BUDGETS.allSelectorsColdTotal,
+        "V-PERF-3 all 7 selectors cold-start total");
+    });
+    it("V-PERF-4 · full round-trip (load + migrate + integrity + hydrate + Tab 2) < 500ms × calibration", () => {
+      // Build engagement -> save envelope -> tab-2 selector. The actual
+      // load+migrate+integrity path runs through canvasFile.loadCanvas
+      // (async), so this vector exercises the whole synchronous slice
+      // we can measure here: build + save + reparse + tab-2 selector.
+      const { wallMs } = measure("full-roundtrip-sync", () => {
+        const eng = buildReferenceEngagement();
+        const saved = buildSaveEnvelopeV3(eng);
+        if (!saved.ok) throw new Error("save failed");
+        // Re-validate the persisted envelope (mirrors loadCanvas's
+        // boundary validation step).
+        const reparsed = JSON.parse(JSON.stringify(saved.envelope.engagement));
+        // Selectors against the reparsed engagement (not memoizable;
+        // reparsed has new object refs).
+        selectMatrixView(reparsed, { state: "current", _key: 2 });
+      });
+      assertWithinBudget(wallMs, PERF_BUDGETS.fullRoundTrip,
+        "V-PERF-4 full round-trip sync slice");
+    });
+    it("V-PERF-5 · single tab render after engagement loaded < 100ms × calibration", () => {
+      // "Tab render" against v3.0 selectors = compute the view object
+      // for that tab. Actual DOM rendering is the v2.x view layer's job
+      // (which still receives v2.x session shape today). When the v3.0
+      // -> v2.x adapter lands, this can extend to actual DOM time.
+      const eng = buildReferenceEngagement();
+      const { wallMs } = measureMin("tab-render-tab-2", () => {
+        selectMatrixView(eng, { state: "current", _key: Math.random() });
+        selectVendorMix(eng);
+      });
+      assertWithinBudget(wallMs, PERF_BUDGETS.tabRender,
+        "V-PERF-5 single tab render selectors");
+    });
+    it("V-PERF-6 · integrity sweep on acme-demo.canvas < 100ms × calibration", () => {
+      const eng = buildReferenceEngagement();
+      const { wallMs } = measureMin("integrity-sweep-200inst", () =>
+        runIntegritySweep(eng, {}));
+      assertWithinBudget(wallMs, PERF_BUDGETS.integritySweep,
+        "V-PERF-6 integrity sweep on 200-instance reference");
+    });
     it("V-PERF-7 · migrate_v2_0_to_v3_0 on v2.0 acme-demo equivalent < 200ms × calibration", () => {});
-    it("V-PERF-8 · generateManifest cold < 50ms × calibration", () => {});
+    it("V-PERF-8 · generateManifest cold < 50ms × calibration", () => {
+      const { wallMs } = measureMin("generateManifest-cold", () => generateManifest());
+      assertWithinBudget(wallMs, PERF_BUDGETS.selectorColdStart,
+        "V-PERF-8 generateManifest cold");
+    });
     it("V-PERF-9 · validateSkillSave for 200-char template < 5ms × calibration", () => {});
-    it("V-PERF-SCALE-1 · acme-demo.canvas has exactly 200 instances (regression guard)", () => {});
+    it("V-PERF-SCALE-1 · acme-demo.canvas has exactly 200 instances (regression guard)", () => {
+      const eng = buildReferenceEngagement();
+      assertEqual(eng.instances.allIds.length, 200,
+        "reference engagement MUST have exactly 200 instances. Silent " +
+        "demo growth would silently relax perf budgets — change SPEC sec S11 " +
+        "first, then update the builder.");
+      // Also verify the supporting record counts so the reference doesn't
+      // drift across other dimensions.
+      assertEqual(eng.drivers.allIds.length, 4,        "4 drivers");
+      assertEqual(eng.environments.allIds.length, 3,   "3 environments");
+      assertEqual(eng.gaps.allIds.length, 12,          "12 gaps");
+      // byState partition is exhaustive
+      assertEqual(eng.instances.byState.current.length, 100, "100 current");
+      assertEqual(eng.instances.byState.desired.length, 100, "100 desired");
+    });
   });
 
   // -------------------------------------------------------------------

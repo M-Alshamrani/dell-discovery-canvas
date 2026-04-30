@@ -41,6 +41,7 @@ COPY vendor/       /usr/share/nginx/html/vendor/
 COPY catalogs/     /usr/share/nginx/html/catalogs/
 COPY selectors/    /usr/share/nginx/html/selectors/
 COPY migrations/   /usr/share/nginx/html/migrations/
+COPY tests/        /usr/share/nginx/html/tests/
 
 # nginx:alpine already EXPOSEs 80 and runs as root for low ports; keep defaults.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
