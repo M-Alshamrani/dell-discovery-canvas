@@ -932,6 +932,85 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
+## v3.0.0 · Data architecture rebuild · QUEUED + LOCKED 2026-04-30
+
+**Status**: QUEUED. Branch `v3.0-data-architecture` from `origin/main` at v2.4.16 ship (`5614f32`). APP_VERSION bumped to `3.0.0-alpha`. v2.4.17 work-in-progress preserved on local main + tag `v2.4.17-wip-snapshot`. Authority: [`data-architecture-directive.md`](../data-architecture-directive.md) (706-line lead-architect directive). Build pipeline locked at directive §0: spec → tests → code → smoke.
+
+### Why v3.0 (not v2.4.17)
+
+The v2.4.17 attempt landed 14 commits and 770 GREEN tests covering AI-features rebuild (click-to-scope dispatch, sparkle marker, integrity sweep, manifest split, seed library purge, drift detection). It was not enough. Audit revealed:
+
+- AI-authored fields stored as plain strings (no provenance, no catalog version stamp, no validation status).
+- Hand-maintained validators + manifest + DDL would diverge.
+- `customer.drivers[]` nested storage made cross-engagement reporting impractical.
+- Dell product taxonomy not first-class (Boomi / Taegis / VxRail risks).
+- No performance budget enforced.
+
+User direction (verbatim, 2026-04-30): *"we work with foundational data models input and outputs, and that it. If something defined as a new data identifier, it has to fit the data model rules."* Plus: *"i can not accept this patching."* Plus: *"do a full clean data architecture as per industry data architecture and linked records practice."*
+
+The consultant's directive is the response. v3.0 is a single coherent rebuild, not an incremental patch.
+
+### Scope (per directive sections)
+
+**Schema layer (§2-3)**: Zod as single source of truth. `schema/` directory with one file per entity. Validators / manifest / FK declarations / DDL all derive. Versioned at `<major>.<minor>` (target: `3.0`).
+
+**Storage layer (§4)**: in-memory `{byId, allIds, indexes}` collections. Persisted shape is flat lists (forward-compatible with backend). Engagement-scoped from day one (`engagementId` on every record). Customer + drivers extracted to top-level collections.
+
+**Selectors layer (§5)**: every UI view is a pure memoized function over the engagement. 7 required selectors locked in directive §5.2: matrix, gaps kanban, projects, vendor mix, health summary, exec-summary inputs, linked composition.
+
+**Catalogs (§6)**: versioned reference data. NEW `DELL_PRODUCT_TAXONOMY` catalog with Dell positioning corrections (no Boomi, no Secureworks Taegis, no VxRail; SmartFabric Manager not Director; CloudIQ under APEX AIOps).
+
+**Skill builder (§7)**: chip manifest GENERATED from schema (never hand-maintained). 2-step Intent panel (scope → entity kind → bindings). Skills validated at save-time against the manifest. LLM structured output for catalog-constrained fields.
+
+**AI provenance (§8)**: every AI-authored field wrapped `{value, provenance: {model, promptVersion, skillId, runId, timestamp, catalogVersions, validationStatus}}`. Plain strings in AI slots = schema violation. Catalog-version drift detection on every load.
+
+**Migration (§9)**: v2.0 → v3.0 migrator with 8-fixture round-trip suite. Idempotent; pure; failure preserves the original file. AI-authored free-text fields wrapped with `validationStatus: "stale"`.
+
+**Integrity (§10)**: pure sweep over FK declarations + invariants. Repairs orphan FKs, quarantines unrepairable required-FK violations, never fabricates entities, never edits user-authored content.
+
+**Performance (§11)**: 100ms tab render + 500ms full round-trip on 200-instance reference engagement. CI-gated by performance regression tests.
+
+**Multi-engagement readiness (§12)**: `engagementId` + `ownerId` on every record from day one. v3.0 single-user single-engagement; v3.1 adds engagement registry; v3.2 wires backend.
+
+**Tests (§14)**: real-execution-only. 12 categories (schema property, FK integrity, invariants, migration round-trip, selector correctness + purity, manifest generation, path resolution, AI provenance, catalog drift, performance regression, end-to-end render). Anti-cheat checks: no NODE_ENV=test branches in production code; no swallowed catches; no constant-from-stub assertions.
+
+### Resolutions of directive §17 open questions
+
+See [`v3.0/OPEN_QUESTIONS_RESOLVED.md`](v3.0/OPEN_QUESTIONS_RESOLVED.md). Three locked (Q5/Q6/Q7), four default-with-review (Q1/Q2/Q3/Q4) per user direction "use sensible defaults and flag in spec for review."
+
+### Order of work
+
+1. **Spec scaffold** (this commit): APP_VERSION + docs/v3.0/ + CHANGELOG entry + HANDOFF flip.
+2. **Implementation specification** ([`v3.0/SPEC.md`](v3.0/SPEC.md)): every directive R-number → SPEC §N concrete contract (file paths, function signatures, invariants).
+3. **Migration specification** ([`v3.0/MIGRATION.md`](v3.0/MIGRATION.md)): v2.0 → v3.0 transformation rules + 8-fixture round-trip set.
+4. **Test vector contract** ([`v3.0/TESTS.md`](v3.0/TESTS.md)): every R-number → ≥1 vector. Coverage report.
+5. **Suite N RED-first**: vectors land as `it()` placeholders in `diagnostics/appSpec.js`. Banner stays GREEN (empty bodies pass trivially).
+6. **Schema layer implementation** (directive §2-3): Zod schemas + factories + FK declarations. Round-trip the demo session through the new schema.
+7. **In-memory shape transform** (directive §4.1): collection hydration on load. Action functions per collection.
+8. **Selectors layer** (directive §5): 7 selectors built; views consume them; per-view closures retired.
+9. **v2.0 → v3.0 migrator** (directive §9.3): 8 fixtures round-trip GREEN.
+10. **Catalog versioning + Dell taxonomy** (directive §6): catalogs gain `catalogVersion`; persisted entities reference both id + version.
+11. **AI provenance subsystem** (directive §8): wrapper schema + structured-output LLM calls + drift detection.
+12. **Skill builder UI rebuild** (directive §7): 2-step Intent panel + scope-aware chip palette + skill output rendering.
+13. **Performance regression tests** (directive §11): 200-instance reference engagement + budget gates.
+14. **Browser smoke** via Chrome MCP → `docs/v3.0/test-logs/v3.0.0-smoke.md`.
+15. **PAUSE for explicit "tag it" approval** per `feedback_no_push_without_approval.md`.
+16. **On approval**: APP_VERSION 3.0.0-alpha → 3.0.0; CHANGELOG_PLAN QUEUED → IMPLEMENTED; HANDOFF flip; tag `v3.0.0`; push.
+
+### Banner target
+
+v2.4.16 baseline: 616 GREEN. v3.0 target: ~900 GREEN (Suite N adds ~280 vectors covering directive §2-§14). Number is provisional pending TESTS.md authorship.
+
+### Reuse from v2.4.17 work-in-progress
+
+Per HANDOVER §6: §INT integrity-sweep rules, `session.activeEntity` shape, demo session content, M1-M11 migrator inventory (informs v2.0 → v3.0 migrator), `data-{kind}-id` rendering rule across 5 views, `setSelection` + `clearSelection` click-handler wiring, pick-mode purple "AI" pill CSS, click-to-scope queue + auto-rerun. Discarded: hand-maintained validators (replaced by Zod-derived), legacy fieldManifest compat shims (replaced by Zod-generated manifest).
+
+### Rollback anchors
+
+Two tags locked at branch creation: `v2.4.16-baseline` (`5614f32`, last clean shipped state) and `v2.4.17-wip-snapshot` (`58660b7`, the v2.4.17 in-progress tip). Either restores cleanly per HANDOVER §7.3 scenarios A-D.
+
+---
+
 ## v2.4.16 · Foundations: Taxonomy + Reporting Audit + PillEditor fix · IMPLEMENTED + TAGGED 2026-04-29
 
 **Status**: SHIPPED. Tag `v2.4.16` on origin/main. 616/616 GREEN ✅. Sequenced spec → tests → code → smoke per `feedback_spec_and_test_first.md`. Backlog source: `HANDOFF.md` Bucket B1.5 items 1 + 4 + 2.

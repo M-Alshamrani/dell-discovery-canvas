@@ -1,6 +1,10 @@
 # Dell Discovery Canvas , Session Handoff
 
-**Last session end**: 2026-04-29. **v2.4.16 SHIPPED to GitHub** (tag `v2.4.16` on `origin/main`). Foundations release: Bucket B1.5 items 1 (discipline reassertion), 4 (taxonomy + reporting derivation audit), and 2 (PillEditor investigation) — all SHIPPED in a clean spec → tests → code → smoke sequence. **NEXT UP**: v2.4.17 with Bucket B1.5 items 3 (theme + tag consistency app-wide) + 6 (right-panel utilization) + KD8 (gap-card asset-lifecycle visualization) + KD9 (PillEditor bare-pill UX clarity). v2.4.18 carries item 5 (crown-jewel reporting redesign + Executive summary sub-tab).
+**Last session end**: 2026-04-30. **v3.0 DATA-ARCHITECTURE REBUILD STARTED.** New branch `v3.0-data-architecture` created from `origin/main` at v2.4.16 ship (`5614f32`). APP_VERSION bumped to `3.0.0-alpha`. Founding docs imported from local main: [`data-architecture-directive.md`](data-architecture-directive.md) (the consultant's lead-architect directive, 706 lines, 18 sections, P1-P10 principles), [`HANDOVER_v2.4.17_to_v3.0.md`](HANDOVER_v2.4.17_to_v3.0.md) (bridge artifact + reuse map + 4 rollback scenarios), [`second_opinion_consultation.md`](second_opinion_consultation.md) (the prompt that produced the directive). v3.0 doctrine folder scaffolded at [`docs/v3.0/`](docs/v3.0/). **NEXT UP**: author the implementation specification at `docs/v3.0/SPEC.md` per directive §0.1. After SPEC: MIGRATION.md, TESTS.md, then Suite N RED-first vectors, then schema layer implementation.
+
+**v2.4.17 work-in-progress preserved**: 14 commits on local `main` (NOT pushed) + tag `v2.4.17-wip-snapshot` at commit `58660b7`. v2.4.17 is recoverable per HANDOVER_v2.4.17_to_v3.0.md §7.3 scenarios A-D if v3.0 migration fails.
+
+**Previously**: v2.4.16 SHIPPED 2026-04-29 (foundations release: discipline reassertion + taxonomy + reporting derivation audit + PillEditor investigation). 616/616 GREEN. Tag `v2.4.16` on `origin/main`. Detail preserved below.
 
 **Previously**: v2.4.15 SHIPPED 2026-04-29 (5 polish iters + 1 hotfix). Detail preserved below. Five polish iterations now absorbed: — Iter 1: dynamic envs + soft-delete + vendor mix segmented bar + modern FilterBar + capsule polish + footer + matrix. Iter 2 (Tier 1 + Tier 2): GPLC `.tag[data-t]` primitive, button-feedback states, AI provider Save fix, blue-dot → Lucide lock, hide-flow drops env column entirely + uses Overlay.js, FilterBar accordion with persistent collapse, vendor mix dimension picker + shimmer + click-to-cross-filter. Iter 3: Gaps filters consolidated into FilterBar (Layer/Env/Domain/Service/Urgency + Quick toggles for "Needs review only" / "Show closed gaps" + "+ Add gap" trailing CTA); Vendor mix Option A redesign (per-layer + per-env standing cards REPLACED with 3 click-to-drill KPI tiles — Dell density / Most diverse layer / Top non-Dell concentration — plus collapsible "All instances" table); AI Assist pick mode morphs overlay into a top-right heartbeat capsule (was full-transparent + separate pill), Esc restores; PICK_SELECTORS extended to include env-tile + service-tile (the v2.4.15 entities). 584 GREEN / 0 RED. **PUSHED to origin/main + tag v2.4.15**. v2.4.14 is the previous tag (now superseded).
 
@@ -10,11 +14,13 @@
 
 ## 1 · Where you are
 
-- `git log --oneline main` , HEAD on `c0c6d77` (Spec . v2.4.15 . LOCKED 2026-04-27 . dynamic envs + UX polish bundle). **This commit is LOCAL ONLY**, ahead of `origin/main` by 1. Per `feedback_no_push_without_approval.md` the spec stays local until user explicitly says "push."
-- `origin/main` HEAD on `dd6974b` (v2.4.14 . post-tag handoff updates).
-- `git tag --list 'v2.*' | sort -V` , 25 tags: `v2.1.1` through `v2.4.14` (plus `v2.4.11.d01` + `v2.4.11.d02` hygiene-pass records on origin only). v2.4.14 is the latest tag.
-- Working tree: clean.
-- GitHub: https://github.com/M-Alshamrani/dell-discovery-canvas (private).
+- **Branch**: `v3.0-data-architecture`. Created 2026-04-30 from `origin/main` (`5614f32`, v2.4.16 ship). Tracks origin/main; ahead by N commits (v3.0 work). NOT yet pushed; per `feedback_no_push_without_approval.md` stays local until user says "tag it" / "push."
+- **Local `main`**: 15 commits ahead of origin (v2.4.17 work-in-progress + the 3 founding docs). NOT pushed. Preserved at tag `v2.4.17-wip-snapshot` (`58660b7`).
+- **`origin/main`**: HEAD on `5614f32` (v2.4.16 ship). Last pushed state.
+- **Rollback anchors** (local-only tags): `v2.4.16-baseline` (`5614f32`) + `v2.4.17-wip-snapshot` (`58660b7`).
+- **Git tags on origin**: 25+ tags `v2.1.1` through `v2.4.16` (plus `v2.4.11.d01` + `v2.4.11.d02` hygiene-pass records on origin only). v2.4.16 is the latest pushed tag.
+- **Working tree**: clean (after scaffold commit).
+- **GitHub**: https://github.com/M-Alshamrani/dell-discovery-canvas (private).
 
 ## 2 · What is shipped
 
@@ -65,19 +71,38 @@ All six UX issues from v2.4.4 are resolved, and the two reliability failure mode
 - v2.4.5.1 · per-provider `fallbackModels[]` chain (Gemini defaults to `gemini-2.0-flash, gemini-1.5-flash`).
 - v2.4.5.1 · Settings UI exposes the fallback chain; `Test connection` reports which model answered.
 
-## 4 · NEXT UP — Bucket A2 · v2.4.6 Action-command skills
+## 4 · NEXT UP — v3.0 implementation specification (`docs/v3.0/SPEC.md`)
 
-Scope locked in `SPEC.md §12.6`. Runtime for the `json-commands` response format already declared in the skill schema but stub-rejected today. One disciplined slice:
+Branch `v3.0-data-architecture` is at scaffold state (founding docs imported + APP_VERSION bumped + CHANGELOG_PLAN entry + this header). The next concrete action is **authoring the v3.0 implementation specification**. Per `data-architecture-directive.md` §0.1:
 
-1. NEW `core/actionCommands.js` — whitelist of ops: `updateField`, `updateGap`, `createGap`, `deleteGap`, `linkInstance`, `setGapDriver`. Each op routes to an existing function in `interactions/*Commands.js` (no business-logic duplication).
-2. Extend `interactions/aiCommands.js parseCommands(responseText)` — parse `{ commands: [...] }` shape, validate each op against the whitelist, reject unknown ops at parse time (not at apply time).
-3. `applyCommands(commands, ctx)` — batches under one undo snapshot, emits `session-changed` once per batch (reason `"ai-apply"` as usual).
-4. Wire `skillEngine.js` · when `responseFormat === "json-commands"`, call parser instead of `parseProposals`. `UseAiButton.js` renders a distinct "N actions proposed" panel (reuse the `applyPolicy` dispatch).
-5. Remove the v2.4.4 stub that rejects json-commands outright.
-6. Test vectors — Suite 37 · AC1-AC10 covering: parser rejects unknown op; each op mutates correctly; invalid args throw with a readable message; batch + undo is byte-identical; skillEngine integration returns `result.commands[]`.
-7. Per `feedback_foundational_testing.md`: add at least one seed skill in `core/seedSkills.js` that uses `json-commands` (e.g., "Link these two gaps to their desired tiles" on the Gaps tab); refresh demo session if any new field is needed; update `docs/DEMO_CHANGELOG.md`.
+> Specification step. Claude Code reads this directive and produces (a) the implementation specification and (b) the migration specification. Anything constrained here is mandatory; anything not constrained is open to the spec writer's judgment but must be justified inline in the spec.
 
-Estimated scope: ~3 hr. Fresh session can execute directly.
+The implementation spec at `docs/v3.0/SPEC.md` covers directive sections 1-18 with concrete contracts:
+
+1. **§1 principles** — restate P1-P10 as the invariant table; every later section references back.
+2. **§2 schema layer** — Zod choice locked, `schema/` directory layout, file-per-entity contract, `createEmpty<Entity>()` factory pattern, FK declaration shape, validation boundaries (load / save / commit only).
+3. **§3 entity model** — concrete Zod schema per entity (engagement, customer, driver, environment, instance, gap) with field types + invariants. Cross-cutting relationship table (workload mappedAssetIds, originId, gap.affectedEnvironments) declared as first-class.
+4. **§4 storage** — in-memory `{byId, allIds, indexes}` shape, action functions per collection, persisted shape (flat lists), engagement scoping, FK declaration consumption.
+5. **§5 selectors** — 7 required selectors with shape contracts, memoize-one per `OPEN_QUESTIONS_RESOLVED.md` Q2, forbidden patterns.
+6. **§6 catalogs** — versioned shape, loader interface, 8-catalog inventory with `DELL_PRODUCT_TAXONOMY` corrections.
+7. **§7 skill builder** — skill model, generated chip manifest (snapshot drift fails build), path resolution, structured-output validation, regression suite (production-critical skills per `OPEN_QUESTIONS_RESOLVED.md` Q3).
+8. **§8 provenance** — wrapper schema, catalog validation at suggestion time, UI distinction by icon, drift detection.
+9. **§9 migration** — migrator contract, round-trip fixtures, v2.0 → v3.0 transformation steps, failure handling.
+10. **§10 integrity** — sweep contract, repair rules, denied operations.
+11. **§11 performance** — budgets, calibration multiplier per `OPEN_QUESTIONS_RESOLVED.md` Q1, regression test framework.
+12. **§12 multi-engagement readiness** — what v3.0 stamps, what v3.1 adds.
+13. **§13 backend** — Postgres + Drizzle target, document-DB rejection rationale, mapping rules, Replicache as v3.2 reference.
+14. **§14 tests** — 12 categories, real-execution-only, mocking boundaries, anti-cheat checks.
+15. **§15 out of scope** — explicit non-goals.
+16. **§16 glossary** — engagement / entity / selector / manifest / skill / linked composition / provenance wrapper / catalog / integrity sweep / reference engagement.
+17. **§17 open questions resolved** — pointer to `OPEN_QUESTIONS_RESOLVED.md`.
+18. **§18 document control** — authoring + review log.
+
+Each SPEC §N has the shape: `R-numbered requirement set` + `concrete file paths/signatures` + `forbidden patterns` + `test contract pointer (vector ids in TESTS.md)`.
+
+After SPEC.md: `docs/v3.0/MIGRATION.md` (the v2.0 → v3.0 specification per directive §9.3) + `docs/v3.0/TESTS.md` (test vectors per directive §14, every R-number → ≥1 vector). After all three docs: Suite N RED-first lands in `diagnostics/appSpec.js`. After Suite N: schema layer implementation (directive §2-3).
+
+**Estimated scope of next session**: SPEC.md authorship is the heaviest single doc; 4-6 hours of careful drafting against the directive. MIGRATION.md + TESTS.md are smaller. Suite N RED-first is mechanical once TESTS.md is locked.
 
 ## 5 · Full backlog (after v2.4.6)
 

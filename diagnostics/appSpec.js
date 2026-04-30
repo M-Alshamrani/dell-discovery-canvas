@@ -4919,12 +4919,16 @@ describe("37 · Phase 19g · v2.4.6 UX quick-wins — version chip + skill chip 
   it("QW1 · APP_VERSION is a non-empty semver-shaped string (distinct from session schema version)", () => {
     assert(typeof APP_VERSION === "string" && APP_VERSION.length > 0,
       "APP_VERSION must be a non-empty string");
-    assert(/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(APP_VERSION),
+    // Standard semver: MAJOR.MINOR.PATCH with optional .HOTFIX or
+    // -prerelease suffix (-alpha, -rc.1, etc.). v3.0 introduced
+    // pre-release suffix support.
+    assert(/^\d+\.\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?$/.test(APP_VERSION),
       "APP_VERSION must look like a semver (got: " + APP_VERSION + ")");
-    // Must not be "2.0" — that's the session schema version in
-    // sessionMeta.version. Confusing them is the bug this fixes.
-    assert(APP_VERSION !== "2.0",
-      "APP_VERSION must not collide with the session-schema version '2.0'");
+    // Must not be "2.0" — that's the (legacy) session schema version
+    // in sessionMeta.version, or the "3.0" engagement schema version
+    // in v3.0+. Confusing them is the bug this fixes.
+    assert(APP_VERSION !== "2.0" && APP_VERSION !== "3.0",
+      "APP_VERSION must not collide with a schema version ('2.0' or '3.0')");
   });
 
   it("QW2 · header renders TWO separate elements: session meta + app version chip", () => {
