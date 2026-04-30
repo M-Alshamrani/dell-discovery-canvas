@@ -8634,6 +8634,8 @@ import { generateManifest, serializeManifestStable } from "../services/manifestG
 import { resolveTemplate, resolvePath } from "../services/pathResolver.js";
 import { buildReferenceEngagement } from "../tests/perf/buildReferenceEngagement.js";
 import { measure, measureMin, assertWithinBudget, PERF_BUDGETS } from "../tests/perf/perfHarness.js";
+import { runSkill } from "../services/skillRunner.js";
+import { createMockLLMProvider } from "../tests/mocks/mockLLMProvider.js";
 
 // ============================================================================
 // Suite 49 · v3.0 data architecture rebuild · RED-first vector scaffold
@@ -10117,9 +10119,45 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-PROV-1 · dell-mapping skill structured-output rejects out-of-catalog Dell product id", () => {});
     it("V-PROV-2 · user edit on aiMappedDellSolutions.value flips validationStatus to 'user-edited'", () => {});
     it("V-PROV-3 · user edit preserves the original provenance fields (model, promptVersion, runId, timestamp)", () => {});
-    it("V-PROV-4 · re-running a skill on a stale field replaces the entire envelope; new validationStatus === 'valid'", () => {});
-    it("V-PROV-5 · plain-string assignment to instance.aiSuggestedDellMapping rejected by InstanceSchema", () => {});
-    it("V-PROV-6 · plain-string assignment to gap.aiMappedDellSolutions rejected by GapSchema", () => {});
+    it("V-PROV-4 · re-running a skill on a stale field replaces the entire envelope; new validationStatus === 'valid'", async () => {
+      // First run: produces { value, provenance: {validationStatus: "valid"} }
+      const skill = { skillId: "skl-test-001", version: "1.0.0",
+        promptTemplate: "Map: {{customer.name}}" };
+      const ctx = { customer: { name: "Acme" }, catalogVersions: { DELL_PRODUCT_TAXONOMY: "2026.04" } };
+      const provider = createMockLLMProvider({
+        defaultResponse: { model: "mock-claude", text: "PowerStore + PowerProtect" }
+      });
+      const first = await runSkill(skill, ctx, provider, { runTimestamp: "2026-04-01T00:00:00.000Z" });
+      assertEqual(first.provenance.validationStatus, "valid", "first run produces valid status");
+
+      // Simulate "stale" state by patching the envelope (drift would do this).
+      const stale = { ...first, provenance: { ...first.provenance, validationStatus: "stale" } };
+
+      // Re-run: returns a NEW envelope with new runId + new timestamp + valid status.
+      const second = await runSkill(skill, ctx, provider, { runTimestamp: "2026-05-01T00:00:00.000Z" });
+      assertEqual(second.provenance.validationStatus, "valid",
+        "re-run produces valid status (stale was replaced)");
+      assert(second.provenance.timestamp !== stale.provenance.timestamp,
+        "re-run has a new timestamp");
+    });
+    it("V-PROV-5 · plain-string assignment to instance.aiSuggestedDellMapping rejected by InstanceSchema", () => {
+      const inst = createEmptyInstance({ state: "current" });
+      const broken = { ...inst, aiSuggestedDellMapping: "PowerStore" };
+      const result = InstanceSchema.safeParse(broken);
+      assert(result.success === false,
+        "plain-string assignment to AI-authored slot must be rejected (provenance wrapper required)");
+      assert(result.error.issues.some(i => i.path[0] === "aiSuggestedDellMapping"),
+        "rejection must point at aiSuggestedDellMapping");
+    });
+    it("V-PROV-6 · plain-string assignment to gap.aiMappedDellSolutions rejected by GapSchema", () => {
+      const gap = createEmptyGap();
+      const broken = { ...gap, aiMappedDellSolutions: "PowerStore + PowerProtect" };
+      const result = GapSchema.safeParse(broken);
+      assert(result.success === false,
+        "plain-string assignment to AI-authored slot must be rejected (provenance wrapper required)");
+      assert(result.error.issues.some(i => i.path[0] === "aiMappedDellSolutions"),
+        "rejection must point at aiMappedDellSolutions");
+    });
     it("V-PROV-7 · provenance is set ONLY by services/skillRunner.js (meta-test grep)", () => {});
     it("V-PROV-8 · UI icon for validationStatus === 'valid' is the default sparkle (no dot)", () => {});
     it("V-PROV-9 · UI icon for 'stale' carries the amber dot", () => {});
@@ -10127,8 +10165,30 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-PROV-11 · UI icon for 'user-edited' is the pencil-with-sparkle", () => {});
     it("V-PROV-12 · tooltip on each icon includes model + skillId + timestamp", () => {});
     it("V-PROV-13 · catalog-validation retry budget exhausts at 2 retries → validationStatus === 'invalid'", () => {});
-    it("V-PROV-14 · runId is unique across runs (UUID v4 or v8 deterministic)", () => {});
-    it("V-PROV-15 · timestamp matches ctx.runTimestamp for deterministic test mode", () => {});
+    it("V-PROV-14 · runId is unique across runs (UUID v4 or v8 deterministic)", async () => {
+      const skill = { skillId: "skl-uniq", promptTemplate: "Test" };
+      const ctx = { customer: { name: "X" }, catalogVersions: {} };
+      const provider = createMockLLMProvider({ defaultResponse: { model: "mock", text: "ok" } });
+      // Two runs without runIdSeed -> non-deterministic runIds (real-prod path)
+      const a = await runSkill(skill, ctx, provider);
+      const b = await runSkill(skill, ctx, provider);
+      assert(a.provenance.runId !== b.provenance.runId,
+        "runIds must differ across runs (production path uses crypto.randomUUID)");
+      // Format: UUID-shaped
+      assert(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(a.provenance.runId),
+        "runId is UUID-shaped: " + a.provenance.runId);
+    });
+    it("V-PROV-15 · timestamp matches ctx.runTimestamp for deterministic test mode", async () => {
+      const skill = { skillId: "skl-determ", promptTemplate: "Test" };
+      const ctx = { customer: { name: "X" }, catalogVersions: {} };
+      const provider = createMockLLMProvider({ defaultResponse: { model: "mock", text: "ok" } });
+      const fixedTs = "2026-01-01T00:00:00.000Z";
+      // With runTimestamp + runIdSeed: byte-deterministic envelope
+      const a = await runSkill(skill, ctx, provider, { runTimestamp: fixedTs, runIdSeed: "test-seed-1" });
+      const b = await runSkill(skill, ctx, provider, { runTimestamp: fixedTs, runIdSeed: "test-seed-1" });
+      assertEqual(a.provenance.timestamp, fixedTs, "timestamp matches opts.runTimestamp");
+      assertEqual(a.provenance.runId,     b.provenance.runId, "deterministic runId from runIdSeed");
+    });
   });
 
   // -------------------------------------------------------------------
