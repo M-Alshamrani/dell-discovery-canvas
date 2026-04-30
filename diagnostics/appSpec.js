@@ -10822,11 +10822,147 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
   // sec T15 · V-XCUT · Cross-cutting relationships (per SPEC sec 3.7 + S14.2)
   // -------------------------------------------------------------------
   describe("§T15 · V-XCUT · Cross-cutting relationships", () => {
-    it("V-XCUT-1 · workload mappedAssetIds across 2+ envs survives sweep + matrix view + vendor mix counts once", () => {});
-    it("V-XCUT-2 · desired originId cross-env survives sweep + linked composition pulls cross-env current", () => {});
-    it("V-XCUT-3 · gap with affectedEnvironments.length === 3 appears in all 3 env-filtered selectors + counted once globally", () => {});
-    it("V-XCUT-4 · gap relatedCurrentInstanceIds mixing envs → linked composition pulls all current regardless of env", () => {});
-    it("V-XCUT-5 · gap relatedDesiredInstanceIds mixing envs → linked composition pulls all desired regardless of env", () => {});
+    it("V-XCUT-1 · workload mappedAssetIds across 2+ envs survives sweep + matrix view + vendor mix counts once", () => {
+      // Build engagement: 3 envs, 1 workload in env1 mapping assets in env2 + env3
+      let eng = createEmptyEngagement();
+      const ed = (id) => eng.environments.allIds[id];
+      eng = addEnvironment(eng, { envCatalogId: "coreDc",      catalogVersion: "2026.04" }).engagement;
+      eng = addEnvironment(eng, { envCatalogId: "drDc",        catalogVersion: "2026.04" }).engagement;
+      eng = addEnvironment(eng, { envCatalogId: "publicCloud", catalogVersion: "2026.04" }).engagement;
+      // Asset instances in env2 + env3 (compute layer, current state)
+      eng = addInstanceV3(eng, { state:"current", layerId:"compute", environmentId: ed(1),
+        label:"Asset-A", vendor:"Dell", vendorGroup:"dell", criticality:"Medium", disposition:"keep" }).engagement;
+      const assetA = eng.instances.allIds[0];
+      eng = addInstanceV3(eng, { state:"current", layerId:"compute", environmentId: ed(2),
+        label:"Asset-B", vendor:"Dell", vendorGroup:"dell", criticality:"Medium", disposition:"keep" }).engagement;
+      const assetB = eng.instances.allIds[1];
+      // Workload in env1 mapping both
+      eng = addInstanceV3(eng, { state:"current", layerId:"workload", environmentId: ed(0),
+        label:"App-X", vendor:"Custom", vendorGroup:"custom", criticality:"High", disposition:"keep",
+        mappedAssetIds: [assetA, assetB] }).engagement;
+      const workload = eng.instances.allIds[2];
+
+      // (a) sweep doesn't orphan
+      const sweep = runIntegritySweep(eng, {});
+      const sweptWorkload = sweep.repaired.instances.byId[workload];
+      assertEqual(sweptWorkload.mappedAssetIds.length, 2,
+        "both cross-env mapped assets survive sweep");
+
+      // (b) matrix view shows workload in its NATIVE env
+      const matrix = selectMatrixView(eng, { state: "current" });
+      const cell = matrix.cells[ed(0)].workload;
+      assert(cell.instanceIds.includes(workload),
+        "workload appears in its native (env, layer) cell");
+
+      // (c) vendor mix counts the workload once
+      const vm = selectVendorMix(eng);
+      assertEqual(vm.totals.total, 3, "3 instances total (no double-counting via mappedAssetIds)");
+    });
+    it("V-XCUT-2 · desired originId cross-env survives sweep + linked composition pulls cross-env current", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      eng = addEnvironment(eng, { envCatalogId: "drDc",   catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      const env2 = eng.environments.allIds[1];
+
+      // Current instance in env1
+      eng = addInstanceV3(eng, { state:"current", layerId:"compute", environmentId:env1,
+        label:"Old-Compute", vendor:"HPE", vendorGroup:"nonDell", criticality:"Medium", disposition:"replace" }).engagement;
+      const currentId = eng.instances.allIds[0];
+      // Desired instance in env2 with originId pointing at the current in env1
+      eng = addInstanceV3(eng, { state:"desired", layerId:"compute", environmentId:env2,
+        label:"New-Compute", vendor:"Dell PowerEdge", vendorGroup:"dell",
+        criticality:"Medium", disposition:"replace", originId:currentId }).engagement;
+      const desiredId = eng.instances.allIds[1];
+
+      // (a) sweep doesn't orphan
+      const sweep = runIntegritySweep(eng, {});
+      assertEqual(sweep.repaired.instances.byId[desiredId].originId, currentId,
+        "cross-env originId survives sweep");
+
+      // (b) linked composition for the desired instance pulls the cross-env current
+      const linked = selectLinkedComposition(eng, { kind: "desiredInstance", id: desiredId });
+      assertEqual(linked.linked.originInstance.id, currentId,
+        "linked composition pulls cross-env origin");
+      assert(linked.linked.originInstance.environmentId !== desiredId,
+        "origin lives in a different environment");
+    });
+    it("V-XCUT-3 · gap with affectedEnvironments.length === 3 appears in all 3 env-filtered selectors + counted once globally", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc",      catalogVersion: "2026.04" }).engagement;
+      eng = addEnvironment(eng, { envCatalogId: "drDc",        catalogVersion: "2026.04" }).engagement;
+      eng = addEnvironment(eng, { envCatalogId: "publicCloud", catalogVersion: "2026.04" }).engagement;
+      const [e1, e2, e3] = eng.environments.allIds;
+      eng = addGapV3(eng, { description: "cross-env compliance",
+        gapType: "ops", urgency: "High", phase: "now", status: "open",
+        layerId: "infrastructure", affectedLayers: ["infrastructure"],
+        affectedEnvironments: [e1, e2, e3]
+      }).engagement;
+      const gapId = eng.gaps.allIds[0];
+
+      // Linked composition for each env should include this gap
+      const linkedE1 = selectLinkedComposition(eng, { kind: "environment", id: e1 });
+      const linkedE2 = selectLinkedComposition(eng, { kind: "environment", id: e2 });
+      const linkedE3 = selectLinkedComposition(eng, { kind: "environment", id: e3 });
+      assert(linkedE1.linked.gaps.some(g => g.id === gapId), "gap appears in env1's linked.gaps");
+      assert(linkedE2.linked.gaps.some(g => g.id === gapId), "gap appears in env2's linked.gaps");
+      assert(linkedE3.linked.gaps.some(g => g.id === gapId), "gap appears in env3's linked.gaps");
+
+      // Counted once globally (not 3x by env)
+      const kanban = selectGapsKanban(eng);
+      assertEqual(kanban.totalsByStatus.open, 1, "gap counted exactly once in totals");
+    });
+    it("V-XCUT-4 · gap relatedCurrentInstanceIds mixing envs → linked composition pulls all current regardless of env", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      eng = addEnvironment(eng, { envCatalogId: "drDc",   catalogVersion: "2026.04" }).engagement;
+      const [e1, e2] = eng.environments.allIds;
+      // Two current instances, one per env
+      eng = addInstanceV3(eng, { state:"current", layerId:"compute", environmentId:e1,
+        label:"C1", vendor:"X", vendorGroup:"nonDell", criticality:"Medium", disposition:"replace" }).engagement;
+      const c1 = eng.instances.allIds[0];
+      eng = addInstanceV3(eng, { state:"current", layerId:"compute", environmentId:e2,
+        label:"C2", vendor:"Y", vendorGroup:"nonDell", criticality:"Medium", disposition:"replace" }).engagement;
+      const c2 = eng.instances.allIds[1];
+      // Gap referencing both via relatedCurrentInstanceIds
+      eng = addGapV3(eng, { description: "consolidate", gapType: "consolidate",
+        urgency: "Medium", phase: "next", status: "open",
+        layerId: "compute", affectedLayers: ["compute"], affectedEnvironments: [e1, e2],
+        relatedCurrentInstanceIds: [c1, c2]
+      }).engagement;
+      const gapId = eng.gaps.allIds[0];
+      // Linked composition pulls both current instances regardless of env
+      const linked = selectLinkedComposition(eng, { kind: "gap", id: gapId });
+      assertEqual(linked.linked.relatedInstances.current.length, 2,
+        "both cross-env current instances pulled");
+      const ids = linked.linked.relatedInstances.current.map(i => i.id);
+      assert(ids.includes(c1) && ids.includes(c2), "both ids present");
+    });
+    it("V-XCUT-5 · gap relatedDesiredInstanceIds mixing envs → linked composition pulls all desired regardless of env", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      eng = addEnvironment(eng, { envCatalogId: "drDc",   catalogVersion: "2026.04" }).engagement;
+      const [e1, e2] = eng.environments.allIds;
+      // Two desired instances, one per env
+      eng = addInstanceV3(eng, { state:"desired", layerId:"compute", environmentId:e1,
+        label:"D1", vendor:"Dell", vendorGroup:"dell", criticality:"Medium", disposition:"replace" }).engagement;
+      const d1 = eng.instances.allIds[0];
+      eng = addInstanceV3(eng, { state:"desired", layerId:"compute", environmentId:e2,
+        label:"D2", vendor:"Dell", vendorGroup:"dell", criticality:"Medium", disposition:"replace" }).engagement;
+      const d2 = eng.instances.allIds[1];
+      // Gap referencing both via relatedDesiredInstanceIds
+      eng = addGapV3(eng, { description: "introduce", gapType: "introduce",
+        urgency: "High", phase: "now", status: "open",
+        layerId: "compute", affectedLayers: ["compute"], affectedEnvironments: [e1, e2],
+        relatedDesiredInstanceIds: [d1, d2]
+      }).engagement;
+      const gapId = eng.gaps.allIds[0];
+      const linked = selectLinkedComposition(eng, { kind: "gap", id: gapId });
+      assertEqual(linked.linked.relatedInstances.desired.length, 2,
+        "both cross-env desired instances pulled");
+      const ids = linked.linked.relatedInstances.desired.map(i => i.id);
+      assert(ids.includes(d1) && ids.includes(d2), "both ids present");
+    });
   });
 
   // -------------------------------------------------------------------
@@ -10934,7 +11070,61 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assertEqual(result.provenance.catalogVersions.BUSINESS_DRIVERS,      "2026.04", "BUSINESS_DRIVERS stamped");
       assertEqual(result.provenance.catalogVersions.ENV_CATALOG,           "2026.04", "ENV_CATALOG stamped");
     });
-    it("V-PROD-5 · dell-mapping output round-trips through save+load byte-equivalent", () => {});
+    it("V-PROD-5 · dell-mapping output round-trips through save+load byte-equivalent", async () => {
+      // Build a small engagement, run dell-mapping, stamp result on the gap,
+      // save -> load, assert the AI field byte-equal.
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addGapV3(eng, { description: "modernize storage", gapType: "replace",
+        urgency: "Medium", phase: "now", status: "open", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      const gapId = eng.gaps.allIds[0];
+
+      // Run skill (mocked) and stamp result on the gap
+      const dellCat = await loadCatalog("DELL_PRODUCT_TAXONOMY");
+      const provider = createMockLLMProvider({
+        defaultResponse: {
+          model: "claude-sonnet-4-6",
+          text:  JSON.stringify({ products: ["powerstore", "powerprotect_dd"] })
+        }
+      });
+      const ctx = {
+        customer: eng.customer,
+        context: { gap: eng.gaps.byId[gapId] },
+        catalogVersions: {
+          DELL_PRODUCT_TAXONOMY: dellCat.catalogVersion,
+          BUSINESS_DRIVERS:      "2026.04",
+          ENV_CATALOG:           "2026.04"
+        },
+        dellTaxonomyIds: new Set(dellCat.entries.map(e => e.id))
+      };
+      const skillResult = await runSkill(SEED_SKILL_DELL_MAPPING, ctx, provider,
+        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-5" });
+      assertEqual(skillResult.provenance.validationStatus, "valid", "skill ran clean");
+
+      // Stamp on the gap (in real app, an action function does this)
+      const stamped = { ...eng,
+        gaps: { ...eng.gaps,
+          byId: { ...eng.gaps.byId,
+            [gapId]: { ...eng.gaps.byId[gapId], aiMappedDellSolutions: skillResult }
+          }
+        }
+      };
+
+      // Save -> load round-trip
+      const saved = buildSaveEnvelopeV3(stamped);
+      assert(saved.ok, "save succeeded: " + JSON.stringify(saved.errors || ""));
+      const loaded = await loadCanvasV3(saved.envelope);
+      assert(loaded.ok, "load succeeded: " + JSON.stringify(loaded.error || ""));
+
+      // Byte-equal on the AI field (sweep + integrity should leave it unchanged
+      // because catalog versions match)
+      const loadedGap = loaded.engagement.gaps.byId[gapId];
+      assertEqual(JSON.stringify(loadedGap.aiMappedDellSolutions),
+                  JSON.stringify(skillResult),
+        "aiMappedDellSolutions byte-equivalent across save+load round-trip");
+    });
 
     // executive-summary (smoke)
     it("V-PROD-6 · executive-summary output non-empty string of length >= 100", async () => {
