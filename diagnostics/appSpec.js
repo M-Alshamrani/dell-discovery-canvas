@@ -8618,6 +8618,8 @@ import {
   CATALOG_IDS,
   _resetCacheForTests as _resetCatalogCache
 } from "../services/catalogLoader.js";
+import { selectVendorMix }  from "../selectors/vendorMix.js";
+import { selectGapsKanban } from "../selectors/gapsKanban.js";
 
 // ============================================================================
 // Suite 49 · v3.0 data architecture rebuild · RED-first vector scaffold
@@ -9242,8 +9244,55 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-SEL-1e · layerIds in catalog order from LAYERS", () => {});
 
     // Correctness — selectGapsKanban (V-SEL-2a..2c)
-    it("V-SEL-2a · selectGapsKanban groups gaps by phase + status", () => {});
-    it("V-SEL-2b · totalsByStatus.closed populated but downstream excludes from active counts", () => {});
+    it("V-SEL-2a · selectGapsKanban groups gaps by phase + status", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      const mk = (phase, status) => addGapV3(eng, {
+        description: phase + "/" + status, gapType: "replace",
+        urgency: "Medium", phase, status,
+        layerId: "compute", affectedLayers: ["compute"],
+        affectedEnvironments: [env1]
+      });
+      eng = mk("now",   "open").engagement;
+      eng = mk("now",   "in_progress").engagement;
+      eng = mk("next",  "open").engagement;
+      eng = mk("later", "closed").engagement;
+      const view = selectGapsKanban(eng);
+      assertEqual(view.byPhase.now.open.length,         1, "now/open");
+      assertEqual(view.byPhase.now.in_progress.length,  1, "now/in_progress");
+      assertEqual(view.byPhase.next.open.length,        1, "next/open");
+      assertEqual(view.byPhase.later.closed.length,     1, "later/closed");
+      assertEqual(view.byPhase.now.deferred.length,     0, "now/deferred empty");
+    });
+    it("V-SEL-2b · totalsByStatus.closed populated but downstream excludes from active counts", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      const mk = (status) => addGapV3(eng, {
+        description: "g-" + status, gapType: "replace",
+        urgency: "Medium", phase: "now", status,
+        layerId: "compute", affectedLayers: ["compute"],
+        affectedEnvironments: [env1]
+      });
+      eng = mk("open").engagement;
+      eng = mk("open").engagement;
+      eng = mk("in_progress").engagement;
+      eng = mk("closed").engagement;
+      eng = mk("closed").engagement;
+      eng = mk("deferred").engagement;
+      const view = selectGapsKanban(eng);
+      // totalsByStatus reports all 4 buckets faithfully (no exclusion)
+      assertEqual(view.totalsByStatus.open,        2, "2 open");
+      assertEqual(view.totalsByStatus.in_progress, 1, "1 in_progress");
+      assertEqual(view.totalsByStatus.closed,      2, "2 closed");
+      assertEqual(view.totalsByStatus.deferred,    1, "1 deferred");
+      // Active-gap derivation = open + in_progress + deferred (closed EXCLUDED).
+      // Per SPEC sec S5.2.2 + KD8 — selectHealthSummary + selectVendorMix
+      // read this shape; consumers MUST NOT add closed to active totals.
+      const active = view.totalsByStatus.open + view.totalsByStatus.in_progress + view.totalsByStatus.deferred;
+      assertEqual(active, 4, "active gaps = open + in_progress + deferred (closed excluded)");
+    });
     it("V-SEL-2c · sort order within (phase, status) deterministic", () => {});
 
     // Correctness — selectProjects (V-SEL-3a..3e)
@@ -9254,10 +9303,64 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-SEL-3e · project.mostUrgent = max urgency among constituent gaps", () => {});
 
     // Correctness — selectVendorMix (V-SEL-4a..4d)
-    it("V-SEL-4a · selectVendorMix.totals matches sum of byLayer + byEnvironment", () => {});
+    it("V-SEL-4a · selectVendorMix.totals matches sum of byLayer + byEnvironment", () => {
+      // Build a small engagement with 2 envs, 2 layers, and a known vendor mix.
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      eng = addEnvironment(eng, { envCatalogId: "drDc",   catalogVersion: "2026.04" }).engagement;
+      const [e1, e2] = eng.environments.allIds;
+      const mk = (env, layer, vendor, group) => addInstanceV3(eng, {
+        state: "current", layerId: layer, environmentId: env,
+        label: vendor + "@" + layer, vendor, vendorGroup: group,
+        criticality: "Medium", disposition: "keep"
+      });
+      eng = mk(e1, "compute", "Dell PowerEdge", "dell").engagement;
+      eng = mk(e1, "compute", "HPE ProLiant",   "nonDell").engagement;
+      eng = mk(e2, "storage", "PowerStore",     "dell").engagement;
+      const view = selectVendorMix(eng);
+      // Totals == sum across byLayer
+      const layerSum = Object.values(view.byLayer)
+        .reduce((s, b) => s + b.total, 0);
+      assertEqual(layerSum, view.totals.total, "byLayer total === overall total");
+      const envSum = Object.values(view.byEnvironment)
+        .reduce((s, b) => s + b.total, 0);
+      assertEqual(envSum, view.totals.total, "byEnvironment total === overall total");
+      assertEqual(view.totals.total, 3, "3 instances total");
+      assertEqual(view.totals.dell, 2, "2 dell");
+      assertEqual(view.totals.nonDell, 1, "1 nonDell");
+    });
     it("V-SEL-4b · selectVendorMix.byLayer correct for cross-cutting fixture", () => {});
     it("V-SEL-4c · selectVendorMix.byEnvironment correct for cross-cutting fixture", () => {});
-    it("V-SEL-4d · 3 KPI tiles (dellDensity, mostDiverseLayer, topNonDellConcentration) computed correctly", () => {});
+    it("V-SEL-4d · 3 KPI tiles (dellDensity, mostDiverseLayer, topNonDellConcentration) computed correctly", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const e1 = eng.environments.allIds[0];
+      const mk = (layer, vendor, group) => addInstanceV3(eng, {
+        state: "current", layerId: layer, environmentId: e1,
+        label: vendor, vendor, vendorGroup: group,
+        criticality: "Medium", disposition: "keep"
+      });
+      eng = mk("compute", "Dell PowerEdge",  "dell").engagement;
+      eng = mk("compute", "HPE ProLiant",    "nonDell").engagement;
+      eng = mk("compute", "Custom",          "custom").engagement;
+      eng = mk("storage", "PowerStore",      "dell").engagement;
+      const v = selectVendorMix(eng);
+      // dellDensity is overall dellPercent
+      assertEqual(v.kpiTiles.dellDensity.value, v.totals.dellPercent,
+        "dellDensity tile === totals.dellPercent");
+      // mostDiverseLayer: compute has 3 vendor groups, storage has 1
+      assertEqual(v.kpiTiles.mostDiverseLayer.layerId, "compute",
+        "compute is most diverse (3 groups)");
+      assertEqual(v.kpiTiles.mostDiverseLayer.vendorCount, 3,
+        "3 distinct vendor groups in compute");
+      // topNonDellConcentration: only HPE ProLiant in nonDell
+      assertEqual(v.kpiTiles.topNonDellConcentration.vendorName, "HPE ProLiant",
+        "top nonDell vendor name");
+      assertEqual(v.kpiTiles.topNonDellConcentration.count, 1,
+        "1 instance");
+      assertEqual(v.kpiTiles.topNonDellConcentration.percentOfNonDell, 100,
+        "100% of nonDell (only one nonDell vendor)");
+    });
 
     // Correctness — selectHealthSummary (V-SEL-5a..5d)
     it("V-SEL-5a · selectHealthSummary.byLayer scores correct for cross-cutting fixture", () => {});
@@ -9281,26 +9384,114 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 
     // Purity (V-SEL-PURE-*)
     it("V-SEL-PURE-1 · selectMatrixView returns ===-equal output for ===-equal inputs", () => {});
-    it("V-SEL-PURE-2 · selectGapsKanban returns ===-equal output for ===-equal inputs", () => {});
+    it("V-SEL-PURE-2 · selectGapsKanban returns ===-equal output for ===-equal inputs", () => {
+      const eng = createEmptyEngagement();
+      const a = selectGapsKanban(eng);
+      const b = selectGapsKanban(eng);
+      assert(a === b, "memoizeOne returns ===-equal output for ===-equal input");
+    });
     it("V-SEL-PURE-3 · selectProjects returns ===-equal output for ===-equal inputs", () => {});
-    it("V-SEL-PURE-4 · selectVendorMix returns ===-equal output for ===-equal inputs", () => {});
+    it("V-SEL-PURE-4 · selectVendorMix returns ===-equal output for ===-equal inputs", () => {
+      const eng = createEmptyEngagement();
+      const a = selectVendorMix(eng);
+      const b = selectVendorMix(eng);
+      assert(a === b, "memoizeOne returns ===-equal output for ===-equal input");
+    });
     it("V-SEL-PURE-5 · selectHealthSummary returns ===-equal output for ===-equal inputs", () => {});
     it("V-SEL-PURE-6 · selectExecutiveSummaryInputs returns ===-equal output for ===-equal inputs", () => {});
     it("V-SEL-PURE-7 · selectLinkedComposition returns ===-equal output for ===-equal inputs", () => {});
 
     // Memoization invalidation (V-SEL-INVAL-*)
     it("V-SEL-INVAL-1 · action addInstance invalidates selectMatrixView memoization", () => {});
-    it("V-SEL-INVAL-2 · action addGap invalidates selectGapsKanban memoization", () => {});
+    it("V-SEL-INVAL-2 · action addGap invalidates selectGapsKanban memoization", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      const before = selectGapsKanban(eng);
+      const next = addGapV3(eng, {
+        description: "new gap", gapType: "replace",
+        urgency: "Medium", phase: "now", status: "open",
+        layerId: "compute", affectedLayers: ["compute"],
+        affectedEnvironments: [env1]
+      });
+      assert(next.ok, "addGap ok");
+      const after = selectGapsKanban(next.engagement);
+      assert(before !== after,
+        "engagement reference changed -> selector recomputes -> different output reference");
+      assertEqual(after.byPhase.now.open.length, 1, "after has the new gap");
+    });
     it("V-SEL-INVAL-3 · action updateGap invalidates selectProjects memoization", () => {});
-    it("V-SEL-INVAL-4 · action updateInstance invalidates selectVendorMix memoization", () => {});
+    it("V-SEL-INVAL-4 · action updateInstance invalidates selectVendorMix memoization", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addInstanceV3(eng, {
+        state: "current", layerId: "compute", environmentId: env1,
+        label: "Original", vendor: "HPE", vendorGroup: "nonDell",
+        criticality: "Medium", disposition: "keep"
+      }).engagement;
+      const before = selectVendorMix(eng);
+      const instId = eng.instances.allIds[0];
+      // Switch the instance from nonDell to dell. Vendor mix totals shift.
+      const updated = updateInstanceV3(eng, instId, {
+        vendor: "Dell PowerEdge", vendorGroup: "dell"
+      });
+      assert(updated.ok, "updateInstance ok");
+      const after = selectVendorMix(updated.engagement);
+      assert(before !== after, "engagement ref changed -> output ref changed");
+      assertEqual(before.totals.dell, 0, "before: 0 dell");
+      assertEqual(after.totals.dell, 1, "after: 1 dell");
+    });
     it("V-SEL-INVAL-5 · action addGap invalidates selectHealthSummary memoization", () => {});
     it("V-SEL-INVAL-6 · action updateCustomer invalidates selectExecutiveSummaryInputs memoization", () => {});
     it("V-SEL-INVAL-7 · action affecting linked entity invalidates selectLinkedComposition memoization", () => {});
 
     // Forbidden patterns (V-SEL-FORBID-*)
-    it("V-SEL-FORBID-1 · no selectors/*.js file imports localStorage / document / window / fetch", () => {});
+    it("V-SEL-FORBID-1 · no selectors/*.js file imports localStorage / document / window / fetch", async () => {
+      // Meta-test: fetches each selector source file + greps for forbidden
+      // identifiers. Per SPEC sec S5.1.1: selectors do not reach into
+      // localStorage, the DOM, the network, or any source other than the
+      // engagement passed in.
+      const SELECTOR_FILES = ["vendorMix.js", "gapsKanban.js"];
+      const FORBIDDEN = ["localStorage", "document.", "window.", "fetch("];
+      for (const file of SELECTOR_FILES) {
+        const res = await fetch("/selectors/" + file);
+        assert(res.ok, file + " must serve 200 OK");
+        const src = await res.text();
+        // Strip comment lines so we don't false-trigger on /* fetch( */ etc.
+        const stripped = src.split("\n")
+          .filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l))
+          .join("\n");
+        for (const banned of FORBIDDEN) {
+          assert(!stripped.includes(banned),
+            file + " must not reference '" + banned + "' in production code");
+        }
+      }
+    });
     it("V-SEL-FORBID-2 · no selectors/*.js file declares module-scope mutable state outside memoize wrapper", () => {});
-    it("V-SEL-FORBID-3 · no selectors/*.js file imports reselect / proxy-memoize / lodash.memoize", () => {});
+    it("V-SEL-FORBID-3 · no selectors/*.js file imports reselect / proxy-memoize / lodash.memoize", async () => {
+      // Meta-test: enforces the SPEC sec S5.1.3 single-library rule.
+      // memoize-one (or our vendored equivalent at services/memoizeOne.js)
+      // is the sanctioned tool; everything else is forbidden.
+      const SELECTOR_FILES = ["vendorMix.js", "gapsKanban.js"];
+      const FORBIDDEN_IMPORTS = ["reselect", "proxy-memoize", "lodash.memoize", "nano-memoize"];
+      for (const file of SELECTOR_FILES) {
+        const res = await fetch("/selectors/" + file);
+        const src = await res.text();
+        for (const lib of FORBIDDEN_IMPORTS) {
+          // Match `from "lib"` or `from 'lib'` patterns specifically (not
+          // mentions in comments).
+          const patterns = [
+            'from "' + lib + '"',
+            "from '" + lib + "'"
+          ];
+          for (const p of patterns) {
+            assert(!src.includes(p),
+              file + " must not import '" + lib + "' (SPEC S5.1.3)");
+          }
+        }
+      }
+    });
   });
 
   // -------------------------------------------------------------------
