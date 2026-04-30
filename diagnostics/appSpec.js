@@ -10733,10 +10733,106 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
   // -------------------------------------------------------------------
   describe("§T16 · V-PROD · Production-critical regression suite", () => {
     // dell-mapping (strict)
-    it("V-PROD-1 · dell-mapping output validates against DellSolutionListSchema", () => {});
-    it("V-PROD-2 · dell-mapping every entry id is in DELL_PRODUCT_TAXONOMY.entries[].id", () => {});
-    it("V-PROD-3 · dell-mapping NO entry id matches boomi/secureworks-taegis/vxrail/smartfabric-director", () => {});
-    it("V-PROD-4 · dell-mapping provenance fully populated (model + promptVersion + skillId + runId + timestamp + catalogVersions + validationStatus='valid')", () => {});
+    it("V-PROD-1 · dell-mapping output validates against DellSolutionListSchema", async () => {
+      // Mock returns a JSON-shaped response that parses + validates.
+      const provider = createMockLLMProvider({
+        defaultResponse: {
+          model: "mock-claude-sonnet",
+          text:  JSON.stringify({
+            rationale: "Mid-range storage modernization with cyber-resilience.",
+            products: ["powerstore", "powerprotect_dd", "powerprotect_cyber"]
+          })
+        }
+      });
+      const dellCat = await loadCatalog("DELL_PRODUCT_TAXONOMY");
+      const ctx = {
+        customer: { name: "Acme" },
+        context: { gap: { description: "Need ransomware-resilient storage", layerId: "storage", urgency: "High" } },
+        catalogVersions: { DELL_PRODUCT_TAXONOMY: dellCat.catalogVersion },
+        dellTaxonomyIds: new Set(dellCat.entries.map(e => e.id))
+      };
+      const result = await runSkill(SEED_SKILL_DELL_MAPPING, ctx, provider,
+        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-1" });
+      assert(typeof result.value === "object", "value is an object (not a string)");
+      assert(Array.isArray(result.value.products), "value.products is an array");
+      assertEqual(result.value.products.length, 3, "3 products in output");
+    });
+    it("V-PROD-2 · dell-mapping every entry id is in DELL_PRODUCT_TAXONOMY.entries[].id", async () => {
+      const dellCat = await loadCatalog("DELL_PRODUCT_TAXONOMY");
+      const validIds = new Set(dellCat.entries.map(e => e.id));
+      const provider = createMockLLMProvider({
+        defaultResponse: {
+          model: "mock-claude-sonnet",
+          text:  JSON.stringify({ products: ["powerstore", "smartfabric_manager", "dell_private_cloud"] })
+        }
+      });
+      const ctx = {
+        customer: { name: "Acme" },
+        context: { gap: { description: "modernize", layerId: "storage", urgency: "Medium" } },
+        catalogVersions: { DELL_PRODUCT_TAXONOMY: dellCat.catalogVersion },
+        dellTaxonomyIds: validIds
+      };
+      const result = await runSkill(SEED_SKILL_DELL_MAPPING, ctx, provider,
+        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-2" });
+      // Catalog membership enforced by runner — every product in result MUST be in catalog.
+      result.value.products.forEach(id => {
+        assert(validIds.has(id), "product '" + id + "' must be in DELL_PRODUCT_TAXONOMY");
+      });
+      assertEqual(result.provenance.validationStatus, "valid", "all products in catalog -> valid");
+    });
+    it("V-PROD-3 · dell-mapping NO entry id matches boomi/secureworks-taegis/vxrail/smartfabric-director", async () => {
+      // Adversarial: mock attempts to return a banned product. Runner
+      // must reject + retry; after retry budget exhausted -> validationStatus="invalid".
+      const dellCat = await loadCatalog("DELL_PRODUCT_TAXONOMY");
+      const provider = createMockLLMProvider({
+        defaultResponse: {
+          model: "mock-claude-sonnet",
+          text:  JSON.stringify({ products: ["vxrail", "boomi"] })   // both banned per S6.2.1
+        }
+      });
+      const ctx = {
+        customer: { name: "Acme" },
+        context: { gap: { description: "modernize", layerId: "storage", urgency: "Medium" } },
+        catalogVersions: { DELL_PRODUCT_TAXONOMY: dellCat.catalogVersion },
+        dellTaxonomyIds: new Set(dellCat.entries.map(e => e.id))
+      };
+      const result = await runSkill(SEED_SKILL_DELL_MAPPING, ctx, provider,
+        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-3" });
+      // Runner exhausted retries (mock always returns banned products) -> invalid envelope
+      assertEqual(result.provenance.validationStatus, "invalid",
+        "banned products -> retry exhausted -> validationStatus='invalid'");
+    });
+    it("V-PROD-4 · dell-mapping provenance fully populated (model + promptVersion + skillId + runId + timestamp + catalogVersions + validationStatus='valid')", async () => {
+      const dellCat = await loadCatalog("DELL_PRODUCT_TAXONOMY");
+      const provider = createMockLLMProvider({
+        defaultResponse: {
+          model: "claude-sonnet-4-6",
+          text:  JSON.stringify({ products: ["powerstore", "powerprotect_dd"] })
+        }
+      });
+      const ctx = {
+        customer: { name: "Acme" },
+        context: { gap: { description: "modernize", layerId: "storage", urgency: "High" } },
+        catalogVersions: {
+          DELL_PRODUCT_TAXONOMY: dellCat.catalogVersion,
+          BUSINESS_DRIVERS:      "2026.04",
+          ENV_CATALOG:           "2026.04"
+        },
+        dellTaxonomyIds: new Set(dellCat.entries.map(e => e.id))
+      };
+      const result = await runSkill(SEED_SKILL_DELL_MAPPING, ctx, provider,
+        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-4" });
+      // Full provenance contract per SPEC sec S8.1
+      assertEqual(result.provenance.validationStatus, "valid",   "validationStatus");
+      assertEqual(result.provenance.model,            "claude-sonnet-4-6", "model");
+      assertEqual(result.provenance.skillId,          "dell-mapping", "skillId");
+      assertEqual(result.provenance.promptVersion,    "skill:dell-mapping@1.0.0", "promptVersion");
+      assert(result.provenance.runId.length > 0, "runId populated");
+      assertEqual(result.provenance.timestamp,        "2026-05-01T00:00:00.000Z", "timestamp from opts");
+      assertEqual(result.provenance.catalogVersions.DELL_PRODUCT_TAXONOMY, "2026.04", "Dell taxonomy version stamped");
+      assertEqual(result.provenance.catalogVersions.BUSINESS_DRIVERS,      "2026.04", "BUSINESS_DRIVERS stamped");
+      assertEqual(result.provenance.catalogVersions.ENV_CATALOG,           "2026.04", "ENV_CATALOG stamped");
+    });
     it("V-PROD-5 · dell-mapping output round-trips through save+load byte-equivalent", () => {});
 
     // executive-summary (smoke)

@@ -15,6 +15,10 @@
 
 import { resolveTemplate } from "./pathResolver.js";
 import { generateDeterministicId } from "../migrations/helpers/deterministicId.js";
+import { getOutputSchema } from "./skillOutputSchemas.js";
+
+// Catalog-validation retry budget per SPEC sec S8.2.2.
+const MAX_CATALOG_RETRIES = 2;
 
 // runSkill(skill, ctx, llmProvider, opts?) -> Promise<{ value, provenance }>
 //
@@ -61,11 +65,75 @@ export async function runSkill(skill, ctx, llmProvider, opts = {}) {
   };
 
   // Free-text mode: wrap text as-is.
-  // Structured-output mode (per SPEC S7.4.1): TODO when first
-  // structured skill lands. Hook point for catalog-validation retry
-  // budget per S8.2.2.
+  if (skill.outputContract === "free-text" || !skill.outputContract) {
+    return { value: response.text, provenance };
+  }
+
+  // Structured-output mode (per SPEC S7.4.1):
+  //   - LLM response.text is parsed as JSON
+  //   - Parsed object validated against the registered Zod schema
+  //   - Catalog membership check on relevant fields (per S8.2.2)
+  //   - Retry up to MAX_CATALOG_RETRIES on miss
+  //   - validationStatus="invalid" after exhaustion
+  const schema = getOutputSchema(skill.outputContract.schemaRef);
+  if (!schema) {
+    throw new Error("runSkill: unknown schemaRef '" + skill.outputContract.schemaRef + "'");
+  }
+
+  let attempt   = 0;
+  let lastValue = null;
+  let lastErrors = null;
+  let stricterPrompt = resolvedPrompt;
+
+  while (attempt <= MAX_CATALOG_RETRIES) {
+    const r = (attempt === 0) ? response : await llmProvider.complete({ prompt: stricterPrompt });
+    let parsed;
+    try {
+      parsed = JSON.parse(r.text);
+    } catch (e) {
+      lastErrors = [{ code: "JSON_PARSE", message: e.message }];
+      attempt += 1;
+      stricterPrompt = resolvedPrompt + "\n\nIMPORTANT: respond with ONLY a JSON object matching the schema. No prose.";
+      continue;
+    }
+    const schemaResult = schema.safeParse(parsed);
+    if (!schemaResult.success) {
+      lastValue  = parsed;
+      lastErrors = schemaResult.error.issues;
+      attempt += 1;
+      stricterPrompt = resolvedPrompt + "\n\nIMPORTANT: previous response failed schema validation. Issues: " +
+                       JSON.stringify(schemaResult.error.issues.slice(0, 3));
+      continue;
+    }
+    const validated = schemaResult.data;
+
+    // Catalog-membership check for dell-mapping (and any future
+    // catalog-bound schema). Reject products not in the catalog
+    // OR matching the SPEC sec S6.2.1 banned list.
+    if (skill.outputContract.schemaRef === "DellSolutionListSchema" && Array.isArray(validated.products)) {
+      const validIds = ctx?.dellTaxonomyIds || new Set();
+      const banned = ["boomi","secureworks_taegis","vxrail","smartfabric_director"];
+      const invalid = validated.products.filter(id =>
+        banned.includes(id) || (validIds.size > 0 && !validIds.has(id))
+      );
+      if (invalid.length > 0) {
+        lastValue  = validated;
+        lastErrors = [{ code: "CATALOG_MEMBERSHIP",
+                        message: "Invalid products: " + invalid.join(", ") }];
+        attempt += 1;
+        stricterPrompt = resolvedPrompt + "\n\nIMPORTANT: products " + JSON.stringify(invalid) +
+                         " are NOT in the Dell taxonomy. Use only catalog ids.";
+        continue;
+      }
+    }
+
+    // Success path
+    return { value: validated, provenance };
+  }
+
+  // Retry budget exhausted -> invalid envelope per SPEC sec S8.2.2
   return {
-    value: response.text,
-    provenance
+    value: lastValue,
+    provenance: { ...provenance, validationStatus: "invalid" }
   };
 }
