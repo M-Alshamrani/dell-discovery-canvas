@@ -8612,6 +8612,12 @@ import {
   buildSaveEnvelope as buildSaveEnvelopeV3,
   loadCanvas        as loadCanvasV3
 } from "../services/canvasFile.js";
+import {
+  loadCatalog,
+  loadAllCatalogs,
+  CATALOG_IDS,
+  _resetCacheForTests as _resetCatalogCache
+} from "../services/catalogLoader.js";
 
 // ============================================================================
 // Suite 49 · v3.0 data architecture rebuild · RED-first vector scaffold
@@ -9396,18 +9402,118 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
   // sec T11 · V-CAT · Catalog snapshot (per SPEC sec S6.3)
   // -------------------------------------------------------------------
   describe("§T11 · V-CAT · Catalog snapshot", () => {
-    it("V-CAT-1 · loadCatalog('LAYERS') returns 6-entry catalog parsed through LayerCatalogSchema", () => {});
-    it("V-CAT-2 · loadCatalog('BUSINESS_DRIVERS') returns 8-entry catalog", () => {});
-    it("V-CAT-3 · loadCatalog('ENV_CATALOG') returns 8-entry catalog", () => {});
-    it("V-CAT-4 · loadCatalog('SERVICE_TYPES') returns 10-entry catalog", () => {});
-    it("V-CAT-5 · loadCatalog('GAP_TYPES') returns 5-entry catalog", () => {});
-    it("V-CAT-6 · loadCatalog('DISPOSITION_ACTIONS') returns 7-entry catalog", () => {});
-    it("V-CAT-7 · loadCatalog('CUSTOMER_VERTICALS') returns alphabetised catalog", () => {});
-    it("V-CAT-DELL-1 · DELL_PRODUCT_TAXONOMY does NOT contain 'boomi', 'secureworks-taegis', 'vxrail', 'smartfabric-director'", () => {});
-    it("V-CAT-DELL-2 · DELL_PRODUCT_TAXONOMY DOES contain 'smartfabric-manager', 'dell-private-cloud', 'dell-automation-platform', 'powerflex'", () => {});
-    it("V-CAT-DELL-3 · DELL_PRODUCT_TAXONOMY 'cloudiq' entry has umbrella: 'Dell APEX AIOps'", () => {});
-    it("V-CAT-VER-1 · every catalog snapshot has catalogVersion matching /^\\d{4}\\.\\d{2}$/", () => {});
-    it("V-CAT-VER-2 · all v3.0 catalog snapshots ship with catalogVersion === '2026.04'", () => {});
+    it("V-CAT-1 · loadCatalog('LAYERS') returns 6-entry catalog parsed through CatalogSchema", async () => {
+      const cat = await loadCatalog("LAYERS");
+      assertEqual(cat.catalogId, "LAYERS", "catalogId preserved");
+      assertEqual(cat.entries.length, 6, "LAYERS has 6 entries");
+      const ids = cat.entries.map(e => e.id);
+      assert(ids.includes("workload"),       "includes workload layer");
+      assert(ids.includes("compute"),        "includes compute layer");
+      assert(ids.includes("storage"),        "includes storage layer");
+      assert(ids.includes("dataProtection"), "includes dataProtection layer");
+      assert(ids.includes("virtualization"), "includes virtualization layer");
+      assert(ids.includes("infrastructure"), "includes infrastructure layer");
+    });
+    it("V-CAT-2 · loadCatalog('BUSINESS_DRIVERS') returns 8-entry catalog", async () => {
+      const cat = await loadCatalog("BUSINESS_DRIVERS");
+      assertEqual(cat.entries.length, 8, "BUSINESS_DRIVERS has 8 entries");
+      // Each entry has hint + conversationStarter (per S6.2 inventory).
+      assert(cat.entries.every(e => typeof e.hint === "string" && e.hint.length > 0),
+        "every driver has a hint");
+      assert(cat.entries.every(e => typeof e.conversationStarter === "string" && e.conversationStarter.length > 0),
+        "every driver has a conversationStarter");
+    });
+    it("V-CAT-3 · loadCatalog('ENV_CATALOG') returns 8-entry catalog", async () => {
+      const cat = await loadCatalog("ENV_CATALOG");
+      assertEqual(cat.entries.length, 8, "ENV_CATALOG has 8 entries");
+    });
+    it("V-CAT-4 · loadCatalog('SERVICE_TYPES') returns 10-entry catalog", async () => {
+      const cat = await loadCatalog("SERVICE_TYPES");
+      assertEqual(cat.entries.length, 10, "SERVICE_TYPES has 10 entries");
+    });
+    it("V-CAT-5 · loadCatalog('GAP_TYPES') returns 5-entry catalog", async () => {
+      const cat = await loadCatalog("GAP_TYPES");
+      assertEqual(cat.entries.length, 5, "GAP_TYPES has 5 entries");
+      const ids = cat.entries.map(e => e.id);
+      assert(ids.includes("replace"),     "includes replace");
+      assert(ids.includes("consolidate"), "includes consolidate");
+      assert(ids.includes("introduce"),   "includes introduce");
+      assert(ids.includes("enhance"),     "includes enhance");
+      assert(ids.includes("ops"),         "includes ops");
+    });
+    it("V-CAT-6 · loadCatalog('DISPOSITION_ACTIONS') returns 7-entry catalog", async () => {
+      const cat = await loadCatalog("DISPOSITION_ACTIONS");
+      assertEqual(cat.entries.length, 7, "DISPOSITION_ACTIONS has 7 entries");
+      const ids = cat.entries.map(e => e.id);
+      const expected = ["keep","enhance","replace","consolidate","retire","introduce","ops"];
+      expected.forEach(id => assert(ids.includes(id), "includes " + id));
+    });
+    it("V-CAT-7 · loadCatalog('CUSTOMER_VERTICALS') returns alphabetised catalog", async () => {
+      const cat = await loadCatalog("CUSTOMER_VERTICALS");
+      const labels = cat.entries.map(e => e.label);
+      const sorted = [...labels].sort((a, b) => a.localeCompare(b));
+      assert(labels.length === sorted.length && labels.every((l, i) => l === sorted[i]),
+        "verticals must be alphabetised. got: " + labels.join(", "));
+    });
+    it("V-CAT-DELL-1 · DELL_PRODUCT_TAXONOMY does NOT contain 'boomi', 'secureworks-taegis', 'vxrail', 'smartfabric-director'", async () => {
+      const cat = await loadCatalog("DELL_PRODUCT_TAXONOMY");
+      const ids = cat.entries.map(e => e.id);
+      const labels = cat.entries.map(e => e.label.toLowerCase());
+      // SPEC sec S6.2.1 LOCKED corrections — these must NOT appear.
+      const banned = [
+        { id: "boomi",                 reason: "divested" },
+        { id: "secureworks_taegis",    reason: "divested" },
+        { id: "secureworks-taegis",    reason: "divested" },
+        { id: "vxrail",                reason: "superseded by Dell Private Cloud + PowerFlex" },
+        { id: "smartfabric_director",  reason: "replaced by SmartFabric Manager" },
+        { id: "smartfabric-director",  reason: "replaced by SmartFabric Manager" }
+      ];
+      banned.forEach(({ id, reason }) => {
+        assert(!ids.includes(id),
+          "DELL_PRODUCT_TAXONOMY must NOT contain '" + id + "' (" + reason + ")");
+        assert(!labels.includes(id.replace(/_/g, " ")),
+          "DELL_PRODUCT_TAXONOMY must NOT contain a label matching '" + id + "'");
+      });
+      // Also reject the literal label "SmartFabric Director".
+      assert(!labels.some(l => l.includes("smartfabric director")),
+        "DELL_PRODUCT_TAXONOMY must NOT contain a 'SmartFabric Director' label");
+    });
+    it("V-CAT-DELL-2 · DELL_PRODUCT_TAXONOMY DOES contain 'smartfabric-manager', 'dell-private-cloud', 'dell-automation-platform', 'powerflex'", async () => {
+      const cat = await loadCatalog("DELL_PRODUCT_TAXONOMY");
+      const ids = cat.entries.map(e => e.id);
+      // SPEC sec S6.2.1 LOCKED corrections — these MUST appear.
+      const required = [
+        "smartfabric_manager",       // replaces SmartFabric Director
+        "dell_private_cloud",        // replaces VxRail positioning
+        "dell_automation_platform",  // companion to Dell Private Cloud
+        "powerflex"                  // SDS layer of Dell Private Cloud
+      ];
+      required.forEach(id => assert(ids.includes(id),
+        "DELL_PRODUCT_TAXONOMY MUST contain '" + id + "' (per SPEC S6.2.1 lock)"));
+    });
+    it("V-CAT-DELL-3 · DELL_PRODUCT_TAXONOMY 'cloudiq' entry has umbrella: 'Dell APEX AIOps'", async () => {
+      const cat = await loadCatalog("DELL_PRODUCT_TAXONOMY");
+      const cloudiq = cat.entries.find(e => e.id === "cloudiq");
+      assert(cloudiq, "cloudiq entry must exist (under Dell APEX AIOps umbrella)");
+      assertEqual(cloudiq.umbrella, "Dell APEX AIOps",
+        "cloudiq.umbrella must be 'Dell APEX AIOps' per SPEC S6.2.1 lock");
+    });
+    it("V-CAT-VER-1 · every catalog snapshot has catalogVersion matching /^\\d{4}\\.\\d{2}$/", async () => {
+      const all = await loadAllCatalogs();
+      const ids = Object.keys(all);
+      assertEqual(ids.length, 8, "exactly 8 catalogs are bundled");
+      ids.forEach(id => {
+        assert(/^\d{4}\.\d{2}$/.test(all[id].catalogVersion),
+          id + " catalogVersion '" + all[id].catalogVersion + "' must match YYYY.MM");
+      });
+    });
+    it("V-CAT-VER-2 · all v3.0 catalog snapshots ship with catalogVersion === '2026.04'", async () => {
+      const all = await loadAllCatalogs();
+      Object.entries(all).forEach(([id, cat]) => {
+        assertEqual(cat.catalogVersion, "2026.04",
+          id + " must ship with catalogVersion '2026.04' at v3.0 ship");
+      });
+    });
   });
 
   // -------------------------------------------------------------------

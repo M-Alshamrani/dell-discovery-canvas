@@ -16,7 +16,12 @@
 // state from the freshly-restored localStorage and emit a
 // session-changed so the UI re-renders the user's REAL data.
 
-export function runIsolated(run, restoreCallback) {
+// v3.0 · runIsolated is async because run() is now async (test bodies
+// can return Promises so async features like SPEC sec S6.1 catalog
+// loading can be tested directly). The `finally` block awaits run()
+// before restoring localStorage, ensuring async tests see the
+// pre-snapshot state until they complete.
+export async function runIsolated(run, restoreCallback) {
   // Snapshot every storage key.
   var snapshot = {};
   try {
@@ -27,7 +32,7 @@ export function runIsolated(run, restoreCallback) {
   } catch (e) { /* private mode etc. — best-effort */ }
 
   try {
-    return run();
+    return await run();
   } finally {
     // Restore: wipe any test-side keys, then re-write the snapshot.
     try {
@@ -66,17 +71,21 @@ export function createTestRunner() {
     if (a !== b) throw new Error(`${msg || "Expected equal"} (expected: ${b}, actual: ${a})`);
   }
 
-  function run() {
+  // v3.0 · async to support test bodies that return Promises (e.g.
+  // SPEC sec S6.1.2's loadCatalog Promise<Catalog> contract). Sync test
+  // bodies still work — `await test.fn()` on a non-Promise return value
+  // is a no-op (resolves to the same value).
+  async function run() {
     const results = { suites: [], total: 0, passed: 0, failed: 0 };
     console.group("[Tests] Dell Discovery Canvas");
-    suites.forEach(suite => {
+    for (const suite of suites) {
       const sr = { name: suite.name, tests: [] };
       results.suites.push(sr);
       console.group(`Suite: ${suite.name}`);
-      suite.tests.forEach(test => {
+      for (const test of suite.tests) {
         results.total++;
         try {
-          test.fn();
+          await test.fn();
           sr.tests.push({ name: test.name, status: "passed" });
           results.passed++;
           console.log(`  ✅  ${test.name}`);
@@ -85,9 +94,9 @@ export function createTestRunner() {
           results.failed++;
           console.error(`  ❌  ${test.name}`, e.message);
         }
-      });
+      }
       console.groupEnd();
-    });
+    }
     console.log(`\n[Tests] ${results.passed}/${results.total} passed${results.failed ? ` · ${results.failed} failed` : " ✅"}`);
     console.groupEnd();
     renderBanner(results);
