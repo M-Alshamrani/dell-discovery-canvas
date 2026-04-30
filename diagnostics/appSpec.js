@@ -8618,8 +8618,13 @@ import {
   CATALOG_IDS,
   _resetCacheForTests as _resetCatalogCache
 } from "../services/catalogLoader.js";
-import { selectVendorMix }  from "../selectors/vendorMix.js";
-import { selectGapsKanban } from "../selectors/gapsKanban.js";
+import { selectVendorMix }              from "../selectors/vendorMix.js";
+import { selectGapsKanban }             from "../selectors/gapsKanban.js";
+import { selectMatrixView }             from "../selectors/matrix.js";
+import { selectProjects }               from "../selectors/projects.js";
+import { selectHealthSummary }          from "../selectors/healthSummary.js";
+import { selectExecutiveSummaryInputs } from "../selectors/executiveSummary.js";
+import { selectLinkedComposition }      from "../selectors/linkedComposition.js";
 
 // ============================================================================
 // Suite 49 · v3.0 data architecture rebuild · RED-first vector scaffold
@@ -9237,9 +9242,36 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
   // -------------------------------------------------------------------
   describe("§T6 · V-SEL · Selector correctness + purity", () => {
     // Correctness — selectMatrixView (V-SEL-1a..1e)
-    it("V-SEL-1a · selectMatrixView({state:'current'}) returns env × layer grid", () => {});
+    it("V-SEL-1a · selectMatrixView({state:'current'}) returns env × layer grid", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const e1 = eng.environments.allIds[0];
+      eng = addInstanceV3(eng, { state: "current", layerId: "compute", environmentId: e1,
+        label: "PE1", vendor: "Dell", vendorGroup: "dell", criticality: "Medium", disposition: "keep" }).engagement;
+      eng = addInstanceV3(eng, { state: "desired", layerId: "compute", environmentId: e1,
+        label: "PE2", vendor: "Dell", vendorGroup: "dell", criticality: "Medium", disposition: "keep" }).engagement;
+      const view = selectMatrixView(eng, { state: "current" });
+      assertEqual(view.state, "current", "state preserved");
+      assertEqual(view.envIds.length, 1, "1 env");
+      assertEqual(view.layerIds.length, 6, "6 layers in catalog order");
+      const cell = view.cells[e1].compute;
+      assertEqual(cell.count, 1, "current state has 1 instance in compute (desired excluded)");
+      assertEqual(cell.vendorMix.dell, 1, "1 dell");
+    });
     it("V-SEL-1b · selectMatrixView({state:'desired'}) returns env × layer grid", () => {});
-    it("V-SEL-1c · hidden envs excluded unless arg.includeHidden", () => {});
+    it("V-SEL-1c · hidden envs excluded unless arg.includeHidden", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      eng = addEnvironment(eng, { envCatalogId: "drDc",   catalogVersion: "2026.04" }).engagement;
+      const visibleEnv = eng.environments.allIds[0];
+      const hiddenEnv  = eng.environments.allIds[1];
+      eng = hideEnvironment(eng, hiddenEnv).engagement;
+      const defaultView = selectMatrixView(eng, { state: "current" });
+      assert(defaultView.envIds.includes(visibleEnv),  "visible env present by default");
+      assert(!defaultView.envIds.includes(hiddenEnv),  "hidden env excluded by default");
+      const inclView = selectMatrixView(eng, { state: "current", includeHidden: true });
+      assert(inclView.envIds.includes(hiddenEnv), "hidden env present when includeHidden:true");
+    });
     it("V-SEL-1d · cell.vendorMix counts dell + nonDell + custom correctly", () => {});
     it("V-SEL-1e · layerIds in catalog order from LAYERS", () => {});
 
@@ -9296,10 +9328,50 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-SEL-2c · sort order within (phase, status) deterministic", () => {});
 
     // Correctness — selectProjects (V-SEL-3a..3e)
-    it("V-SEL-3a · selectProjects assigns deterministic projectId from grouping key", () => {});
+    it("V-SEL-3a · selectProjects assigns deterministic projectId from grouping key", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addDriver(eng, { businessDriverId: "ai_data", priority: "High" }).engagement;
+      const drvId = eng.drivers.allIds[0];
+      // Two gaps sharing (driverId, layerId) -> same project
+      eng = addGapV3(eng, { description: "g1", gapType: "replace", urgency: "Medium",
+        phase: "now", status: "open", driverId: drvId, layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      eng = addGapV3(eng, { description: "g2", gapType: "enhance", urgency: "Low",
+        phase: "next", status: "open", driverId: drvId, layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      // Different layer -> different project
+      eng = addGapV3(eng, { description: "g3", gapType: "introduce", urgency: "High",
+        phase: "now", status: "open", driverId: drvId, layerId: "storage",
+        affectedLayers: ["storage"], affectedEnvironments: [env1] }).engagement;
+      const view = selectProjects(eng);
+      assertEqual(view.projects.length, 2, "2 projects: (drv,compute) + (drv,storage)");
+      // Re-run: same projectIds (deterministic)
+      const view2 = selectProjects(eng);
+      assertEqual(view.projects[0].projectId, view2.projects[0].projectId,
+        "projectId is deterministic across calls");
+    });
     it("V-SEL-3b · gap → project assignment correct against fixture", () => {});
     it("V-SEL-3c · unassigned gaps appear in projects.unassigned", () => {});
-    it("V-SEL-3d · project.phase = earliest among constituent gaps", () => {});
+    it("V-SEL-3d · project.phase = earliest among constituent gaps", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addDriver(eng, { businessDriverId: "ai_data", priority: "High" }).engagement;
+      const drvId = eng.drivers.allIds[0];
+      // Two gaps in same project: one "later", one "now". Earliest wins.
+      eng = addGapV3(eng, { description: "g-later", gapType: "replace", urgency: "Medium",
+        phase: "later", status: "open", driverId: drvId, layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      eng = addGapV3(eng, { description: "g-now", gapType: "enhance", urgency: "High",
+        phase: "now", status: "open", driverId: drvId, layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      const view = selectProjects(eng);
+      assertEqual(view.projects.length, 1, "1 project");
+      assertEqual(view.projects[0].phase, "now", "earliest phase wins");
+      assertEqual(view.projects[0].mostUrgent, "High", "max urgency wins");
+    });
     it("V-SEL-3e · project.mostUrgent = max urgency among constituent gaps", () => {});
 
     // Correctness — selectVendorMix (V-SEL-4a..4d)
@@ -9364,45 +9436,149 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 
     // Correctness — selectHealthSummary (V-SEL-5a..5d)
     it("V-SEL-5a · selectHealthSummary.byLayer scores correct for cross-cutting fixture", () => {});
-    it("V-SEL-5b · highRiskGaps excludes status === 'closed' (KD8 invariant preserved)", () => {});
+    it("V-SEL-5b · highRiskGaps excludes status === 'closed' (KD8 invariant preserved)", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      // Two High-urgency gaps in compute: one open, one closed.
+      eng = addGapV3(eng, { description: "open-high", gapType: "replace", urgency: "High",
+        phase: "now", status: "open", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      eng = addGapV3(eng, { description: "closed-high", gapType: "replace", urgency: "High",
+        phase: "now", status: "closed", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      const view = selectHealthSummary(eng);
+      // Only the open gap counts as high-risk; closed is excluded (KD8).
+      assertEqual(view.byLayer.compute.counts.highRiskGaps, 1,
+        "highRiskGaps excludes closed gaps (KD8)");
+      assertEqual(view.byLayer.compute.counts.openGaps, 1,
+        "openGaps count also excludes closed");
+    });
     it("V-SEL-5c · overall.score computed deterministically from byLayer", () => {});
     it("V-SEL-5d · highestRiskLayer correct for fixture", () => {});
 
     // Correctness — selectExecutiveSummaryInputs (V-SEL-6a..6c)
-    it("V-SEL-6a · selectExecutiveSummaryInputs.engagementMeta passes through verbatim", () => {});
-    it("V-SEL-6b · drivers.topPriority is the High-priority driver (or first if tied)", () => {});
-    it("V-SEL-6c · catalogVersions populated from loaded catalogs (provenance bridge)", () => {});
+    it("V-SEL-6a · selectExecutiveSummaryInputs.engagementMeta passes through verbatim", () => {
+      const eng = createEmptyEngagement({ meta: {
+        presalesOwner: "Mahmoud", status: "Draft",
+        engagementId: "00000000-0000-4000-8000-000000000abc"
+      } });
+      const view = selectExecutiveSummaryInputs(eng);
+      assertEqual(view.engagementMeta.presalesOwner, "Mahmoud", "presalesOwner");
+      assertEqual(view.engagementMeta.status, "Draft", "status");
+      assertEqual(view.engagementMeta.customerName, "New customer", "customer name from default");
+      assertEqual(view.engagementMeta.vertical, "Financial Services", "vertical from default");
+    });
+    it("V-SEL-6b · drivers.topPriority is the High-priority driver (or first if tied)", () => {
+      let eng = createEmptyEngagement();
+      eng = addDriver(eng, { businessDriverId: "ops_simplicity", priority: "Medium" }).engagement;
+      eng = addDriver(eng, { businessDriverId: "ai_data",        priority: "High"   }).engagement;
+      eng = addDriver(eng, { businessDriverId: "cyber_resilience", priority: "Low"  }).engagement;
+      const view = selectExecutiveSummaryInputs(eng);
+      assertEqual(view.drivers.topPriority?.businessDriverId, "ai_data",
+        "topPriority is the High-priority driver");
+      assertEqual(view.drivers.all.length, 3, "all 3 drivers exposed");
+    });
+    it("V-SEL-6c · catalogVersions populated from loaded catalogs (provenance bridge)", () => {
+      let eng = createEmptyEngagement();
+      eng = addDriver(eng, { businessDriverId: "ai_data", priority: "High",
+        catalogVersion: "2026.04" }).engagement;
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const view = selectExecutiveSummaryInputs(eng);
+      assertEqual(view.catalogVersions.BUSINESS_DRIVERS, "2026.04",
+        "BUSINESS_DRIVERS catalog version exposed for provenance stamping");
+      assertEqual(view.catalogVersions.ENV_CATALOG, "2026.04",
+        "ENV_CATALOG catalog version exposed for provenance stamping");
+    });
 
     // Correctness — selectLinkedComposition (V-SEL-7a..7g)
-    it("V-SEL-7a · selectLinkedComposition({kind:'driver'}) returns entity + catalog + linked.gaps + linked.relatedInstances", () => {});
+    it("V-SEL-7a · selectLinkedComposition({kind:'driver'}) returns entity + catalog + linked.gaps + linked.relatedInstances", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addDriver(eng, { businessDriverId: "ai_data", priority: "High" }).engagement;
+      const drvId = eng.drivers.allIds[0];
+      eng = addGapV3(eng, { description: "g1", gapType: "replace", urgency: "Medium",
+        phase: "now", status: "open", driverId: drvId, layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      const view = selectLinkedComposition(eng, { kind: "driver", id: drvId });
+      assertEqual(view.kind, "driver", "kind preserved");
+      assertEqual(view.entity.id, drvId, "entity present");
+      assertEqual(view.linked.gaps.length, 1, "linked.gaps includes the matching gap");
+      assertEqual(view.linked.affectedEnvironments.length, 1, "linked.affectedEnvironments");
+    });
     it("V-SEL-7b · selectLinkedComposition({kind:'currentInstance'}) returns entity + linked.desiredCounterparts + linked.gaps", () => {});
     it("V-SEL-7c · selectLinkedComposition({kind:'desiredInstance'}) returns entity + linked.originInstance + linked.gaps", () => {});
     it("V-SEL-7d · selectLinkedComposition({kind:'gap'}) returns entity + linked.driver + linked.relatedInstances + linked.affectedEnvironments", () => {});
     it("V-SEL-7e · selectLinkedComposition({kind:'environment'}) returns entity + linked.instances + linked.gaps", () => {});
     it("V-SEL-7f · selectLinkedComposition({kind:'project'}) returns entity + linked.gaps + linked.drivers", () => {});
-    it("V-SEL-7g · selectLinkedComposition with non-existent id returns graceful null/error envelope", () => {});
+    it("V-SEL-7g · selectLinkedComposition with non-existent id returns graceful null/error envelope", () => {
+      const eng = createEmptyEngagement();
+      const view = selectLinkedComposition(eng, { kind: "driver", id: "00000000-0000-4000-8000-000000bad000" });
+      assertEqual(view.entity, null, "entity null when not found");
+      assert(typeof view.error === "string" && view.error.length > 0, "error message present");
+      // No throw is the contract; the caller can branch on entity===null.
+    });
 
     // Purity (V-SEL-PURE-*)
-    it("V-SEL-PURE-1 · selectMatrixView returns ===-equal output for ===-equal inputs", () => {});
+    it("V-SEL-PURE-1 · selectMatrixView returns ===-equal output for ===-equal inputs", () => {
+      const eng = createEmptyEngagement();
+      const a = selectMatrixView(eng, { state: "current" });
+      const b = selectMatrixView(eng, { state: "current" });
+      assert(a === b, "memoizeOne returns ===-equal output for ===-equal input");
+    });
     it("V-SEL-PURE-2 · selectGapsKanban returns ===-equal output for ===-equal inputs", () => {
       const eng = createEmptyEngagement();
       const a = selectGapsKanban(eng);
       const b = selectGapsKanban(eng);
       assert(a === b, "memoizeOne returns ===-equal output for ===-equal input");
     });
-    it("V-SEL-PURE-3 · selectProjects returns ===-equal output for ===-equal inputs", () => {});
+    it("V-SEL-PURE-3 · selectProjects returns ===-equal output for ===-equal inputs", () => {
+      const eng = createEmptyEngagement();
+      const a = selectProjects(eng);
+      const b = selectProjects(eng);
+      assert(a === b, "memoizeOne returns ===-equal output for ===-equal input");
+    });
     it("V-SEL-PURE-4 · selectVendorMix returns ===-equal output for ===-equal inputs", () => {
       const eng = createEmptyEngagement();
       const a = selectVendorMix(eng);
       const b = selectVendorMix(eng);
       assert(a === b, "memoizeOne returns ===-equal output for ===-equal input");
     });
-    it("V-SEL-PURE-5 · selectHealthSummary returns ===-equal output for ===-equal inputs", () => {});
-    it("V-SEL-PURE-6 · selectExecutiveSummaryInputs returns ===-equal output for ===-equal inputs", () => {});
-    it("V-SEL-PURE-7 · selectLinkedComposition returns ===-equal output for ===-equal inputs", () => {});
+    it("V-SEL-PURE-5 · selectHealthSummary returns ===-equal output for ===-equal inputs", () => {
+      const eng = createEmptyEngagement();
+      const a = selectHealthSummary(eng);
+      const b = selectHealthSummary(eng);
+      assert(a === b, "memoizeOne returns ===-equal output for ===-equal input");
+    });
+    it("V-SEL-PURE-6 · selectExecutiveSummaryInputs returns ===-equal output for ===-equal inputs", () => {
+      const eng = createEmptyEngagement();
+      const a = selectExecutiveSummaryInputs(eng);
+      const b = selectExecutiveSummaryInputs(eng);
+      assert(a === b, "memoizeOne returns ===-equal output for ===-equal input");
+    });
+    it("V-SEL-PURE-7 · selectLinkedComposition returns ===-equal output for ===-equal inputs", () => {
+      let eng = createEmptyEngagement();
+      eng = addDriver(eng, { businessDriverId: "ai_data", priority: "High" }).engagement;
+      const drvId = eng.drivers.allIds[0];
+      const a = selectLinkedComposition(eng, { kind: "driver", id: drvId });
+      const b = selectLinkedComposition(eng, { kind: "driver", id: drvId });
+      assert(a === b, "memoizeOne returns ===-equal output for ===-equal (engagement, kind, id)");
+    });
 
     // Memoization invalidation (V-SEL-INVAL-*)
-    it("V-SEL-INVAL-1 · action addInstance invalidates selectMatrixView memoization", () => {});
+    it("V-SEL-INVAL-1 · action addInstance invalidates selectMatrixView memoization", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const e1 = eng.environments.allIds[0];
+      const before = selectMatrixView(eng, { state: "current" });
+      const next = addInstanceV3(eng, { state: "current", layerId: "compute", environmentId: e1,
+        label: "T1", vendor: "Dell", vendorGroup: "dell", criticality: "Medium", disposition: "keep" });
+      assert(next.ok, "addInstance ok");
+      const after = selectMatrixView(next.engagement, { state: "current" });
+      assert(before !== after, "engagement ref changed -> output ref changed");
+      assertEqual(after.cells[e1].compute.count, 1, "after has the new instance");
+    });
     it("V-SEL-INVAL-2 · action addGap invalidates selectGapsKanban memoization", () => {
       let eng = createEmptyEngagement();
       eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
@@ -9420,7 +9596,20 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "engagement reference changed -> selector recomputes -> different output reference");
       assertEqual(after.byPhase.now.open.length, 1, "after has the new gap");
     });
-    it("V-SEL-INVAL-3 · action updateGap invalidates selectProjects memoization", () => {});
+    it("V-SEL-INVAL-3 · action updateGap invalidates selectProjects memoization", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addGapV3(eng, { description: "g1", gapType: "replace", urgency: "Medium",
+        phase: "now", status: "open", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
+      const gapId = eng.gaps.allIds[0];
+      const before = selectProjects(eng);
+      const updated = updateGapV3(eng, gapId, { phase: "later" });
+      assert(updated.ok, "updateGap ok");
+      const after = selectProjects(updated.engagement);
+      assert(before !== after, "engagement ref changed -> selectProjects re-computes");
+    });
     it("V-SEL-INVAL-4 · action updateInstance invalidates selectVendorMix memoization", () => {
       let eng = createEmptyEngagement();
       eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
@@ -9442,9 +9631,45 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assertEqual(before.totals.dell, 0, "before: 0 dell");
       assertEqual(after.totals.dell, 1, "after: 1 dell");
     });
-    it("V-SEL-INVAL-5 · action addGap invalidates selectHealthSummary memoization", () => {});
-    it("V-SEL-INVAL-6 · action updateCustomer invalidates selectExecutiveSummaryInputs memoization", () => {});
-    it("V-SEL-INVAL-7 · action affecting linked entity invalidates selectLinkedComposition memoization", () => {});
+    it("V-SEL-INVAL-5 · action addGap invalidates selectHealthSummary memoization", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      const before = selectHealthSummary(eng);
+      assertEqual(before.byLayer.compute.counts.openGaps, 0, "before: 0 open gaps");
+      const next = addGapV3(eng, { description: "g1", gapType: "replace", urgency: "High",
+        phase: "now", status: "open", layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] });
+      const after = selectHealthSummary(next.engagement);
+      assert(before !== after, "ref changed");
+      assertEqual(after.byLayer.compute.counts.highRiskGaps, 1, "after: 1 highRisk gap");
+    });
+    it("V-SEL-INVAL-6 · action updateCustomer invalidates selectExecutiveSummaryInputs memoization", () => {
+      const eng = createEmptyEngagement();
+      const before = selectExecutiveSummaryInputs(eng);
+      const updated = updateCustomer(eng, { name: "Acme Inc.", vertical: "Healthcare" });
+      assert(updated.ok, "updateCustomer ok");
+      const after = selectExecutiveSummaryInputs(updated.engagement);
+      assert(before !== after, "ref changed -> recompute");
+      assertEqual(after.engagementMeta.customerName, "Acme Inc.", "name reflected");
+      assertEqual(after.engagementMeta.vertical, "Healthcare", "vertical reflected");
+    });
+    it("V-SEL-INVAL-7 · action affecting linked entity invalidates selectLinkedComposition memoization", () => {
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const env1 = eng.environments.allIds[0];
+      eng = addDriver(eng, { businessDriverId: "ai_data", priority: "High" }).engagement;
+      const drvId = eng.drivers.allIds[0];
+      const before = selectLinkedComposition(eng, { kind: "driver", id: drvId });
+      assertEqual(before.linked.gaps.length, 0, "before: no gaps");
+      // Add a gap linked to this driver
+      const next = addGapV3(eng, { description: "linked", gapType: "replace", urgency: "Medium",
+        phase: "now", status: "open", driverId: drvId, layerId: "compute",
+        affectedLayers: ["compute"], affectedEnvironments: [env1] });
+      const after = selectLinkedComposition(next.engagement, { kind: "driver", id: drvId });
+      assert(before !== after, "ref changed");
+      assertEqual(after.linked.gaps.length, 1, "after: 1 linked gap");
+    });
 
     // Forbidden patterns (V-SEL-FORBID-*)
     it("V-SEL-FORBID-1 · no selectors/*.js file imports localStorage / document / window / fetch", async () => {
