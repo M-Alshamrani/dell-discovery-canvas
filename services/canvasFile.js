@@ -17,6 +17,9 @@
 
 import { APP_VERSION } from "../core/version.js";
 import { EngagementSchema, CURRENT_SCHEMA_VERSION } from "../schema/engagement.js";
+import { migrateToVersion, MigrationError, MigrationStepError } from "../migrations/index.js";
+import { makePipelineContext } from "../migrations/helpers/pipelineContext.js";
+import { loadAllCatalogs } from "./catalogLoader.js";
 
 export const FILE_FORMAT_VERSION = "v3-1";   // bump from v2.x's "v2-x" formats
 export const FILE_MIME = "application/x-dell-discovery-canvas";
@@ -90,7 +93,7 @@ function stripForPersist(eng) {
 //
 // Returns { ok: true, engagement } | { ok: false, error, recoveryHint }.
 
-export function loadCanvas(envelope) {
+export async function loadCanvas(envelope) {
   if (!envelope || typeof envelope !== "object") {
     return {
       ok:    false,
@@ -100,22 +103,33 @@ export function loadCanvas(envelope) {
   }
 
   // Schema version dispatch. v3.0 path is direct; older versions route
-  // through the migrator (not yet wired).
+  // through the migrator (now wired per MIGRATION sec M1.2).
   const schemaVersion = envelope.schemaVersion ?? envelope.engagement?.meta?.schemaVersion ?? "2.0";
   let v3Engagement;
   if (schemaVersion === CURRENT_SCHEMA_VERSION) {
     v3Engagement = envelope.engagement;
   } else if (schemaVersion < CURRENT_SCHEMA_VERSION) {
-    // Migrator stub — replace when migrations/v2-0_to_v3-0/ lands.
-    return {
-      ok:    false,
-      error: {
-        code:    "MIGRATOR_NOT_WIRED",
-        message: `Loaded v${schemaVersion} envelope but the v${schemaVersion} -> v${CURRENT_SCHEMA_VERSION} migrator is not yet wired in this build.`,
-        schemaVersion
-      },
-      recoveryHint: "Re-save this engagement in a newer build, or wait for migrator integration."
-    };
+    // Migrator path. Bundle a frozen catalog snapshot for the pipeline
+    // context per MIGRATION sec M13.
+    try {
+      const catalogSnapshot = await loadAllCatalogs();
+      const ctx = makePipelineContext({ catalogSnapshot });
+      const migrated = migrateToVersion(envelope.engagement, CURRENT_SCHEMA_VERSION, ctx);
+      v3Engagement = migrated;
+    } catch (e) {
+      return {
+        ok: false,
+        error: {
+          code:             (e instanceof MigrationStepError) ? "MIGRATION_STEP_FAILED" : "MIGRATION_FAILED",
+          message:          e.message,
+          step:             e.step,
+          migratorVersion:  "v2-0_to_v3-0",
+          schemaVersion,
+          originalEnvelope: envelope
+        },
+        recoveryHint: "Migration failed. You can download the original .canvas file or try again."
+      };
+    }
   } else {
     return {
       ok:    false,

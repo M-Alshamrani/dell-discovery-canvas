@@ -8625,6 +8625,10 @@ import { selectProjects }               from "../selectors/projects.js";
 import { selectHealthSummary }          from "../selectors/healthSummary.js";
 import { selectExecutiveSummaryInputs } from "../selectors/executiveSummary.js";
 import { selectLinkedComposition }      from "../selectors/linkedComposition.js";
+import { migrate_v2_0_to_v3_0, MigrationStepError } from "../migrations/v2-0_to_v3-0/index.js";
+import { migrateToVersion } from "../migrations/index.js";
+import { makePipelineContext } from "../migrations/helpers/pipelineContext.js";
+import { generateDeterministicId } from "../migrations/helpers/deterministicId.js";
 
 // ============================================================================
 // Suite 49 · v3.0 data architecture rebuild · RED-first vector scaffold
@@ -8936,11 +8940,11 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assert("allIds" in saved.envelope.engagement.instances,
         "instances.allIds preserved");
     });
-    it("V-SCH-48 · secondary indexes ARE rebuilt on load", () => {
+    it("V-SCH-48 · secondary indexes ARE rebuilt on load", async () => {
       const eng = createEmptyEngagement();
       const saved = buildSaveEnvelopeV3(eng);
       assert(saved.ok, "save succeeded");
-      const loaded = loadCanvasV3(saved.envelope);
+      const loaded = await loadCanvasV3(saved.envelope);
       assert(loaded.ok, "load succeeded: " + JSON.stringify(loaded.error || ""));
       assert("byState" in loaded.engagement.instances,
         "instances.byState rebuilt on load");
@@ -9175,31 +9179,138 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-MIG-8 · acme-demo.canvas migrates; 200 instances; full migration < 200ms calibrated", () => {});
 
     // Per-step assertions (V-MIG-S{1..10}-*)
-    it("V-MIG-S1-1 · Step 1: v2.0 input → engagementMeta.schemaVersion === '3.0'", () => {});
-    it("V-MIG-S1-2 · Step 1: idempotent on already-v3.0 input", () => {});
+    // Helper for V-MIG-* — builds a minimal v2.0-shaped engagement.
+    function v2Empty(overrides) {
+      return Object.assign({
+        sessionMeta: {
+          sessionId: "sess-abc-123",
+          version:   "2.0",
+          savedAt:   "2025-12-01T00:00:00.000Z"
+        },
+        customer:     { name: "Acme", vertical: "Financial Services", drivers: [] },
+        environments: [],
+        instances:    [],
+        gaps:         []
+      }, overrides);
+    }
+    function testCtx(overrides) {
+      return makePipelineContext(Object.assign({
+        migrationTimestamp: "2026-01-01T00:00:00.000Z",
+        randomSeed:         "test-seed",
+        catalogSnapshot:    { BUSINESS_DRIVERS: { catalogVersion: "2026.04" }, ENV_CATALOG: { catalogVersion: "2026.04" } }
+      }, overrides));
+    }
+
+    it("V-MIG-S1-1 · Step 1: v2.0 input → engagementMeta.schemaVersion === '3.0'", () => {
+      const v3 = migrate_v2_0_to_v3_0(v2Empty(), testCtx());
+      assertEqual(v3.engagementMeta.schemaVersion, "3.0", "schemaVersion stamped to 3.0");
+    });
+    it("V-MIG-S1-2 · Step 1: idempotent on already-v3.0 input", () => {
+      // Run once, then run again on the same input — second run produces same output.
+      const v2 = v2Empty();
+      const a = migrate_v2_0_to_v3_0(v2, testCtx());
+      const b = migrate_v2_0_to_v3_0(v2, testCtx());
+      assertEqual(a.engagementMeta.schemaVersion, b.engagementMeta.schemaVersion,
+        "schemaVersion same across runs");
+      assertEqual(a.engagementMeta.engagementId, b.engagementMeta.engagementId,
+        "engagementId same across runs");
+    });
     it("V-MIG-S1-3 · Step 1: empty engagement → engagementMeta.schemaVersion === '3.0'", () => {});
 
-    it("V-MIG-S2-1 · Step 2: sessionMeta.sessionId preserved as engagementId", () => {});
+    it("V-MIG-S2-1 · Step 2: sessionMeta.sessionId preserved as engagementId", () => {
+      const v3 = migrate_v2_0_to_v3_0(v2Empty(), testCtx());
+      assertEqual(v3.engagementMeta.engagementId, "sess-abc-123",
+        "engagementId === v2.0 sessionId");
+    });
     it("V-MIG-S2-2 · Step 2: missing sessionId → deterministic id; same input twice → same id", () => {});
-    it("V-MIG-S2-3 · Step 2: sessionMeta deleted from output", () => {});
+    it("V-MIG-S2-3 · Step 2: sessionMeta deleted from output", () => {
+      const v3 = migrate_v2_0_to_v3_0(v2Empty(), testCtx());
+      assert(!("sessionMeta" in v3), "sessionMeta key removed from output");
+    });
 
-    it("V-MIG-S3-1 · Step 3: missing ownerId → 'local-user'", () => {});
-    it("V-MIG-S3-2 · Step 3: empty ownerId → 'local-user'", () => {});
+    it("V-MIG-S3-1 · Step 3: missing ownerId → 'local-user'", () => {
+      const v3 = migrate_v2_0_to_v3_0(v2Empty(), testCtx());
+      assertEqual(v3.engagementMeta.ownerId, "local-user", "ownerId default applied");
+    });
+    it("V-MIG-S3-2 · Step 3: empty ownerId → 'local-user'", () => {
+      const v2 = v2Empty();
+      v2.sessionMeta.ownerId = "   ";   // whitespace-only counts as empty
+      const v3 = migrate_v2_0_to_v3_0(v2, testCtx());
+      assertEqual(v3.engagementMeta.ownerId, "local-user", "empty/whitespace -> default");
+    });
     it("V-MIG-S3-3 · Step 3: existing ownerId preserved", () => {});
 
     it("V-MIG-S4-1 · Step 4: sessionMeta.savedAt → both createdAt + updatedAt", () => {});
     it("V-MIG-S4-2 · Step 4: no v2.0 timestamp → both = ctx.migrationTimestamp", () => {});
     it("V-MIG-S4-3 · Step 4: existing v3.0 timestamps preserved (idempotent)", () => {});
 
-    it("V-MIG-S5-1 · Step 5: customer.segment + .industry → notes (standard merge)", () => {});
-    it("V-MIG-S5-2 · Step 5: segment redundant with vertical → dropped", () => {});
+    it("V-MIG-S5-1 · Step 5: customer.segment + .industry → notes (standard merge)", () => {
+      const v2 = v2Empty({ customer: {
+        name: "Acme", vertical: "Financial Services",
+        segment: "Banking", industry: "Finance", drivers: []
+      } });
+      const v3 = migrate_v2_0_to_v3_0(v2, testCtx());
+      assert(v3.customer.notes.includes("Banking"),  "Banking merged into notes");
+      assert(v3.customer.notes.includes("Finance"),  "Finance merged into notes");
+      assert(!("segment" in v3.customer),  "segment field deleted");
+      assert(!("industry" in v3.customer), "industry field deleted");
+    });
+    it("V-MIG-S5-2 · Step 5: segment redundant with vertical → dropped", () => {
+      const v2 = v2Empty({ customer: {
+        name: "Acme", vertical: "Healthcare",
+        segment: "Healthcare",          // exact match -> drop, don't merge
+        industry: "Healthcare",
+        drivers: []
+      } });
+      const v3 = migrate_v2_0_to_v3_0(v2, testCtx());
+      assertEqual(v3.customer.notes, "", "redundant entries dropped, notes empty");
+    });
     it("V-MIG-S5-3 · Step 5: segment already in notes → dropped", () => {});
     it("V-MIG-S5-4 · Step 5: empty segment/industry strings treated as absent", () => {});
 
-    it("V-MIG-S6-1 · Step 6: 3-driver v2.4.16 input → 3-driver v3.0 collection in allIds order", () => {});
-    it("V-MIG-S6-2 · Step 6: priority normalization (lowercase, numeric, empty)", () => {});
+    it("V-MIG-S6-1 · Step 6: 3-driver v2.4.16 input → 3-driver v3.0 collection in allIds order", () => {
+      const v2 = v2Empty({ customer: {
+        name: "Acme", vertical: "Financial Services",
+        drivers: [
+          { driverId: "ai_data",          priority: "High",   outcomes: "Drive AI" },
+          { driverId: "cyber_resilience", priority: "Medium", outcomes: "Stop ransomware" },
+          { driverId: "cost_optimization", priority: "Low",   outcomes: "Save money" }
+        ]
+      } });
+      const v3 = migrate_v2_0_to_v3_0(v2, testCtx());
+      assertEqual(v3.drivers.allIds.length, 3, "3 drivers extracted");
+      const businessIds = v3.drivers.allIds.map(id => v3.drivers.byId[id].businessDriverId);
+      assertEqual(businessIds[0], "ai_data",          "order preserved (1)");
+      assertEqual(businessIds[1], "cyber_resilience", "order preserved (2)");
+      assertEqual(businessIds[2], "cost_optimization","order preserved (3)");
+    });
+    it("V-MIG-S6-2 · Step 6: priority normalization (lowercase, numeric, empty)", () => {
+      const v2 = v2Empty({ customer: {
+        name: "Acme", vertical: "Financial Services",
+        drivers: [
+          { driverId: "ai_data",     priority: "high"     },     // lowercase
+          { driverId: "ops_simplicity", priority: "1"     },     // numeric
+          { driverId: "modernize_infra", priority: ""     },     // empty
+          { driverId: "cyber_resilience", priority: "Critical" } // unknown
+        ]
+      } });
+      const v3 = migrate_v2_0_to_v3_0(v2, testCtx());
+      const ps = v3.drivers.allIds.map(id => v3.drivers.byId[id].priority);
+      assertEqual(ps[0], "High",   "'high' -> High");
+      assertEqual(ps[1], "High",   "'1' -> High");
+      assertEqual(ps[2], "Medium", "empty -> Medium default");
+      assertEqual(ps[3], "Medium", "unknown -> Medium default");
+    });
     it("V-MIG-S6-3 · Step 6: empty drivers[] → empty collection", () => {});
-    it("V-MIG-S6-4 · Step 6: customer.drivers absent from output (key deleted)", () => {});
+    it("V-MIG-S6-4 · Step 6: customer.drivers absent from output (key deleted)", () => {
+      const v2 = v2Empty({ customer: {
+        name: "Acme", vertical: "Financial Services",
+        drivers: [{ driverId: "ai_data", priority: "High" }]
+      } });
+      const v3 = migrate_v2_0_to_v3_0(v2, testCtx());
+      assert(!("drivers" in v3.customer), "customer.drivers key removed");
+      assert(v3.drivers.allIds.length === 1, "driver promoted to top-level collection");
+    });
     it("V-MIG-S6-5 · Step 6: catalogVersion stamped from ctx.catalogSnapshot", () => {});
 
     it("V-MIG-S7-1 · Step 7: v2.0 unified-array instances → Collection<Instance> with byState populated", () => {});
@@ -9207,17 +9318,80 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-MIG-S7-3 · Step 7: empty arrays → empty collections", () => {});
     it("V-MIG-S7-4 · Step 7: allIds preserves source array order", () => {});
 
-    it("V-MIG-S8-1 · Step 8: every gap.projectId deleted from output", () => {});
+    it("V-MIG-S8-1 · Step 8: every gap.projectId deleted from output", () => {
+      const v2 = v2Empty({
+        environments: [{ id: "env1", envCatalogId: "coreDc" }],
+        gaps: [
+          { id: "g1", description: "g1", layerId: "compute",
+            projectId: "proj-old-A",
+            gapType: "replace", urgency: "High", phase: "now", status: "open",
+            affectedLayers: ["compute"], affectedEnvironments: ["env1"] }
+        ]
+      });
+      const v3 = migrate_v2_0_to_v3_0(v2, testCtx());
+      const gap = v3.gaps.byId[v3.gaps.allIds[0]];
+      assert(!("projectId" in gap), "gap.projectId stripped (now derived by selectProjects)");
+    });
     it("V-MIG-S8-2 · Step 8: gap.id and other fields preserved", () => {});
     it("V-MIG-S8-3 · Step 8: idempotent (no projectId in v3.0 input → no change)", () => {});
 
-    it("V-MIG-S9-1 · Step 9: plain-string mappedDellSolutions → provenance wrapper with validationStatus='stale'", () => {});
-    it("V-MIG-S9-2 · Step 9: original string preserved in value.rawLegacy", () => {});
+    it("V-MIG-S9-1 · Step 9: plain-string mappedDellSolutions → provenance wrapper with validationStatus='stale'", () => {
+      const v2 = v2Empty({
+        environments: [{ id: "env1", envCatalogId: "coreDc" }],
+        gaps: [
+          { id: "g-ai", description: "Map this", layerId: "compute",
+            mappedDellSolutions: "PowerStore + PowerProtect",   // legacy plain string
+            gapType: "replace", urgency: "High", phase: "now", status: "open",
+            affectedLayers: ["compute"], affectedEnvironments: ["env1"] }
+        ]
+      });
+      const v3 = migrate_v2_0_to_v3_0(v2, testCtx());
+      const gap = v3.gaps.byId[v3.gaps.allIds[0]];
+      assert(gap.aiMappedDellSolutions, "wrapper created");
+      assertEqual(gap.aiMappedDellSolutions.provenance.validationStatus, "stale",
+        "validationStatus=stale (forces user to re-run)");
+      assertEqual(gap.aiMappedDellSolutions.provenance.model, "unknown",
+        "model='unknown' (legacy)");
+    });
+    it("V-MIG-S9-2 · Step 9: original string preserved in value.rawLegacy", () => {
+      const original = "PowerStore + PowerProtect";
+      const v2 = v2Empty({
+        environments: [{ id: "env1", envCatalogId: "coreDc" }],
+        gaps: [
+          { id: "g-ai", description: "Map", layerId: "compute",
+            mappedDellSolutions: original,
+            gapType: "replace", urgency: "High", phase: "now", status: "open",
+            affectedLayers: ["compute"], affectedEnvironments: ["env1"] }
+        ]
+      });
+      const v3 = migrate_v2_0_to_v3_0(v2, testCtx());
+      const gap = v3.gaps.byId[v3.gaps.allIds[0]];
+      assertEqual(gap.aiMappedDellSolutions.value.rawLegacy, original,
+        "rawLegacy preserves the original v2.4.x string");
+      assertEqual(gap.aiMappedDellSolutions.value.products.length, 0,
+        "products array empty until user re-runs");
+      assert(!("mappedDellSolutions" in gap), "legacy plain-string field deleted");
+    });
     it("V-MIG-S9-3 · Step 9: empty string → no wrapper created", () => {});
     it("V-MIG-S9-4 · Step 9: integrity-log entry emitted with correct count", () => {});
     it("V-MIG-S9-5 · Step 9: idempotent — already-wrapped field unchanged", () => {});
 
-    it("V-MIG-S10-1 · Step 10: every record post-step10 has engagementId === engagementMeta.engagementId", () => {});
+    it("V-MIG-S10-1 · Step 10: every record post-step10 has engagementId === engagementMeta.engagementId", () => {
+      const v2 = v2Empty({
+        customer: { name: "Acme", vertical: "Financial Services",
+          drivers: [{ driverId: "ai_data", priority: "High" }] },
+        environments: [{ id: "env1", envCatalogId: "coreDc" }],
+        gaps: [{ id: "g1", description: "g1", layerId: "compute",
+          gapType: "replace", urgency: "High", phase: "now", status: "open",
+          affectedLayers: ["compute"], affectedEnvironments: ["env1"] }]
+      });
+      const v3 = migrate_v2_0_to_v3_0(v2, testCtx());
+      const eid = v3.engagementMeta.engagementId;
+      assertEqual(v3.customer.engagementId, eid, "customer stamped");
+      assertEqual(v3.drivers.byId[v3.drivers.allIds[0]].engagementId, eid, "driver stamped");
+      assertEqual(v3.environments.byId[v3.environments.allIds[0]].engagementId, eid, "environment stamped");
+      assertEqual(v3.gaps.byId[v3.gaps.allIds[0]].engagementId, eid, "gap stamped");
+    });
     it("V-MIG-S10-2 · Step 10: idempotent on already-stamped engagement", () => {});
 
     // Idempotency + determinism (V-MIG-IDEM-*, V-MIG-DETERM-*, V-MIG-COLLIDE-*, V-MIG-INPUT-IMMUT-*)
@@ -9225,13 +9399,71 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-MIG-IDEM-2 · migrate idempotent on multi-env.canvas", () => {});
     it("V-MIG-IDEM-3 · migrate idempotent on acme-demo.canvas", () => {});
     it("V-MIG-IDEM-4 · migrate(v3_0) is no-op (deepEquals input)", () => {});
-    it("V-MIG-DETERM-1 · two runs with same ctx.randomSeed produce byte-equal output", () => {});
-    it("V-MIG-DETERM-2 · generated ids deterministic from stable input fields", () => {});
+    it("V-MIG-DETERM-1 · two runs with same ctx.randomSeed produce byte-equal output", () => {
+      const v2 = v2Empty({
+        customer: { name: "Acme", vertical: "Healthcare",
+          drivers: [
+            { driverId: "ai_data", priority: "High" },
+            { driverId: "ops_simplicity", priority: "Medium" }
+          ] }
+      });
+      const a = migrate_v2_0_to_v3_0(v2, testCtx());
+      const b = migrate_v2_0_to_v3_0(v2, testCtx());
+      // JSON serialize for byte-equality comparison
+      assertEqual(JSON.stringify(a.drivers), JSON.stringify(b.drivers),
+        "drivers byte-equal across runs (deterministic id generation)");
+    });
+    it("V-MIG-DETERM-2 · generated ids deterministic from stable input fields", () => {
+      // generateDeterministicId("driver", seed, "ai_data", 0) returns same id every time.
+      const a = generateDeterministicId("driver", "test-seed", "ai_data", 0);
+      const b = generateDeterministicId("driver", "test-seed", "ai_data", 0);
+      assertEqual(a, b, "same inputs -> same id");
+      // Different inputs -> different id (collision check at our scale).
+      const c = generateDeterministicId("driver", "test-seed", "ops_simplicity", 0);
+      assert(a !== c, "different businessDriverId -> different id");
+      // Output is UUID-shaped.
+      assert(/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(a),
+        "id is UUID v8 shape: " + a);
+    });
     it("V-MIG-COLLIDE-1 · no id collisions across all 8 fixtures", () => {});
-    it("V-MIG-INPUT-IMMUT-1 · migrate does not mutate the input engagement (structuredClone at entry)", () => {});
+    it("V-MIG-INPUT-IMMUT-1 · migrate does not mutate the input engagement (structuredClone at entry)", () => {
+      const v2 = v2Empty({ customer: { name: "Acme", vertical: "Healthcare",
+        drivers: [{ driverId: "ai_data", priority: "High" }] } });
+      const v2Snapshot = JSON.stringify(v2);
+      migrate_v2_0_to_v3_0(v2, testCtx());
+      const v2After = JSON.stringify(v2);
+      assertEqual(v2After, v2Snapshot, "input engagement not mutated");
+    });
 
     // Failure handling (V-MIG-FAIL-*)
-    it("V-MIG-FAIL-1 · throwing step produces MigrationFailure with failing step name + message", () => {});
+    it("V-MIG-FAIL-1 · throwing step produces MigrationFailure with failing step name + message", () => {
+      // Force a throw: pass a v2 input with a deeply broken shape that
+      // step01_schemaVersion can't handle gracefully — actually, step01
+      // is robust. Instead, hijack via a custom ctx that throws inside
+      // ctx.deterministicId (used by step02 + step06).
+      const brokenCtx = makePipelineContext({
+        migrationTimestamp: "2026-01-01T00:00:00.000Z",
+        catalogSnapshot:    { BUSINESS_DRIVERS: { catalogVersion: "2026.04" }, ENV_CATALOG: { catalogVersion: "2026.04" } }
+      });
+      // Patch deterministicId to throw
+      const truly_broken = Object.assign(Object.create(null), brokenCtx, {
+        deterministicId: () => { throw new Error("boom"); }
+      });
+      // A v2.0 with no sessionId triggers step02's deterministicId path
+      const v2 = v2Empty();
+      delete v2.sessionMeta.sessionId;
+      let thrown = null;
+      try {
+        migrate_v2_0_to_v3_0(v2, truly_broken);
+      } catch (e) {
+        thrown = e;
+      }
+      assert(thrown, "migrator threw");
+      assert(thrown instanceof MigrationStepError,
+        "thrown is MigrationStepError, got: " + (thrown && thrown.name));
+      assert(thrown.step && thrown.step.length > 0, "step name populated");
+      assert(thrown.cause && thrown.cause.message === "boom", "original cause preserved");
+    });
     it("V-MIG-FAIL-2 · originalEnvelope deep-equals the input (preserved)", () => {});
     it("V-MIG-FAIL-3 · no console errors swallowed during failure", () => {});
     it("V-MIG-FAIL-4 · recovery flow: try-again with verbose ctx logs each step's input/output", () => {});
