@@ -8575,7 +8575,14 @@ describe("47 · v2.4.16 · Foundations: Taxonomy + Reporting + PillEditor", () =
 // v3.0 imports — schema layer (per SPEC sec S2 + sec 3). These imports
 // resolve through the importmap in index.html; "zod" maps to the
 // vendored ./vendor/zod/zod.mjs build (per SPEC sec S2.1.1 LOCKED).
-import { CustomerSchema, createEmptyCustomer } from "../schema/customer.js";
+import { CustomerSchema,    createEmptyCustomer    } from "../schema/customer.js";
+import { DriverSchema,      createEmptyDriver      } from "../schema/driver.js";
+import { EnvironmentSchema, createEmptyEnvironment } from "../schema/environment.js";
+import { InstanceSchema,    createEmptyInstance    } from "../schema/instance.js";
+import { GapSchema,         createEmptyGap         } from "../schema/gap.js";
+import { EngagementMetaSchema, createEmptyEngagementMeta,
+         EngagementSchema,     createEmptyEngagement
+       } from "../schema/engagement.js";
 
 // ============================================================================
 // Suite 49 · v3.0 data architecture rebuild · RED-first vector scaffold
@@ -8602,7 +8609,14 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
   // -------------------------------------------------------------------
   describe("§T2 · V-SCH · Schema property tests", () => {
     // Per-entity acceptance (V-SCH-1..7)
-    it("V-SCH-1 · EngagementMetaSchema accepts createEmptyEngagementMeta() output", () => {});
+    it("V-SCH-1 · EngagementMetaSchema accepts createEmptyEngagementMeta() output", () => {
+      const m = createEmptyEngagementMeta();
+      const result = EngagementMetaSchema.safeParse(m);
+      assert(result.success === true,
+        "createEmptyEngagementMeta must produce a meta record EngagementMetaSchema accepts. Issues: " +
+        (result.success ? "" : JSON.stringify(result.error.issues)));
+      assertEqual(result.data.schemaVersion, "3.0", "schemaVersion locked at '3.0'");
+    });
     it("V-SCH-2 · CustomerSchema accepts createEmptyCustomer() output", () => {
       const c = createEmptyCustomer();
       const result = CustomerSchema.safeParse(c);
@@ -8612,16 +8626,73 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assertEqual(result.data.name, c.name, "name preserved");
       assertEqual(result.data.vertical, c.vertical, "vertical preserved");
     });
-    it("V-SCH-3 · DriverSchema accepts createEmptyDriver() output", () => {});
-    it("V-SCH-4 · EnvironmentSchema accepts createEmptyEnvironment() output", () => {});
-    it("V-SCH-5 · InstanceSchema accepts createEmptyInstance({state:'current'})", () => {});
-    it("V-SCH-6 · InstanceSchema accepts createEmptyInstance({state:'desired'})", () => {});
-    it("V-SCH-7 · GapSchema accepts createEmptyGap() output", () => {});
+    it("V-SCH-3 · DriverSchema accepts createEmptyDriver() output", () => {
+      const d = createEmptyDriver();
+      const result = DriverSchema.safeParse(d);
+      assert(result.success === true,
+        "createEmptyDriver must produce a driver DriverSchema accepts. Issues: " +
+        (result.success ? "" : JSON.stringify(result.error.issues)));
+      assert(["High","Medium","Low"].includes(result.data.priority), "priority is one of the 3 enum values");
+    });
+    it("V-SCH-4 · EnvironmentSchema accepts createEmptyEnvironment() output", () => {
+      const env = createEmptyEnvironment();
+      const result = EnvironmentSchema.safeParse(env);
+      assert(result.success === true,
+        "createEmptyEnvironment must produce an env EnvironmentSchema accepts. Issues: " +
+        (result.success ? "" : JSON.stringify(result.error.issues)));
+      assertEqual(result.data.hidden, false, "hidden defaults to false");
+    });
+    it("V-SCH-5 · InstanceSchema accepts createEmptyInstance({state:'current'})", () => {
+      const inst = createEmptyInstance({ state: "current" });
+      const result = InstanceSchema.safeParse(inst);
+      assert(result.success === true,
+        "createEmptyInstance({state:'current'}) must produce an instance InstanceSchema accepts. Issues: " +
+        (result.success ? "" : JSON.stringify(result.error.issues)));
+      assertEqual(result.data.state, "current", "state preserved");
+      assertEqual(result.data.originId, null, "current-state instance has originId=null");
+      assertEqual(result.data.priority, null, "current-state instance has priority=null");
+    });
+    it("V-SCH-6 · InstanceSchema accepts createEmptyInstance({state:'desired'})", () => {
+      const inst = createEmptyInstance({ state: "desired" });
+      const result = InstanceSchema.safeParse(inst);
+      assert(result.success === true,
+        "createEmptyInstance({state:'desired'}) must produce an instance InstanceSchema accepts. Issues: " +
+        (result.success ? "" : JSON.stringify(result.error.issues)));
+      assertEqual(result.data.state, "desired", "state preserved");
+    });
+    it("V-SCH-7 · GapSchema accepts createEmptyGap() output", () => {
+      const gap = createEmptyGap();
+      const result = GapSchema.safeParse(gap);
+      assert(result.success === true,
+        "createEmptyGap must produce a gap GapSchema accepts. Issues: " +
+        (result.success ? "" : JSON.stringify(result.error.issues)));
+      // G6 invariant satisfied by default factory: affectedLayers[0] === layerId
+      assertEqual(result.data.affectedLayers[0], result.data.layerId,
+        "G6: affectedLayers[0] === layerId in default factory");
+    });
 
     // Per-entity rejection of malformed inputs (V-SCH-8..40)
-    it("V-SCH-8 · EngagementMetaSchema rejects schemaVersion !== '3.0'", () => {});
-    it("V-SCH-9 · EngagementMetaSchema rejects status not in enum (Draft|In review|Locked)", () => {});
-    it("V-SCH-10 · EngagementMetaSchema rejects empty ownerId", () => {});
+    it("V-SCH-8 · EngagementMetaSchema rejects schemaVersion !== '3.0'", () => {
+      const m = createEmptyEngagementMeta();
+      const result = EngagementMetaSchema.safeParse({ ...m, schemaVersion: "2.0" });
+      assert(result.success === false, "schemaVersion '2.0' must be rejected (literal '3.0')");
+      assert(result.error.issues.some(i => i.path[0] === "schemaVersion"),
+        "rejection must point at schemaVersion");
+    });
+    it("V-SCH-9 · EngagementMetaSchema rejects status not in enum (Draft|In review|Locked)", () => {
+      const m = createEmptyEngagementMeta();
+      const result = EngagementMetaSchema.safeParse({ ...m, status: "Done" });
+      assert(result.success === false, "status 'Done' must be rejected");
+      assert(result.error.issues.some(i => i.path[0] === "status"),
+        "rejection must point at status");
+    });
+    it("V-SCH-10 · EngagementMetaSchema rejects empty ownerId", () => {
+      const m = createEmptyEngagementMeta();
+      const result = EngagementMetaSchema.safeParse({ ...m, ownerId: "" });
+      assert(result.success === false, "empty ownerId must be rejected (min(1))");
+      assert(result.error.issues.some(i => i.path[0] === "ownerId"),
+        "rejection must point at ownerId");
+    });
     it("V-SCH-11 · CustomerSchema rejects empty name", () => {
       const c = createEmptyCustomer();
       c.name = "";
@@ -8640,24 +8711,143 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         i.code === "unrecognized_keys" || (i.path && (i.path.includes("segment") || i.path.includes("industry")))
       ), "rejection must flag the unrecognized legacy keys");
     });
-    it("V-SCH-13 · DriverSchema rejects priority not in {High, Medium, Low}", () => {});
-    it("V-SCH-14 · DriverSchema rejects missing required businessDriverId", () => {});
-    it("V-SCH-15 · DriverSchema rejects empty catalogVersion", () => {});
-    it("V-SCH-16 · EnvironmentSchema rejects missing required envCatalogId", () => {});
-    it("V-SCH-17 · EnvironmentSchema rejects sizeKw of wrong type (string)", () => {});
-    it("V-SCH-18 · InstanceSchema rejects state not in {current, desired}", () => {});
-    it("V-SCH-19 · InstanceSchema rejects vendorGroup not in {dell, nonDell, custom}", () => {});
-    it("V-SCH-20 · InstanceSchema rejects criticality not in {High, Medium, Low}", () => {});
-    it("V-SCH-21 · InstanceSchema rejects originId on state==='current' (superRefine)", () => {});
-    it("V-SCH-22 · InstanceSchema rejects priority on state==='current' (superRefine)", () => {});
-    it("V-SCH-23 · InstanceSchema rejects mappedAssetIds non-empty on layerId !== 'workload' (superRefine)", () => {});
-    it("V-SCH-24 · GapSchema rejects urgency not in enum", () => {});
-    it("V-SCH-25 · GapSchema rejects phase not in enum", () => {});
-    it("V-SCH-26 · GapSchema rejects status not in enum", () => {});
-    it("V-SCH-27 · GapSchema rejects empty description", () => {});
-    it("V-SCH-28 · GapSchema rejects empty affectedLayers array", () => {});
-    it("V-SCH-29 · GapSchema rejects empty affectedEnvironments array", () => {});
-    it("V-SCH-30 · GapSchema rejects affectedLayers[0] !== layerId (G6 invariant)", () => {});
+    it("V-SCH-13 · DriverSchema rejects priority not in {High, Medium, Low}", () => {
+      const d = createEmptyDriver();
+      const result = DriverSchema.safeParse({ ...d, priority: "Critical" });
+      assert(result.success === false, "priority 'Critical' must be rejected");
+      assert(result.error.issues.some(i => i.path[0] === "priority"),
+        "rejection must point at priority");
+    });
+    it("V-SCH-14 · DriverSchema rejects missing required businessDriverId", () => {
+      const d = createEmptyDriver();
+      const { businessDriverId, ...withoutFk } = d;
+      const result = DriverSchema.safeParse(withoutFk);
+      assert(result.success === false, "missing businessDriverId must be rejected");
+      assert(result.error.issues.some(i => i.path[0] === "businessDriverId"),
+        "rejection must point at businessDriverId");
+    });
+    it("V-SCH-15 · DriverSchema rejects empty catalogVersion", () => {
+      const d = createEmptyDriver();
+      const result = DriverSchema.safeParse({ ...d, catalogVersion: "" });
+      assert(result.success === false, "empty catalogVersion must be rejected");
+      assert(result.error.issues.some(i => i.path[0] === "catalogVersion"),
+        "rejection must point at catalogVersion");
+    });
+    it("V-SCH-16 · EnvironmentSchema rejects missing required envCatalogId", () => {
+      const env = createEmptyEnvironment();
+      const { envCatalogId, ...withoutFk } = env;
+      const result = EnvironmentSchema.safeParse(withoutFk);
+      assert(result.success === false, "missing envCatalogId must be rejected");
+      assert(result.error.issues.some(i => i.path[0] === "envCatalogId"),
+        "rejection must point at envCatalogId");
+    });
+    it("V-SCH-17 · EnvironmentSchema rejects sizeKw of wrong type (string)", () => {
+      const env = createEmptyEnvironment();
+      const result = EnvironmentSchema.safeParse({ ...env, sizeKw: "100" });
+      assert(result.success === false, "string sizeKw must be rejected (number-or-null only)");
+      assert(result.error.issues.some(i => i.path[0] === "sizeKw"),
+        "rejection must point at sizeKw");
+    });
+    it("V-SCH-18 · InstanceSchema rejects state not in {current, desired}", () => {
+      const inst = createEmptyInstance();
+      const result = InstanceSchema.safeParse({ ...inst, state: "future" });
+      assert(result.success === false, "state 'future' must be rejected");
+      assert(result.error.issues.some(i => i.path[0] === "state"),
+        "rejection must point at state");
+    });
+    it("V-SCH-19 · InstanceSchema rejects vendorGroup not in {dell, nonDell, custom}", () => {
+      const inst = createEmptyInstance();
+      const result = InstanceSchema.safeParse({ ...inst, vendorGroup: "ibm" });
+      assert(result.success === false, "vendorGroup 'ibm' must be rejected");
+      assert(result.error.issues.some(i => i.path[0] === "vendorGroup"),
+        "rejection must point at vendorGroup");
+    });
+    it("V-SCH-20 · InstanceSchema rejects criticality not in {High, Medium, Low}", () => {
+      const inst = createEmptyInstance();
+      const result = InstanceSchema.safeParse({ ...inst, criticality: "Critical" });
+      assert(result.success === false, "criticality 'Critical' must be rejected");
+      assert(result.error.issues.some(i => i.path[0] === "criticality"),
+        "rejection must point at criticality");
+    });
+    it("V-SCH-21 · InstanceSchema rejects originId on state==='current' (superRefine)", () => {
+      const inst = createEmptyInstance({ state: "current" });
+      const bad = { ...inst, originId: "00000000-0000-4000-8000-00000000aaaa" };
+      const result = InstanceSchema.safeParse(bad);
+      assert(result.success === false,
+        "current-state instance with originId must be rejected (superRefine R3.5.a)");
+      assert(result.error.issues.some(i => i.path[0] === "originId"),
+        "rejection must point at originId");
+    });
+    it("V-SCH-22 · InstanceSchema rejects priority on state==='current' (superRefine)", () => {
+      const inst = createEmptyInstance({ state: "current" });
+      const bad = { ...inst, priority: "Now" };
+      const result = InstanceSchema.safeParse(bad);
+      assert(result.success === false,
+        "current-state instance with priority must be rejected (superRefine R3.5.a)");
+      assert(result.error.issues.some(i => i.path[0] === "priority"),
+        "rejection must point at priority");
+    });
+    it("V-SCH-23 · InstanceSchema rejects mappedAssetIds non-empty on layerId !== 'workload' (superRefine)", () => {
+      const inst = createEmptyInstance({ layerId: "compute" });
+      const bad = { ...inst, mappedAssetIds: ["00000000-0000-4000-8000-00000000aaaa"] };
+      const result = InstanceSchema.safeParse(bad);
+      assert(result.success === false,
+        "non-workload instance with non-empty mappedAssetIds must be rejected (superRefine R3.5.b)");
+      assert(result.error.issues.some(i => i.path[0] === "mappedAssetIds"),
+        "rejection must point at mappedAssetIds");
+    });
+    it("V-SCH-24 · GapSchema rejects urgency not in enum", () => {
+      const gap = createEmptyGap();
+      const result = GapSchema.safeParse({ ...gap, urgency: "Severe" });
+      assert(result.success === false, "urgency 'Severe' must be rejected");
+      assert(result.error.issues.some(i => i.path[0] === "urgency"),
+        "rejection must point at urgency");
+    });
+    it("V-SCH-25 · GapSchema rejects phase not in enum", () => {
+      const gap = createEmptyGap();
+      const result = GapSchema.safeParse({ ...gap, phase: "soon" });
+      assert(result.success === false, "phase 'soon' must be rejected");
+      assert(result.error.issues.some(i => i.path[0] === "phase"),
+        "rejection must point at phase");
+    });
+    it("V-SCH-26 · GapSchema rejects status not in enum", () => {
+      const gap = createEmptyGap();
+      const result = GapSchema.safeParse({ ...gap, status: "wip" });
+      assert(result.success === false, "status 'wip' must be rejected");
+      assert(result.error.issues.some(i => i.path[0] === "status"),
+        "rejection must point at status");
+    });
+    it("V-SCH-27 · GapSchema rejects empty description", () => {
+      const gap = createEmptyGap();
+      const result = GapSchema.safeParse({ ...gap, description: "" });
+      assert(result.success === false, "empty description must be rejected (min(1))");
+      assert(result.error.issues.some(i => i.path[0] === "description"),
+        "rejection must point at description");
+    });
+    it("V-SCH-28 · GapSchema rejects empty affectedLayers array", () => {
+      const gap = createEmptyGap();
+      const result = GapSchema.safeParse({ ...gap, affectedLayers: [] });
+      assert(result.success === false, "empty affectedLayers must be rejected (min(1))");
+      assert(result.error.issues.some(i => i.path[0] === "affectedLayers"),
+        "rejection must point at affectedLayers");
+    });
+    it("V-SCH-29 · GapSchema rejects empty affectedEnvironments array", () => {
+      const gap = createEmptyGap();
+      const result = GapSchema.safeParse({ ...gap, affectedEnvironments: [] });
+      assert(result.success === false, "empty affectedEnvironments must be rejected (min(1))");
+      assert(result.error.issues.some(i => i.path[0] === "affectedEnvironments"),
+        "rejection must point at affectedEnvironments");
+    });
+    it("V-SCH-30 · GapSchema rejects affectedLayers[0] !== layerId (G6 invariant)", () => {
+      const gap = createEmptyGap({ layerId: "compute" });
+      // Force the G6 violation: layerId is 'compute' but affectedLayers starts with 'storage'.
+      const bad = { ...gap, affectedLayers: ["storage", "compute"] };
+      const result = GapSchema.safeParse(bad);
+      assert(result.success === false,
+        "gap with affectedLayers[0] !== layerId must be rejected (G6 invariant)");
+      assert(result.error.issues.some(i => i.path[0] === "affectedLayers"),
+        "rejection must point at affectedLayers");
+    });
     it("V-SCH-31 · EngagementSchema rejects engagement missing customer", () => {});
     it("V-SCH-32 · EngagementSchema rejects engagement missing engagementMeta", () => {});
     it("V-SCH-33 · EngagementSchema rejects collection missing byId", () => {});
