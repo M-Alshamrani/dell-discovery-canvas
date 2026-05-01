@@ -35,6 +35,11 @@ import {
   loadV3SkillById,
   deleteV3Skill
 } from "../../state/v3SkillStore.js";
+import {
+  createRealLLMProvider,
+  getActiveProviderStatus,
+  ProviderNotConfiguredError
+} from "../../services/realLLMProvider.js";
 
 const SEED_SKILLS = [
   { id: "dell-mapping",       label: "Dell mapping (click-to-run on Gap, structured)", skill: SEED_SKILL_DELL_MAPPING },
@@ -106,7 +111,8 @@ export function renderV3SkillBuilder(container) {
     skillType:      "session-wide",
     entityKind:     null,
     promptTemplate: "Hello {{customer.name}}!",
-    lastValidation: null
+    lastValidation: null,
+    providerMode:   "mock"   // "mock" | "real"
   };
   const manifest = generateManifest();
 
@@ -250,13 +256,30 @@ export function renderV3SkillBuilder(container) {
   const skillIdInput    = meta.querySelector("#v3-skill-id");
   const skillLabelInput = meta.querySelector("#v3-skill-label");
 
-  // ───── VALIDATE + RUN + SAVE BUTTONS + PANELS ─────
+  // ───── VALIDATE + RUN + SAVE BUTTONS + PROVIDER TOGGLE + PANELS ─────
   const actions = document.createElement("section");
   actions.className = "v3-skill-builder-actions";
+  const initialStatus = getActiveProviderStatus();
   actions.innerHTML = `
+    <div class="v3-skill-builder-provider-row" role="radiogroup" aria-label="LLM provider">
+      <label class="v3-skill-builder-provider-label">
+        <input type="radio" name="v3-provider" value="mock" checked />
+        <span class="v3-skill-builder-provider-name">Mock LLM</span>
+        <span class="v3-skill-builder-provider-meta">canned responses, no key needed</span>
+      </label>
+      <label class="v3-skill-builder-provider-label">
+        <input type="radio" name="v3-provider" value="real" />
+        <span class="v3-skill-builder-provider-name">Real LLM</span>
+        <span class="v3-skill-builder-provider-meta v3-skill-builder-provider-status">
+          ${escapeHtml(initialStatus.label)} ${initialStatus.ready
+              ? `<span class="prov-status prov-status-valid">READY</span>`
+              : `<span class="prov-status prov-status-invalid">NOT CONFIGURED</span>`}
+        </span>
+      </label>
+    </div>
     <div class="v3-skill-builder-actions-row">
       <button type="button" class="v3-skill-builder-validate-btn">Validate template paths</button>
-      <button type="button" class="v3-skill-builder-run-btn">Run skill (mock LLM)</button>
+      <button type="button" class="v3-skill-builder-run-btn">Run skill</button>
       <button type="button" class="v3-skill-builder-save-btn">Save skill</button>
     </div>
     <div class="v3-skill-builder-validation-result" aria-live="polite"></div>
@@ -270,6 +293,24 @@ export function renderV3SkillBuilder(container) {
   const resultPanel    = actions.querySelector(".v3-skill-builder-validation-result");
   const saveResultPanel = actions.querySelector(".v3-skill-builder-save-result");
   const runResultPanel  = actions.querySelector(".v3-skill-builder-run-result");
+  const providerStatusEl = actions.querySelector(".v3-skill-builder-provider-status");
+
+  // Provider radio: switches state.providerMode. The Run handler reads
+  // it; Mock path uses the canned responses, Real path uses the v2.x
+  // chatCompletion adapter.
+  actions.querySelectorAll('input[name="v3-provider"]').forEach(input => {
+    input.addEventListener("change", e => {
+      state.providerMode = e.target.value;
+      // Re-fetch readiness in case the user just opened AI Settings + saved.
+      const status = getActiveProviderStatus();
+      providerStatusEl.innerHTML = escapeHtml(status.label) + " " + (status.ready
+        ? '<span class="prov-status prov-status-valid">READY</span>'
+        : '<span class="prov-status prov-status-invalid">NOT CONFIGURED</span>');
+      runBtn.textContent = state.providerMode === "real" ? "Run skill (real LLM)" : "Run skill (mock LLM)";
+    });
+  });
+  // Initial label
+  runBtn.textContent = "Run skill (mock LLM)";
 
   // ───── HANDLERS ─────
   function refreshChips() {
@@ -414,27 +455,37 @@ export function renderV3SkillBuilder(container) {
     renderSaveResult(saveResultPanel, { ok: true, deleted: id });
   });
 
-  // Run skill via mock LLM provider
+  // Run skill: dispatch on state.providerMode
   runBtn.addEventListener("click", async () => {
     const id = seedSelect.value;
     if (!id) {
       runResultPanel.innerHTML =
-        '<div class="v3-skill-builder-run-empty">Pick a seed skill above first ' +
-        '(this v3.0 demo executes seed skills against the reference engagement; ' +
-        'the run path that wires real-LLM credentials is the next slice).</div>';
+        '<div class="v3-skill-builder-run-empty">Pick a seed skill above first. ' +
+        'The run path executes the selected seed against the reference engagement, ' +
+        'either with the canned mock response (Mock LLM) or against your configured ' +
+        'AI provider (Real LLM — see AI Settings).</div>';
       return;
     }
     runBtn.disabled = true;
-    runBtn.textContent = "Running…";
+    const labelDuring = state.providerMode === "real" ? "Calling real LLM…" : "Running…";
+    runBtn.textContent = labelDuring;
     try {
       const result = await runSeedSkill(id, state);
       renderRunResult(runResultPanel, id, state, result);
     } catch (e) {
+      const isProviderErr = e instanceof ProviderNotConfiguredError ||
+                            (e && e.code === "PROVIDER_NOT_READY");
       runResultPanel.innerHTML =
-        '<div class="v3-skill-builder-run-error">Run failed: ' + escapeHtml(e.message) + '</div>';
+        '<div class="v3-skill-builder-run-error">' +
+          '<strong>Run failed: </strong>' + escapeHtml(e.message) +
+          (isProviderErr
+            ? '<div style="margin-top:8px;font-size:11px;">Open <strong>AI Settings</strong> ' +
+              '(gear icon in the topbar) to set your provider key + model, then re-toggle Real LLM.</div>'
+            : '') +
+        '</div>';
     } finally {
       runBtn.disabled = false;
-      runBtn.textContent = "Run skill (mock LLM)";
+      runBtn.textContent = state.providerMode === "real" ? "Run skill (real LLM)" : "Run skill (mock LLM)";
     }
   });
 
@@ -523,10 +574,10 @@ async function runSeedSkill(seedId, state) {
   // textarea (so they can edit + re-run).
   const skillToRun = { ...seed, promptTemplate: state.promptTemplate };
 
-  // Mock provider canned to this seed's expected response shape.
-  const provider = createMockLLMProvider({
-    defaultResponse: MOCK_RESPONSES_BY_SKILL_ID[seedId]
-  });
+  // Provider dispatch: mock OR real (per state.providerMode toggle).
+  const provider = state.providerMode === "real"
+    ? createRealLLMProvider()
+    : createMockLLMProvider({ defaultResponse: MOCK_RESPONSES_BY_SKILL_ID[seedId] });
 
   // Resolve the prompt up-front so we can show it to the user.
   const resolvedPrompt = resolveTemplate(skillToRun.promptTemplate, ctx, {
