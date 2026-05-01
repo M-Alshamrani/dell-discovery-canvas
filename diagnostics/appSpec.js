@@ -11799,7 +11799,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       unsub();
     });
 
-    it("V-ADP-10 · loadCanvasV3 + setActiveEngagement chains into all 6 view shapes (round-trip)", () => {
+    it("V-ADP-10 · loadCanvasV3 + setActiveEngagement chains into all 6 view shapes (round-trip)", async () => {
       _resetAdapterEnv();
       // Build a minimal valid engagement, save+load roundtrip, then drive
       // through the adapter. This exercises §S9 migrator + §S10 sweep
@@ -11807,11 +11807,18 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       let eng = createEmptyEngagement();
       eng = updateCustomer(eng, { name: "RT Customer", vertical: "Financial Services", region: "EMEA" }).engagement;
       eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
-      const envelope = buildSaveEnvelopeV3(eng);
-      const reloaded = loadCanvasV3(envelope);
-      // loadCanvasV3 may return either { engagement, ... } or the engagement
-      // directly; v3.0 contract is { ok, engagement, ... }.
-      const engReloaded = reloaded && reloaded.engagement ? reloaded.engagement : reloaded;
+
+      // buildSaveEnvelopeV3 returns { ok, envelope } per SPEC §S4.2.4.
+      const saveResult = buildSaveEnvelopeV3(eng);
+      assert(saveResult.ok === true,
+        "save envelope built ok; got: " + JSON.stringify(saveResult.errors || ""));
+      const envelope = saveResult.envelope;
+
+      // loadCanvasV3 is async (await per SPEC §S6.1.2 Promise<Catalog>).
+      const reloaded = await loadCanvasV3(envelope);
+      assert(reloaded.ok === true,
+        "load canvas ok; got: " + JSON.stringify(reloaded.error || ""));
+      const engReloaded = reloaded.engagement;
       setActiveEngagement(engReloaded);
 
       const ctx     = adaptContextView(engReloaded);
