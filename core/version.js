@@ -12,8 +12,11 @@
 //   - git tags — runtime code doesn't read git; this string is the
 //     runtime-visible version.
 //
-// "3.0.0-alpha" is the in-progress v3.0 data-architecture rebuild on
-// branch v3.0-data-architecture. Tag bumps to "3.0.0" only on real
-// ship (per data-architecture-directive.md sec 0).
+// "3.0.0-beta" — feature-complete v3.0 data-architecture rebuild
+// on branch v3.0-data-architecture. Tagged v3.0.0-beta on 2026-05-01.
+// Path to "3.0.0" (no suffix) is gated on:
+//   - v3.0 -> v2.x adapter (existing tabs read from v3.0 selectors)
+//   - At least one real workshop run against a v3.0 engagement
+//   - Successful migration of at least one real customer .canvas file
 
-export const APP_VERSION = "3.0.0-alpha";
+export const APP_VERSION = "3.0.0-beta";

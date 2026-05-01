@@ -932,9 +932,20 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
-## v3.0.0 · Data architecture rebuild · QUEUED + LOCKED 2026-04-30
+## v3.0.0 · Data architecture rebuild · BETA — TAGGED 2026-05-01
 
-**Status**: QUEUED. Branch `v3.0-data-architecture` from `origin/main` at v2.4.16 ship (`5614f32`). APP_VERSION bumped to `3.0.0-alpha`. v2.4.17 work-in-progress preserved on local main + tag `v2.4.17-wip-snapshot`. Authority: [`data-architecture-directive.md`](../data-architecture-directive.md) (706-line lead-architect directive). Build pipeline locked at directive §0: spec → tests → code → smoke.
+**Status**: **BETA SHIPPED**. Tag `v3.0.0-beta` on `origin/v3.0-data-architecture`. APP_VERSION = `3.0.0-beta`. Path to non-suffix `3.0.0` GA gated on three remaining items: (1) v3.0 → v2.x adapter so existing tabs read from v3.0 selectors against the active engagement (today's app is ~95% v2.x with v3.0 only powering the Lab); (2) at least one real workshop validation run; (3) successful migration of at least one real customer's saved `.canvas` file (current migrator coverage is fixture-based only, 8 synthetic fixtures).
+
+**What's BETA-shipped (29 commits over 2026-04-30 → 2026-05-01)**: every directive SPEC backend section §S2–§S11 closed and tested. 167 real assertions out of ~404 vector ids; 1001/1001 GREEN test banner. V-PROD: 11/11. V-XCUT: 5/5. Skill builder UI 2-step Intent panel + manifest-driven chip palette + path validation + structured-output runner with catalog-validation retry + provenance wrapper + drift detection + Mock | Real LLM toggle wired to v2.x core/aiClient + skill persistence + saved-skills picker — all visible at `http://localhost:8080` via the "v3.0 Lab" topbar button.
+
+**Remaining work for non-suffix 3.0.0 GA** (queued under v3.0.1 or merged into 3.0.0 GA scope):
+1. v3.0 → v2.x adapter — invasive but unblocks visible v3.0 across the existing 5 tabs.
+2. V-MFG-1 snapshot drift gate — checked-in `services/manifest.snapshot.json` + byte-equal regression test.
+3. Real-workshop smoke run with browser-smoke evidence.
+4. Real-customer `.canvas` migration smoke run.
+5. Inline TO-RESOLVE / TO-CONFIRM items in SPEC.md (§S7.4 Dell Sales Chat structured-output mechanism, §S7.4.4 LLM eval framework deferred to v3.1, V-PROD-* mock LLM response keying format).
+
+Authority: [`../data-architecture-directive.md`](../data-architecture-directive.md) (706-line lead-architect directive). Build pipeline locked at directive §0: spec → tests → code → smoke.
 
 ### Why v3.0 (not v2.4.17)
 
