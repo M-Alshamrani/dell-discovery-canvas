@@ -9993,7 +9993,69 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
   // sec T7 · V-MFG · Manifest generation (per SPEC sec S7.6)
   // -------------------------------------------------------------------
   describe("§T7 · V-MFG · Manifest generation", () => {
-    it("V-MFG-1 · generateManifest() byte-equals services/manifest.snapshot.json (drift gate)", () => {});
+    it("V-MFG-1 · generateManifest() FNV-1a hash + structural counts equal locked snapshot (drift gate)", () => {
+      // SPEC §S7.6 drift gate. Deliberately uses an FNV-1a hash + per-kind
+      // structural counts rather than a full JSON snapshot file: the byte-
+      // exact JSON would be ~9 KB, large enough that maintenance friction
+      // outweighs the benefit, and string-extracting through the test
+      // harness is unreliable. Hash + counts catch every realistic drift
+      // (added/removed path, renamed field, kind added) while staying
+      // tiny enough to live as a constant.
+      //
+      // Regen procedure (when this test fails because YOU intended the
+      // drift):
+      //   1. Open Chrome DevTools console with the app loaded.
+      //   2. Paste:
+      //      const { generateManifest, serializeManifestStable } = await import('/services/manifestGenerator.js');
+      //      const json = serializeManifestStable(generateManifest());
+      //      let h = 0x811c9dc5; for (let i=0;i<json.length;i++) { h ^= json.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+      //      console.log({ bytes: json.length, fnv1a: h.toString(16).padStart(8,'0') });
+      //      const m = generateManifest();
+      //      console.log({ entityKinds: Object.keys(m.byEntityKind).sort(),
+      //                    perKindOwn: Object.fromEntries(Object.entries(m.byEntityKind).map(([k,v]) => [k, v.ownPaths?.length ?? 0])),
+      //                    perKindLinked: Object.fromEntries(Object.entries(m.byEntityKind).map(([k,v]) => [k, v.linkedPaths?.length ?? 0])) });
+      //   3. Update the LOCKED_* constants below with the new values.
+      //   4. Re-run the test → GREEN.
+
+      // Locked snapshot — v3.0.0-rc.1 baseline (2026-05-01).
+      const LOCKED_BYTES        = 8744;
+      const LOCKED_HASH         = "3a217459";
+      const LOCKED_SESSION_PATH_COUNT = 7;
+      const LOCKED_ENTITY_KINDS = ["currentInstance","desiredInstance","driver","environment","gap","project"];
+      const LOCKED_OWN_COUNT    = { driver: 5, currentInstance: 7, desiredInstance: 7, gap: 5, environment: 6, project: 0 };
+      const LOCKED_LINKED_COUNT = { driver: 2, currentInstance: 1, desiredInstance: 1, gap: 2, environment: 2, project: 1 };
+
+      // FNV-1a 32-bit. Deterministic, no crypto dependency, browser+test safe.
+      function fnv1a(s) {
+        let h = 0x811c9dc5;
+        for (let i = 0; i < s.length; i++) {
+          h ^= s.charCodeAt(i);
+          h = Math.imul(h, 0x01000193) >>> 0;
+        }
+        return h.toString(16).padStart(8, "0");
+      }
+
+      const live = generateManifest();
+      const json = serializeManifestStable(live);
+
+      assertEqual(json.length, LOCKED_BYTES,
+        "V-MFG-1 · manifest size drift detected (regen the snapshot in test body if intentional)");
+      assertEqual(fnv1a(json), LOCKED_HASH,
+        "V-MFG-1 · manifest FNV-1a hash drift detected (regen the snapshot in test body if intentional)");
+      assertEqual(live.sessionPaths.length, LOCKED_SESSION_PATH_COUNT,
+        "V-MFG-1 · sessionPaths count drift");
+
+      const liveKinds = Object.keys(live.byEntityKind).sort();
+      assertEqual(liveKinds.join(","), LOCKED_ENTITY_KINDS.join(","),
+        "V-MFG-1 · entity-kind set drift");
+
+      for (const k of LOCKED_ENTITY_KINDS) {
+        assertEqual(live.byEntityKind[k].ownPaths?.length ?? 0, LOCKED_OWN_COUNT[k],
+          "V-MFG-1 · ownPaths count drift on " + k);
+        assertEqual(live.byEntityKind[k].linkedPaths?.length ?? 0, LOCKED_LINKED_COUNT[k],
+          "V-MFG-1 · linkedPaths count drift on " + k);
+      }
+    });
     it("V-MFG-2 · manifest.sessionPaths includes customer.name, customer.vertical, engagementMeta.engagementDate", () => {
       const m = generateManifest();
       const paths = m.sessionPaths.map(p => p.path);

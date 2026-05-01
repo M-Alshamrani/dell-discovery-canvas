@@ -421,7 +421,7 @@ it("V-SEL-PURE-1 · selectMatrixView returns reference-equal output for equal in
 
 | Vector | Assertion |
 |---|---|
-| V-MFG-1 | `generateManifest()` byte-equals `services/manifest.snapshot.json` (drift gate) |
+| V-MFG-1 | `generateManifest()` FNV-1a hash + per-kind ownPaths/linkedPaths counts + sessionPath count + entity-kind set match locked snapshot constants in test body (drift gate). Hash + counts chosen over a byte-equal JSON snapshot file because the JSON is ~9 KB and string-extracting through the test harness is unreliable; hash+counts catch every realistic drift. |
 | V-MFG-2 | `manifest.sessionPaths` includes `customer.name`, `customer.vertical`, `engagementMeta.engagementDate` |
 | V-MFG-3 | `manifest.byEntityKind.driver.ownPaths` includes `context.driver.priority`, `context.driver.outcomes` |
 | V-MFG-4 | `manifest.byEntityKind.driver.linkedPaths` includes `context.driver.linkedGaps[*].description` (composition rule applied) |
