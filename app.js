@@ -13,6 +13,12 @@ import { getStatus as getSaveStatus, onStatusChange as onSaveStatusChange } from
 // restores the user's saved body[data-filter-<dim>] attributes on app
 // boot, before the user navigates to a tab that uses FilterBar.
 import "./state/filterState.js";
+// v3.0.0-rc.1 . SPEC §S19.3 co-existence bridge. Side-effect import
+// subscribes to session-changed and runs the v2->v3 migrator into
+// the v3EngagementStore on every emission (and once at boot). v2.x
+// views keep reading sessionState today; per-view migration in
+// later commits flips reads over to state/v3Adapter.js.
+import "./state/v3SessionBridge.js";
 import { confirmAction, notifyError, notifyInfo, notifySuccess } from "./ui/components/Notify.js";
 import { buildSaveEnvelope, parseFileEnvelope, applyEnvelope, suggestFilename, FILE_MIME } from "./services/sessionFile.js";
 import { renderContextView }         from "./ui/views/ContextView.js";
