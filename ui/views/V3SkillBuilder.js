@@ -29,6 +29,12 @@ import {
   SEED_SKILL_EXECUTIVE_SUMMARY,
   SEED_SKILL_CARE_BUILDER
 } from "../../core/v3SeedSkills.js";
+import {
+  saveV3Skill,
+  loadV3Skills,
+  loadV3SkillById,
+  deleteV3Skill
+} from "../../state/v3SkillStore.js";
 
 const SEED_SKILLS = [
   { id: "dell-mapping",       label: "Dell mapping (click-to-run on Gap, structured)", skill: SEED_SKILL_DELL_MAPPING },
@@ -133,6 +139,42 @@ export function renderV3SkillBuilder(container) {
   container.appendChild(seedPicker);
   const seedSelect = seedPicker.querySelector("#v3-seed-picker");
 
+  // ───── SAVED SKILLS PICKER ─────
+  const savedPicker = document.createElement("section");
+  savedPicker.className = "v3-skill-builder-saved-picker";
+  savedPicker.innerHTML = `
+    <label class="v3-skill-builder-saved-label" for="v3-saved-picker">
+      Your saved skills <span class="v3-skill-builder-saved-count"></span>
+    </label>
+    <div class="v3-skill-builder-saved-row">
+      <select id="v3-saved-picker" class="v3-skill-builder-seed-select">
+        <option value="">— Pick a saved skill to load —</option>
+      </select>
+      <button type="button" class="v3-skill-builder-saved-delete-btn"
+              title="Delete the selected saved skill">Delete</button>
+    </div>
+  `;
+  container.appendChild(savedPicker);
+  const savedSelect    = savedPicker.querySelector("#v3-saved-picker");
+  const savedCountEl   = savedPicker.querySelector(".v3-skill-builder-saved-count");
+  const savedDeleteBtn = savedPicker.querySelector(".v3-skill-builder-saved-delete-btn");
+
+  function refreshSavedList() {
+    const all = loadV3Skills();
+    const ids = Object.keys(all);
+    savedCountEl.textContent = ids.length ? "(" + ids.length + ")" : "(none yet)";
+    const previous = savedSelect.value;
+    savedSelect.innerHTML = '<option value="">— Pick a saved skill to load —</option>' +
+      ids.map(id => {
+        const s = all[id];
+        const label = s.label || s.skillId;
+        const scope = s.skillType === "click-to-run" ? (s.entityKind || "click-to-run") : "session-wide";
+        return `<option value="${id}">${escapeHtml(label)} · ${escapeHtml(scope)}</option>`;
+      }).join("");
+    if (ids.includes(previous)) savedSelect.value = previous;
+  }
+  refreshSavedList();
+
   // ───── STEP 1: Scope picker ─────
   const step1 = document.createElement("section");
   step1.className = "v3-skill-builder-step";
@@ -187,22 +229,47 @@ export function renderV3SkillBuilder(container) {
   container.appendChild(editor);
   const textarea = editor.querySelector("#v3-prompt");
 
-  // ───── VALIDATE + RUN BUTTONS + PANELS ─────
+  // ───── SKILL META FIELDS (skillId + label) ─────
+  const meta = document.createElement("section");
+  meta.className = "v3-skill-builder-meta";
+  meta.innerHTML = `
+    <div class="v3-skill-builder-meta-row">
+      <div class="v3-skill-builder-meta-field">
+        <label class="v3-skill-builder-meta-label" for="v3-skill-id">skillId</label>
+        <input id="v3-skill-id" class="v3-skill-builder-meta-input" type="text"
+               placeholder="skl-my-skill-1" />
+      </div>
+      <div class="v3-skill-builder-meta-field v3-skill-builder-meta-field-grow">
+        <label class="v3-skill-builder-meta-label" for="v3-skill-label">label</label>
+        <input id="v3-skill-label" class="v3-skill-builder-meta-input" type="text"
+               placeholder="My new skill" />
+      </div>
+    </div>
+  `;
+  container.appendChild(meta);
+  const skillIdInput    = meta.querySelector("#v3-skill-id");
+  const skillLabelInput = meta.querySelector("#v3-skill-label");
+
+  // ───── VALIDATE + RUN + SAVE BUTTONS + PANELS ─────
   const actions = document.createElement("section");
   actions.className = "v3-skill-builder-actions";
   actions.innerHTML = `
     <div class="v3-skill-builder-actions-row">
       <button type="button" class="v3-skill-builder-validate-btn">Validate template paths</button>
       <button type="button" class="v3-skill-builder-run-btn">Run skill (mock LLM)</button>
+      <button type="button" class="v3-skill-builder-save-btn">Save skill</button>
     </div>
     <div class="v3-skill-builder-validation-result" aria-live="polite"></div>
+    <div class="v3-skill-builder-save-result" aria-live="polite"></div>
     <div class="v3-skill-builder-run-result" aria-live="polite"></div>
   `;
   container.appendChild(actions);
-  const validateBtn   = actions.querySelector(".v3-skill-builder-validate-btn");
-  const runBtn        = actions.querySelector(".v3-skill-builder-run-btn");
-  const resultPanel   = actions.querySelector(".v3-skill-builder-validation-result");
-  const runResultPanel = actions.querySelector(".v3-skill-builder-run-result");
+  const validateBtn    = actions.querySelector(".v3-skill-builder-validate-btn");
+  const runBtn         = actions.querySelector(".v3-skill-builder-run-btn");
+  const saveBtn        = actions.querySelector(".v3-skill-builder-save-btn");
+  const resultPanel    = actions.querySelector(".v3-skill-builder-validation-result");
+  const saveResultPanel = actions.querySelector(".v3-skill-builder-save-result");
+  const runResultPanel  = actions.querySelector(".v3-skill-builder-run-result");
 
   // ───── HANDLERS ─────
   function refreshChips() {
@@ -275,6 +342,76 @@ export function renderV3SkillBuilder(container) {
                                  "v3-skill-builder-validation-result-error");
     resultPanel.innerHTML = "";
     runResultPanel.innerHTML = "";
+  });
+
+  // Save skill: extract bindings from the template via the manifest,
+  // SkillSchema-validate, persist to localStorage. Refresh saved list.
+  saveBtn.addEventListener("click", () => {
+    const draft = {
+      skillId:        (skillIdInput.value || "").trim(),
+      label:          (skillLabelInput.value || "").trim() || "Untitled skill",
+      skillType:      state.skillType,
+      entityKind:     state.entityKind,
+      promptTemplate: state.promptTemplate,
+      outputContract: "free-text"
+    };
+    if (!draft.skillId) {
+      renderSaveResult(saveResultPanel, {
+        ok: false,
+        errors: [{ message: "skillId is required (e.g. \"skl-my-skill-1\")" }]
+      });
+      return;
+    }
+    const result = saveV3Skill(draft, { manifest });
+    renderSaveResult(saveResultPanel, result);
+    if (result.ok) refreshSavedList();
+  });
+
+  // Load a saved skill into the form
+  savedSelect.addEventListener("change", e => {
+    const id = e.target.value;
+    if (!id) return;
+    const saved = loadV3SkillById(id);
+    if (!saved) return;
+    state.skillType      = saved.skillType;
+    state.entityKind     = saved.entityKind || null;
+    state.promptTemplate = saved.promptTemplate;
+    skillIdInput.value    = saved.skillId;
+    skillLabelInput.value = saved.label;
+    // Sync UI
+    step1.querySelectorAll('input[name="v3-scope"]').forEach(inp => {
+      inp.checked = (inp.value === saved.skillType);
+    });
+    if (saved.entityKind) {
+      step2.querySelector(".v3-skill-builder-kind-picker").value = saved.entityKind;
+    }
+    textarea.value = saved.promptTemplate;
+    // Reset the seed picker (loaded saved -> not from seed)
+    seedSelect.value = "";
+    refreshStep2Visibility();
+    refreshChips();
+    // Clear stale results
+    resultPanel.innerHTML = "";
+    resultPanel.classList.remove("v3-skill-builder-validation-result-ok",
+                                 "v3-skill-builder-validation-result-error");
+    saveResultPanel.innerHTML = "";
+    runResultPanel.innerHTML = "";
+  });
+
+  // Delete saved skill
+  savedDeleteBtn.addEventListener("click", () => {
+    const id = savedSelect.value;
+    if (!id) {
+      renderSaveResult(saveResultPanel, {
+        ok: false,
+        errors: [{ message: "Pick a saved skill from the list first." }]
+      });
+      return;
+    }
+    if (!window.confirm("Delete saved skill \"" + id + "\"?")) return;
+    deleteV3Skill(id);
+    refreshSavedList();
+    renderSaveResult(saveResultPanel, { ok: true, deleted: id });
   });
 
   // Run skill via mock LLM provider
@@ -459,6 +596,45 @@ function renderRunResult(panel, seedId, state, { resolvedPrompt, envelope }) {
       <tr><th>catalogVersions</th> <td><code>${escapeHtml(JSON.stringify(p.catalogVersions))}</code></td></tr>
     </table>
   `;
+}
+
+function renderSaveResult(panel, result) {
+  panel.innerHTML = "";
+  panel.classList.remove("v3-skill-builder-save-result-ok",
+                          "v3-skill-builder-save-result-error");
+  if (result.ok && result.deleted) {
+    panel.classList.add("v3-skill-builder-save-result-ok");
+    panel.textContent = "✓ Deleted saved skill: " + result.deleted;
+    return;
+  }
+  if (result.ok) {
+    panel.classList.add("v3-skill-builder-save-result-ok");
+    const bindings = result.skill.bindings || [];
+    panel.innerHTML =
+      '<div>✓ Saved <code>' + escapeHtml(result.skill.skillId) + '</code> ' +
+      '(' + bindings.length + ' binding' + (bindings.length === 1 ? '' : 's') + ' extracted).</div>' +
+      (bindings.length > 0
+        ? '<div class="v3-skill-builder-save-bindings">' +
+            bindings.map(b => '<code>' + escapeHtml(b.path) + '</code> <span class="prov-status prov-status-valid">' +
+                              escapeHtml(b.source) + '</span>').join(" ") +
+          '</div>'
+        : "");
+    return;
+  }
+  panel.classList.add("v3-skill-builder-save-result-error");
+  const list = document.createElement("ul");
+  list.className = "v3-skill-builder-error-list";
+  (result.errors || []).forEach(err => {
+    const li = document.createElement("li");
+    li.className = "v3-skill-builder-error-item";
+    li.innerHTML =
+      (err.path
+        ? '<div class="v3-skill-builder-error-path">' + escapeHtml(err.path) + '</div>'
+        : "") +
+      '<div class="v3-skill-builder-error-message">' + escapeHtml(err.message) + '</div>';
+    list.appendChild(li);
+  });
+  panel.appendChild(list);
 }
 
 function escapeHtml(s) {
