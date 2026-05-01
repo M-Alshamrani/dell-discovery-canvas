@@ -37,37 +37,37 @@ import { engagementPathManifest }  from "../schema/engagement.js";
 const LINKED_BY_KIND = {
   driver: [
     { path: "context.driver.linkedGaps[*].description", type: "string", label: "Linked gap description",
-      composition: "engagement.gaps where gap.driverId === driver.id" },
+      source: "linked", composition: "engagement.gaps where gap.driverId === driver.id" },
     { path: "context.driver.linkedGaps[*].urgency", type: "enum", label: "Linked gap urgency",
-      composition: "engagement.gaps where gap.driverId === driver.id" }
+      source: "linked", composition: "engagement.gaps where gap.driverId === driver.id" }
   ],
   currentInstance: [
     { path: "context.currentInstance.desiredCounterparts[*].label", type: "string",
-      label: "Desired counterpart label",
+      label: "Desired counterpart label", source: "linked",
       composition: "engagement.instances where state==='desired' AND originId === instance.id" }
   ],
   desiredInstance: [
     { path: "context.desiredInstance.originInstance.label", type: "string",
-      label: "Origin (current) instance label",
+      label: "Origin (current) instance label", source: "linked",
       composition: "engagement.instances.byId[instance.originId]" }
   ],
   gap: [
-    { path: "context.gap.driver.priority", type: "enum", label: "Linked driver priority",
+    { path: "context.gap.driver.priority", type: "enum", label: "Linked driver priority", source: "linked",
       composition: "engagement.drivers.byId[gap.driverId]" },
     { path: "context.gap.affectedEnvironments[*].alias", type: "string",
-      label: "Affected environment alias",
+      label: "Affected environment alias", source: "linked",
       composition: "engagement.environments filtered by gap.affectedEnvironments[]" }
   ],
   environment: [
     { path: "context.environment.linkedInstances[*].label", type: "string",
-      label: "Linked instance label",
+      label: "Linked instance label", source: "linked",
       composition: "engagement.instances where environmentId === environment.id" },
     { path: "context.environment.linkedGaps[*].description", type: "string",
-      label: "Linked gap description",
+      label: "Linked gap description", source: "linked",
       composition: "engagement.gaps where affectedEnvironments.includes(environment.id)" }
   ],
   project: [
-    { path: "context.project.gaps[*].description", type: "string", label: "Gap description",
+    { path: "context.project.gaps[*].description", type: "string", label: "Gap description", source: "linked",
       composition: "engagement.gaps grouped into this project (selectProjects)" }
   ]
 };

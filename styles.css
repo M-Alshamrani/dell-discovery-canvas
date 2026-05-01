@@ -4953,3 +4953,288 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
   align-items: center;
   gap: 4px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v3.0 · SkillBuilder 2-step Intent panel · SPEC sec S7.5
+ * Standalone overlay; doesn't interact with v2.x styles.
+ * ═══════════════════════════════════════════════════════════════════ */
+
+.v3-skill-builder {
+  background: var(--surface-1, #fff);
+  color: var(--text-1, #1c2128);
+  padding: 28px 32px;
+  font-family: var(--font-sans, "Inter", system-ui, sans-serif);
+  max-width: 920px;
+  margin: 0 auto;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.v3-skill-builder-header {
+  border-bottom: 1px solid var(--border-1, #e6e8eb);
+  padding-bottom: 16px;
+}
+.v3-skill-builder-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 4px 0;
+  color: var(--dell-blue, #0078D4);
+}
+.v3-skill-builder-subtitle {
+  font-size: 12px;
+  color: var(--text-2, #6e7781);
+  letter-spacing: 0.02em;
+}
+.v3-skill-builder-step {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v3-skill-builder-step-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--dell-blue, #0078D4);
+}
+.v3-skill-builder-step-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1, #1c2128);
+}
+.v3-skill-builder-radio-group {
+  display: flex;
+  gap: 12px;
+}
+.v3-skill-builder-radio {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1.5px solid var(--border-1, #e6e8eb);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.v3-skill-builder-radio:has(input:checked) {
+  border-color: var(--dell-blue, #0078D4);
+  background: rgba(0, 120, 212, 0.04);
+}
+.v3-skill-builder-radio input { margin-bottom: 2px; }
+.v3-skill-builder-radio-title { font-size: 13px; font-weight: 600; }
+.v3-skill-builder-radio-hint  { font-size: 11px; color: var(--text-2, #6e7781); }
+.v3-skill-builder-kind-picker {
+  font-size: 13px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-1, #e6e8eb);
+  border-radius: 6px;
+  background: white;
+  font-family: inherit;
+  max-width: 280px;
+}
+.v3-skill-builder-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--border-1, #e6e8eb);
+  padding-top: 16px;
+}
+.v3-skill-builder-palette-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-2, #6e7781);
+  text-transform: uppercase;
+}
+.v3-skill-builder-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.v3-skill-builder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-1, #e6e8eb);
+  border-radius: 999px;
+  background: var(--surface-2, #f6f8fa);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, transform 0.08s;
+}
+.v3-skill-builder-chip:hover {
+  border-color: var(--dell-blue, #0078D4);
+  background: rgba(0, 120, 212, 0.06);
+}
+.v3-skill-builder-chip:active { transform: translateY(1px); }
+.v3-skill-builder-chip-source {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-2, #6e7781);
+  text-transform: uppercase;
+}
+.v3-skill-builder-chip-path {
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-1, #1c2128);
+}
+.v3-skill-builder-chip[data-source="catalog"] .v3-skill-builder-chip-source {
+  color: #b76e00;
+}
+.v3-skill-builder-chip[data-source="linked"] .v3-skill-builder-chip-source {
+  color: #6f42c1;
+}
+.v3-skill-builder-chip[data-source="entity"] .v3-skill-builder-chip-source {
+  color: var(--dell-blue, #0078D4);
+}
+.v3-skill-builder-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v3-skill-builder-editor-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-2, #6e7781);
+  text-transform: uppercase;
+}
+.v3-skill-builder-textarea {
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 13px;
+  padding: 12px;
+  border: 1px solid var(--border-1, #e6e8eb);
+  border-radius: 8px;
+  background: var(--surface-2, #fafbfc);
+  resize: vertical;
+  line-height: 1.5;
+}
+.v3-skill-builder-textarea:focus {
+  outline: 2px solid var(--dell-blue, #0078D4);
+  outline-offset: -1px;
+}
+.v3-skill-builder-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.v3-skill-builder-validate-btn {
+  align-self: flex-start;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  background: var(--dell-blue, #0078D4);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.v3-skill-builder-validate-btn:hover {
+  background: #006abc;
+}
+.v3-skill-builder-validation-result {
+  font-size: 13px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  display: none;
+}
+.v3-skill-builder-validation-result-ok,
+.v3-skill-builder-validation-result-error {
+  display: block;
+}
+.v3-skill-builder-validation-result-ok {
+  background: #e7f7e7;
+  border-color: #76d176;
+  color: #1f6d1f;
+}
+.v3-skill-builder-validation-result-error {
+  background: #fdecec;
+  border-color: #f0a3a3;
+  color: #8c2424;
+}
+.v3-skill-builder-error-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.v3-skill-builder-error-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.v3-skill-builder-error-path {
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-weight: 600;
+  font-size: 12px;
+}
+.v3-skill-builder-error-message { font-size: 12px; }
+.v3-skill-builder-error-suggestions { margin-top: 4px; font-size: 11px; }
+.v3-skill-builder-error-suggestions code {
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* Overlay container that hosts the panel */
+.v3-skill-builder-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 9000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 24px;
+  overflow-y: auto;
+}
+.v3-skill-builder-overlay-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 36px;
+  height: 36px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #d0d7de;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 10;
+}
+.v3-skill-builder-overlay-close:hover { background: white; }
+
+/* "v3 Lab" topbar button */
+.topbar-v3-lab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-family: inherit;
+  background: linear-gradient(135deg, var(--dell-blue, #0078D4), #5b8dee);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: transform 0.08s, box-shadow 0.12s;
+}
+.topbar-v3-lab-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 120, 212, 0.25);
+}
+.topbar-v3-lab-btn:active { transform: translateY(0); }

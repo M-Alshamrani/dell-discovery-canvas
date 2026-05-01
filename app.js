@@ -62,6 +62,7 @@ document.addEventListener("DOMContentLoaded", function() {
   wireSettingsBtn();
   wireUndoBtn();
   wireTopbarAiBtn();
+  wireTopbarV3LabBtn();
   // v2.4.13 S2A . repaint the secondary line whenever the save status
   // bus emits, so "Saving..." -> "Saved just now" without a full
   // re-render. Tick a 30s interval so "Saved 2m ago" keeps incrementing.
@@ -131,6 +132,45 @@ document.addEventListener("DOMContentLoaded", function() {
 function wireSettingsBtn() {
   var btn = document.getElementById("settingsBtn");
   if (btn) btn.addEventListener("click", openSettingsModal);
+}
+
+// v3.0 · "v3.0 Lab" topbar button. Opens the V3SkillBuilder panel as a
+// fullscreen overlay. First user-visible v3.0 surface (per SPEC §S7.5).
+// Lazily imports the builder module so we don't load schema/zod on every
+// page (only when the user actually opens the lab).
+function wireTopbarV3LabBtn() {
+  var btn = document.getElementById("topbarV3LabBtn");
+  if (!btn) return;
+  btn.addEventListener("click", async function() {
+    var existing = document.getElementById("v3SkillBuilderOverlay");
+    if (existing) { existing.remove(); return; }
+    var overlay = document.createElement("div");
+    overlay.id = "v3SkillBuilderOverlay";
+    overlay.className = "v3-skill-builder-overlay";
+    overlay.innerHTML = '<button class="v3-skill-builder-overlay-close" aria-label="Close">×</button>' +
+                        '<div class="v3-skill-builder-overlay-host" style="width:100%;"></div>';
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click", function(e) {
+      if (e.target === overlay) overlay.remove();
+    });
+    overlay.querySelector(".v3-skill-builder-overlay-close")
+      .addEventListener("click", function() { overlay.remove(); });
+    document.addEventListener("keydown", function escHandler(e) {
+      if (e.key === "Escape" && document.body.contains(overlay)) {
+        overlay.remove();
+        document.removeEventListener("keydown", escHandler);
+      }
+    });
+
+    var host = overlay.querySelector(".v3-skill-builder-overlay-host");
+    try {
+      var mod = await import("./ui/views/V3SkillBuilder.js");
+      mod.renderV3SkillBuilder(host);
+    } catch (e) {
+      host.innerHTML = '<div style="padding:24px;color:#a52a2a;background:#fff;border-radius:8px;">' +
+                       'Failed to load v3.0 Skill Builder: ' + e.message + '</div>';
+    }
+  });
 }
 
 // v2.4.13 S2 + S4 . global AI Assist button click handler. Statically
