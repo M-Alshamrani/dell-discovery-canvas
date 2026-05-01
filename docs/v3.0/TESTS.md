@@ -766,7 +766,68 @@ it("V-ANTI-4 · every R-number in SPEC.md has >=1 matching vector id in TESTS.md
 
 ---
 
-## §T19 · Banner target reconciliation
+## §T19 · V-ADP — v3.0 → v2.x consumption adapter
+
+**Coverage**: SPEC §S19.
+
+**Approximate count**: 10 vectors.
+
+| Vector | Assertion |
+|---|---|
+| V-ADP-1 | `adaptContextView(eng)` is a pure function: same engagement reference → same output reference (downstream of §S5 selector memoization per Q2 resolution) |
+| V-ADP-2 | Empty engagement (`createEmptyEngagement()`) renders all 6 view shapes (`adapt{Context,Architecture,Heatmap,Workload,Gaps,Reporting}View`) without throwing |
+| V-ADP-3 | Reference engagement → `adaptContextView` returns shape `{customer, drivers}` matching the v2.x ContextView contract (`customer.name`, `customer.vertical`, `customer.region`, `drivers[].priority`, `drivers[].outcomes`) |
+| V-ADP-4 | Reference engagement → `adaptArchitectureView` returns shape consumed by today's MatrixView (env × layer cells; each cell `{instanceIds, layerId, environmentId}`); per-cell instance order matches §S5.1 `selectMatrixView` |
+| V-ADP-5 | Reference engagement → `adaptHeatmapView` returns the v2.x heatmap shape (per-cell counts + health rollups derived from architecture data; identical to today's MatrixView heat layer) |
+| V-ADP-6 | Reference engagement → `adaptWorkloadView` returns workload mapping with `mappedAssetIds[]` resolved to instance summaries spanning environments (cross-ref V-XCUT-1: workload counted once globally; rendered in native env) |
+| V-ADP-7 | Reference engagement → `adaptGapsView` returns gaps grouped per today's GapsBoard with `affectedEnvironments[]`, `relatedCurrentInstanceIds[]`, `relatedDesiredInstanceIds[]`, `services[]`, `projectId`, `urgency` all preserved (cross-ref V-XCUT-3..5) |
+| V-ADP-8 | Reference engagement → `adaptReportingView` returns aggregations consumed by SummaryHealthView (per-env health + per-driver gap counts + global counts); a gap with `affectedEnvironments.length === 3` is counted once globally (cross-ref V-XCUT-3) |
+| V-ADP-9 | `commitContextEdit({customer: {name: "Acme"}})` updates `engagement.customer.name === "Acme"` AND emits exactly once to active subscribers; engagement reference changes (commit produces new immutable engagement) |
+| V-ADP-10 | `loadCanvasV3(json)` → `setActiveEngagement(eng)` → all 6 `adapt<View>View(eng)` succeed without errors against an engagement freshly through §S9 migrator + §S10 integrity sweep (round-trip integration) |
+
+### T19.1 · Sample vector body (V-ADP-9)
+
+```js
+it("V-ADP-9 · commitContextEdit updates customer.name and emits to subscribers", () => {
+  const eng = createEmptyEngagement();
+  setActiveEngagement(eng);
+  let emittedCount = 0;
+  let lastEmitted = null;
+  const unsub = subscribeActiveEngagement(e => { emittedCount++; lastEmitted = e; });
+
+  commitContextEdit({ customer: { name: "Acme Financial Services" } });
+
+  const after = getActiveEngagement();
+  assertEqual(after.customer.name, "Acme Financial Services",
+    "customer.name reflects the commit");
+  assertEqual(emittedCount, 1, "subscribers notified exactly once per commit");
+  assert(lastEmitted === after, "subscriber received the post-commit engagement");
+  assert(lastEmitted !== eng, "commit produced a new engagement reference (immutable update)");
+  unsub();
+});
+```
+
+### T19.2 · Sample vector body (V-ADP-1)
+
+```js
+it("V-ADP-1 · adaptContextView is identity-stable on unchanged engagement reference", () => {
+  const eng = loadReference("acme-financial.canvas");
+  const a = adaptContextView(eng);
+  const b = adaptContextView(eng);
+  assert(a === b, "same engagement reference → same output reference (memoization)");
+});
+```
+
+### T19.3 · Forbidden test patterns
+
+- **F19T.1** · Stubbing `state/v3Adapter.js` internals — purity must be observable through the pure-function interface; do not mock `subscribeActiveEngagement` or `commitAction` (cross-ref §V-ANTI-5).
+- **F19T.2** · Constructing engagement objects by hand bypassing `createEmptyEngagement` / `loadCanvasV3` (cross-ref §V-SCH forbidden patterns).
+- **F19T.3** · Asserting V-ADP-1 purity via `JSON.stringify(a) === JSON.stringify(b)` — that hides reference-identity bugs that the §S5 memoization contract forbids; assert `a === b` directly.
+- **F19T.4** · Asserting view-shape correctness against literal expected objects (brittle); assert specific keys + cross-cutting invariants (V-ADP-6 / V-ADP-8) instead.
+
+---
+
+## §T20 · Banner target reconciliation
 
 Per SPEC §S14.6:
 
@@ -789,25 +850,26 @@ Per SPEC §S14.6:
 | V-PROD | 11 | T16 (11) |
 | V-MULTI | 8 | T17 (8) |
 | V-ANTI | 5 | T18 (5) |
-| **TOTAL** | **~401** | **~404** |
+| V-ADP | 10 | T19 (10) |
+| **TOTAL** | **~411** | **~414** |
 
-Final banner target after merging: **616 (v2.4.16 baseline) - obsolete (~120 v2.4.x vectors that test fields/shapes that no longer exist) + 401 new = ~897 GREEN**. Provisional pending Suite 49 land + obsolete-vector audit.
+Final banner target after merging: **616 (v2.4.16 baseline) - obsolete (~120 v2.4.x vectors that test fields/shapes that no longer exist) + 411 new = ~907 GREEN**. Provisional pending Suite 49 land + obsolete-vector audit. v3.0.0-beta currently shows 1001/1001 because actual implementation enumerates per-fixture / per-invariant; "approximate count" here is the planning floor, not a ceiling.
 
 ---
 
-## §T20 · Open items
+## §T21 · Open items
 
 | Item | Section | Tag |
 |---|---|---|
 | V-SCH-12 default — `.strict()` vs `.strip()` for unknown fields | §T2.2 | TO RESOLVE (default `.strict()` for v3.0) |
 | V-MFG-10 manifest entry count expected size table | §T7 | TO LOCK at SPEC §S7.2.1 implementation |
 | V-ANTI-4 strict R-number → vector enforcement | §T18.1 | TO UPGRADE in v3.1 (smoke-check floors in v3.0) |
-| Banner target obsolete-vector audit | §T19 | TO RUN at Suite 49 land time (count which v2.4.x vectors test fields that v3.0 removes) |
+| Banner target obsolete-vector audit | §T20 | TO RUN at Suite 49 land time (count which v2.4.x vectors test fields that v3.0 removes) |
 | V-PROD mock LLM response keyed by prompt hash format | §T16.4 | TO AUTHOR alongside `services/llm/mockProvider.js` |
 
 ---
 
-## §T21 · Document control
+## §T22 · Document control
 
 - **Authored**: 2026-05-01 alongside MIGRATION.md.
 - **Owner**: spec writer (Claude Opus 4.7 1M context, this session and successors).
@@ -819,5 +881,6 @@ Final banner target after merging: **616 (v2.4.16 baseline) - obsolete (~120 v2.
 | Date | Section | Change |
 |---|---|---|
 | 2026-05-01 | All | Initial draft. 17 vector categories + ~404 vector ids enumerated. Banner target ~897 GREEN. |
+| 2026-05-01 | §T19 + §T20 + §T21 + §T22 | NEW §T19 V-ADP-1..10 vectors for SPEC §S19 v3.0 → v2.x consumption adapter. Existing §T19/T20/T21 meta-sections renumbered to §T20/T21/T22. Banner target bumps from ~897 to ~907. |
 
 End of TESTS.

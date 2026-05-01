@@ -386,6 +386,31 @@ Retired currents persist in `session.instances[]` for audit + reporting. The "re
 
 ---
 
+## 15 · v3.0 → v2.x consumption adapter (`state/v3Adapter.js`) · NEW v3.0.0-rc.1 (QUEUED 2026-05-01)
+
+**Status**: SPEC §S19 + TESTS §T19 V-ADP-1..10 authored 2026-05-01; implementation queued. **Rules below are normative once Suite N V-ADP-1..10 lands GREEN.**
+
+The adapter is the cutover boundary between the v2.x `state/sessionState.js` store and the v3.0 `state/v3EngagementStore.js`. View modules read engagement-derived data only through the adapter; writes go through `commitAction` wrappers that invoke §S4 action functions. The v3.0 Lab tab (Skill Builder, shipped at v3.0.0-beta) reads from `engagementStore` directly without going through `adaptXxxView`; it is its own surface, not part of the adapter migration window.
+
+| # | Rule | Tier | When it fires |
+|---|---|---|---|
+| AD1 | View module imports `state/sessionState.js` after migration | 🔴 HARD | review-time (lint TO AUTHOR alongside SPEC §S5.3 F5.3.2) |
+| AD2 | Adapter mutates engagement object directly (raw assignment / `Object.assign` / array push on engagement subtree) | 🔴 HARD | code review; all writes via `commitAction(actionFn, ...)` |
+| AD3 | View module imports `selectors/v3.js` directly | 🔴 HARD | review-time; views go through `adaptXxxView` only |
+| AD4 | Adapter caches per-view-shape outputs in its own cache | 🔴 HARD | code review (selectors §S5 already memoize on engagement-reference identity per Q2) |
+| AD5 | `state/v3EngagementStore.js` exposes engagement object by deep reference for write | 🔴 HARD | engagement is read-only at the consumer; writes via `commitAction` only |
+| AD6 | `adapt<View>View(eng)` is a pure function — same engagement reference → same output reference | 🔴 HARD | tested by V-ADP-1 |
+| AD7 | Empty engagement (`createEmptyEngagement()`) renders all 6 view shapes without throwing | 🔴 HARD | tested by V-ADP-2 |
+| AD8 | Adapter writes commit through §S4 action functions, never via raw object mutation | 🔴 HARD | tested by V-ADP-9 |
+| AD9 | View migrations land in fixed order: Context → Architecture → Heatmap → Workload Mapping → Gaps → Reporting | 🔵 AUTO | sequenced commits per SPEC §S19.4; one commit + browser smoke per view |
+| AD10 | The v3.0 Lab tab reads from `engagementStore` directly without going through `adaptXxxView` | 🔵 AUTO | shipped at v3.0.0-beta; the Lab is its own surface, not a v2.x view |
+| AD11 | `.canvas` v3.0 file load drives `engagementStore.setActiveEngagement(loadCanvasV3(json).engagement)`; v2.x `.canvas` files run §S9 migrator first then same set | 🔴 HARD | every load (cross-ref §10 migration) |
+| AD12 | While migration is in progress, the v2.x `state/sessionState.js` store and the v3.0 `state/v3EngagementStore.js` BOTH live in memory; co-existence ends when Reporting (Tab 6) lands; even then sessionState is NOT deleted (rollback anchor + v2.x AI admin still reads it per `project_v2x_admin_deferred.md`) | 🔵 AUTO | through v3.0.0 GA |
+
+**Cross-references**: SPEC §S19 + TESTS §T19 V-ADP-1..10. Memory anchors: `feedback_spec_and_test_first.md` (this entire section is the spec-first artifact), `feedback_browser_smoke_required.md` (per-commit smoke between view migrations), `project_v2x_admin_deferred.md` (sessionState NOT deleted).
+
+---
+
 ## v2.4.15 · UI surfaces that make rules visible
 
 Rules without visible UI are surprises. v2.4.11 added the original surfaces; v2.4.12-15 extended them. Updated to reflect v2.4.15 ship state.

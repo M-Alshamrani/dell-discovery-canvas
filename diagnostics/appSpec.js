@@ -8645,6 +8645,29 @@ import {
 import { SkillSchema, createEmptySkill } from "../schema/skill.js";
 import { validateSkillSave }             from "../services/skillSaveValidator.js";
 
+// v3.0.0-rc.1 · §T19 V-ADP · v3.0 → v2.x consumption adapter
+// (SPEC §S19, RULES §15). Imports the STUB module — Suite 49 §T19
+// V-ADP-1..10 fails RED against these stubs by design until impl lands.
+import {
+  adaptContextView,
+  adaptArchitectureView,
+  adaptHeatmapView,
+  adaptWorkloadView,
+  adaptGapsView,
+  adaptReportingView,
+  commitContextEdit,
+  commitInstanceEdit,
+  commitWorkloadMapping,
+  commitGapEdit
+} from "../state/v3Adapter.js";
+import {
+  getActiveEngagement,
+  setActiveEngagement,
+  subscribeActiveEngagement,
+  commitAction,
+  _resetForTests as _resetEngagementStoreForTests
+} from "../state/v3EngagementStore.js";
+
 // ============================================================================
 // Suite 49 · v3.0 data architecture rebuild · RED-first vector scaffold
 //
@@ -11591,6 +11614,222 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-ANTI-3 · no `assert(stubReturnValue === stubReturnValue)` patterns in test source", () => {});
     it("V-ANTI-4 · every R-number in SPEC.md has >=1 matching vector id in TESTS.md (smoke; strict in v3.1)", () => {});
     it("V-ANTI-5 · no internal modules mocked outside SPEC sec S14.4 closed list", () => {});
+  });
+
+  // -------------------------------------------------------------------
+  // §T19 · V-ADP · v3.0 → v2.x consumption adapter (per SPEC §S19)
+  // RED-first: state/v3Adapter.js + state/v3EngagementStore.js are
+  // STUBS. V-ADP-3..9 + V-ADP-10 will fail against the stubs and go
+  // GREEN as the real adapter implementation lands in the next commit.
+  // V-ADP-1, V-ADP-2 pass with stubs (purity holds for null returns;
+  // null returns don't throw) — that's intentional per RED-first design.
+  // -------------------------------------------------------------------
+  describe("§T19 · V-ADP · v3.0 → v2.x consumption adapter", () => {
+
+    function _resetAdapterEnv() {
+      _resetEngagementStoreForTests();
+    }
+
+    it("V-ADP-1 · adaptContextView is identity-stable on unchanged engagement reference", () => {
+      _resetAdapterEnv();
+      const eng = createEmptyEngagement();
+      const a = adaptContextView(eng);
+      const b = adaptContextView(eng);
+      assert(a === b,
+        "same engagement reference → same adapter output reference (memoization downstream of §S5)");
+    });
+
+    it("V-ADP-2 · empty engagement renders all 6 view shapes without throwing", () => {
+      _resetAdapterEnv();
+      const eng = createEmptyEngagement();
+      let threw = null;
+      try {
+        adaptContextView(eng);
+        adaptArchitectureView(eng);
+        adaptHeatmapView(eng);
+        adaptWorkloadView(eng);
+        adaptGapsView(eng);
+        adaptReportingView(eng);
+      } catch (e) { threw = e; }
+      assert(threw === null,
+        "no adapter throws on empty engagement; got: " + (threw && threw.message));
+    });
+
+    it("V-ADP-3 · adaptContextView returns {customer, drivers} shape from a populated engagement", () => {
+      _resetAdapterEnv();
+      let eng = createEmptyEngagement();
+      // Populate customer via §S4 action so we exercise the full read path.
+      eng = updateCustomer(eng, { name: "Acme Financial Services", vertical: "Financial Services", region: "EMEA" }).engagement;
+      eng = addDriver(eng, { businessDriverId: "ai_data", priority: "High", outcomes: "Stand up an AI platform in 12 months." }).engagement;
+
+      const view = adaptContextView(eng);
+      assert(view !== null && typeof view === "object", "adapter returns an object, not null");
+      assert(view.customer && typeof view.customer === "object", "view.customer is an object");
+      assertEqual(view.customer.name, "Acme Financial Services", "customer.name surfaces");
+      assertEqual(view.customer.vertical, "Financial Services", "customer.vertical surfaces");
+      assertEqual(view.customer.region, "EMEA", "customer.region surfaces");
+      assert(Array.isArray(view.drivers) && view.drivers.length === 1,
+        "view.drivers is an array of length 1");
+      assertEqual(view.drivers[0].priority, "High", "driver priority surfaces");
+    });
+
+    it("V-ADP-4 · adaptArchitectureView returns env × layer matrix shape (instanceIds per cell)", () => {
+      _resetAdapterEnv();
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const envId = eng.environments.allIds[0];
+      eng = addInstanceV3(eng, { state:"current", layerId:"compute", environmentId: envId,
+        label:"PowerEdge-1", vendor:"Dell", vendorGroup:"dell", criticality:"Medium", disposition:"keep" }).engagement;
+      const instId = eng.instances.allIds[0];
+
+      const view = adaptArchitectureView(eng);
+      assert(view !== null && typeof view === "object", "adapter returns an object, not null");
+      assert(view.cells && typeof view.cells === "object",
+        "view.cells is the env-keyed map");
+      assert(view.cells[envId] && view.cells[envId].compute,
+        "(envId, compute) cell exists");
+      assert(Array.isArray(view.cells[envId].compute.instanceIds),
+        "cell.instanceIds is an array");
+      assert(view.cells[envId].compute.instanceIds.includes(instId),
+        "cell.instanceIds includes the added instance");
+    });
+
+    it("V-ADP-5 · adaptHeatmapView returns per-cell health rollup shape derived from architecture", () => {
+      _resetAdapterEnv();
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+
+      const view = adaptHeatmapView(eng);
+      assert(view !== null && typeof view === "object", "adapter returns an object, not null");
+      // Heatmap shape mirrors architecture: per-env per-layer cell with at least a count.
+      assert(view.cells && typeof view.cells === "object", "view.cells is the env-keyed map");
+    });
+
+    it("V-ADP-6 · adaptWorkloadView resolves mappedAssetIds across envs (cross-ref V-XCUT-1)", () => {
+      _resetAdapterEnv();
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      eng = addEnvironment(eng, { envCatalogId: "drDc",   catalogVersion: "2026.04" }).engagement;
+      const [e1, e2] = eng.environments.allIds;
+      eng = addInstanceV3(eng, { state:"current", layerId:"compute", environmentId: e2,
+        label:"Asset-A", vendor:"Dell", vendorGroup:"dell", criticality:"Medium", disposition:"keep" }).engagement;
+      const assetId = eng.instances.allIds[0];
+      eng = addInstanceV3(eng, { state:"current", layerId:"workload", environmentId: e1,
+        label:"App-X", vendor:"Custom", vendorGroup:"custom", criticality:"High", disposition:"keep",
+        mappedAssetIds: [assetId] }).engagement;
+      const workloadId = eng.instances.allIds[1];
+
+      const view = adaptWorkloadView(eng);
+      assert(view !== null && typeof view === "object", "adapter returns an object, not null");
+      assert(Array.isArray(view.workloads), "view.workloads is an array");
+      const wl = view.workloads.find(w => w.id === workloadId);
+      assert(wl, "workload appears in view.workloads");
+      assert(Array.isArray(wl.mappedAssets) && wl.mappedAssets.length === 1,
+        "workload.mappedAssets resolves the cross-env asset");
+      assertEqual(wl.mappedAssets[0].id, assetId, "mapped asset id resolved");
+    });
+
+    it("V-ADP-7 · adaptGapsView returns gaps with affectedEnvironments + relatedInstances + services + projectId preserved", () => {
+      _resetAdapterEnv();
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      eng = addEnvironment(eng, { envCatalogId: "drDc",   catalogVersion: "2026.04" }).engagement;
+      const [e1, e2] = eng.environments.allIds;
+      eng = addGapV3(eng, { description: "compliance audit gap",
+        gapType: "ops", urgency: "High", phase: "now", status: "open",
+        layerId: "infrastructure", affectedLayers: ["infrastructure"],
+        affectedEnvironments: [e1, e2]
+      }).engagement;
+      const gapId = eng.gaps.allIds[0];
+
+      const view = adaptGapsView(eng);
+      assert(view !== null && typeof view === "object", "adapter returns an object, not null");
+      assert(Array.isArray(view.gaps), "view.gaps is an array");
+      const gap = view.gaps.find(g => g.id === gapId);
+      assert(gap, "gap appears in view.gaps");
+      assert(Array.isArray(gap.affectedEnvironments) && gap.affectedEnvironments.length === 2,
+        "affectedEnvironments preserved (length 2)");
+      assertEqual(gap.urgency, "High", "urgency preserved");
+      assertEqual(gap.gapType, "ops", "gapType preserved");
+    });
+
+    it("V-ADP-8 · adaptReportingView returns aggregations (per-env health + global counts; multi-env gap counted once)", () => {
+      _resetAdapterEnv();
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc",      catalogVersion: "2026.04" }).engagement;
+      eng = addEnvironment(eng, { envCatalogId: "drDc",        catalogVersion: "2026.04" }).engagement;
+      eng = addEnvironment(eng, { envCatalogId: "publicCloud", catalogVersion: "2026.04" }).engagement;
+      const [e1, e2, e3] = eng.environments.allIds;
+      eng = addGapV3(eng, { description: "cross-env compliance",
+        gapType: "ops", urgency: "High", phase: "now", status: "open",
+        layerId: "infrastructure", affectedLayers: ["infrastructure"],
+        affectedEnvironments: [e1, e2, e3]
+      }).engagement;
+
+      const view = adaptReportingView(eng);
+      assert(view !== null && typeof view === "object", "adapter returns an object, not null");
+      assert(view.totals && typeof view.totals === "object", "view.totals exists");
+      assertEqual(view.totals.gapsOpen, 1,
+        "multi-env gap counted exactly once globally (cross-ref V-XCUT-3)");
+    });
+
+    it("V-ADP-9 · commitContextEdit updates customer.name and emits to subscribers (write-through + immutable update)", () => {
+      _resetAdapterEnv();
+      const eng = createEmptyEngagement();
+      setActiveEngagement(eng);
+
+      let emittedCount = 0;
+      let lastEmitted = null;
+      const unsub = subscribeActiveEngagement(e => { emittedCount++; lastEmitted = e; });
+      // Reset emit count from the setActiveEngagement notify (S19.3 contract).
+      emittedCount = 0;
+      lastEmitted = null;
+
+      commitContextEdit({ customer: { name: "Acme Financial Services" } });
+
+      const after = getActiveEngagement();
+      assertEqual(after.customer.name, "Acme Financial Services",
+        "customer.name reflects the commit");
+      assertEqual(emittedCount, 1,
+        "subscribers notified exactly once per commit");
+      assert(lastEmitted === after,
+        "subscriber received the post-commit engagement");
+      assert(after !== eng,
+        "commit produced a new engagement reference (immutable update per P3)");
+      unsub();
+    });
+
+    it("V-ADP-10 · loadCanvasV3 + setActiveEngagement chains into all 6 view shapes (round-trip)", () => {
+      _resetAdapterEnv();
+      // Build a minimal valid engagement, save+load roundtrip, then drive
+      // through the adapter. This exercises §S9 migrator + §S10 sweep
+      // upstream of the adapter.
+      let eng = createEmptyEngagement();
+      eng = updateCustomer(eng, { name: "RT Customer", vertical: "Financial Services", region: "EMEA" }).engagement;
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const envelope = buildSaveEnvelopeV3(eng);
+      const reloaded = loadCanvasV3(envelope);
+      // loadCanvasV3 may return either { engagement, ... } or the engagement
+      // directly; v3.0 contract is { ok, engagement, ... }.
+      const engReloaded = reloaded && reloaded.engagement ? reloaded.engagement : reloaded;
+      setActiveEngagement(engReloaded);
+
+      const ctx     = adaptContextView(engReloaded);
+      const arch    = adaptArchitectureView(engReloaded);
+      const heat    = adaptHeatmapView(engReloaded);
+      const wl      = adaptWorkloadView(engReloaded);
+      const gaps    = adaptGapsView(engReloaded);
+      const reportv = adaptReportingView(engReloaded);
+
+      assert(ctx     !== null, "adaptContextView is non-null after roundtrip");
+      assert(arch    !== null, "adaptArchitectureView is non-null after roundtrip");
+      assert(heat    !== null, "adaptHeatmapView is non-null after roundtrip");
+      assert(wl      !== null, "adaptWorkloadView is non-null after roundtrip");
+      assert(gaps    !== null, "adaptGapsView is non-null after roundtrip");
+      assert(reportv !== null, "adaptReportingView is non-null after roundtrip");
+      assertEqual(ctx.customer.name, "RT Customer",
+        "round-tripped customer.name surfaces through adapter");
+    });
   });
 
 });

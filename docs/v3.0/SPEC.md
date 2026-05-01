@@ -1585,6 +1585,107 @@ Plus the v2.4.16 baseline of 616 GREEN that survives v3.0 migration (some vector
 
 ---
 
+## §S19 · v3.0 → v2.x consumption adapter (SPEC-only annex)
+
+**Status**: NEW 2026-05-01. SPEC-only annex; not in [`data-architecture-directive.md`](../../data-architecture-directive.md). The directive §0.4 sequenced *manifest → skill builder UI → perf gates → smoke* on the implicit assumption that v3.0 ships and v2.x views are rewritten in-place. The adapter is the pragmatic bridge that ships `3.0.0` GA without rewriting every view atom in one release: existing 5 v2.x view tabs (Context · Architecture · Heatmap · Workload Mapping · Gaps · Reporting) read v3.0 data through a thin module instead of the v2.x `state/sessionState.js` store. The v3.0 Lab tab (Skill Builder, shipped at v3.0.0-beta) already reads from v3.0 selectors directly; this annex extends the same pattern to the rest of the app.
+
+**Authority cascade**: SPEC §19 → RULES delta (`docs/RULES.md` adapter invariant) → TESTS.md §T19 V-ADP-* → Suite N RED-first → `state/v3Adapter.js` + `state/v3EngagementStore.js` → per-view migrations → browser smoke.
+
+### S19.1 · Module shape
+
+**`state/v3Adapter.js`** — read-mostly bridge. Exports:
+
+```js
+// View-shape adapters. Each takes the active engagement and returns the
+// data shape the v2.x view component expects today (i.e. the same keys
+// today's view code reads off `state/sessionState.js`).
+export function adaptContextView(eng);        // Tab 1 · customer + drivers
+export function adaptArchitectureView(eng);   // Tab 2 · environments + instances
+export function adaptHeatmapView(eng);        // Tab 3 · derived from architecture data
+export function adaptWorkloadView(eng);       // Tab 4 · workload mapping (mappedAssetIds)
+export function adaptGapsView(eng);           // Tab 5 · gaps + affectedEnvs + projectId + services
+export function adaptReportingView(eng);      // Tab 6 · summary health aggregations
+
+// Write-through helpers. v2.x view "writes" call these instead of mutating
+// session state directly. Each helper invokes a §S4 action function on
+// the engagement store, which commits + emits.
+export function commitContextEdit(patch);
+export function commitInstanceEdit(layerId, envId, instancePatch);
+export function commitWorkloadMapping(workloadId, mappedAssetIds);
+export function commitGapEdit(gapId, patch);
+```
+
+**`state/v3EngagementStore.js`** — single in-memory engagement + pub/sub.
+
+```js
+let active = null;                // current v3.0 engagement object
+const subs  = new Set();          // Set<(eng) => void>
+export function getActiveEngagement();
+export function setActiveEngagement(eng);
+export function subscribeActiveEngagement(fn);  // returns unsubscribe
+export function commitAction(actionFn, ...args);  // wraps §S4 action; emits on success
+```
+
+### S19.2 · R-numbered requirements
+
+| R | Requirement | Trace |
+|---|---|---|
+| **R19.1** | Adapter exposes 6 view-shape selectors (`adapt<View>View(eng)`) and 4 write helpers (`commit<View>Edit(...)`) per S19.1 | This SPEC |
+| **R19.2** | Adapter is read-mostly: zero state mutation; all derived shapes flow through §S5 selectors | P3 (presentation derived, never stored) |
+| **R19.3** | Active engagement is owned by `state/v3EngagementStore.js` (single in-memory engagement + pub/sub); adapter never holds engagement state itself | P2 + future v3.1 §S12 multi-engagement |
+| **R19.4** | View edits commit through §S4 action functions only (`commit<View>Edit` wraps `commitAction(actionFn, ...)`); no raw object mutation in the adapter or in views | P2 (storage normalized) |
+| **R19.5** | Each `adapt<View>View(eng)` is a pure function: deterministic shape, no side effects, identity-stable when engagement reference is unchanged (downstream of §S5 memoization) | §14 testing + P9 perf |
+| **R19.6** | Adapter MUST NOT import `state/sessionState.js`; adapter is the cutover boundary between the two stores | RULES delta |
+| **R19.7** | Once a view is migrated, the view file MUST import only from `state/v3Adapter.js` for engagement-derived data; direct imports of `selectors/v3.js` in view modules are forbidden | §5.3 forbidden patterns extension |
+| **R19.8** | `.canvas` v3.0 file load drives `engagementStore.setActiveEngagement(loadCanvasV3(json).engagement)`; v2.x `.canvas` files run §S9 migrator first, then same set | §S9 + §10 integrity sweep on every load |
+| **R19.9** | View migrations land in the order: Context → Architecture → Heatmap → Workload Mapping → Gaps → Reporting; each migration is one commit + browser smoke before the next | S19.4 below |
+| **R19.10** | The v3.0 Lab tab (already-shipped Skill Builder) reads from `engagementStore` directly without going through `adaptXxxView`; the Lab is its own surface, not a v2.x view | v3.0.0-beta ship state |
+
+### S19.3 · Co-existence window
+
+Until every view is migrated, the v2.x `state/sessionState.js` store and the v3.0 `state/v3EngagementStore.js` BOTH live in memory. Each migrated view stops reading sessionState and starts reading the adapter. Every commit boundary (one view migrated per commit per R19.9) re-runs the full browser smoke; the green banner being 1001/1001 alone is **not** sufficient (cross-ref `feedback_browser_smoke_required.md` + the empty-page regressions caught at v3.0 commits 8 and 11).
+
+When the last view (Reporting) migrates and tests are GREEN, the v2.x sessionState store is dead code from a runtime perspective but is **NOT deleted in this release**: it stays available as a rollback anchor + because the v2.x AI admin panel still reads from it (per the `project_v2x_admin_deferred.md` decision).
+
+### S19.4 · Migration ordering rationale
+
+| Order | View | Why this position |
+|---|---|---|
+| 1 | Context (Tab 1) | Smallest data shape (customer + drivers); smallest blast radius; exercises basic adapter wiring + pub/sub re-render |
+| 2 | Architecture (Tab 2) | Environments + instances matrix; exercises `selectMatrixView` integration; matrix view is the highest-traffic surface |
+| 3 | Heatmap (Tab 3) | Derived from Architecture data; should be free once Tab 2 lands (same selectors + adapter) |
+| 4 | Workload Mapping (Tab 4) | Cross-cutting `mappedAssetIds`; exercises P2 cross-cutting + V-XCUT integration |
+| 5 | Gaps (Tab 5) | Largest field set: `affectedEnvironments`, `relatedCurrentInstanceIds`, `relatedDesiredInstanceIds`, `services[]`, `projectId`, `urgency`; full §S3 entity coverage |
+| 6 | Reporting / SummaryHealth (Tab 6) | Aggregations; depends on stable upstream views; last because regressions in 1–5 surface here |
+
+### S19.5 · Forbidden patterns
+
+- **F19.5.1** · View module imports `state/sessionState.js` after migration: forbidden. (RULES enforces; lint rule TO AUTHOR alongside §S5.3 F5.3.2.)
+- **F19.5.2** · Adapter mutates engagement object: forbidden. All writes go through `commitAction(actionFn, ...)`.
+- **F19.5.3** · View module imports `selectors/v3.js` directly: forbidden. The adapter is the only consumer of `selectors/v3.js` from view code.
+- **F19.5.4** · Adapter memoizes view-shape outputs in its own cache: forbidden. The §S5 selectors already memoize on engagement-reference identity per `OPEN_QUESTIONS_RESOLVED.md` Q2.
+- **F19.5.5** · `state/v3EngagementStore.js` exposes the engagement object by deep reference for write: forbidden. Reads return the engagement directly (callers MUST treat it as read-only); writes go through `commitAction`.
+
+### S19.6 · Test contract for §19
+
+Vectors in TESTS.md §T19 V-ADP-1..10. Summary:
+
+- **V-ADP-1**: each `adapt<View>View(eng)` returns the same output reference when called twice with the same engagement reference (purity + memoization downstream).
+- **V-ADP-2**: empty engagement (`createEmptyEngagement()`) renders every view shape without throwing.
+- **V-ADP-3 / 4 / 5 / 6 / 7 / 8**: per-view shape correctness against reference engagement (one vector per view).
+- **V-ADP-9**: `commitContextEdit({customer: {name: "X"}})` updates `engagement.customer.name` to `"X"` and emits to subscribers.
+- **V-ADP-10**: `.canvas` v3.0 file → `loadCanvasV3` → `setActiveEngagement` → all 6 view shapes derive without errors (round-trip).
+
+**Forbidden test patterns**: stubbing `state/v3Adapter.js` internals; constructing engagement objects bypassing `createEmptyEngagement` / `loadCanvasV3`.
+
+### S19.7 · Trace
+
+- **Principles**: P2 (storage normalized) + P3 (presentation derived) + P9 (performance budget — adapter MUST NOT break 100ms render).
+- **Sections**: §S4 (action functions consumed by write helpers) + §S5 (selectors consumed by read selectors) + §S9 (migrator drives initial engagement set) + §S10 (integrity sweep gates engagement set).
+- **Memory anchors**: `feedback_spec_and_test_first.md` (this very section is the spec-first artifact) + `feedback_browser_smoke_required.md` (per-commit smoke between view migrations) + `feedback_dockerfile_whitelist.md` (no new top-level dirs in this work) + `project_v2x_admin_deferred.md` (sessionState NOT deleted).
+
+---
+
 ## §15 · Out of scope (explicit)
 
 Per directive §15. Re-listed here for SPEC traceability:
@@ -1654,5 +1755,6 @@ These are tractable; they do not block §1-§4 implementation.
 | 2026-04-30 | All | Initial draft. §0–§4 + §15–§18 complete. §5–§14 scaffolded. |
 | 2026-05-01 | §5–§9 | Filled selectors, catalogs, skill builder, provenance, migration. Concrete file paths + signatures + Zod sketches. |
 | 2026-05-01 | §10–§14 | Filled integrity, performance, multi-engagement, backend, tests. Repair-rule table, calibration mechanism, vector-id pattern, banner target ~900 GREEN. |
+| 2026-05-01 | §S19 | NEW SPEC-only annex · v3.0 → v2.x consumption adapter. R19.1–R19.10 + module shape (`state/v3Adapter.js` + `state/v3EngagementStore.js`) + 6-view migration order + forbidden patterns + V-ADP-1..10 test pointer. Drives non-suffix `3.0.0` GA: with adapter shipped, the existing 5 v2.x view tabs read from v3.0 selectors against the active engagement (today only the Lab does). |
 
 End of SPEC.
