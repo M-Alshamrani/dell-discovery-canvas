@@ -12481,6 +12481,41 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "envLabel mirrors the env.alias for human-readable citation");
     });
 
+    it("V-CHAT-23 · BUG-015 guard: handshake prefix is silently stripped on SUBSEQUENT turns when the model disobeys 'first turn only'", async () => {
+      _resetChatEnv();
+      const eng = createEmptyEngagement();
+      setActiveEngagement(eng);
+      // expected sha for the strip
+      const sha = (await import("../core/dataContract.js")).getContractChecksum();
+      const handshakeLine = "[contract-ack v3.0 sha=" + sha + "]\n\n";
+
+      // Mock a SUBSEQUENT turn (transcript non-empty) where the model
+      // repeats the handshake prefix anyway. Pre-fix the handshake
+      // leaked into the bubble; post-fix it's stripped silently +
+      // contractAck stays null (since this isn't the first turn).
+      const provider = createMockChatProvider({
+        responses: [
+          { kind: "text", text: handshakeLine + "The client name is Acme Healthcare Group." }
+        ]
+      });
+      const result = await streamChat({
+        engagement:     eng,
+        transcript:     [{ role: "user", content: "earlier turn" }, { role: "assistant", content: "earlier reply" }],
+        userMessage:    "what is the client name",
+        providerConfig: { providerKey: "mock" },
+        provider:       provider
+      });
+
+      assert(typeof result.response === "string",
+        "response is a string");
+      assert(!result.response.startsWith("[contract-ack"),
+        "handshake prefix stripped from visible response (got: '" + result.response.slice(0, 60) + "')");
+      assertEqual(result.contractAck, null,
+        "contractAck stays null on subsequent turns (the truth signal only matters on turn 1)");
+      assert(result.response.includes("Acme Healthcare Group"),
+        "actual answer text preserved");
+    });
+
     it("V-CHAT-19 · BUG-012 guard: tool-chain cap — chatService stops at MAX_TOOL_ROUNDS and surfaces a notice", async () => {
       _resetChatEnv();
       let eng = createEmptyEngagement();

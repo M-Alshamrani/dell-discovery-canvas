@@ -75,7 +75,7 @@ export function openCanvasChat() {
     body:    body,
     footer:  footer,
     kind:    "canvas-chat",
-    size:    "default",
+    size:    "chat",
     persist: true
   });
 
@@ -91,14 +91,22 @@ export function openCanvasChat() {
 }
 
 function buildBody() {
+  // Phase 3 redesign: row layout. Main column (transcript + meter +
+  // input) on the left; collapsible Skills rail on the right. Rail
+  // is hidden by default; toggled via the head-extras chip.
   const body = document.createElement("div");
   body.className = "canvas-chat-body";
+
+  // ── Main column ─────────────────────────────────────────────────
+  const main = document.createElement("div");
+  main.className = "canvas-chat-main";
+  body.appendChild(main);
 
   // Transcript scroll region.
   const scroll = document.createElement("div");
   scroll.className = "canvas-chat-transcript";
   scroll.setAttribute("data-canvas-chat-transcript", "");
-  body.appendChild(scroll);
+  main.appendChild(scroll);
 
   // Empty-state hint (rendered conditionally by paintTranscript).
   const empty = document.createElement("div");
@@ -114,7 +122,7 @@ function buildBody() {
   meter.className = "canvas-chat-meter";
   meter.setAttribute("data-canvas-chat-meter", "");
   meter.textContent = "ready";
-  body.appendChild(meter);
+  main.appendChild(meter);
 
   // Input row.
   const inputRow = document.createElement("div");
@@ -139,7 +147,7 @@ function buildBody() {
 
   inputRow.appendChild(input);
   inputRow.appendChild(send);
-  body.appendChild(inputRow);
+  main.appendChild(inputRow);
 
   // Wire send + Enter keystroke.
   send.addEventListener("click", function() { handleSend(body); });
@@ -155,6 +163,24 @@ function buildBody() {
     const lines = Math.min(6, Math.max(1, input.value.split("\n").length));
     input.style.height = (lines * 22 + 16) + "px";
   });
+
+  // ── Right rail (Skills) ────────────────────────────────────────
+  // Scaffolded for Phase 4 — currently a placeholder. The rail is
+  // hidden by default; the head-extras toggle flips .is-open.
+  const rail = document.createElement("aside");
+  rail.className = "canvas-chat-rail";
+  rail.setAttribute("data-canvas-chat-rail", "");
+  rail.innerHTML =
+    '<div class="canvas-chat-rail-head">' +
+      '<div class="canvas-chat-rail-eyebrow">Shortcuts</div>' +
+      '<div class="canvas-chat-rail-title">Skills</div>' +
+    '</div>' +
+    '<div class="canvas-chat-rail-body">' +
+      '<div class="canvas-chat-rail-empty">' +
+        'Saved skills will appear here as one-click shortcuts. Click any skill to drop a pre-filled prompt into the chat.' +
+      '</div>' +
+    '</div>';
+  body.appendChild(rail);
 
   return body;
 }
@@ -236,6 +262,28 @@ function injectHeaderExtras() {
     if (body) paintTranscript(body);
   });
   slot.appendChild(clearBtn);
+
+  // Skills-rail toggle (Phase 3 scaffold). Flips .is-open on the rail
+  // to show/hide the right column. Phase 4 populates the rail with
+  // saved-skill cards that drop a pre-filled prompt into the chat.
+  const railBtn = document.createElement("button");
+  railBtn.type = "button";
+  railBtn.className = "canvas-chat-rail-toggle";
+  railBtn.title = "Show / hide the Skills shortcut rail";
+  railBtn.innerHTML =
+    '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" ' +
+    'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<rect x="2" y="2" width="12" height="12" rx="1.5"/>' +
+    '<line x1="11" y1="2" x2="11" y2="14"/></svg>' +
+    ' <span>Skills</span>';
+  railBtn.addEventListener("click", function() {
+    const rail = document.querySelector(".overlay[data-kind='canvas-chat'] [data-canvas-chat-rail]");
+    if (!rail) return;
+    const open = rail.classList.toggle("is-open");
+    railBtn.classList.toggle("is-active", open);
+    railBtn.setAttribute("aria-pressed", open ? "true" : "false");
+  });
+  slot.appendChild(railBtn);
 
   // Ack indicator placeholder (filled by renderAckIndicator on first-turn
   // handshake completion). Empty until the LLM's first response is parsed.

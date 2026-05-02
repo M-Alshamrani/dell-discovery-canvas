@@ -192,26 +192,33 @@ export async function streamChat(opts) {
     catalogVersions: (engagement && engagement.meta && engagement.meta.catalogVersions) || {}
   };
 
-  // SPEC §S20.16 + §S25.5 first-turn handshake parsing.
-  // ON THE FIRST TURN ONLY (transcript is empty), the LLM's response
-  // MUST start with [contract-ack v3.0 sha=<8>]. We parse, strip from
-  // the visible response, and report ack-status via contractAck.
-  // On subsequent turns (transcript non-empty), the prefix is forbidden
-  // by the role section; we don't parse and contractAck is null.
+  // SPEC §S20.16 + §S25.5 handshake parsing.
+  // ON THE FIRST TURN, the LLM is INSTRUCTED to emit
+  // [contract-ack v3.0 sha=<8>] as its first line. We parse, validate
+  // sha, strip from the visible response, and report ack-status via
+  // contractAck.
+  // ON SUBSEQUENT TURNS, the role section forbids the prefix — but
+  // some models (notably Gemini) repeat it intermittently (BUG-015,
+  // 2026-05-02 PM). Defensively strip the handshake regardless of
+  // turn so it never leaks into the rendered bubble. ContractAck is
+  // ONLY populated on the first turn (the place its truth signal
+  // actually matters); on subsequent turns we silently strip + leave
+  // contractAck null.
   let contractAck = null;
   let visibleResponse = finalResponse;
+  const handshakeMatch = HANDSHAKE_RE.exec(finalResponse);
+  if (handshakeMatch) {
+    visibleResponse = finalResponse.slice(handshakeMatch[0].length).replace(/^\s*\n/, "");
+  }
   if (transcript.length === 0) {
     const expected = getContractChecksum();
-    const m = HANDSHAKE_RE.exec(finalResponse);
-    if (m) {
-      const received = m[1].toLowerCase();
+    if (handshakeMatch) {
+      const received = handshakeMatch[1].toLowerCase();
       contractAck = {
         ok:       received === expected,
         expected: expected,
         received: received
       };
-      // Strip the handshake line from the visible response.
-      visibleResponse = finalResponse.slice(m[0].length).replace(/^\s*\n/, "");
     } else {
       contractAck = {
         ok:       false,
