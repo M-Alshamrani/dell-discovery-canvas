@@ -21,8 +21,9 @@ import { validateSkillSave }   from "../../services/skillSaveValidator.js";
 import { createEmptySkill }    from "../../schema/skill.js";
 import { runSkill }            from "../../services/skillRunner.js";
 import { resolveTemplate }     from "../../services/pathResolver.js";
-import { createMockLLMProvider } from "../../tests/mocks/mockLLMProvider.js";
-import { buildReferenceEngagement } from "../../tests/perf/buildReferenceEngagement.js";
+import { createMockLLMProvider } from "../../services/mockLLMProvider.js";
+import { loadV3Demo } from "../../core/v3DemoEngagement.js";
+import { getActiveEngagement } from "../../state/v3EngagementStore.js";
 import { loadCatalog }         from "../../services/catalogLoader.js";
 import {
   SEED_SKILL_DELL_MAPPING,
@@ -542,8 +543,12 @@ async function runSeedSkill(seedId, state) {
   if (!seedEntry) throw new Error("Unknown seed: " + seedId);
   const seed = seedEntry.skill;
 
-  // Build a context that matches the seed skill's scope.
-  const eng = buildReferenceEngagement();
+  // Use the live engagement (set by Load-demo → loadV3Demo() OR by
+  // the bridge for non-demo v2 sessions). Falls back to the v3-native
+  // demo when the engagement store is empty so the Lab always has
+  // valid v3-shape data to run against — never the test fixture from
+  // tests/perf (per RULES §17 + SPEC §S23).
+  const eng = getActiveEngagement() || loadV3Demo();
   const dellCat = await loadCatalog("DELL_PRODUCT_TAXONOMY");
   const catalogVersions = {
     DELL_PRODUCT_TAXONOMY: dellCat.catalogVersion,

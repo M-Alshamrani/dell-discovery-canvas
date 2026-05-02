@@ -606,12 +606,24 @@ function wireFooter() {
     demoBtn.addEventListener("click", function() {
       confirmAction({
         title: "Load demo session?",
-        body: "This replaces the current canvas with the Riyadh / Jeddah demo. Anything you've typed is lost (use Save to file first if you want to keep it).",
+        body: "This replaces the current canvas with the Acme Healthcare / Riyadh + AWS me-south-1 demo. Anything you've typed is lost (use Save to file first if you want to keep it).",
         confirmLabel: "Load demo",
         danger: true
-      }).then(function(yes) {
+      }).then(async function(yes) {
         if (!yes) return;
+        // v2.x dispatch (legacy view tabs read sessionState today; bridge
+        // also runs but is customer-only post-revert).
         resetToDemo();
+        // v3.0 dispatch (per SPEC §S21.4): set the active engagement
+        // directly to the schema-strict v3-native demo. This is what
+        // Canvas Chat + the v3 Lab read through state/v3EngagementStore.
+        try {
+          var demoMod   = await import("./core/v3DemoEngagement.js");
+          var storeMod  = await import("./state/v3EngagementStore.js");
+          storeMod.setActiveEngagement(demoMod.loadV3Demo());
+        } catch (e) {
+          console.error("[demo] v3-native demo failed to load:", e);
+        }
         currentStep = "reporting"; currentReportingTab = "overview";
         renderHeaderMeta(); renderStepper(); renderStage();
       });

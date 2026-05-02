@@ -26,7 +26,7 @@ import {
   loadTranscript, saveTranscript, clearTranscript, summarizeIfNeeded
 }                                              from "../../state/chatMemory.js";
 import { streamChat, providerCapabilities }   from "../../services/chatService.js";
-import { createMockChatProvider }             from "../../tests/mocks/mockChatProvider.js";
+import { createMockChatProvider }             from "../../services/mockChatProvider.js";
 import { createRealChatProvider }             from "../../services/realChatProvider.js";
 import { loadAiConfig }                        from "../../core/aiConfig.js";
 import { confirmAction }                       from "../components/Notify.js";
