@@ -12539,6 +12539,278 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       clearTranscript(engId);
     });
 
+    // -----------------------------------------------------------------
+    // V-CHAT-27..32 · Phase A · Generic LLM connector — OpenAI canonical
+    // tool-use across all three providers (per SPEC §S26 + RULES §16 CH20).
+    // Closes BUG-018 (Gemini hangs on tool-required questions) + unblocks
+    // any OpenAI-compat LLM (vLLM, local, Mistral, Groq, Dell Sales Chat).
+    // -----------------------------------------------------------------
+
+    it("V-CHAT-27 · Phase A: buildRequest('openai-compatible') with tools emits OpenAI canonical {tools:[{type:'function',function:{name,description,parameters}}]} + tool_choice:'auto'", async () => {
+      const { CHAT_TOOLS } = await import("../services/chatTools.js");
+      const wireTools = CHAT_TOOLS.map(t => ({
+        name: t.name, description: t.description, input_schema: t.input_schema
+      }));
+      const req = buildRequest("openai-compatible", {
+        baseUrl: "/api/llm/local/v1",
+        model:   "code-llm",
+        apiKey:  "sk-test",
+        messages: [
+          { role: "system", content: "you are grounded" },
+          { role: "user",   content: "how many gaps?" }
+        ],
+        tools: wireTools
+      });
+      assert(Array.isArray(req.body.tools) && req.body.tools.length === wireTools.length,
+        "openai-compatible body.tools mirrors CHAT_TOOLS count");
+      const first = req.body.tools[0];
+      assertEqual(first.type, "function",
+        "OpenAI canonical wraps each tool in {type:'function', function:{...}}");
+      assert(first.function && typeof first.function.name === "string"
+        && typeof first.function.description === "string"
+        && first.function.parameters,
+        "function carries name + description + parameters (renamed from input_schema)");
+      assert(typeof first.function.input_schema === "undefined",
+        "Anthropic 'input_schema' field is renamed to 'parameters' for OpenAI canonical");
+      assertEqual(req.body.tool_choice, "auto",
+        "tool_choice='auto' set when tools present");
+    });
+
+    it("V-CHAT-28 · Phase A: buildRequest('openai-compatible') translates Anthropic-shape array content into OpenAI flat messages (text → message.content; tool_use → tool_calls; tool_result → role:'tool')", async () => {
+      const req = buildRequest("openai-compatible", {
+        baseUrl: "/api/llm/local/v1",
+        model:   "code-llm",
+        apiKey:  "sk-test",
+        messages: [
+          { role: "system", content: "sys" },
+          { role: "user",   content: "q" },
+          { role: "assistant", content: [
+            { type: "text",     text: "let me check" },
+            { type: "tool_use", id: "call_xyz", name: "selectGapsKanban", input: { state: "current" } }
+          ] },
+          { role: "user", content: [
+            { type: "tool_result", tool_use_id: "call_xyz", content: "{\"counts\":{\"open\":1}}" }
+          ] }
+        ]
+      });
+      const msgs = req.body.messages;
+      // Find the assistant message with tool_calls
+      const asst = msgs.find(m => m.role === "assistant");
+      assert(asst, "assistant message present after translation");
+      assertEqual(asst.content, "let me check",
+        "assistant message.content carries the text-block prose (or null when no text)");
+      assert(Array.isArray(asst.tool_calls) && asst.tool_calls.length === 1,
+        "assistant tool_calls populated from tool_use block");
+      const tc = asst.tool_calls[0];
+      assertEqual(tc.id, "call_xyz", "tool_call id correlates the round-trip");
+      assertEqual(tc.type, "function", "tool_call.type='function'");
+      assertEqual(tc.function.name, "selectGapsKanban", "tool_call.function.name preserved");
+      assertEqual(tc.function.arguments, "{\"state\":\"current\"}",
+        "tool_call.function.arguments is JSON-stringified input");
+      // Tool result becomes a role:"tool" message correlated by tool_call_id
+      const toolMsg = msgs.find(m => m.role === "tool");
+      assert(toolMsg, "role:'tool' message emitted from tool_result block");
+      assertEqual(toolMsg.tool_call_id, "call_xyz", "tool_call_id mirrors the assistant tool_calls.id");
+      assertEqual(toolMsg.content, "{\"counts\":{\"open\":1}}",
+        "tool message content carries the tool_result string");
+    });
+
+    it("V-CHAT-29 · Phase A: realChatProvider with openai-compatible stub fetch yields tool_use event then completes the round-trip via streamChat", async () => {
+      const { createRealChatProvider } = await import("../services/realChatProvider.js");
+      _resetChatEnv();
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      eng = addGapV3(eng, { description: "stub gap", gapType: "ops", urgency: "High", phase: "now",
+        status: "open", layerId: "infrastructure", affectedLayers: ["infrastructure"] }).engagement;
+      setActiveEngagement(eng);
+
+      let callIdx = 0;
+      const stubFetch = async (url, init) => {
+        callIdx++;
+        const sent = JSON.parse(init.body);
+        if (callIdx === 1) {
+          // Round 1 — model emits tool_calls (no content)
+          return {
+            ok: true, status: 200,
+            json: async () => ({
+              choices: [{
+                message: {
+                  content: null,
+                  tool_calls: [{
+                    id: "call_oai_1",
+                    type: "function",
+                    function: { name: "selectGapsKanban", arguments: "{}" }
+                  }]
+                }
+              }]
+            }),
+            text: async () => ""
+          };
+        }
+        // Round 2 — assert round-2 carries the tool_calls assistant + role:"tool" user, then return final text
+        const asstWithTool = sent.messages.find(m => m.role === "assistant" && Array.isArray(m.tool_calls));
+        if (!asstWithTool) throw new Error("V-CHAT-29: round-2 missing assistant tool_calls");
+        const toolMsg = sent.messages.find(m => m.role === "tool");
+        if (!toolMsg) throw new Error("V-CHAT-29: round-2 missing role:'tool' message");
+        if (toolMsg.tool_call_id !== "call_oai_1") throw new Error("V-CHAT-29: tool_call_id correlation lost");
+        return {
+          ok: true, status: 200,
+          json: async () => ({
+            choices: [{ message: { content: "There is 1 open gap with High urgency." } }]
+          }),
+          text: async () => ""
+        };
+      };
+
+      const provider = createRealChatProvider({
+        providerKey: "local",        // local routes through openai-compatible
+        baseUrl:     "/api/llm/local/v1",
+        model:       "code-llm",
+        apiKey:      "sk-test",
+        fetchImpl:   stubFetch
+      });
+      const result = await streamChat({
+        engagement:     eng,
+        transcript:     [],
+        userMessage:    "How many High-urgency gaps are open?",
+        providerConfig: { providerKey: "local" },
+        provider:       provider
+      });
+      assertEqual(callIdx, 2, "two fetches: round-1 (tool_calls) + round-2 (final text)");
+      assert(typeof result.response === "string" && result.response.includes("1"),
+        "final text from round-2 surfaces");
+    });
+
+    it("V-CHAT-30 · Phase A: buildRequest('gemini') with tools emits {tools:[{functionDeclarations:[...]}]}", async () => {
+      const { CHAT_TOOLS } = await import("../services/chatTools.js");
+      const wireTools = CHAT_TOOLS.map(t => ({
+        name: t.name, description: t.description, input_schema: t.input_schema
+      }));
+      const req = buildRequest("gemini", {
+        baseUrl: "/api/llm/gemini",
+        model:   "gemini-2.5-flash",
+        apiKey:  "AIza-test",
+        messages: [
+          { role: "system", content: "sys" },
+          { role: "user",   content: "q" }
+        ],
+        tools: wireTools
+      });
+      assert(Array.isArray(req.body.tools) && req.body.tools.length >= 1,
+        "gemini body.tools populated");
+      const td = req.body.tools[0];
+      assert(Array.isArray(td.functionDeclarations) && td.functionDeclarations.length === wireTools.length,
+        "gemini tools[0].functionDeclarations carries all CHAT_TOOLS entries");
+      const fd = td.functionDeclarations[0];
+      assert(typeof fd.name === "string" && typeof fd.description === "string" && fd.parameters,
+        "each functionDeclaration has name + description + parameters");
+    });
+
+    it("V-CHAT-31 · Phase A: buildRequest('gemini') translates Anthropic-shape array content into Gemini parts with functionCall / functionResponse", async () => {
+      const req = buildRequest("gemini", {
+        baseUrl: "/api/llm/gemini",
+        model:   "gemini-2.5-flash",
+        apiKey:  "AIza-test",
+        messages: [
+          { role: "system", content: "sys" },
+          { role: "user",   content: "q" },
+          { role: "assistant", content: [
+            { type: "text",     text: "let me check" },
+            { type: "tool_use", id: "call_gem_1", name: "selectGapsKanban", input: {} }
+          ] },
+          { role: "user", content: [
+            { type: "tool_result", tool_use_id: "call_gem_1", content: "{\"counts\":{\"open\":1}}" }
+          ] }
+        ]
+      });
+      const contents = req.body.contents;
+      // Find the model message (assistant → "model" role per gemini convention)
+      const model = contents.find(c => c.role === "model");
+      assert(model, "model message present after translation");
+      assert(Array.isArray(model.parts) && model.parts.length >= 2,
+        "model parts array carries text + functionCall");
+      const textPart = model.parts.find(p => typeof p.text === "string");
+      const fnCall   = model.parts.find(p => p.functionCall);
+      assert(textPart && /let me check/.test(textPart.text), "text part preserved");
+      assert(fnCall && fnCall.functionCall.name === "selectGapsKanban",
+        "functionCall.name preserved from tool_use");
+      // Tool result becomes a user message with functionResponse part
+      const userResp = contents[contents.length - 1];
+      assertEqual(userResp.role, "user", "tool_result becomes role:'user'");
+      const fnResp = userResp.parts.find(p => p.functionResponse);
+      assert(fnResp, "functionResponse part present");
+      assertEqual(fnResp.functionResponse.name, "selectGapsKanban",
+        "functionResponse.name correlates by NAME (Gemini lacks tool_call_id)");
+    });
+
+    it("V-CHAT-32 · Phase A: realChatProvider with gemini stub fetch yields tool_use event then completes round-trip via streamChat", async () => {
+      const { createRealChatProvider } = await import("../services/realChatProvider.js");
+      _resetChatEnv();
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      eng = addGapV3(eng, { description: "stub gap", gapType: "ops", urgency: "High", phase: "now",
+        status: "open", layerId: "infrastructure", affectedLayers: ["infrastructure"] }).engagement;
+      setActiveEngagement(eng);
+
+      let callIdx = 0;
+      const stubFetch = async (url, init) => {
+        callIdx++;
+        const sent = JSON.parse(init.body);
+        if (callIdx === 1) {
+          // Round 1 — Gemini emits a functionCall part
+          return {
+            ok: true, status: 200,
+            json: async () => ({
+              candidates: [{
+                content: {
+                  role: "model",
+                  parts: [{ functionCall: { name: "selectGapsKanban", args: {} } }]
+                }
+              }]
+            }),
+            text: async () => ""
+          };
+        }
+        // Round 2 — assert round-2 carries the model functionCall + user functionResponse, then return final text
+        const modelMsg = sent.contents.find(c => c.role === "model" && c.parts.some(p => p.functionCall));
+        if (!modelMsg) throw new Error("V-CHAT-32: round-2 missing model functionCall part");
+        const userMsg = sent.contents[sent.contents.length - 1];
+        const fnResp = userMsg.parts.find(p => p.functionResponse);
+        if (!fnResp) throw new Error("V-CHAT-32: round-2 missing functionResponse part");
+        if (fnResp.functionResponse.name !== "selectGapsKanban") throw new Error("V-CHAT-32: functionResponse.name correlation lost");
+        return {
+          ok: true, status: 200,
+          json: async () => ({
+            candidates: [{
+              content: {
+                role: "model",
+                parts: [{ text: "There is 1 open gap with High urgency." }]
+              }
+            }]
+          }),
+          text: async () => ""
+        };
+      };
+
+      const provider = createRealChatProvider({
+        providerKey: "gemini",
+        baseUrl:     "/api/llm/gemini",
+        model:       "gemini-2.5-flash",
+        apiKey:      "AIza-test",
+        fetchImpl:   stubFetch
+      });
+      const result = await streamChat({
+        engagement:     eng,
+        transcript:     [],
+        userMessage:    "How many High-urgency gaps are open?",
+        providerConfig: { providerKey: "gemini" },
+        provider:       provider
+      });
+      assertEqual(callIdx, 2, "two fetches: round-1 (functionCall) + round-2 (final text)");
+      assert(typeof result.response === "string" && result.response.includes("1"),
+        "final text from round-2 surfaces");
+    });
+
     it("V-CHAT-26 · BUG-017 guard: chat overlay header has connection-status chip (no Mock toggle); chip text reflects active provider", async () => {
       // Source-grep — the overlay file must NOT carry a 'Mock' provider
       // toggle in its head-extras anymore. The new chip must be present.

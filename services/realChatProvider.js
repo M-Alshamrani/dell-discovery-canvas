@@ -1,35 +1,41 @@
 // services/realChatProvider.js
 //
-// SPEC §S20.5 + §S20.8 + §S20.18 · adapter from the v3 chat-streaming
+// SPEC §S20.5 + §S20.8 + §S20.18 + §S26 · adapter from the v3 chat-stream
 // protocol (`async *stream({messages, tools}) yield {kind, ...}`) to the
-// existing services/aiService.js chatCompletion call shape.
+// services/aiService.js chatCompletion + streamCompletion call shapes.
 //
-// rc.2 (Step 7) — Anthropic tool-use round-trip is wired (per RULES §16
-// CH19): the wire-shape `tools` array (name + description + input_schema)
-// is forwarded to chatCompletion; the response's content blocks are
-// scanned for `tool_use`; if found, a `{kind:"tool_use", name, input, id}`
-// event is yielded for chatService to round-trip through CHAT_TOOLS.
-// chatService then re-issues with the assistant content blocks + a
-// `tool_result` block in the user message (Anthropic-shape; aiService
-// passes array-content through verbatim).
+// Phase A (2026-05-02 LATE EVENING) — generic LLM connector. Tool-use
+// is now wired for ALL three provider kinds: anthropic, openai-compatible,
+// and gemini (per SPEC §S26 + RULES §16 CH20). chatService emits
+// Anthropic-canonical content-block messages for the round-2 turn; each
+// wire builder in aiService translates to the native shape. Tool-call
+// extraction is dispatched by providerKind in extractToolCalls.
 //
-// Per-token SSE streaming is still chunk E (Step 8). Today the real
-// provider call is non-streaming: chatCompletion returns the full text,
-// and we yield a single `{kind:"text"}` event with the whole payload.
-// The chat overlay renders identically either way.
-//
-// Tool-use over OpenAI / Gemini lands in rc.3 (their function-calling
-// shapes differ enough to deserve their own request builders).
+// SSE per-token streaming is still Anthropic-only (rc.2). For openai-
+// compatible + gemini we use the non-streaming chatCompletion path and
+// yield a single `{kind:"text"}` event with the whole payload. Phase A3
+// will extend streamCompletion to OpenAI SSE.
 //
 // Forbidden (RULES §16):
 //   - importing state/sessionState.js
 //   - importing state/collections/* (read-only)
 //
-// Authority: docs/v3.0/SPEC.md §S20.5.1 + §S20.8 + §S20.18 ·
-//            `services/aiService.js` chatCompletion contract ·
-//            docs/RULES.md §16 CH19.
+// Authority: docs/v3.0/SPEC.md §S20.5.1 + §S20.8 + §S20.18 + §S26 ·
+//            `services/aiService.js` chatCompletion / extractToolCalls ·
+//            docs/RULES.md §16 CH19 + CH20.
 
-import { chatCompletion, streamCompletion } from "./aiService.js";
+import { chatCompletion, streamCompletion, extractToolCalls } from "./aiService.js";
+
+// providerKey → providerKind map (mirrors aiService.PROVIDER_FROM_KEY;
+// kept local to avoid a public export). All "openai-compatible"-shaped
+// providers (local LLM, Dell Sales Chat, future vendors) share the same
+// wire/extract path.
+const PROVIDER_KIND_FOR_KEY = {
+  local:         "openai-compatible",
+  anthropic:     "anthropic",
+  gemini:        "gemini",
+  dellSalesChat: "openai-compatible"
+};
 
 // createRealChatProvider({ providerKey, baseUrl, model, fallbackModels?,
 //                          apiKey?, stream?, fetchImpl? })
@@ -50,12 +56,24 @@ import { chatCompletion, streamCompletion } from "./aiService.js";
 export function createRealChatProvider(opts) {
   const providerConfig = opts || {};
   const callsRecorded = [];
-  // toolUse + caching capabilities are true ONLY for Anthropic in rc.2;
-  // OpenAI + Gemini wire builders ship in rc.3.
-  const supportsToolUse = providerConfig.providerKey === "anthropic";
-  // SSE streaming defaults ON for Anthropic; opt-out via stream:false.
-  const wantsStream = providerConfig.stream !== false && supportsToolUse;
-  const capabilities = { streaming: wantsStream, toolUse: supportsToolUse, caching: supportsToolUse };
+  const providerKind  = PROVIDER_KIND_FOR_KEY[providerConfig.providerKey] || "openai-compatible";
+
+  // Phase A — tool-use is supported across all three provider kinds.
+  // Each builder in aiService translates the canonical content blocks
+  // to its native wire shape; extractToolCalls dispatches by kind.
+  const supportsToolUse  = true;
+  // SSE per-token streaming is Anthropic-only today (Phase A3 extends
+  // to OpenAI). Opt-out via stream:false (V-CHAT-15 stub uses this).
+  const supportsStream   = providerConfig.providerKey === "anthropic";
+  const wantsStream      = providerConfig.stream !== false && supportsStream;
+  // cache_control is Anthropic-specific.
+  const supportsCaching  = providerConfig.providerKey === "anthropic";
+
+  const capabilities = {
+    streaming: wantsStream,
+    toolUse:   supportsToolUse,
+    caching:   supportsCaching
+  };
 
   return {
     callsRecorded,
@@ -122,12 +140,10 @@ export function createRealChatProvider(opts) {
         return;
       }
 
-      // For Anthropic, scan raw content blocks for tool_use BEFORE
-      // emitting text. chatService captures only the first tool_use per
-      // round (per CH10), so order doesn't matter — but yielding tool_use
-      // first matches the natural Anthropic stream-event order.
-      const toolUseBlocks = supportsToolUse ? extractToolUseBlocks(response && response.raw) : [];
-      for (const tu of toolUseBlocks) {
+      // SPEC §S26.3 — provider-dispatched tool-call extraction.
+      // Same {kind:"tool_use",...} event shape regardless of provider.
+      const toolCalls = extractToolCalls(providerKind, response && response.raw);
+      for (const tu of toolCalls) {
         yield { kind: "tool_use", name: tu.name, input: tu.input || {}, id: tu.id };
       }
 
@@ -141,9 +157,10 @@ export function createRealChatProvider(opts) {
 }
 
 // Strip non-serializable fields (notably `invoke`) from CHAT_TOOLS to
-// produce the Anthropic wire shape. Anthropic's tools schema is
-// {name, description, input_schema}; extras are silently dropped by the
-// API but waste prompt tokens.
+// produce the canonical wire-shape `{name, description, input_schema}`.
+// Each provider's wire builder in aiService translates input_schema to
+// its native field name (anthropic keeps it; openai-compatible renames
+// to `parameters`; gemini wraps in functionDeclarations + parameters).
 function toWireTools(tools) {
   if (!Array.isArray(tools)) return [];
   return tools.map(function(t) {
@@ -153,19 +170,4 @@ function toWireTools(tools) {
       input_schema: t.input_schema || { type: "object", properties: {} }
     };
   });
-}
-
-// extractToolUseBlocks(rawAnthropicResponse) → [{ id, name, input }]
-// Anthropic returns content as an array of blocks; tool_use blocks have
-// {type:"tool_use", id, name, input}. We collect all of them; chatService
-// honors only the first per round.
-function extractToolUseBlocks(raw) {
-  if (!raw || !Array.isArray(raw.content)) return [];
-  const out = [];
-  for (const b of raw.content) {
-    if (b && b.type === "tool_use" && typeof b.name === "string") {
-      out.push({ id: b.id || null, name: b.name, input: b.input || {} });
-    }
-  }
-  return out;
 }

@@ -172,10 +172,86 @@ export function buildRequest(providerKind, opts) {
   var messages = opts.messages || [];
 
   if (providerKind === "openai-compatible") {
+    // SPEC §S26.2 — translate Anthropic-canonical content-block messages
+    // into OpenAI flat shape. Each message with array content gets walked:
+    //   - text block         → message.content (string)
+    //   - tool_use block     → message.tool_calls[]
+    //   - tool_result block  → SEPARATE role:"tool" message correlated by
+    //                          tool_use_id (which maps to OpenAI tool_call_id)
+    var oaiMessages = [];
+    messages.forEach(function(m) {
+      if (Array.isArray(m.content)) {
+        if (m.role === "assistant") {
+          var textPieces = [];
+          var toolCalls  = [];
+          m.content.forEach(function(b) {
+            if (b.type === "text" && typeof b.text === "string") {
+              textPieces.push(b.text);
+            } else if (b.type === "tool_use") {
+              toolCalls.push({
+                id:   b.id || ("call_" + Math.random().toString(36).slice(2, 12)),
+                type: "function",
+                function: {
+                  name:      b.name,
+                  arguments: JSON.stringify(b.input || {})
+                }
+              });
+            }
+          });
+          var asst = { role: "assistant", content: textPieces.length > 0 ? textPieces.join("\n") : null };
+          if (toolCalls.length > 0) asst.tool_calls = toolCalls;
+          oaiMessages.push(asst);
+        } else if (m.role === "user") {
+          // user message with array content carries tool_result blocks.
+          // Each tool_result becomes a SEPARATE role:"tool" message.
+          m.content.forEach(function(b) {
+            if (b.type === "tool_result") {
+              oaiMessages.push({
+                role:         "tool",
+                tool_call_id: b.tool_use_id || "",
+                content:      typeof b.content === "string" ? b.content : JSON.stringify(b.content)
+              });
+            } else if (b.type === "text" && typeof b.text === "string") {
+              oaiMessages.push({ role: "user", content: b.text });
+            }
+          });
+        } else {
+          // System or other role with array content — flatten text blocks
+          var texts = [];
+          m.content.forEach(function(b) {
+            if (b.type === "text" && typeof b.text === "string") texts.push(b.text);
+          });
+          oaiMessages.push({ role: m.role, content: texts.join("\n") });
+        }
+      } else {
+        oaiMessages.push({ role: m.role, content: m.content });
+      }
+    });
+    var oaiBody = {
+      model: model,
+      messages: oaiMessages,
+      max_tokens: 1024,
+      temperature: 0.3
+    };
+    // SPEC §S26.2 — OpenAI canonical tools shape:
+    // tools: [{type:"function", function:{name, description, parameters}}]
+    if (Array.isArray(opts.tools) && opts.tools.length > 0) {
+      oaiBody.tools = opts.tools.map(function(t) {
+        return {
+          type: "function",
+          function: {
+            name:        t.name,
+            description: t.description,
+            parameters:  t.input_schema || t.parameters || { type: "object", properties: {} }
+          }
+        };
+      });
+      oaiBody.tool_choice = "auto";
+    }
     return {
       url: joinUrl(baseUrl, "/chat/completions"),
       headers: openAiHeaders(apiKey),
-      body: { model: model, messages: messages, max_tokens: 1024, temperature: 0.3 }
+      body: oaiBody
     };
   }
   if (providerKind === "anthropic") {
@@ -238,13 +314,77 @@ export function buildRequest(providerKind, opts) {
     };
   }
   if (providerKind === "gemini") {
-    // Gemini's Generative Language API expects a contents[] array; system
-    // messages collapse into a leading systemInstruction.
+    // SPEC §S26.2 — Gemini contents[] with parts. system messages
+    // collapse into systemInstruction. Translation of Anthropic-canonical
+    // array content:
+    //   - text block        → parts[].text
+    //   - tool_use block    → parts[].functionCall { name, args }
+    //   - tool_result block → role:"user" message with parts[].functionResponse
+    //                          { name, response: { result: <stringified content> } }
+    // Tool-result correlation is by NAME (Gemini lacks tool_call_id);
+    // chatService keeps NAME stable across rounds via the same tool dispatch.
     var systemContent = "";
     var contents = [];
+    // We need the most recent tool_use NAME so a follow-up tool_result
+    // can correlate by name. Track per content-block index.
+    var lastToolUseName = null;
     messages.forEach(function(m) {
       if (m.role === "system") {
-        systemContent = (systemContent ? systemContent + "\n\n" : "") + m.content;
+        var sysText = "";
+        if (Array.isArray(m.content)) {
+          m.content.forEach(function(b) {
+            if (b.type === "text" && typeof b.text === "string") sysText += b.text;
+          });
+        } else {
+          sysText = m.content;
+        }
+        systemContent = (systemContent ? systemContent + "\n\n" : "") + sysText;
+        return;
+      }
+      if (Array.isArray(m.content)) {
+        if (m.role === "assistant") {
+          var parts = [];
+          m.content.forEach(function(b) {
+            if (b.type === "text" && typeof b.text === "string") {
+              parts.push({ text: b.text });
+            } else if (b.type === "tool_use") {
+              parts.push({ functionCall: { name: b.name, args: b.input || {} } });
+              lastToolUseName = b.name;
+            }
+          });
+          contents.push({ role: "model", parts: parts });
+        } else if (m.role === "user") {
+          var parts2 = [];
+          m.content.forEach(function(b) {
+            if (b.type === "tool_result") {
+              var resultPayload;
+              try {
+                resultPayload = typeof b.content === "string" ? JSON.parse(b.content) : b.content;
+              } catch (_e) {
+                resultPayload = { result: typeof b.content === "string" ? b.content : "" };
+              }
+              parts2.push({
+                functionResponse: {
+                  name:     lastToolUseName || "",
+                  response: (resultPayload && typeof resultPayload === "object" && !Array.isArray(resultPayload))
+                              ? resultPayload
+                              : { result: resultPayload }
+                }
+              });
+            } else if (b.type === "text" && typeof b.text === "string") {
+              parts2.push({ text: b.text });
+            }
+          });
+          contents.push({ role: "user", parts: parts2 });
+        } else {
+          // Fallback for any other role
+          var ptexts = [];
+          m.content.forEach(function(b) {
+            if (b.type === "text" && typeof b.text === "string") ptexts.push(b.text);
+          });
+          contents.push({ role: m.role === "assistant" ? "model" : "user",
+                          parts: [{ text: ptexts.join("\n") }] });
+        }
       } else {
         contents.push({
           role:  m.role === "assistant" ? "model" : "user",
@@ -254,6 +394,19 @@ export function buildRequest(providerKind, opts) {
     });
     var body2 = { contents: contents };
     if (systemContent) body2.systemInstruction = { parts: [{ text: systemContent }] };
+    // SPEC §S26.2 — Gemini tools wire shape:
+    // tools: [{functionDeclarations: [{name, description, parameters}]}]
+    if (Array.isArray(opts.tools) && opts.tools.length > 0) {
+      body2.tools = [{
+        functionDeclarations: opts.tools.map(function(t) {
+          return {
+            name:        t.name,
+            description: t.description,
+            parameters:  t.input_schema || t.parameters || { type: "object", properties: {} }
+          };
+        })
+      }];
+    }
     return {
       url: joinUrl(baseUrl, "/v1beta/models/" + encodeURIComponent(model) +
                             ":generateContent?key=" + encodeURIComponent(apiKey)),
@@ -286,6 +439,7 @@ export function extractText(providerKind, json) {
     var c0 = json.choices && json.choices[0];
     if (!c0) return "";
     var msg = c0.message;
+    // OpenAI message.content can be string OR null (when only tool_calls).
     if (msg && typeof msg.content === "string") return msg.content;
     return "";
   }
@@ -306,6 +460,57 @@ export function extractText(providerKind, json) {
     return t;
   }
   return "";
+}
+
+// SPEC §S26.3 · Generic tool-call extraction.
+// Returns [{ id, name, input }] normalized across providers. Empty array
+// when the response carries no tool calls. realChatProvider dispatches
+// here per provider kind.
+export function extractToolCalls(providerKind, json) {
+  if (!json) return [];
+  if (providerKind === "anthropic") {
+    var blocks = json.content || [];
+    var out = [];
+    for (var i = 0; i < blocks.length; i++) {
+      var b = blocks[i];
+      if (b && b.type === "tool_use" && typeof b.name === "string") {
+        out.push({ id: b.id || null, name: b.name, input: b.input || {} });
+      }
+    }
+    return out;
+  }
+  if (providerKind === "openai-compatible") {
+    var c0 = json.choices && json.choices[0];
+    if (!c0 || !c0.message || !Array.isArray(c0.message.tool_calls)) return [];
+    return c0.message.tool_calls.map(function(tc) {
+      var input = {};
+      try { input = tc.function && typeof tc.function.arguments === "string"
+                      ? JSON.parse(tc.function.arguments)
+                      : {}; }
+      catch (_e) { input = {}; }
+      return {
+        id:    tc.id || null,
+        name:  (tc.function && tc.function.name) || "",
+        input: input
+      };
+    }).filter(function(x) { return x.name.length > 0; });
+  }
+  if (providerKind === "gemini") {
+    var cand = (json.candidates || [])[0];
+    if (!cand || !cand.content || !Array.isArray(cand.content.parts)) return [];
+    var out2 = [];
+    cand.content.parts.forEach(function(p) {
+      if (p && p.functionCall && typeof p.functionCall.name === "string") {
+        out2.push({
+          id:    null,                   // Gemini lacks per-call ids; correlation by name
+          name:  p.functionCall.name,
+          input: p.functionCall.args || {}
+        });
+      }
+    });
+    return out2;
+  }
+  return [];
 }
 
 // streamCompletion(opts) — async generator over Anthropic SSE events.

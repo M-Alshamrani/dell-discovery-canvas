@@ -2511,6 +2511,108 @@ Items requiring resolution before tests get vectors:
 
 These are tractable; they do not block §1-§4 implementation.
 
+---
+
+## §S26 · Generic LLM connector — OpenAI canonical tool-use
+
+**Status**: NEW 2026-05-02 LATE EVENING. SPEC-only annex. Authored as the architectural fix for BUG-018 (Gemini hangs on tool-required questions) + the user's strategic ask: a generic, vendor-neutral connector that automatically supports any OpenAI-compatible LLM (vLLM, local, OpenAI, Mistral, Groq, Together, Anyscale, Dell Sales Chat) without per-provider rewiring.
+
+### S26.1 · The lingua franca
+
+OpenAI's function-calling shape is the de-facto industry standard for LLM tool-use. Native support: OpenAI, vLLM, Mistral, Groq, Together, Anyscale, Dell Sales Chat, all "openai-compatible" endpoints. Anthropic and Gemini have their own shapes; the connector translates between OpenAI canonical ↔ provider native at the WIRE BUILDER level.
+
+**Canonical request shape**:
+```json
+{
+  "model": "...",
+  "messages": [...],
+  "tools": [{"type": "function", "function": {"name": "...", "description": "...", "parameters": {...}}}],
+  "tool_choice": "auto"
+}
+```
+
+**Canonical response shape**:
+```json
+{
+  "choices": [{
+    "message": {
+      "content": "..." | null,
+      "tool_calls": [{"id": "call_abc", "type": "function", "function": {"name": "...", "arguments": "{...}"}}]
+    }
+  }]
+}
+```
+
+**Round-trip messages** (when the model emits `tool_calls`):
+```json
+{"role": "assistant", "content": null, "tool_calls": [...]}
+{"role": "tool", "tool_call_id": "call_abc", "content": "<json result>"}
+```
+
+### S26.2 · Translation contract — chatService → wire builders
+
+`services/chatService.js` continues to emit ANTHROPIC-SHAPE content-block messages for the round-2 turn (preamble text + tool_use block in assistant; tool_result block in user). This shape is the most expressive (mixed text + tool_use; correlated by tool_use_id) and serves as the internal "canonical" for chatService's purposes.
+
+Each wire builder in `services/aiService.js` translates from this Anthropic-shape canonical INTO its native wire format:
+
+| Provider kind | Native shape | Translation |
+|---|---|---|
+| `anthropic` | content-block array (verbatim) | passthrough |
+| `openai-compatible` | flat `tool_calls`/`role:"tool"` | content-block array → flatten (text → message.content; tool_use block → tool_calls[]; tool_result block → role:"tool" message with tool_call_id) |
+| `gemini` | `parts[].functionCall`/`functionResponse` | content-block array → parts[] (text → text part; tool_use → functionCall; tool_result → role:"user" with functionResponse part) |
+
+Tools wire shape per provider:
+
+| Provider kind | Tools wire format |
+|---|---|
+| `anthropic` | `tools: [{name, description, input_schema}]` (current) |
+| `openai-compatible` | `tools: [{type:"function", function:{name, description, parameters}}]` + `tool_choice: "auto"` |
+| `gemini` | `tools: [{functionDeclarations: [{name, description, parameters}]}]` |
+
+**Constraint**: the `parameters` / `input_schema` JSON Schema is the SAME object across providers (we just rename the field). All three providers accept Zod-derived JSON Schema as-is.
+
+### S26.3 · Tool-call extraction — provider dispatch
+
+`services/realChatProvider.js` dispatches tool-call extraction by provider:
+
+```js
+// Anthropic content-block:        raw.content[].type === "tool_use"
+// OpenAI canonical:                raw.choices[0].message.tool_calls[]
+// Gemini parts:                    raw.candidates[0].content.parts[].functionCall
+```
+
+All three are normalized into the same chat-stream event:
+```js
+{ kind: "tool_use", id, name, input }
+```
+
+`chatService` does NOT need to know which provider supplied the event. The multi-round chaining loop (BUG-012 fix) works identically for all three providers.
+
+### S26.4 · Capabilities matrix
+
+| Capability | anthropic | openai-compatible | gemini |
+|---|---|---|---|
+| Tool-use round-trip (Phase A) | ✅ rc.2 | **✅ Phase A** | **✅ Phase A** |
+| Multi-round chaining | ✅ rc.2 | **✅ Phase A** | **✅ Phase A** |
+| SSE per-token streaming | ✅ rc.2 | ⏳ Phase A3 polish | ⏳ Phase A3 polish |
+| `cache_control` on stable prefix | ✅ rc.2 | ❌ N/A (provider-specific) | ❌ N/A |
+
+### S26.5 · Forbidden
+
+- Provider-specific tool-call shapes leaking into `chatService` (round-trip stays Anthropic-canonical; translation is wire-builder concern only)
+- Per-provider `extractToolCallsX` functions exposed outside `realChatProvider.js`
+- Streaming SSE for OpenAI/Gemini in Phase A (defer to A3)
+
+### S26.6 · Test contract pointer
+
+Tests in `docs/v3.0/TESTS.md §T26` (NEW):
+- **V-CHAT-27**: `buildRequest('openai-compatible')` with tools emits `{tools:[{type:"function",function:{...}}]}` + `tool_choice:"auto"`; tool array elements have `name + description + parameters` (no Anthropic `input_schema`)
+- **V-CHAT-28**: `buildRequest('openai-compatible')` translates Anthropic-shape array content → OpenAI flat messages (text → message.content; tool_use → tool_calls; tool_result → role:"tool")
+- **V-CHAT-29**: `realChatProvider` against an openai-compatible stub fetch yielding `tool_calls` in the response yields `{kind:"tool_use",...}` event + completes round-trip via `streamChat`
+- **V-CHAT-30**: `buildRequest('gemini')` with tools emits `{tools:[{functionDeclarations:[...]}]}`
+- **V-CHAT-31**: `buildRequest('gemini')` translates array content → parts[] with `functionCall` / `functionResponse`
+- **V-CHAT-32**: `realChatProvider` against a gemini stub fetch yielding `functionCall` in `candidates[0].content.parts[]` yields `{kind:"tool_use",...}` event + completes round-trip via `streamChat`
+
 ### Change log
 
 | Date | Section | Change |
