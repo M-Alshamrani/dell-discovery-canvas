@@ -932,6 +932,34 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
+## v3.0.0 · Data architecture rebuild · RC.1 — TAGGED 2026-05-01
+
+**Status**: **RC.1 SHIPPED** on top of `v3.0.0-beta`. Tag `v3.0.0-rc.1` on `origin/v3.0-data-architecture`. APP_VERSION = `3.0.0-rc.1`.
+
+**What landed in rc.1** (4 commits over 2026-05-01 on top of beta):
+1. **SPEC §S19 + TESTS §T19 V-ADP-1..10 + RULES §15** — v3.0 → v2.x in-memory consumption adapter authored spec-and-test-first per `feedback_spec_and_test_first.md`. R19.1–R19.10 + module shape + 6-view migration order + forbidden patterns.
+2. **`state/v3Adapter.js` + `state/v3EngagementStore.js`** — implementation. 6 view-shape selectors (`adapt<View>View`) using memoize-one keyed on engagement reference (mirrors §S5 selector pattern). 4 write-through helpers (`commit<View>Edit`) all routing through `commitAction(actionFn, ...)` so writes land via §S4 action functions. V-ADP-1..10 GREEN against the impl.
+3. **`state/v3SessionBridge.js`** — co-existence bridge per SPEC §S19.3. Subscribes to v2.x `session-changed`, runs an in-memory translator (NOT the file-load migrator — see `project_v3_no_file_migration_burden.md`), populates `v3EngagementStore`. Engagement is non-null after boot; views can read the adapter starting from rc.2.
+4. **V-MFG-1 manifest drift gate** — was an empty placeholder. Now asserts FNV-1a hash + per-kind ownPaths/linkedPaths counts + sessionPath count + entity-kind set against locked snapshot constants (locked 2026-05-01: 8744 bytes, hash `3a217459`). Inline regen procedure documented.
+
+Banner: **1011/1011 GREEN** (1001 baseline + 10 V-ADP). Browser smoke verified before commit per `feedback_browser_smoke_required.md`. DOM-first checks: stepper=5, chip=18 bytes "Canvas v3.0.0-rc.1".
+
+**Architecture decision recorded as memory**: per `project_v3_no_file_migration_burden.md` (saved 2026-05-01), the original "real-customer `.canvas` migration smoke" GA gate is **dropped**. v3 architecture is not bent for file-format migration; the existing v2→v3 file migrator stays as-is on synthetic fixtures.
+
+**Remaining work for non-suffix `3.0.0` GA** (rc.2 → GA arc):
+1. AI items 1+2 — global AI Assist surfaces v3.0 saved skills + dispatches via `runSkill` against `getActiveEngagement()`.
+2. AI item 4 — catalog drift banner + re-validate flow on suggestions.
+3. AI item 6 — Real-LLM commit-time smoke (user-driven Run with Real toggle).
+4. View migrations × 6 (Context → Architecture → Heatmap → Workload Mapping → Gaps → Reporting), one commit + browser smoke per view per SPEC §S19.4. Last view migrated unlocks AI item 3 (provenance icons on canvas fields).
+5. Real-workshop validation run with browser-smoke evidence.
+
+**Status of original BETA gates**:
+- ~~Real-customer `.canvas` migration smoke~~ → **DROPPED** per architectural memory.
+- v3.0 → v2.x adapter → **rc.1 has the adapter module**; per-view migrations pending in rc.2.
+- Real-workshop validation → still queued for GA.
+
+---
+
 ## v3.0.0 · Data architecture rebuild · BETA — TAGGED 2026-05-01
 
 **Status**: **BETA SHIPPED**. Tag `v3.0.0-beta` on `origin/v3.0-data-architecture`. APP_VERSION = `3.0.0-beta`. Path to non-suffix `3.0.0` GA gated on three remaining items: (1) v3.0 → v2.x adapter so existing tabs read from v3.0 selectors against the active engagement (today's app is ~95% v2.x with v3.0 only powering the Lab); (2) at least one real workshop validation run; (3) successful migration of at least one real customer's saved `.canvas` file (current migrator coverage is fixture-based only, 8 synthetic fixtures).

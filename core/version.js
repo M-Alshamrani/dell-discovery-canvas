@@ -12,11 +12,17 @@
 //   - git tags — runtime code doesn't read git; this string is the
 //     runtime-visible version.
 //
-// "3.0.0-beta" — feature-complete v3.0 data-architecture rebuild
-// on branch v3.0-data-architecture. Tagged v3.0.0-beta on 2026-05-01.
-// Path to "3.0.0" (no suffix) is gated on:
-//   - v3.0 -> v2.x adapter (existing tabs read from v3.0 selectors)
+// "3.0.0-rc.1" — release candidate. Adapter (SPEC §S19) + engagement
+// store + session bridge + V-MFG-1 manifest drift gate all shipped on
+// 2026-05-01. v2.x view tabs continue to read sessionState today; their
+// per-view migration to state/v3Adapter.js is the rc.2 / GA arc.
+//
+// Per project_v3_no_file_migration_burden.md the original "real-customer
+// .canvas migration smoke" gate is DROPPED. Path to non-suffix "3.0.0":
+//   - 5 v2.x view tabs migrated to read via state/v3Adapter.js
+//     (Context → Architecture → Heatmap → Workload → Gaps → Reporting)
+//   - AI Assist surfaces v3.0 saved skills + dispatches via
+//     state/v3EngagementStore.js (AI items 1+2 in the rc-arc plan)
 //   - At least one real workshop run against a v3.0 engagement
-//   - Successful migration of at least one real customer .canvas file
 
-export const APP_VERSION = "3.0.0-beta";
+export const APP_VERSION = "3.0.0-rc.1";
