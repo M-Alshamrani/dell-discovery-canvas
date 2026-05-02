@@ -24,8 +24,14 @@
 //            docs/v3.0/TESTS.md §T20 V-CHAT-{4,5,11} ·
 //            docs/RULES.md §16.
 
-import { buildSystemPrompt } from "./systemPromptAssembler.js";
-import { CHAT_TOOLS }        from "./chatTools.js";
+import { buildSystemPrompt }  from "./systemPromptAssembler.js";
+import { CHAT_TOOLS }         from "./chatTools.js";
+import { getContractChecksum } from "../core/dataContract.js";
+
+// SPEC §S20.16 + §S25.5 first-turn handshake regex.
+// LLM is instructed to emit `[contract-ack v3.0 sha=<8-char-hex>]` as
+// the EXACT first line of its first response.
+const HANDSHAKE_RE = /^\[contract-ack\s+v3\.0\s+sha=([0-9a-f]{8})\]\s*\n?/i;
 
 // providerCapabilities(providerKey)
 // → { streaming: bool, toolUse: bool, caching: bool }
@@ -140,7 +146,36 @@ export async function streamChat(opts) {
     catalogVersions: (engagement && engagement.meta && engagement.meta.catalogVersions) || {}
   };
 
-  const result = { response: finalResponse, provenance };
+  // SPEC §S20.16 + §S25.5 first-turn handshake parsing.
+  // ON THE FIRST TURN ONLY (transcript is empty), the LLM's response
+  // MUST start with [contract-ack v3.0 sha=<8>]. We parse, strip from
+  // the visible response, and report ack-status via contractAck.
+  // On subsequent turns (transcript non-empty), the prefix is forbidden
+  // by the role section; we don't parse and contractAck is null.
+  let contractAck = null;
+  let visibleResponse = finalResponse;
+  if (transcript.length === 0) {
+    const expected = getContractChecksum();
+    const m = HANDSHAKE_RE.exec(finalResponse);
+    if (m) {
+      const received = m[1].toLowerCase();
+      contractAck = {
+        ok:       received === expected,
+        expected: expected,
+        received: received
+      };
+      // Strip the handshake line from the visible response.
+      visibleResponse = finalResponse.slice(m[0].length).replace(/^\s*\n/, "");
+    } else {
+      contractAck = {
+        ok:       false,
+        expected: expected,
+        received: null
+      };
+    }
+  }
+
+  const result = { response: visibleResponse, provenance, contractAck };
   try { onComplete(result); } catch (e) { console.warn("[chatService] onComplete threw:", e && e.message); }
   return result;
 }
