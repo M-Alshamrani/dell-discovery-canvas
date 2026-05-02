@@ -31,6 +31,7 @@ import { generateManifest, serializeManifestStable } from "./manifestGenerator.j
 import { CHAT_TOOLS } from "./chatTools.js";
 import { getDataContract, getContractChecksum } from "../core/dataContract.js";
 import { getConceptTOC } from "../core/conceptManifest.js";
+import { APP_SURFACES, getWorkflowTOC, RECOMMENDATIONS } from "../core/appManifest.js";
 
 const ENGAGEMENT_INLINE_THRESHOLD_INSTANCES = 20;
 const ENGAGEMENT_INLINE_THRESHOLD_GAPS      = 20;
@@ -67,8 +68,12 @@ export function buildSystemPrompt(opts) {
   // SPEC §S27 + RULES §16 CH21 — concept dictionary TOC. Inlined on the
   // cached prefix; full bodies fetched on demand via selectConcept(id).
   messages.push({ role: "system", content: buildConceptDictionaryBlock(getConceptTOC()) });
+  // SPEC §S28 + RULES §16 CH22 — app workflow manifest. APP_SURFACES
+  // verbatim + workflow TOC + recommendations table. Inlined on the
+  // cached prefix; full workflow bodies fetched via selectWorkflow(id).
+  messages.push({ role: "system", content: buildAppManifestBlock(APP_SURFACES, getWorkflowTOC(), RECOMMENDATIONS) });
 
-  // Anthropic-only: cache the stable prefix (layers 1+2+3+5+concept-TOC).
+  // Anthropic-only: cache the stable prefix (layers 1+2+3+5+concept-TOC+workflow).
   // The ephemeral cache TTL is 5 minutes; repeat turns within the window
   // re-use the prefix at ~10% input-token cost. Mark the LAST stable
   // message so providers honor the prefix up to and including it.
@@ -100,6 +105,7 @@ function buildRoleSection(contractChecksum) {
     "6. When uncertain, say so. 'I don't have enough data to answer that — try Tab N or add Y to your canvas first.'",
     "7. Output is markdown — assistant messages render via a markdown parser in the chat overlay. Use **bold**, lists, tables, headers as helpful. Code blocks for technical detail.",
     "8. CONCEPT DICTIONARY — the prompt below carries a 60+ entry concept dictionary (gap types, layers, urgencies, dispositions, drivers, environments, entities, relationships, skill scopes). Each row gives id + label + a 1-line headline. For full body (definition + example + when-to-use + vsAlternatives), call the selectConcept(id) tool. When the user asks 'what does X mean?' or 'when should I use X vs Y?', favor the dictionary over guessing. Headlines suffice for ~80% of definitional questions; reach for selectConcept when the user wants depth.",
+    "9. APP WORKFLOW MANIFEST — the prompt below carries an APP SURFACES block (tab + action labels) + a workflow TOC (16 procedures) + recommendations (19 pre-crafted answers for common questions). For 'how do I...' / 'where is...' procedural questions: scan the workflow TOC + recommendations FIRST; for full step-by-step bodies, call the selectWorkflow(id) tool. When the user asks 'what tab handles X?' or 'how do I get to Y?', point them at the APP SURFACES tab + action labels.",
     "",
     "== First-turn handshake (REQUIRED on your FIRST response only) ==",
     "On your FIRST response in this session, you MUST start with EXACTLY this single line, then a blank line, then your normal response:",
@@ -190,6 +196,42 @@ function buildViewsSection() {
   lines.push("");
   for (const t of CHAT_TOOLS) {
     lines.push("- " + t.name + ": " + t.description);
+  }
+  return lines.join("\n");
+}
+
+// SPEC §S28.2 — app workflow manifest inlined on the cached prefix.
+// Three sub-blocks:
+//   1. APP SURFACES (purpose + topbar tabs + global actions) — verbatim
+//   2. Workflow TOC — id · name · intent · app_surface (no full body)
+//   3. Recommendations — id · pre-crafted answer (no regex triggers)
+// Full workflow bodies fetched via selectWorkflow(id) tool.
+function buildAppManifestBlock(surfaces, workflowToc, recommendations) {
+  const lines = [
+    "== App workflow manifest ==",
+    "",
+    "── App surfaces ──",
+    "App purpose: " + surfaces.app_purpose,
+    "",
+    "Topbar tabs (point users at these by their LABEL, not the id):"
+  ];
+  for (const tab of surfaces.topbar_tabs) {
+    lines.push("- " + tab.label + " · " + tab.purpose);
+  }
+  lines.push("");
+  lines.push("Global actions (footer + topbar):");
+  for (const a of surfaces.global_actions) {
+    lines.push("- " + a.label + " (" + a.where + ") · " + a.purpose);
+  }
+  lines.push("");
+  lines.push("── Workflow TOC (" + workflowToc.length + " procedures; call selectWorkflow(id) for full step-by-step body) ──");
+  for (const w of workflowToc) {
+    lines.push(w.id + " · " + w.name + " · " + w.intent + " · " + w.app_surface);
+  }
+  lines.push("");
+  lines.push("── Recommendations (pre-crafted answers for common questions; adapt to the user's exact phrasing) ──");
+  for (const r of recommendations) {
+    lines.push(r.id + " · " + r.answer);
   }
   return lines.join("\n");
 }

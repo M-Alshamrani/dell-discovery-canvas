@@ -287,9 +287,9 @@ function buildContract() {
   }));
 
   // analyticalViews surface ONLY the §S5 selectors (one per selector).
-  // Definitional-grounding tools like selectConcept (per SPEC §S27) are
+  // Grounding tools (selectConcept per §S27, selectWorkflow per §S28) are
   // wired into CHAT_TOOLS too but are not analytical views — they fetch
-  // dictionary content, not engagement data.
+  // dictionary / manifest content, not engagement data.
   const _SELECTOR_NAMES = new Set([
     "selectMatrixView", "selectGapsKanban", "selectVendorMix",
     "selectHealthSummary", "selectExecutiveSummaryInputs",

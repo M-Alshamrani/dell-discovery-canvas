@@ -2695,6 +2695,59 @@ Tests in `docs/v3.0/TESTS.md §T27` (NEW):
 - **V-CONCEPT-4**: system prompt embeds the concept dictionary block — "== Concept dictionary ==" header + at least one concept id + one category label appear in the role-or-contract messages
 - **V-CONCEPT-5**: `CHAT_TOOLS` includes `selectConcept` with `invoke({id}) → {ok, concept}`; invoke('gap_type.replace') returns the full body; invoke('not.a.real.id') returns `{ok:false, error}`
 
+---
+
+## §S28 · App manifest — procedural grounding for the AI assistant
+
+**Status**: NEW 2026-05-02 LATE EVENING. SPEC-only annex. Closes the procedural layer of the user-approved 3-phase AI architecture plan. Together with §S25 (data contract — structural), §S27 (concept manifest — definitional), this section covers app-aware procedural grounding: WORKFLOWS the user follows + RECOMMENDATIONS for common questions + APP_SURFACES the LLM points the user at.
+
+### S28.1 · Module shape
+
+```
+core/appManifest.js
+  export const APP_SCHEMA_VERSION = "v3.0-app-1"
+  export const APP_SURFACES        // {app_purpose, topbar_tabs[], global_actions[]}
+  export const WORKFLOWS           // 16 entries: capture_context, identify_gaps, etc.
+  export const RECOMMENDATIONS     // 19 entries: regex-trigger → guidance map
+  export function getWorkflow(id)
+  export function getWorkflowTOC()
+  export function getRecommendationsTable()
+  export function matchRecommendation(question)
+```
+
+### S28.2 · Inline strategy
+
+| Layer | Inlined | Tool-fetched |
+|---|---|---|
+| APP_SURFACES (≤500 tokens) | ✅ verbatim — small + stable | n/a |
+| Workflow TOC (~16 rows, ~500 tokens) | ✅ each row: `id · name · 1-line intent · app_surface` | full body via `selectWorkflow(id)` |
+| Recommendations (~19 rows, ~1.3KB) | ✅ each row: `id · short-answer-text` (no regex triggers) | n/a; LLM pattern-matches naturally |
+
+Total prefix addition: ~2.3KB (~600 tokens). Cached on the stable prefix via `cache_control: ephemeral` on Anthropic; OpenAI auto-caching applies once total prompt ≥1024 tokens.
+
+### S28.3 · Role-section pointer
+
+Layer 1 (role) gains rule 9 directing the model to use the manifest:
+- For "how do I..." procedural questions → look at the workflow TOC inline; call `selectWorkflow(id)` for the full step-by-step body
+- For "where is X" / "what tab does Y" → point the user at APP_SURFACES (tab/action label)
+- Recommendations are pre-crafted answers for common questions; the model reads them inline + adapts to the user's exact phrasing
+
+### S28.4 · Forbidden
+
+- Adding workflow steps that overlap structural metadata (FK declarations, invariants, paths). Workflows describe USER ACTIONS in the UI; structural facts belong in `core/dataContract.js`.
+- Recommendations that duplicate concept dictionary entries verbatim. Recommendations are ACTION-oriented ("click X then Y"); concepts are DEFINITIONAL ("means X, used when Y"). They cross-reference via `relatedWorkflowIds` / `relatedConceptIds`.
+- Inlining FULL workflow bodies. The TOC is inline; bodies are tool-fetched.
+- Marketing / pitch language in workflow steps. Keep the verbs concrete: "Click +Add gap" not "Strategically initiate a gap-capture motion".
+
+### S28.5 · Test contract pointer
+
+Tests in `docs/v3.0/TESTS.md §T28` (NEW):
+- **V-WORKFLOW-1**: structural — `WORKFLOWS` array; every entry has id+name+intent+appSurface+steps+relatedConcepts+typicalOutcome populated; ids unique
+- **V-WORKFLOW-2**: TOC — `getWorkflowTOC()` returns one row per workflow with id/name/intent/app_surface
+- **V-WORKFLOW-3**: API — `getWorkflow(id)` returns the entry; unknown returns null. `matchRecommendation('how do I add a gap?')` returns rec.add_gap; unknown question returns null. APP_SURFACES has app_purpose + topbar_tabs + global_actions populated.
+- **V-WORKFLOW-4**: system prompt embeds the workflow TOC + APP_SURFACES + recommendations table on the cached prefix; role section points at selectWorkflow
+- **V-WORKFLOW-5**: `CHAT_TOOLS` includes `selectWorkflow` with `invoke({id}) → {ok, workflow}`; invoke('workflow.identify_gaps') returns full body; invoke('not.a.real.id') returns ok:false
+
 ### Change log
 
 | Date | Section | Change |

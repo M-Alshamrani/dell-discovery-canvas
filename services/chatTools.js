@@ -19,6 +19,7 @@ import { selectExecutiveSummaryInputs } from "../selectors/executiveSummary.js";
 import { selectLinkedComposition }      from "../selectors/linkedComposition.js";
 import { selectProjects }               from "../selectors/projects.js";
 import { getConcept }                   from "../core/conceptManifest.js";
+import { getWorkflow }                  from "../core/appManifest.js";
 
 export const CHAT_TOOLS = [
   {
@@ -101,6 +102,30 @@ export const CHAT_TOOLS = [
         return { ok: false, error: "Unknown concept id: '" + (id || "(missing)") + "'. Call selectConcept with one of the ids in the TOC." };
       }
       return { ok: true, concept: c };
+    }
+  },
+  // SPEC §S28 + RULES §16 CH22 — procedural-grounding tool. Fetches
+  // the full body of a workflow (steps + relatedConcepts +
+  // typicalOutcome) from core/appManifest.js. The TOC is inlined on
+  // the cached prefix; this tool surfaces the depth.
+  // Engagement-agnostic (workflows are static).
+  {
+    name: "selectWorkflow",
+    description: "Fetch the full step-by-step body of a single workflow from the app manifest by id (e.g. 'workflow.identify_gaps', 'workflow.configure_ai_provider'). Returns {name, intent, appSurface, steps[], relatedConcepts[], typicalOutcome}. Use when the user asks a procedural 'how do I X' question and the inlined TOC headline isn't enough.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Workflow id, formatted 'workflow.<name>' (e.g. 'workflow.identify_gaps')." }
+      },
+      required: ["id"]
+    },
+    invoke: (engagement, args) => {
+      const id = args && args.id;
+      const w = getWorkflow(id);
+      if (!w) {
+        return { ok: false, error: "Unknown workflow id: '" + (id || "(missing)") + "'. Call selectWorkflow with one of the ids in the TOC." };
+      }
+      return { ok: true, workflow: w };
     }
   }
 ];

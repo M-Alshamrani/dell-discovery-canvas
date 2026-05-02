@@ -12907,6 +12907,104 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 
     });
 
+    // -----------------------------------------------------------------
+    // V-WORKFLOW-1..5 · Phase C2 · App workflow manifest grounding
+    // (per SPEC §S28 + RULES §16 CH22). Wires the 16-workflow + 19-
+    // recommendation + 5-tab manifest into the system prompt + exposes
+    // selectWorkflow(id) as a chat tool.
+    // -----------------------------------------------------------------
+    describe("§T28 · V-WORKFLOW · App workflow manifest", () => {
+
+      it("V-WORKFLOW-1 · core/appManifest exports a structural WORKFLOWS array; every entry has id+name+intent+appSurface+steps+relatedConcepts+typicalOutcome populated; ids are unique", async () => {
+        const am = await import("../core/appManifest.js");
+        assert(Array.isArray(am.WORKFLOWS) && am.WORKFLOWS.length >= 10,
+          "WORKFLOWS array has ≥10 entries (got " + (am.WORKFLOWS && am.WORKFLOWS.length) + ")");
+        const ids = new Set();
+        am.WORKFLOWS.forEach(w => {
+          assert(typeof w.id === "string" && /^workflow\./.test(w.id), "workflow.id starts with 'workflow.': " + w.id);
+          assert(typeof w.name === "string" && w.name.length > 0, "workflow.name non-empty: " + w.id);
+          assert(typeof w.intent === "string" && w.intent.length > 0, "workflow.intent non-empty: " + w.id);
+          assert(typeof w.appSurface === "string" && w.appSurface.length > 0, "workflow.appSurface non-empty: " + w.id);
+          assert(Array.isArray(w.steps) && w.steps.length > 0, "workflow.steps non-empty: " + w.id);
+          assert(Array.isArray(w.relatedConcepts), "workflow.relatedConcepts is array: " + w.id);
+          assert(typeof w.typicalOutcome === "string" && w.typicalOutcome.length > 0, "workflow.typicalOutcome non-empty: " + w.id);
+          assert(!ids.has(w.id), "workflow.id unique: '" + w.id + "' duplicated");
+          ids.add(w.id);
+        });
+      });
+
+      it("V-WORKFLOW-2 · getWorkflowTOC() returns one row per workflow with id+name+intent+app_surface (the cheap inline form)", async () => {
+        const am = await import("../core/appManifest.js");
+        const toc = am.getWorkflowTOC();
+        assertEqual(toc.length, am.WORKFLOWS.length, "TOC has same count as WORKFLOWS");
+        toc.forEach(t => {
+          assert(t.id && t.name && t.intent && t.app_surface,
+            "TOC entry has all 4 fields: " + JSON.stringify(t).slice(0, 80));
+        });
+      });
+
+      it("V-WORKFLOW-3 · API surface: getWorkflow(id) returns entry; matchRecommendation('how do I add a gap?') returns rec.add_gap; APP_SURFACES populated", async () => {
+        const am = await import("../core/appManifest.js");
+        const wf = am.getWorkflow("workflow.identify_gaps");
+        assert(wf && wf.name && Array.isArray(wf.steps),
+          "getWorkflow('workflow.identify_gaps') returns the entry");
+        assertEqual(am.getWorkflow("workflow.not.a.real.id"), null,
+          "unknown workflow id returns null");
+        const rec = am.matchRecommendation("how do I add a gap?");
+        assert(rec && rec.id === "rec.add_gap",
+          "matchRecommendation hits 'rec.add_gap' for the canonical phrasing");
+        assertEqual(am.matchRecommendation("totally unrelated nonsense"), null,
+          "unknown question returns null");
+        // APP_SURFACES sanity
+        assert(am.APP_SURFACES && typeof am.APP_SURFACES.app_purpose === "string"
+          && am.APP_SURFACES.app_purpose.length > 0,
+          "APP_SURFACES.app_purpose populated");
+        assert(Array.isArray(am.APP_SURFACES.topbar_tabs) && am.APP_SURFACES.topbar_tabs.length >= 5,
+          "APP_SURFACES.topbar_tabs has ≥5 tabs");
+        assert(Array.isArray(am.APP_SURFACES.global_actions) && am.APP_SURFACES.global_actions.length >= 5,
+          "APP_SURFACES.global_actions has ≥5 actions");
+      });
+
+      it("V-WORKFLOW-4 · system prompt embeds the workflow TOC + APP_SURFACES + recommendations on the cached prefix; role section points at selectWorkflow", () => {
+        _resetChatEnv();
+        const eng = createEmptyEngagement();
+        const sp = buildSystemPrompt({ engagement: eng, providerKind: "anthropic" });
+        const all = sp.messages.map(m => m.content).join("\n");
+        assert(/App workflow manifest|App surfaces|Workflow TOC/i.test(all),
+          "system prompt contains the workflow / app-surfaces section");
+        assert(/workflow\.identify_gaps/.test(all),
+          "TOC includes at least one workflow id (e.g. workflow.identify_gaps)");
+        assert(/rec\.add_gap/.test(all),
+          "Recommendations table inlined (e.g. rec.add_gap)");
+        assert(/selectWorkflow/.test(all),
+          "role section points at selectWorkflow tool");
+        // Topbar tabs / global actions surface as text the LLM can read
+        assert(/Context tab|Current state tab|Gaps tab/i.test(all),
+          "APP_SURFACES topbar tabs surfaced as text");
+        // Cache-control: workflow block on cached prefix (Anthropic)
+        assert(Array.isArray(sp.cacheControl) && sp.cacheControl.length > 0,
+          "anthropic cacheControl marks the stable prefix; workflow block is part of it");
+      });
+
+      it("V-WORKFLOW-5 · CHAT_TOOLS includes selectWorkflow; invoke({id:'workflow.identify_gaps'}) returns full body; invoke({id:'not.a.real.id'}) returns ok:false", async () => {
+        const tools = await import("../services/chatTools.js");
+        const tool = tools.CHAT_TOOLS.find(t => t.name === "selectWorkflow");
+        assert(tool, "CHAT_TOOLS includes selectWorkflow entry");
+        assert(typeof tool.invoke === "function", "selectWorkflow.invoke is a function");
+        assert(tool.input_schema && tool.input_schema.properties && tool.input_schema.properties.id,
+          "selectWorkflow input_schema declares id parameter");
+        const ok = tool.invoke(null, { id: "workflow.identify_gaps" });
+        assert(ok && ok.ok === true && ok.workflow && ok.workflow.name,
+          "invoke({id:'workflow.identify_gaps'}) returns ok:true + the full body");
+        assert(Array.isArray(ok.workflow.steps) && ok.workflow.steps.length > 0,
+          "returned workflow body carries steps[]");
+        const miss = tool.invoke(null, { id: "not.a.real.id" });
+        assert(miss && miss.ok === false && typeof miss.error === "string",
+          "invoke({id:'not.a.real.id'}) returns ok:false + error");
+      });
+
+    });
+
     it("V-CHAT-26 · BUG-017 guard: chat overlay header has connection-status chip (no Mock toggle); chip text reflects active provider", async () => {
       // Source-grep — the overlay file must NOT carry a 'Mock' provider
       // toggle in its head-extras anymore. The new chip must be present.
