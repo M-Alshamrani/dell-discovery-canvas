@@ -12369,7 +12369,11 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-MOCK-2 · services/mockLLMProvider exports createMockLLMProvider with complete({prompt})→{model,text}", async () => {
       assert(typeof createMockLLMProviderProd === "function",
         "services/mockLLMProvider.js must export createMockLLMProvider");
-      const p = createMockLLMProviderProd({ defaultResponse: "production mock LLM response" });
+      // Canonical contract (per existing tests/mocks/mockLLMProvider.js shape):
+      // defaultResponse is { model: string, text: string }, not a bare string.
+      const p = createMockLLMProviderProd({
+        defaultResponse: { model: "mock-prod-llm", text: "production mock LLM response" }
+      });
       assert(typeof p.complete === "function",
         "mock LLM provider exposes complete({prompt}) → Promise<{model,text}>");
       const result = await p.complete({ prompt: "irrelevant" });
@@ -12389,8 +12393,9 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assertEqual(tokens1.join("|"), tokens2.join("|"),
         "two mock chat providers with same scripted responses yield identical token sequences");
 
-      const llm1 = createMockLLMProviderProd({ defaultResponse: "abc" });
-      const llm2 = createMockLLMProviderProd({ defaultResponse: "abc" });
+      const ABC = { model: "mock-prod-llm", text: "abc" };
+      const llm1 = createMockLLMProviderProd({ defaultResponse: ABC });
+      const llm2 = createMockLLMProviderProd({ defaultResponse: ABC });
       const r1 = await llm1.complete({ prompt: "p" });
       const r2 = await llm2.complete({ prompt: "p" });
       assertEqual(r1.text, r2.text,

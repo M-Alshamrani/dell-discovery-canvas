@@ -1,29 +1,16 @@
-// tests/mocks/mockLLMProvider.js — v3.0 · SPEC sec S14.4 boundary 1
+// tests/mocks/mockLLMProvider.js
 //
-// LLM provider is one of the four sanctioned mock targets. v3.0 mock
-// returns canned responses keyed by prompt hash so tests are
-// deterministic.
+// THIN RE-EXPORT from services/mockLLMProvider.js (the canonical
+// production-located path) per SPEC §S22 + RULES §17.
 //
-// Usage:
-//   const provider = createMockLLMProvider({
-//     responses: {
-//       "Hello, world": { model: "mock-claude", text: "Hi there." }
-//     },
-//     defaultResponse: { model: "mock-default", text: "Mock response" }
-//   });
-//   const r = await provider.complete({ prompt: "Hello, world" });
+// History: this module USED to be the canonical implementation.
+// Production code (V3SkillBuilder) imported from here at runtime,
+// which violated production-from-tests layering (BUG-006). The fix
+// (commit at v3.0.0-rc.2) moved the implementation to
+// `services/mockLLMProvider.js`; this path remains as a re-export
+// so existing V-PROD-* + V-DRIFT-* test imports keep working
+// without changes.
+//
+// New code should import from `services/mockLLMProvider.js` directly.
 
-export function createMockLLMProvider({ responses = {}, defaultResponse } = {}) {
-  return {
-    async complete({ prompt }) {
-      if (responses[prompt]) return responses[prompt];
-      if (defaultResponse) return defaultResponse;
-      // Fallback: echo the prompt prefix so tests can verify the LLM was
-      // actually called with the resolved prompt.
-      return {
-        model: "mock-fallback",
-        text:  "Mock response for prompt starting with: " + prompt.slice(0, 50)
-      };
-    }
-  };
-}
+export { createMockLLMProvider } from "../../services/mockLLMProvider.js";
