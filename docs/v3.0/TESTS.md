@@ -911,7 +911,158 @@ it("V-CHAT-5 · tool-call round-trip: question → tool_use → resolve → tool
 
 ---
 
-## §T21 · Banner target reconciliation
+## §T21 · V-DEMO — v3-native demo engagement
+
+**Coverage**: SPEC §S21.
+
+**Approximate count**: 7 vectors.
+
+| Vector | Assertion |
+|---|---|
+| V-DEMO-1 | `loadV3Demo()` returns an object that passes `EngagementSchema.safeParse(...)` strict (success === true; issues === []) |
+| V-DEMO-2 | The demo module performs `EngagementSchema.parse(...)` at module load and would throw if drift is introduced (verified by inspecting source: at least one parse call at top-level scope, not inside the exported function) |
+| V-DEMO-3 | Demo content shape: `meta.isDemo === true`, customer.name + customer.vertical + customer.region populated, ≥2 drivers each with `businessDriverId` resolving in `BUSINESS_DRIVERS` catalog, ≥2 environments each with `envCatalogId` resolving in `ENV_CATALOG` catalog |
+| V-DEMO-4 | Cross-cutting features per S3.7: at least one workload-layer instance with `mappedAssetIds[]` referencing assets in a DIFFERENT environment AND at least one desired instance with non-null `originId` referencing a current instance |
+| V-DEMO-5 | Gap diversity: at least one ops-typed gap with non-empty `services[]`, at least one gap with `affectedEnvironments.length >= 2` (multi-env), every FK reference (`relatedCurrentInstanceIds`, `relatedDesiredInstanceIds`, `affectedEnvironments`, `driverId`) resolves to an entity that exists in the demo |
+| V-DEMO-6 | Provenance demonstration: at least one AI-authored field carries the full `{value, provenance:{model, promptVersion, skillId, runId, timestamp, catalogVersions, validationStatus}}` wrapper per §S8 |
+| V-DEMO-7 | Determinism: `loadV3Demo() === loadV3Demo()` (referential identity; module caches the constructed engagement) |
+
+### T21.1 · Sample vector body (V-DEMO-1)
+
+```js
+it("V-DEMO-1 · loadV3Demo() passes EngagementSchema strict parse", () => {
+  const eng = loadV3Demo();
+  const result = EngagementSchema.safeParse(eng);
+  assert(result.success === true,
+    "v3 demo must pass strict schema; issues: " +
+    (result.success ? "" : JSON.stringify(result.error.issues.slice(0, 5))));
+});
+```
+
+### T21.2 · Sample vector body (V-DEMO-4)
+
+```js
+it("V-DEMO-4 · cross-cutting workload mappedAssetIds + desired originId both present", () => {
+  const eng = loadV3Demo();
+  // Workload with cross-env mappedAssetIds
+  const workloadCrossEnv = eng.instances.allIds
+    .map(id => eng.instances.byId[id])
+    .find(i => i.layerId === "workload" && Array.isArray(i.mappedAssetIds) && i.mappedAssetIds.length > 0
+       && i.mappedAssetIds.some(aid => {
+            const asset = eng.instances.byId[aid];
+            return asset && asset.environmentId !== i.environmentId;
+          }));
+  assert(workloadCrossEnv,
+    "demo must include at least one workload with mappedAssetIds spanning environments (cross-ref V-XCUT-1)");
+
+  // Desired with originId
+  const desiredWithOrigin = eng.instances.allIds
+    .map(id => eng.instances.byId[id])
+    .find(i => i.state === "desired" && i.originId &&
+      eng.instances.byId[i.originId] && eng.instances.byId[i.originId].state === "current");
+  assert(desiredWithOrigin,
+    "demo must include at least one desired instance whose originId resolves to a current instance");
+});
+```
+
+### T21.3 · Forbidden test patterns
+
+- **F21T.1** · Asserting specific demo entity ids by hand-coded UUID strings — IDs are deterministic but the demo content may evolve; assert by semantic shape (e.g. "find the workload with X label") not literal id equality.
+- **F21T.2** · Mocking `loadV3Demo()` to return alternate engagements; tests drive the real demo end-to-end.
+
+---
+
+## §T22 · V-MOCK — Mock providers as production services
+
+**Coverage**: SPEC §S22.
+
+**Approximate count**: 3 vectors.
+
+| Vector | Assertion |
+|---|---|
+| V-MOCK-1 | `services/mockChatProvider.js` is fetchable from the production path AND exports `createMockChatProvider`; the export's behavior matches the V-CHAT-4 contract (yields `{kind:"text",token}` events for scripted text responses) |
+| V-MOCK-2 | `services/mockLLMProvider.js` is fetchable AND exports `createMockLLMProvider`; behavior matches the V-PROD test contract |
+| V-MOCK-3 | Both providers are deterministic — calling stream/complete with identical args yields identical event sequences (no clocks, no randomness without explicit seed) |
+
+### T22.1 · Sample vector body (V-MOCK-1)
+
+```js
+it("V-MOCK-1 · services/mockChatProvider exports createMockChatProvider", async () => {
+  const mod = await import("/services/mockChatProvider.js");
+  assert(typeof mod.createMockChatProvider === "function",
+    "services/mockChatProvider.js must export createMockChatProvider");
+  const p = mod.createMockChatProvider({ responses: [{ kind: "text", text: "hi" }] });
+  const tokens = [];
+  for await (const evt of p.stream({ messages: [], tools: [] })) {
+    if (evt.kind === "text") tokens.push(evt.token);
+  }
+  assert(tokens.join("").length > 0, "mock provider yields at least one text token");
+});
+```
+
+### T22.2 · Forbidden test patterns
+
+- **F22T.1** · Importing the providers from `tests/mocks/...` in production-shape tests — V-MOCK probes production paths to enforce S22.
+
+---
+
+## §T23 · V-ANTI-RUN — Production code does not import from tests/
+
+**Coverage**: SPEC §S23. Generalizes V-ANTI-5 (internal-module mocking forbidden) into a structural lint.
+
+**Approximate count**: 1 vector (machine-generated; expands as production surfaces grow).
+
+| Vector | Assertion |
+|---|---|
+| V-ANTI-RUN-1 | Source-grep over every production module under `services/`, `state/`, `core/`, `ui/`, `selectors/`, `interactions/`, `migrations/`, `schema/` finds zero `from "../tests/..."` or `from '../../tests/...'` imports. Tests + diagnostics are exempt (they ARE tests). |
+
+### T23.1 · Sample vector body (V-ANTI-RUN-1)
+
+```js
+it("V-ANTI-RUN-1 · production code does not import from tests/ at runtime (per SPEC §S23)", async () => {
+  // Curated list of v3 production modules — extend as new ones land.
+  const FILES = [
+    "core/v3DemoEngagement.js",
+    "services/chatService.js",
+    "services/systemPromptAssembler.js",
+    "services/chatTools.js",
+    "services/mockChatProvider.js",
+    "services/mockLLMProvider.js",
+    "services/realChatProvider.js",
+    "services/realLLMProvider.js",
+    "services/skillRunner.js",
+    "services/manifestGenerator.js",
+    "services/skillSaveValidator.js",
+    "services/canvasFile.js",
+    "state/chatMemory.js",
+    "state/v3Adapter.js",
+    "state/v3EngagementStore.js",
+    "state/v3SessionBridge.js",
+    "state/v3SkillStore.js",
+    "ui/views/CanvasChatOverlay.js",
+    "ui/views/V3SkillBuilder.js"
+  ];
+  const TESTS_IMPORT_RE = /from\s+["'](?:\.\.?\/)+tests\//;
+  for (const file of FILES) {
+    let src;
+    try {
+      const res = await fetch("/" + file);
+      if (!res.ok) continue;       // module not yet shipped
+      src = await res.text();
+    } catch (_e) { continue; }
+    assert(!TESTS_IMPORT_RE.test(src),
+      "V-ANTI-RUN-1: " + file + " imports from tests/ at runtime — forbidden by SPEC §S23");
+  }
+});
+```
+
+### T23.2 · Forbidden test patterns
+
+- **F23T.1** · Testing only the surfaces that were known-bad at audit time. As production surfaces grow, the FILES list must grow with them. Adding a new production module without adding it to the V-ANTI-RUN-1 file list is a discipline failure.
+
+---
+
+## §T24 · Banner target reconciliation
 
 Per SPEC §S14.6:
 
@@ -936,25 +1087,28 @@ Per SPEC §S14.6:
 | V-ANTI | 5 | T18 (5) |
 | V-ADP | 10 | T19 (10) |
 | V-CHAT | 12 | T20 (12) |
-| **TOTAL** | **~423** | **~426** |
+| V-DEMO | 7 | T21 (7) |
+| V-MOCK | 3 | T22 (3) |
+| V-ANTI-RUN | 1 | T23 (1) |
+| **TOTAL** | **~434** | **~437** |
 
-Final banner target after merging: **616 (v2.4.16 baseline) - obsolete (~120 v2.4.x vectors that test fields/shapes that no longer exist) + 423 new = ~919 GREEN**. Provisional pending Suite 49 land + obsolete-vector audit. v3.0.0-rc.1 currently shows 1011/1011 because actual implementation enumerates per-fixture / per-invariant; "approximate count" here is the planning floor, not a ceiling.
+Final banner target after merging: **616 (v2.4.16 baseline) - obsolete (~120 v2.4.x vectors that test fields/shapes that no longer exist) + 434 new = ~930 GREEN**. Provisional pending Suite 49 land + obsolete-vector audit. v3.0.0-rc.1 currently shows 1023/1023 (post-V-CHAT) because actual implementation enumerates per-fixture / per-invariant; "approximate count" here is the planning floor, not a ceiling.
 
 ---
 
-## §T22 · Open items
+## §T25 · Open items
 
 | Item | Section | Tag |
 |---|---|---|
 | V-SCH-12 default — `.strict()` vs `.strip()` for unknown fields | §T2.2 | TO RESOLVE (default `.strict()` for v3.0) |
 | V-MFG-10 manifest entry count expected size table | §T7 | TO LOCK at SPEC §S7.2.1 implementation |
 | V-ANTI-4 strict R-number → vector enforcement | §T18.1 | TO UPGRADE in v3.1 (smoke-check floors in v3.0) |
-| Banner target obsolete-vector audit | §T21 | TO RUN at Suite 49 land time (count which v2.4.x vectors test fields that v3.0 removes) |
+| Banner target obsolete-vector audit | §T24 | TO RUN at Suite 49 land time (count which v2.4.x vectors test fields that v3.0 removes) |
 | V-PROD mock LLM response keyed by prompt hash format | §T16.4 | TO AUTHOR alongside `services/llm/mockProvider.js` |
 
 ---
 
-## §T23 · Document control
+## §T26 · Document control
 
 - **Authored**: 2026-05-01 alongside MIGRATION.md.
 - **Owner**: spec writer (Claude Opus 4.7 1M context, this session and successors).
@@ -968,5 +1122,6 @@ Final banner target after merging: **616 (v2.4.16 baseline) - obsolete (~120 v2.
 | 2026-05-01 | All | Initial draft. 17 vector categories + ~404 vector ids enumerated. Banner target ~897 GREEN. |
 | 2026-05-01 | §T19 + §T20 + §T21 + §T22 | NEW §T19 V-ADP-1..10 vectors for SPEC §S19 v3.0 → v2.x consumption adapter. Existing §T19/T20/T21 meta-sections renumbered to §T20/T21/T22. Banner target bumps from ~897 to ~907. |
 | 2026-05-02 | §T20 + §T21 + §T22 + §T23 | NEW §T20 V-CHAT-1..12 vectors for SPEC §S20 Canvas Chat. Existing §T20/T21/T22 meta-sections (banner target / open items / document control) renumbered to §T21/T22/T23. Banner target bumps from ~907 to ~919. Sample bodies for V-CHAT-3 (selector ↔ tool consistency) + V-CHAT-5 (tool-call round-trip with mock). |
+| 2026-05-02 | §T21 + §T22 + §T23 + §T24 + §T25 + §T26 | NEW §T21 V-DEMO-1..7 (SPEC §S21 v3-native demo). NEW §T22 V-MOCK-1..3 (SPEC §S22 mocks as production services). NEW §T23 V-ANTI-RUN-1 (SPEC §S23 production-no-tests-imports). Existing §T21/T22/T23 meta-sections (banner target / open items / document control) renumbered to §T24/T25/T26. Banner target bumps from ~919 to ~930. Sample bodies for V-DEMO-1 / V-DEMO-4 / V-MOCK-1 / V-ANTI-RUN-1. Authored as the architectural fix for the BUG-003 patch revert per `feedback_no_patches_flag_first.md` + `feedback_test_or_it_didnt_ship.md`. |
 
 End of TESTS.

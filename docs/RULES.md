@@ -431,9 +431,27 @@ The chat surface gives the user a conversational interface to the live engagemen
 | CH10 | Tool-call round-trip is ALWAYS one round when the provider supports tool-use (one `tool_use` → one in-browser dispatch → one `tool_result` back → one final text response). Multi-turn tool chains are NOT supported in v1 | 🔵 AUTO | tested by V-CHAT-5; v3.1 may extend |
 | CH11 | Rolling-window summarization triggers when transcript exceeds CHAT_TRANSCRIPT_WINDOW (default 30 messages) OR CHAT_TRANSCRIPT_TOKEN_BUDGET (default ~12K tokens); older turns collapse into one synthetic `{role:"system", content:"PRIOR CONTEXT: <summary>"}` message | 🔵 AUTO | tested by V-CHAT-7 |
 | CH12 | When the model emits a proposal (rename / re-classify / re-link), the chat surface renders an "Open in Tab N" affordance that switches tabs + pre-fills the input — but mutation happens through normal v2.x / v3.0 UI paths, NEVER from chat | 🔵 AUTO | code review; aligns with CH2 |
-| CH13 | Chat respects the user's active provider config (Mock | Real toggle, same as v3.0 Skill Builder Lab); when Mock is active, chat uses `tests/mocks/mockChatProvider.js` deterministic provider | 🔵 AUTO | tested by V-CHAT-4 + V-CHAT-11 |
+| CH13 | Chat respects the user's active provider config (Mock | Real toggle, same as v3.0 Skill Builder Lab); when Mock is active, chat uses `services/mockChatProvider.js` deterministic provider (per CH14 + RULES §17) | 🔵 AUTO | tested by V-CHAT-4 + V-CHAT-11 |
+| CH14 | Chat layer imports the mock provider from `services/mockChatProvider.js`, NOT from `tests/mocks/mockChatProvider.js` (per RULES §17 + SPEC §S22) | 🔴 HARD | tested by V-ANTI-RUN-1 |
 
 **Cross-references**: SPEC §S20 + TESTS §T20 V-CHAT-1..12. Memory anchors: `feedback_spec_and_test_first.md` (this entire section is the spec-first artifact), `feedback_no_version_prefix_in_names.md` (CH6 enforcement), `feedback_browser_smoke_required.md` (per-commit smoke for chat UI changes), `feedback_test_what_to_test.md` 2026-05-02 escalation (V-CHAT vectors include interaction completeness — clicking send actually streams + tool dispatches + memory persists).
+
+---
+
+## 17 · Production code shall not import from `tests/` at runtime · NEW v3.0.0-rc.2 (QUEUED 2026-05-02)
+
+**Status**: SPEC §S23 + TESTS §T23 V-ANTI-RUN-1 authored 2026-05-02; implementation queued. **Rule below is normative once V-ANTI-RUN-1 lands GREEN against the shipped surfaces.**
+
+The `tests/` directory exists for the in-browser test runner and Suite 49 vectors. It is served by the Dockerfile so the test runner can fetch it, but production code paths MUST NOT depend on it. Test fixtures and test mocks have **deterministic** shapes optimized for assertions; production needs the **live** engagement and the **real** provider. Production-from-tests imports normalize "borrow whatever I need, layer be damned" — once one production module imports from `tests/`, others copy the pattern (which is exactly how BUG-007 was introduced this session by copying BUG-006).
+
+| # | Rule | Tier | When it fires |
+|---|---|---|---|
+| PR1 | Modules under `services/`, `state/`, `core/`, `ui/`, `selectors/`, `interactions/`, `migrations/`, `schema/` import from `tests/` at runtime | 🔴 HARD | tested by V-ANTI-RUN-1 (source-grep) |
+| PR2 | Test files (`diagnostics/appSpec.js`, `diagnostics/demoSpec.js`, `tests/...`) ARE tests; importing from `tests/` is correct (PR1 exemption) | 🔵 AUTO | scope of V-ANTI-RUN-1 |
+| PR3 | When a production module needs functionality currently in `tests/` (e.g. a mock provider that powers a UX toggle), the canonical path is to MOVE the module into `services/` (or other production location) and have `tests/` thin-re-export it (or migrate consumers off `tests/`). Never the reverse | 🔵 AUTO | code review |
+| PR4 | "Just for now" exemptions are forbidden. There are no exemptions. If a feature can't be built without a `tests/` runtime import, the production module gets created first | 🔵 AUTO | per `feedback_no_patches_flag_first.md` |
+
+**Cross-references**: SPEC §S23 + TESTS §T23 V-ANTI-RUN-1. Memory anchors: `feedback_no_patches_flag_first.md` (PR4 is a direct application), `feedback_test_or_it_didnt_ship.md` (V-ANTI-RUN-1 is the regression-test guardrail for BUG-005..007), `feedback_no_version_prefix_in_names.md` (canonical naming for the new `services/mock*Provider.js` modules).
 
 ---
 

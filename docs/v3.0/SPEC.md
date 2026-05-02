@@ -1999,6 +1999,170 @@ Vectors land in TESTS.md §T20 V-CHAT-1..N. Coverage:
 
 ---
 
+## §S21 · v3-native demo engagement (SPEC-only annex)
+
+**Status**: NEW 2026-05-02. SPEC-only annex; not in [`data-architecture-directive.md`](../../data-architecture-directive.md). Authored as the architectural fix for BUG-003 (chat sees empty engagement against v2 demo) and BUG-005 (V3SkillBuilder uses test fixture as runtime engagement).
+
+**Authority cascade**: SPEC §S21 → `docs/RULES.md §17` (production-import discipline) → `docs/v3.0/TESTS.md §T21` V-DEMO-1..N → Suite 49 RED-first → `core/v3DemoEngagement.js` → "Load demo" footer-button wiring → V3SkillBuilder + CanvasChatOverlay consume the live engagement → browser smoke.
+
+### S21.1 · Goals
+
+A hand-curated, schema-strict v3 engagement that **bypasses the v2 → v3 bridge entirely** for the demo case. The demo is the canonical "show me what v3 can do" surface and the authoritative content for any AI surface that needs a populated canvas.
+
+- **Schema-strict**: every entity passes its `<Entity>Schema` (deterministic UUIDs everywhere, ISO timestamps, all required fields, no v2-shape leakage).
+- **Self-validating at module load**: the module calls `EngagementSchema.parse(...)` at import time and throws if the demo drifts out of compliance. The build literally cannot serve a malformed demo.
+- **Highlights v3 features** the chat (and future AI surfaces) should be able to demonstrate:
+  - Cross-cutting workload `mappedAssetIds` spanning two environments.
+  - Desired instance with `originId` referencing a current instance (replace-lifecycle).
+  - Multi-env `gap.affectedEnvironments` (cross-env compliance gap).
+  - Ops-typed gap with `services[]` populated.
+  - At least one AI-authored field with a provenance wrapper.
+- **Smaller than the v2 demo**: 2-3 envs, 5-10 instances, 3-5 gaps, 2-3 drivers. Sized so the engagement section in the chat system prompt (S20.4.4) inlines fully (≤ inline thresholds).
+- **Deterministic**: UUIDs derived from semantic seeds (same demo bytes every load); useful for V-DEMO assertions that compare specific ids.
+
+### S21.2 · Module shape
+
+```
+core/
+  v3DemoEngagement.js
+```
+
+Exports:
+
+```js
+// Returns the curated v3 demo engagement. Idempotent (returns the
+// same module-cached engagement object on repeat calls so the §S5
+// memoization holds).
+export function loadV3Demo();
+
+// Returns metadata about the demo for UI display (e.g. "5 instances,
+// 3 gaps, 2 environments — Acme Healthcare Group / Healthcare / EMEA").
+export function describeV3Demo();
+```
+
+**Forbidden**:
+- importing from `tests/` (per S23 / RULES §17).
+- non-deterministic ids (no `crypto.randomUUID()` at module load).
+- runtime mutation of the cached engagement; consumers go through `commitAction(...)` per §S19.
+
+### S21.3 · R-numbered requirements
+
+| R | Requirement | Trace |
+|---|---|---|
+| R21.1 | `loadV3Demo()` returns an object that passes `EngagementSchema.safeParse(...)` strict | This SPEC + V-DEMO-1 |
+| R21.2 | The module performs `EngagementSchema.parse(...)` at module load and **throws** if the demo drifts out of compliance — build-time guarantee, not runtime hope | V-DEMO-2 |
+| R21.3 | Customer: `name + vertical + region + notes` populated; engagement is unambiguously tagged as a demo (`meta.isDemo === true`) | V-DEMO-3 |
+| R21.4 | Drivers: 2-3 entries with `businessDriverId` referencing real `BUSINESS_DRIVERS` catalog ids; each carries `priority` + `outcomes` text | V-DEMO-3 |
+| R21.5 | Environments: 2-3 entries with `envCatalogId` referencing real `ENV_CATALOG` ids; aliases set | V-DEMO-3 |
+| R21.6 | Instances: 5-10 entries spanning at least 2 layers + 2 envs + 2 vendor groups; **at least one workload-layer instance has `mappedAssetIds` referencing instances in a DIFFERENT environment** (cross-cutting per §3.7); **at least one desired instance has `originId` referencing a current instance** (replace lifecycle) | V-DEMO-4 |
+| R21.7 | Gaps: 3-5 entries with at least: one `ops`-typed gap with non-empty `services[]`; one gap with `affectedEnvironments.length >= 2` (multi-env); FK references (`relatedCurrentInstanceIds`, `relatedDesiredInstanceIds`, `affectedEnvironments`, `driverId`) all resolve to real entities | V-DEMO-5 |
+| R21.8 | At least one AI-authored field carries a provenance wrapper `{value, provenance:{model, promptVersion, skillId, runId, timestamp, catalogVersions, validationStatus}}` per §S8 — demonstrates the wrapper without requiring a live LLM call to populate it | V-DEMO-6 |
+| R21.9 | UUIDs are deterministic across module loads — `loadV3Demo() === loadV3Demo()` (referentially identical via module caching) | V-DEMO-7 |
+| R21.10 | Module imports ONLY from `schema/`, `core/`, `services/` (catalog loaders), or other approved sources. Specifically forbidden: importing from `tests/` (per RULES §17) | V-ANTI-RUN-1 |
+
+### S21.4 · "Load demo" wiring
+
+The footer "Load demo" button (existing in v2.x topbar/footer) must dispatch differently in the v3 path:
+
+- v2.x path (legacy, retiring): calls `resetToDemo()` from `state/sessionStore.js`. Touches v2 sessionState; the bridge then runs (per §S19.3) and produces the customer-only engagement (per the post-revert state of `state/v3SessionBridge.js`).
+- v3 path (new): also calls `setActiveEngagement(loadV3Demo())` after the v2.x dispatch. This guarantees the v3 engagement store has the schema-strict demo, regardless of what the bridge does or doesn't translate.
+
+Net effect: the user clicks "Load demo" once, both v2.x views (legacy) and v3.0 surfaces (Chat, Lab once migrated) have content. The v2.x bridge is harmless (still customer-only) because the v3 engagement is set directly by `loadV3Demo()`, overwriting what the bridge produced.
+
+When per-view migrations finish (per §S19.4), the v2.x dispatch can be removed; "Load demo" then exclusively sets the v3 engagement.
+
+### S21.5 · Forbidden patterns
+
+- **F21.5.1** · Generating UUIDs at module load via `crypto.randomUUID()`. Demo IDs must be deterministic so V-DEMO assertions can pin specific ids.
+- **F21.5.2** · `EngagementSchema.parse(...)` at module load that swallows errors. If parse fails, the module MUST throw at import time.
+- **F21.5.3** · Importing from `tests/`. The demo is production code.
+- **F21.5.4** · Reading from `state/sessionStore.js` or any v2.x state module. The demo is a constant; it has no v2.x dependencies.
+- **F21.5.5** · Mutating the cached engagement after it's returned. Consumers commit via `state/v3EngagementStore.js commitAction(...)`.
+
+### S21.6 · Test contract for §S21
+
+Vectors land in TESTS.md §T21 V-DEMO-1..7. See §T21 for the full vector list.
+
+---
+
+## §S22 · Mock providers as production services (SPEC-only annex)
+
+**Status**: NEW 2026-05-02. SPEC-only annex. Architectural fix for BUG-006 + BUG-007 (V3SkillBuilder + CanvasChatOverlay import test mocks at runtime).
+
+### S22.1 · Goals
+
+The Mock toggle in the Lab and the Chat is a legitimate production UX feature: it lets the user run the AI surface with deterministic local execution (free, fast, offline-safe) before dispatching against a real provider. The mock providers backing this feature must live in `services/`, not `tests/`.
+
+### S22.2 · Module shape
+
+```
+services/
+  mockChatProvider.js   // exports createMockChatProvider per existing tests/mocks/mockChatProvider.js shape
+  mockLLMProvider.js    // exports createMockLLMProvider per existing tests/mocks/mockLLMProvider.js shape
+```
+
+The test paths (`tests/mocks/mockChatProvider.js`, `tests/mocks/mockLLMProvider.js`) become **thin re-exports** that import from `services/` and re-export. This preserves V-CHAT-* + V-PROD-* test imports without breaking, while moving the canonical implementation into `services/`. Once all consumers are updated, the test-path shims can be deleted.
+
+### S22.3 · R-numbered requirements
+
+| R | Requirement | Trace |
+|---|---|---|
+| R22.1 | `services/mockChatProvider.js` exists and exports `createMockChatProvider({responses}) → provider` matching the V-CHAT-4/5 contract | V-MOCK-1 |
+| R22.2 | `services/mockLLMProvider.js` exists and exports `createMockLLMProvider({defaultResponse}) → provider` matching the V-PROD contract | V-MOCK-2 |
+| R22.3 | Both providers are deterministic — no clocks, no randomness without an explicit seed param | V-MOCK-3 |
+| R22.4 | Production code (V3SkillBuilder, CanvasChatOverlay) imports from `services/mock*Provider.js`, NOT `tests/mocks/`. Tests may still import from `tests/mocks/` (which re-exports from `services/`) for backwards compatibility, OR may be migrated to import from `services/` directly | V-ANTI-RUN-1 |
+
+### S22.4 · Forbidden patterns
+
+- **F22.4.1** · Production module imports `tests/mocks/*` directly. Even via dynamic import.
+- **F22.4.2** · Mock providers carrying live network code or non-deterministic behavior.
+
+### S22.5 · Test contract for §S22
+
+Vectors land in TESTS.md §T22 V-MOCK-1..3.
+
+---
+
+## §S23 · Production code shall not import from `tests/` at runtime (SPEC-only annex)
+
+**Status**: NEW 2026-05-02. SPEC-only annex. Architectural fix for BUG-005, BUG-006, BUG-007. Generalizes V-ANTI-5 (which forbids internal-module mocking outside §S14.4) into a structural lint check.
+
+### S23.1 · Rule
+
+Any module under `services/`, `state/`, `core/`, `ui/`, `selectors/`, `interactions/`, `migrations/`, or `schema/` is **production code**. Production code MUST NOT import from `tests/` at runtime, including:
+
+- `tests/perf/buildReferenceEngagement.js`
+- `tests/mocks/*`
+- `tests/fixtures/*`
+
+The `tests/` directory exists for the in-browser test runner and Suite 49 vectors. It is served (per `Dockerfile`) so the test runner can fetch it, but production code paths MUST NOT depend on it.
+
+### S23.2 · Why
+
+Production-from-tests violates layer separation in three ways:
+1. Test code is built to be deterministic for assertions, often at the cost of completeness or scale (e.g. 200-instance perf fixtures, scripted mock responses). Production needs the real engagement and the real provider.
+2. Test code can be removed or restructured between releases without warning. Production code that depends on it breaks silently.
+3. The pattern normalizes "borrow whatever I need, layer be damned." Once one production module imports from `tests/`, others copy the pattern (which is exactly how BUG-007 was introduced this session — by copying BUG-006's pattern).
+
+### S23.3 · R-numbered requirements
+
+| R | Requirement | Trace |
+|---|---|---|
+| R23.1 | Source-grep over `services/`, `state/`, `core/`, `ui/`, `selectors/`, `interactions/`, `migrations/`, `schema/` finds zero `from "../tests/...` or `from '../../tests/...'` imports | V-ANTI-RUN-1 |
+| R23.2 | Test files (`diagnostics/appSpec.js`, `diagnostics/demoSpec.js`, `tests/...`) are exempt — they ARE tests, importing from `tests/` is correct | V-ANTI-RUN-1 scope |
+| R23.3 | When production needs functionality currently in `tests/` (e.g. a mock provider for a UX toggle), the canonical path is to MOVE the module into `services/` (or another production location) and have `tests/` thin-re-export — never the reverse | RULES §17 |
+
+### S23.4 · Forbidden patterns
+
+- **F23.4.1** · Adding a new `from "../tests/..."` import in production code. Caught at review by V-ANTI-RUN-1.
+- **F23.4.2** · "Just for now" exemptions. There are no exemptions.
+
+### S23.5 · Test contract for §S23
+
+V-ANTI-RUN-1 in TESTS.md §T23.
+
+---
+
 ## §15 · Out of scope (explicit)
 
 Per directive §15. Re-listed here for SPEC traceability:
@@ -2070,5 +2234,6 @@ These are tractable; they do not block §1-§4 implementation.
 | 2026-05-01 | §10–§14 | Filled integrity, performance, multi-engagement, backend, tests. Repair-rule table, calibration mechanism, vector-id pattern, banner target ~900 GREEN. |
 | 2026-05-01 | §S19 | NEW SPEC-only annex · v3.0 → v2.x consumption adapter. R19.1–R19.10 + module shape (`state/v3Adapter.js` + `state/v3EngagementStore.js`) + 6-view migration order + forbidden patterns + V-ADP-1..10 test pointer. Drives non-suffix `3.0.0` GA: with adapter shipped, the existing 5 v2.x view tabs read from v3.0 selectors against the active engagement (today only the Lab does). |
 | 2026-05-02 | §S20 | NEW SPEC-only annex · Canvas Chat — context-aware AI assistant. R20.1–R20.15 + module shape (`services/chatService.js` + `services/systemPromptAssembler.js` + `services/chatTools.js` + `state/chatMemory.js` + `ui/views/CanvasChatOverlay.js`) + 5-layer system prompt (role / data-model / manifest / engagement / views) + tool-use round-trip + Anthropic prompt caching + streaming + per-engagement memory + read-only v1 boundary + V-CHAT-1..12 test pointer. Top-priority rc.2 work per user direction 2026-05-02 ("focus on getting it right ... no hallucinations ... best industry practice"). |
+| 2026-05-02 | §S21 + §S22 + §S23 | NEW SPEC-only annexes authoring the architectural fix for BUG-003..007. §S21 v3-native demo engagement (R21.1-R21.10 + `core/v3DemoEngagement.js` module shape + module-load schema-strict self-validation + deterministic UUIDs + V-DEMO-1..7 pointer). §S22 mock providers as production services (R22.1-R22.4 + `services/mockChatProvider.js` + `services/mockLLMProvider.js` shape + V-MOCK-1..3 pointer). §S23 production-no-tests-imports rule (R23.1-R23.3 + V-ANTI-RUN-1 source-grep). Drives the BUG-003 patch revert (`bacc7a0`) → cleanup arc → re-greening sequence per `feedback_no_patches_flag_first.md` + `feedback_test_or_it_didnt_ship.md`. |
 
 End of SPEC.

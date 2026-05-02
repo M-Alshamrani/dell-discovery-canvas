@@ -8681,6 +8681,13 @@ import {
 } from "../state/chatMemory.js";
 import { createMockChatProvider }                from "../tests/mocks/mockChatProvider.js";
 
+// rc.2 . SPEC §S21+S22+S23 . Cleanup arc imports (RED-first stubs).
+// V-DEMO + V-MOCK + V-ANTI-RUN-1 fail RED against stubs until impl
+// commits land per the spec-and-test-first cadence.
+import { loadV3Demo, describeV3Demo }            from "../core/v3DemoEngagement.js";
+import { createMockChatProvider as createMockChatProviderProd } from "../services/mockChatProvider.js";
+import { createMockLLMProvider  as createMockLLMProviderProd  } from "../services/mockLLMProvider.js";
+
 // ============================================================================
 // Suite 49 · v3.0 data architecture rebuild · RED-first vector scaffold
 //
@@ -12192,6 +12199,249 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "anthropic prompt carries cacheControl markers on the stable prefix");
       assert(Array.isArray(oaiPrompt.cacheControl) && oaiPrompt.cacheControl.length === 0,
         "openai-compatible prompt has no cacheControl markers (provider does not support caching)");
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // §T21 · V-DEMO · v3-native demo engagement (per SPEC §S21)
+  // RED-first: core/v3DemoEngagement.js is a STUB that throws on
+  // loadV3Demo(). V-DEMO-1..7 all fail RED until the real curated
+  // demo ships per the architectural fix for BUG-003 / BUG-004.
+  // -------------------------------------------------------------------
+  describe("§T21 · V-DEMO · v3-native demo engagement", () => {
+
+    it("V-DEMO-1 · loadV3Demo() returns an engagement that passes EngagementSchema strict parse", () => {
+      const eng = loadV3Demo();
+      const result = EngagementSchema.safeParse(eng);
+      assert(result.success === true,
+        "v3 demo must pass strict schema; issues: " +
+        (result.success ? "" : JSON.stringify(result.error.issues.slice(0, 5))));
+    });
+
+    it("V-DEMO-2 · core/v3DemoEngagement.js performs EngagementSchema.parse at module load (build-time guarantee, not runtime hope)", async () => {
+      const res = await fetch("/core/v3DemoEngagement.js");
+      assert(res.ok, "core/v3DemoEngagement.js must be fetchable");
+      const src = await res.text();
+      // The module MUST call EngagementSchema.parse(...) at top level
+      // (outside any function body) so module-load fails loudly on drift.
+      // Match: a parse call NOT preceded on the same line by "export function" / "function"
+      // and NOT inside a fenced function body that returns. Heuristic:
+      // require at least one top-level pattern "EngagementSchema.parse(" that is
+      // NOT inside a function body. We approximate by requiring the parse
+      // call to appear OUTSIDE the loadV3Demo / describeV3Demo functions.
+      const hasParse  = /EngagementSchema\s*\.\s*parse\s*\(/.test(src);
+      const topLevel  = /^const\s+\w+\s*=\s*EngagementSchema\s*\.\s*parse\s*\(/m.test(src) ||
+                        /^EngagementSchema\s*\.\s*parse\s*\(/m.test(src);
+      assert(hasParse,
+        "core/v3DemoEngagement.js must call EngagementSchema.parse(...) at module load");
+      assert(topLevel,
+        "EngagementSchema.parse(...) must be at top level (not inside a function body)");
+    });
+
+    it("V-DEMO-3 · demo content shape: meta.isDemo + customer + drivers + envs all populated", () => {
+      const eng = loadV3Demo();
+      assert(eng.meta && eng.meta.isDemo === true, "meta.isDemo === true");
+      assert(eng.customer && typeof eng.customer.name === "string" && eng.customer.name.length > 0,
+        "customer.name populated");
+      assert(typeof eng.customer.vertical === "string" && eng.customer.vertical.length > 0,
+        "customer.vertical populated");
+      assert(typeof eng.customer.region   === "string" && eng.customer.region.length > 0,
+        "customer.region populated");
+      assert(eng.drivers && eng.drivers.allIds.length >= 2, "≥2 drivers");
+      eng.drivers.allIds.forEach(id => {
+        const d = eng.drivers.byId[id];
+        assert(typeof d.businessDriverId === "string" && d.businessDriverId.length > 0,
+          "driver " + id + " has businessDriverId");
+      });
+      assert(eng.environments && eng.environments.allIds.length >= 2, "≥2 environments");
+      eng.environments.allIds.forEach(id => {
+        const e = eng.environments.byId[id];
+        assert(typeof e.envCatalogId === "string" && e.envCatalogId.length > 0,
+          "environment " + id + " has envCatalogId");
+      });
+    });
+
+    it("V-DEMO-4 · cross-cutting features per S3.7: workload mappedAssetIds spanning envs + desired with originId → current", () => {
+      const eng = loadV3Demo();
+      const workloadCrossEnv = eng.instances.allIds
+        .map(id => eng.instances.byId[id])
+        .find(i => i.layerId === "workload" && Array.isArray(i.mappedAssetIds) && i.mappedAssetIds.length > 0
+          && i.mappedAssetIds.some(aid => {
+              const asset = eng.instances.byId[aid];
+              return asset && asset.environmentId !== i.environmentId;
+            }));
+      assert(workloadCrossEnv,
+        "demo must include at least one workload with mappedAssetIds spanning envs (cross-ref V-XCUT-1)");
+
+      const desiredWithOrigin = eng.instances.allIds
+        .map(id => eng.instances.byId[id])
+        .find(i => i.state === "desired" && i.originId &&
+          eng.instances.byId[i.originId] && eng.instances.byId[i.originId].state === "current");
+      assert(desiredWithOrigin,
+        "demo must include at least one desired instance whose originId resolves to a current instance");
+    });
+
+    it("V-DEMO-5 · gap diversity: ≥1 ops with services[] + ≥1 multi-env + every FK reference resolves", () => {
+      const eng = loadV3Demo();
+      const opsWithServices = eng.gaps.allIds
+        .map(id => eng.gaps.byId[id])
+        .find(g => g.gapType === "ops" && Array.isArray(g.services) && g.services.length > 0);
+      assert(opsWithServices, "demo must include an ops-typed gap with non-empty services[]");
+
+      const multiEnvGap = eng.gaps.allIds
+        .map(id => eng.gaps.byId[id])
+        .find(g => Array.isArray(g.affectedEnvironments) && g.affectedEnvironments.length >= 2);
+      assert(multiEnvGap, "demo must include a gap with affectedEnvironments.length >= 2");
+
+      // Every FK on every gap must resolve.
+      for (const gid of eng.gaps.allIds) {
+        const g = eng.gaps.byId[gid];
+        (g.affectedEnvironments || []).forEach(envId => {
+          assert(eng.environments.byId[envId],
+            "gap " + gid + ".affectedEnvironments " + envId + " must resolve to an existing environment");
+        });
+        (g.relatedCurrentInstanceIds || []).forEach(iid => {
+          assert(eng.instances.byId[iid] && eng.instances.byId[iid].state === "current",
+            "gap " + gid + ".relatedCurrentInstanceIds " + iid + " must resolve to an existing current instance");
+        });
+        (g.relatedDesiredInstanceIds || []).forEach(iid => {
+          assert(eng.instances.byId[iid] && eng.instances.byId[iid].state === "desired",
+            "gap " + gid + ".relatedDesiredInstanceIds " + iid + " must resolve to an existing desired instance");
+        });
+        if (g.driverId) {
+          assert(eng.drivers.byId[g.driverId],
+            "gap " + gid + ".driverId " + g.driverId + " must resolve to an existing driver");
+        }
+      }
+    });
+
+    it("V-DEMO-6 · provenance demonstration: ≥1 AI-authored field carries the full provenance wrapper per §S8", () => {
+      const eng = loadV3Demo();
+      // Walk all gap fields looking for { value, provenance: {...} } shape.
+      let foundWrapper = null;
+      for (const gid of eng.gaps.allIds) {
+        const g = eng.gaps.byId[gid];
+        for (const key of Object.keys(g)) {
+          const v = g[key];
+          if (v && typeof v === "object" && "value" in v && v.provenance && typeof v.provenance === "object") {
+            const p = v.provenance;
+            if (p.model && p.promptVersion && p.skillId && p.runId && p.timestamp &&
+                p.catalogVersions && p.validationStatus) {
+              foundWrapper = { gid, key, p };
+              break;
+            }
+          }
+        }
+        if (foundWrapper) break;
+      }
+      assert(foundWrapper,
+        "demo must include at least one AI-authored field with a full provenance wrapper {value, provenance:{model,promptVersion,skillId,runId,timestamp,catalogVersions,validationStatus}}");
+    });
+
+    it("V-DEMO-7 · loadV3Demo() === loadV3Demo() (referentially identical via module caching)", () => {
+      const a = loadV3Demo();
+      const b = loadV3Demo();
+      assert(a === b,
+        "loadV3Demo must return the SAME engagement reference on repeat calls (module-cached, deterministic)");
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // §T22 · V-MOCK · Mock providers as production services (per SPEC §S22)
+  // RED-first: services/mockChatProvider.js + services/mockLLMProvider.js
+  // are STUBS that throw. V-MOCK-1..3 fail RED until impl lands.
+  // -------------------------------------------------------------------
+  describe("§T22 · V-MOCK · Mock providers as production services", () => {
+
+    it("V-MOCK-1 · services/mockChatProvider exports createMockChatProvider matching the V-CHAT-4 contract", async () => {
+      // Production path import already at top of file (createMockChatProviderProd).
+      assert(typeof createMockChatProviderProd === "function",
+        "services/mockChatProvider.js must export createMockChatProvider");
+      const p = createMockChatProviderProd({ responses: [{ kind: "text", text: "hi from prod path" }] });
+      const tokens = [];
+      for await (const evt of p.stream({ messages: [], tools: [] })) {
+        if (evt.kind === "text") tokens.push(evt.token);
+      }
+      assert(tokens.length > 0, "production mock chat provider yields at least one text token");
+      assert(tokens.join("").length > 0, "yielded tokens have non-empty content");
+    });
+
+    it("V-MOCK-2 · services/mockLLMProvider exports createMockLLMProvider with complete({prompt})→{model,text}", async () => {
+      assert(typeof createMockLLMProviderProd === "function",
+        "services/mockLLMProvider.js must export createMockLLMProvider");
+      const p = createMockLLMProviderProd({ defaultResponse: "production mock LLM response" });
+      assert(typeof p.complete === "function",
+        "mock LLM provider exposes complete({prompt}) → Promise<{model,text}>");
+      const result = await p.complete({ prompt: "irrelevant" });
+      assert(typeof result.text === "string" && result.text.length > 0,
+        "complete returns non-empty text");
+      assert(typeof result.model === "string" && result.model.length > 0,
+        "complete returns model id");
+    });
+
+    it("V-MOCK-3 · production mock providers are deterministic (same args → same outputs)", async () => {
+      const p1 = createMockChatProviderProd({ responses: [{ kind: "text", text: "deterministic" }] });
+      const p2 = createMockChatProviderProd({ responses: [{ kind: "text", text: "deterministic" }] });
+      const tokens1 = [];
+      const tokens2 = [];
+      for await (const e of p1.stream({ messages: [], tools: [] })) if (e.kind === "text") tokens1.push(e.token);
+      for await (const e of p2.stream({ messages: [], tools: [] })) if (e.kind === "text") tokens2.push(e.token);
+      assertEqual(tokens1.join("|"), tokens2.join("|"),
+        "two mock chat providers with same scripted responses yield identical token sequences");
+
+      const llm1 = createMockLLMProviderProd({ defaultResponse: "abc" });
+      const llm2 = createMockLLMProviderProd({ defaultResponse: "abc" });
+      const r1 = await llm1.complete({ prompt: "p" });
+      const r2 = await llm2.complete({ prompt: "p" });
+      assertEqual(r1.text, r2.text,
+        "two mock LLM providers with identical defaultResponse yield identical text");
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // §T23 · V-ANTI-RUN · Production code does not import from tests/ (per SPEC §S23)
+  // RED-first: ui/views/V3SkillBuilder.js + ui/views/CanvasChatOverlay.js
+  // currently import from tests/. V-ANTI-RUN-1 fails RED until those
+  // imports flip to services/ (Step 10 of the cleanup arc).
+  // -------------------------------------------------------------------
+  describe("§T23 · V-ANTI-RUN · Production-no-tests-imports lint", () => {
+
+    it("V-ANTI-RUN-1 · production code does not import from tests/ at runtime (per SPEC §S23)", async () => {
+      const FILES = [
+        "core/v3DemoEngagement.js",
+        "core/v3SeedSkills.js",
+        "services/chatService.js",
+        "services/systemPromptAssembler.js",
+        "services/chatTools.js",
+        "services/mockChatProvider.js",
+        "services/mockLLMProvider.js",
+        "services/realChatProvider.js",
+        "services/realLLMProvider.js",
+        "services/skillRunner.js",
+        "services/manifestGenerator.js",
+        "services/skillSaveValidator.js",
+        "services/canvasFile.js",
+        "state/chatMemory.js",
+        "state/v3Adapter.js",
+        "state/v3EngagementStore.js",
+        "state/v3SessionBridge.js",
+        "state/v3SkillStore.js",
+        "ui/views/CanvasChatOverlay.js",
+        "ui/views/V3SkillBuilder.js"
+      ];
+      const TESTS_IMPORT_RE = /from\s+["'](?:\.\.?\/)+tests\//;
+      const offenders = [];
+      for (const file of FILES) {
+        let src;
+        try {
+          const res = await fetch("/" + file);
+          if (!res.ok) continue;
+          src = await res.text();
+        } catch (_e) { continue; }
+        if (TESTS_IMPORT_RE.test(src)) offenders.push(file);
+      }
+      assertEqual(offenders.length, 0,
+        "V-ANTI-RUN-1: production code must not import from tests/ at runtime; offenders: " + offenders.join(", "));
     });
   });
 
