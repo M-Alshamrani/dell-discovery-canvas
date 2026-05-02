@@ -12539,6 +12539,37 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       clearTranscript(engId);
     });
 
+    it("V-CHAT-26 · BUG-017 guard: chat overlay header has connection-status chip (no Mock toggle); chip text reflects active provider", async () => {
+      // Source-grep — the overlay file must NOT carry a 'Mock' provider
+      // toggle in its head-extras anymore. The new chip must be present.
+      const overlaySrc = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
+
+      // Anti-pattern: prior Mock|Real segmented toggle.
+      assert(!/canvas-chat-provider-seg/.test(overlaySrc),
+        "old canvas-chat-provider-seg (Mock|Real toggle) must be removed");
+      assert(!/canvas-chat-provider-btn/.test(overlaySrc),
+        "old canvas-chat-provider-btn must be removed");
+      assert(!/state\.providerMode/.test(overlaySrc),
+        "state.providerMode field must be removed (chat always uses active aiConfig provider)");
+
+      // Required: connection-status chip wired to active provider.
+      assert(/canvas-chat-status-chip/.test(overlaySrc),
+        "new canvas-chat-status-chip must be present in CanvasChatOverlay.js");
+      assert(/openSettingsModal\b/.test(overlaySrc),
+        "chip click must open Settings modal");
+      assert(/isActiveProviderReady\b/.test(overlaySrc),
+        "chip ready/warn state must use isActiveProviderReady from aiConfig");
+
+      // CSS contract: chip styles + ready/warn variants present.
+      const cssSrc = await (await fetch("/styles.css")).text();
+      assert(/\.canvas-chat-status-chip\b/.test(cssSrc),
+        ".canvas-chat-status-chip CSS class defined");
+      assert(/\.canvas-chat-status-chip\.is-ready/.test(cssSrc),
+        ".is-ready variant defined (green-dot connected)");
+      assert(/\.canvas-chat-status-chip\.is-warn/.test(cssSrc),
+        ".is-warn variant defined (amber-dot 'configure provider')");
+    });
+
     it("V-CHAT-23 · BUG-015 guard: handshake prefix is silently stripped on SUBSEQUENT turns when the model disobeys 'first turn only'", async () => {
       _resetChatEnv();
       const eng = createEmptyEngagement();

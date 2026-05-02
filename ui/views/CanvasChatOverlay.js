@@ -25,10 +25,10 @@ import { getActiveEngagement }                from "../../state/engagementStore.
 import {
   loadTranscript, saveTranscript, clearTranscript, summarizeIfNeeded
 }                                              from "../../state/chatMemory.js";
-import { streamChat, providerCapabilities }   from "../../services/chatService.js";
-import { createMockChatProvider }             from "../../services/mockChatProvider.js";
+import { streamChat }                          from "../../services/chatService.js";
 import { createRealChatProvider }             from "../../services/realChatProvider.js";
-import { loadAiConfig }                        from "../../core/aiConfig.js";
+import { loadAiConfig, isActiveProviderReady } from "../../core/aiConfig.js";
+import { openSettingsModal }                   from "./SettingsModal.js";
 import { confirmAction }                       from "../components/Notify.js";
 // SPEC §S20.17 + RULES §16 CH18 — markdown rendering on assistant bubbles
 // only. User bubbles stay textContent (no HTML interpretation; XSS guard).
@@ -38,11 +38,15 @@ import { marked }                              from "../../vendor/marked/marked.
 
 // Module-scope state for the open overlay. Only one chat overlay is
 // open at a time; Overlay.js enforces the singleton pattern.
+//
+// BUG-017 fix (2026-05-02 PM): the prior `providerMode: "mock"|"real"`
+// toggle was removed. The chat ALWAYS uses the user's configured
+// active provider from aiConfig. Mock provider stays available for
+// the test suite via createMockChatProvider; not surfaced in the UI.
 let state = {
   engagement:   null,
   engagementId: null,
   transcript:   { messages: [], summary: null },
-  providerMode: "mock",   // "mock" | "real"
   isStreaming:  false
 };
 
@@ -59,12 +63,6 @@ export function openCanvasChat() {
   state.engagement = getActiveEngagement();
   state.engagementId = (state.engagement && state.engagement.meta && state.engagement.meta.engagementId) || null;
   state.transcript = state.engagementId ? loadTranscript(state.engagementId) : { messages: [], summary: null };
-
-  // Default provider mode: real if user has a configured non-local
-  // provider, mock otherwise. User can flip via the header chip.
-  const aiCfg = loadAiConfig();
-  const activeProvider = aiCfg && aiCfg.activeProvider;
-  state.providerMode = (activeProvider && activeProvider !== "local") ? "real" : "mock";
 
   const body   = buildBody();
   const footer = buildFooter();
@@ -206,37 +204,36 @@ function injectHeaderExtras() {
   if (!slot) return;
   slot.innerHTML = "";
 
-  // Provider toggle: Mock | Real (mirroring the Lab pattern).
-  const seg = document.createElement("div");
-  seg.className = "canvas-chat-provider-seg";
-
-  const aiCfg       = loadAiConfig();
-  const realName    = (aiCfg && aiCfg.activeProvider) || "local";
-  const realCaps    = providerCapabilities(realName);
-  const realLabel   = realCaps.streaming
-    ? labelForProvider(realName)
-    : labelForProvider(realName) + " (no streaming)";
-
-  const opts = [
-    { val: "mock", label: "Mock",       title: "Deterministic mock — no provider call (free)" },
-    { val: "real", label: realLabel,    title: "Use your active provider: " + realName }
-  ];
-  for (const opt of opts) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "canvas-chat-provider-btn" + (state.providerMode === opt.val ? " is-active" : "");
-    btn.setAttribute("data-val", opt.val);
-    btn.title = opt.title;
-    btn.textContent = opt.label;
-    btn.addEventListener("click", function() {
-      state.providerMode = opt.val;
-      seg.querySelectorAll(".canvas-chat-provider-btn").forEach(function(b) {
-        b.classList.toggle("is-active", b.getAttribute("data-val") === opt.val);
-      });
-    });
-    seg.appendChild(btn);
-  }
-  slot.appendChild(seg);
+  // BUG-017 fix · connection-status chip (replaces the prior Mock|Real
+  // segmented toggle). Shows the active provider's status at a glance.
+  // Click → opens Settings modal so the user can configure or switch.
+  // Mock provider stays available for the test suite; not surfaced here.
+  const aiCfg          = loadAiConfig();
+  const activeKey      = (aiCfg && aiCfg.activeProvider) || "local";
+  const ready          = isActiveProviderReady(aiCfg);
+  const providerLabel  = labelForProvider(activeKey);
+  const status = document.createElement("button");
+  status.type = "button";
+  status.className = "canvas-chat-status-chip" + (ready ? " is-ready" : " is-warn");
+  status.title = ready
+    ? "Connected to " + providerLabel + ". Click to manage provider settings."
+    : "No provider configured for " + providerLabel + ". Click to open Settings.";
+  status.setAttribute("aria-label", status.title);
+  const dot = document.createElement("span");
+  dot.className = "canvas-chat-status-dot";
+  dot.setAttribute("aria-hidden", "true");
+  status.appendChild(dot);
+  const labelSpan = document.createElement("span");
+  labelSpan.className = "canvas-chat-status-label";
+  labelSpan.textContent = ready
+    ? "Connected to " + providerLabel
+    : "Configure provider";
+  status.appendChild(labelSpan);
+  status.addEventListener("click", function() {
+    closeOverlay();
+    openSettingsModal({ section: "providers" });
+  });
+  slot.appendChild(status);
 
   // Clear-chat button.
   const clearBtn = document.createElement("button");
@@ -462,38 +459,29 @@ async function handleSend(body) {
   input.value = "";
   input.style.height = "auto";
 
-  // Resolve provider.
-  let provider;
-  let providerKey;
-  if (state.providerMode === "real") {
-    const aiCfg = loadAiConfig();
-    providerKey = aiCfg && aiCfg.activeProvider;
-    const cfg = aiCfg && aiCfg.providers && aiCfg.providers[providerKey];
-    if (!providerKey || !cfg) {
-      assistantMsg.content = "Real provider not configured. Open Settings to set one, or use Mock.";
-      state.isStreaming = false;
-      input.disabled = false;
-      paintTranscript(body);
-      if (meter) meter.textContent = "ready";
-      return;
-    }
-    provider = createRealChatProvider({
-      providerKey:    providerKey,
-      baseUrl:        cfg.baseUrl,
-      model:          cfg.model,
-      fallbackModels: cfg.fallbackModels || [],
-      apiKey:         cfg.apiKey || ""
-    });
-  } else {
-    providerKey = "mock";
-    // Deterministic mock that echoes the question — useful for smoke
-    // testing without burning the user's wallet.
-    provider = createMockChatProvider({
-      responses: [
-        { kind: "text", text: "[mock] you asked: \"" + userMessage + "\". Switch to a Real provider in the header to dispatch this against your live LLM." }
-      ]
-    });
+  // Resolve provider — always the user's active aiConfig provider
+  // (BUG-017 fix: Mock is no longer surfaced in the chat header).
+  // If the active provider isn't configured, surface a clear chat-bubble
+  // message + repaint the connection-status chip in warning state.
+  const aiCfg = loadAiConfig();
+  const providerKey = (aiCfg && aiCfg.activeProvider) || "local";
+  const cfg = aiCfg && aiCfg.providers && aiCfg.providers[providerKey];
+  if (!cfg || !isActiveProviderReady(aiCfg)) {
+    assistantMsg.content = "**No AI provider configured.** Open Settings (gear icon) to add an API key for " +
+      labelForProvider(providerKey) + ", or pick a different provider.";
+    state.isStreaming = false;
+    input.disabled = false;
+    paintTranscript(body);
+    if (meter) meter.textContent = "no provider";
+    return;
   }
+  const provider = createRealChatProvider({
+    providerKey:    providerKey,
+    baseUrl:        cfg.baseUrl,
+    model:          cfg.model,
+    fallbackModels: cfg.fallbackModels || [],
+    apiKey:         cfg.apiKey || ""
+  });
 
   // Summarize if the rolling-window threshold tripped.
   state.transcript = summarizeIfNeeded(state.transcript);
