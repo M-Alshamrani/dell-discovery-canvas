@@ -100,9 +100,13 @@ export function migrateSkillToV31(raw) {
   // 2. Translate legacy skillType + entityKind into parameters[].
   //    Only auto-fill parameters when none were already declared so a
   //    caller that supplies BOTH new + legacy fields keeps the new.
+  //    Parameter NAME = entityKind (e.g. "gap", "driver") so legacy
+  //    prompt templates referencing {{context.gap.description}} keep
+  //    resolving cleanly post-migration. The runner binds
+  //    context.<paramName> = looked-up-entity at invocation time.
   if (raw.skillType === "click-to-run" && raw.entityKind && out.parameters.length === 0) {
     out.parameters = [{
-      name:        "entity",
+      name:        raw.entityKind,
       type:        "entityId",
       description: "Pick a " + raw.entityKind,
       required:    true

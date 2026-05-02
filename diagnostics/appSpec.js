@@ -13036,6 +13036,110 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         assertEqual(fail.success, false, "v3.1 schema rejects extra legacy fields (skillType/entityKind)");
       });
 
+      it("V-SKILL-V3-3 · skillRunner accepts opts.params; resolves {{<paramName>}} placeholders + binds entityId parameters to ctx.context.<paramName>; rejects missing required parameters", async () => {
+        const { createMockLLMProvider } = await import("../services/mockLLMProvider.js");
+        // Skill with one entityId parameter named "gap"; prompt uses BOTH
+        // styles: {{gap}} (raw param) and {{context.gap.description}}
+        // (legacy entity-bound style).
+        const skill = {
+          id:           "00000000-0000-4000-8000-0000000ab003",
+          engagementId: "00000000-0000-4000-8000-0000000ab003",
+          createdAt:    "2026-05-02T00:00:00.000Z",
+          updatedAt:    "2026-05-02T00:00:00.000Z",
+          skillId:      "skl-v3-3",
+          label:        "Test parameterized skill",
+          version:      "1.0.0",
+          outputTarget: "chat-bubble",
+          parameters: [
+            { name: "gap", type: "entityId", description: "Pick a gap", required: true }
+          ],
+          promptTemplate:       "Gap id: {{gap}}; Description: {{context.gap.description}}",
+          bindings:             [],
+          outputContract:       "free-text",
+          validatedAgainst:     "3.1",
+          outdatedSinceVersion: null
+        };
+
+        // Build a minimal engagement with one gap so lookup succeeds.
+        let eng = createEmptyEngagement();
+        eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+        const addRes = addGapV3(eng, {
+          description: "Replace Veeam with PPDM",
+          gapType: "replace", urgency: "High", phase: "now", status: "open",
+          layerId: "dataProtection", affectedLayers: ["dataProtection"]
+        });
+        eng = addRes.engagement;
+        const gapId = eng.gaps.allIds[0];
+
+        // Echo provider returns the resolved prompt verbatim so we can
+        // assert what got resolved.
+        const echoProvider = {
+          complete: async ({ prompt }) => ({ model: "mock-echo", text: prompt })
+        };
+
+        // Path 1: required parameter MISSING → throws.
+        let threwForMissing = false;
+        try {
+          await runSkill(skill, { engagement: eng, catalogVersions: {} }, echoProvider,
+            { runTimestamp: "2026-05-02T00:00:00.000Z", runIdSeed: "v-skill-v3-3-miss" });
+        } catch (e) {
+          threwForMissing = /missing required parameter 'gap'/i.test(e.message);
+        }
+        assert(threwForMissing, "throws when required parameter 'gap' is missing");
+
+        // Path 2: parameter SUPPLIED → resolves both {{gap}} and {{context.gap.description}}.
+        const result = await runSkill(skill, { engagement: eng, catalogVersions: {} }, echoProvider,
+          { runTimestamp: "2026-05-02T00:00:00.000Z", runIdSeed: "v-skill-v3-3-ok",
+            params: { gap: gapId } });
+        assert(typeof result.value === "string",
+          "free-text result is a string");
+        assert(result.value.includes("Gap id: " + gapId),
+          "{{gap}} resolved to the parameter value");
+        assert(result.value.includes("Replace Veeam with PPDM"),
+          "{{context.gap.description}} resolved to the looked-up entity description");
+      });
+
+      it("V-SKILL-V3-4 · skillRunner outputTarget='chat-bubble' returns markdown (free-text); deferred targets throw a clear 'rc.4' error per SPEC §S29.7", async () => {
+        const echoProvider = {
+          complete: async ({ prompt }) => ({ model: "mock-echo", text: "Generated text." })
+        };
+        const baseSkill = {
+          id:           "00000000-0000-4000-8000-0000000ab004",
+          engagementId: "00000000-0000-4000-8000-0000000ab004",
+          createdAt:    "2026-05-02T00:00:00.000Z",
+          updatedAt:    "2026-05-02T00:00:00.000Z",
+          skillId:      "skl-v3-4",
+          label:        "Test target dispatch",
+          version:      "1.0.0",
+          parameters: [],
+          promptTemplate:       "Hello",
+          bindings:             [],
+          outputContract:       "free-text",
+          validatedAgainst:     "3.1",
+          outdatedSinceVersion: null
+        };
+
+        // chat-bubble — shipping.
+        const okResult = await runSkill({ ...baseSkill, outputTarget: "chat-bubble" },
+          { engagement: createEmptyEngagement(), catalogVersions: {} }, echoProvider,
+          { runTimestamp: "2026-05-02T00:00:00.000Z", runIdSeed: "v-skill-v3-4-ok" });
+        assertEqual(okResult.value, "Generated text.",
+          "chat-bubble target renders as free-text markdown");
+
+        // Each deferred target throws.
+        for (const target of ["structured-card", "reporting-panel", "proposed-changes"]) {
+          let threw = false;
+          try {
+            await runSkill({ ...baseSkill, outputTarget: target },
+              { engagement: createEmptyEngagement(), catalogVersions: {} }, echoProvider,
+              { runTimestamp: "2026-05-02T00:00:00.000Z", runIdSeed: "v-skill-v3-4-" + target });
+          } catch (e) {
+            threw = /deferred to rc\.4/.test(e.message) && e.message.includes(target);
+          }
+          assert(threw, "outputTarget '" + target + "' throws clear deferred error");
+        }
+      });
+
       it("V-SKILL-V3-2 · migrateSkillToV31 round-trip: legacy v3.0 click-to-run + entityKind translates to v3.1 parameters[]; v3.1 input passes through unchanged (idempotent)", async () => {
         const { migrateSkillToV31, SkillSchema } = await import("../schema/skill.js");
 
@@ -13061,7 +13165,8 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         assert(typeof migrated.entityKind === "undefined", "entityKind dropped");
         assertEqual(migrated.outputTarget, "chat-bubble", "outputTarget defaults to chat-bubble");
         assertEqual(migrated.parameters.length, 1, "parameters[] derived (1 entry)");
-        assertEqual(migrated.parameters[0].name, "entity", "parameter.name='entity'");
+        assertEqual(migrated.parameters[0].name, "gap",
+          "parameter.name = entityKind ('gap'), so legacy {{context.gap.*}} prompts keep resolving");
         assertEqual(migrated.parameters[0].type, "entityId", "parameter.type='entityId'");
         assert(/gap/i.test(migrated.parameters[0].description), "parameter.description names the entity-kind");
         assertEqual(migrated.validatedAgainst, "3.1", "validatedAgainst bumped to 3.1");
