@@ -2748,6 +2748,131 @@ Tests in `docs/v3.0/TESTS.md §T28` (NEW):
 - **V-WORKFLOW-4**: system prompt embeds the workflow TOC + APP_SURFACES + recommendations table on the cached prefix; role section points at selectWorkflow
 - **V-WORKFLOW-5**: `CHAT_TOOLS` includes `selectWorkflow` with `invoke({id}) → {ok, workflow}`; invoke('workflow.identify_gaps') returns full body; invoke('not.a.real.id') returns ok:false
 
+---
+
+## §S29 · Skill architecture v3.1 — parameterized markdown skills + rendering-target abstraction
+
+**Status**: DRAFT 2026-05-02 LATE EVENING. SPEC-only annex. Captures the user-and-Claude joint architecture conversation about what skills SHOULD be now that the chat surface is fully context-aware (per §S20 + §S25 + §S27 + §S28). Implementation is the rc.3 arc.
+
+### S29.1 · Why redesign now
+
+The Skill Builder authored before §S20 (Canvas Chat) assumed:
+- **Click-to-run** binding to a specific entity (gap, instance, driver, env, project)
+- **Chip palette** for picking `{{path}}` bindings from the engagement
+- **Entity-kind picker** to scope click-to-run skills to one entity type
+- **Result panel** rendering the LLM output in a separate UI
+
+After Phase A/B/C of the AI architecture rollout (commits e8d17e4 + 9778f25 + 5fb48f3), the chat surface gives the LLM:
+- Live access to the FULL engagement (Layer 4 of the system prompt) + multi-round tool chaining
+- Full data-contract grounding (§S25)
+- Concept dictionary headlines + on-demand depth via `selectConcept` (§S27)
+- App workflow manifest + on-demand depth via `selectWorkflow` (§S28)
+
+This means a user asking "Map this gap to Dell solutions" in the chat gets the SAME power that the click-to-run "Dell mapping" skill provided — without leaving the chat, without picking an entity from a chip palette, with full conversational follow-up. The click-to-run scope is REDUNDANT.
+
+What chat does NOT do well, and what skills SHOULD do:
+1. **Produce the same shape every time** — chat is non-deterministic; skills are recipes
+2. **Visual / structured output** — heatmaps, matrices, tables, SVG (chat only produces text)
+3. **Encapsulate expert prompts** — a master prompt crafted once, used many times across engagements
+4. **Repeatability across customers** — author once, run on every customer engagement
+5. **Mutate-with-approval** (future) — generate proposed changes + approval gates
+
+### S29.2 · Skill schema v3.1 — what changes
+
+**Dropped** (from the v3.0 schema in `schema/skill.js`):
+- `skillType: "click-to-run" | "session-wide"` — collapses (single scope: parameterized prompt)
+- `entityKind: "driver" | "currentInstance" | "desiredInstance" | "gap" | "environment" | "project"` — gone (no click-to-run scope)
+- The implicit "the engagement is auto-resolved as binding context" stays — skills always have access to the full engagement.
+
+**Added**:
+- `outputTarget: "chat-bubble" | "structured-card" | "reporting-panel" | "proposed-changes"` — what shape the skill produces. `chat-bubble` is the only target shipping in v3.1; the other three are documented for future work (rc.4+).
+- `outputSchema?: ZodSchema` — required when `outputTarget !== "chat-bubble"`. For chat-bubble, output is markdown (no schema needed).
+- `parameters: Array<{name, type, description, required}>` — zero-or-more user-supplied arguments at invocation time. Default empty array.
+
+**Preserved**:
+- `id`, `label`, `version`, `promptTemplate`, `bindings[]`, `outputContract`, `validatedAgainst`, `outdatedSinceVersion`, all cross-cutting fields.
+
+### S29.3 · Migration policy
+
+Existing v3.0 skills (the 3 seeds in `core/v3SeedSkills.js` + any user-saved skills in localStorage) auto-migrate at load time:
+
+| v3.0 field | v3.1 mapping |
+|---|---|
+| `skillType: "session-wide"` | drop; outputTarget defaults to `"chat-bubble"`, parameters: [] |
+| `skillType: "click-to-run"` + `entityKind: "<X>"` | drop both; parameters: `[{name: "entity", type: "string", description: "Pick a <X>", required: true}]` |
+| `bindings[]` | preserved (still valid for prompt template resolution) |
+| `outputContract` | preserved (drives Zod parsing for outputTarget="structured-card") |
+
+The `state/v3SkillStore.js` `loadV3Skills` runs the migration at read-time; saves write the new shape. Round-trip preserves user data; no destructive change.
+
+### S29.4 · Builder UX simplification
+
+The current `ui/views/SkillBuilder.js` (Lab tab) is RETIRED in Phase 5. Replaced by an inline slide-over panel inside the chat overlay's right rail. The new builder surface:
+
+- **Name** (text)
+- **Description** (text — shown on the rail card)
+- **Prompt template** (textarea with `{{parameter}}` placeholders for skill parameters; `{{engagement.*}}`, `{{drivers.*}}`, `{{gaps.*}}` etc. continue to resolve from the live engagement)
+- **Parameters** (zero or more rows: name + type + description + required toggle)
+- **Output target** (radio: chat-bubble | structured-card | reporting-panel | proposed-changes — only chat-bubble enabled in v3.1)
+- **Output schema** (only when target ≠ chat-bubble — Zod schema editor; deferred to rc.4)
+- **Mock-run preview** button (renders the resolved prompt + a deterministic mock LLM response so the author sees the shape)
+- **Validate + Save** buttons
+
+REMOVED from the v3.0 builder:
+- Chip palette (the engagement is auto-resolved; users don't pick which fields to inject)
+- Scope picker (single scope now)
+- Entity-kind picker (no click-to-run)
+- The "1-2-3 step" wizard layout (collapses to a single form)
+
+### S29.5 · Chat right-rail integration
+
+The Canvas Chat overlay's collapsible right rail (Phase 3 scaffold, commit eb2ffc8) populates with saved skills as compact cards (`name · description · scope`). Click behavior:
+
+- **Skill with no parameters** → drop the resolved prompt into the chat input. User reviews + presses Enter to send.
+- **Skill with parameters** → render an inline parameter form (one input per parameter) above the chat input; on submit, the resolved prompt is sent to the chat.
+- **"+ New skill"** → opens the simplified builder slide-over (S29.4).
+
+Output of skill-driven turns appears in the chat as a regular assistant bubble, with provenance footer (`via <skill name> · model · run id · timestamp`).
+
+### S29.6 · "Use AI" button retirement
+
+The `ui/components/UseAiButton.js` (and its callers across Gaps view, Instances view, etc.) is RETIRED in Phase 4. The button silently invoked a click-to-run skill against a picked entity; with parameterized skills + chat right-rail, the same affordance is "open chat → click skill in rail → fill parameter form → send".
+
+For users who prefer a keyboard-fast path: Cmd+K opens the chat overlay; typing a skill name fuzzy-matches in the right rail.
+
+### S29.7 · Forbidden / out-of-scope
+
+- Reporting-panel skills (the heatmap example) — DEFERRED to rc.4. Schema slot exists; no rendering implementation yet.
+- Mutate-with-approval skills — DEFERRED to rc.4 / GA. Requires a separate "proposed-change" review UX + integration with §S4 action functions.
+- Skill chaining ("workshop deliverable pack") — DEFERRED to GA / post-GA.
+- Skill parameter validation — Zod schema slot exists; runtime validation lands when a non-chat-bubble target ships.
+- Any UX that re-introduces click-to-run or entity-kind binding.
+
+### S29.8 · Test contract pointer
+
+Tests in `docs/v3.0/TESTS.md §T29` (NEW; lands with rc.3 implementation):
+- **V-SKILL-V3-1**: schema strict-parses a v3.1 skill (no skillType / entityKind; outputTarget present; parameters[] array)
+- **V-SKILL-V3-2**: migration — v3.0 click-to-run skill round-trips through `loadV3Skills` → v3.1 shape (parameters auto-derived from entityKind)
+- **V-SKILL-V3-3**: skillRunner accepts parameters object; resolves `{{parameter}}` placeholders; rejects missing required parameters
+- **V-SKILL-V3-4**: outputTarget="chat-bubble" returns markdown; outputTarget="structured-card" stub throws with "deferred to rc.4" message
+- **V-SKILL-V3-5**: rebuilt SkillBuilder UI — no scope picker, no chip palette, parameter rows render, mock-run preview works
+- **V-SKILL-V3-6**: chat right-rail populates with saved skill cards; click drops resolved prompt
+- **V-SKILL-V3-7**: UseAiButton.js source no longer imported anywhere (V-ANTI-RUN-style guard)
+
+### S29.9 · Implementation phases (rc.3 arc)
+
+Per the user's pacing direction, the rc.3 arc lands in 5-7 commits over multiple sessions:
+
+| # | Commit scope | Risk |
+|---|---|---|
+| 1 | THIS DOC commit (§S29 + RULES §16 CH23) | None |
+| 2 | `schema/skill.js` updates + migration policy + V-SKILL-V3-1/2 | Medium (schema migration) |
+| 3 | `services/skillRunner.js` parameterized invoke + V-SKILL-V3-3/4 | Low |
+| 4 | `ui/views/SkillBuilder.js` simplified rebuild + V-SKILL-V3-5 | Medium (heavy UI refactor) |
+| 5 | `ui/views/CanvasChatOverlay.js` right-rail population + V-SKILL-V3-6 | Low |
+| 6 | UseAiButton retirement + V-SKILL-V3-7 + V-ANTI-USE-AI source-grep | Low |
+| 7 (Phase 5) | Top-bar consolidation + Lab tab deprecation + HANDOFF rewrite | Low |
+
 ### Change log
 
 | Date | Section | Change |
