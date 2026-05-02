@@ -124,9 +124,9 @@ export function renderSkillBuilder(container) {
   const header = document.createElement("div");
   header.className = "skill-builder-header";
   header.innerHTML = `
-    <h2 class="skill-builder-title">Skill Builder Lab</h2>
+    <h2 class="skill-builder-title">Skill Builder</h2>
     <div class="skill-builder-subtitle">
-      Manifest-driven chip palette · save-time path validation · mock-LLM run · per SPEC §S7.5
+      Author AI skills with bindable canvas paths, validate them at save time, and try a mock run before deploying.
     </div>
   `;
   container.appendChild(header);
@@ -136,7 +136,7 @@ export function renderSkillBuilder(container) {
   seedPicker.className = "skill-builder-seed-picker";
   seedPicker.innerHTML = `
     <label class="skill-builder-seed-label" for="seed-picker">
-      Load production-critical seed (per <code>OPEN_QUESTIONS_RESOLVED.md</code> Q3)
+      Start from a curated seed skill
     </label>
     <select id="seed-picker" class="skill-builder-seed-select">
       <option value="">— Build from scratch —</option>
@@ -190,12 +190,12 @@ export function renderSkillBuilder(container) {
     <div class="skill-builder-step-label">Scope</div>
     <div class="skill-builder-radio-group" role="radiogroup" aria-label="Skill scope">
       <label class="skill-builder-radio">
-        <input type="radio" name="v3-scope" value="session-wide" checked />
+        <input type="radio" name="skill-builder-scope" value="session-wide" checked />
         <span class="skill-builder-radio-title">Session-wide</span>
         <span class="skill-builder-radio-hint">Operates on the whole engagement</span>
       </label>
       <label class="skill-builder-radio">
-        <input type="radio" name="v3-scope" value="click-to-run" />
+        <input type="radio" name="skill-builder-scope" value="click-to-run" />
         <span class="skill-builder-radio-title">Click-to-run</span>
         <span class="skill-builder-radio-hint">Operates on one entity the user clicks</span>
       </label>
@@ -230,11 +230,11 @@ export function renderSkillBuilder(container) {
   const editor = document.createElement("section");
   editor.className = "skill-builder-editor";
   editor.innerHTML = `
-    <label class="skill-builder-editor-label" for="v3-prompt">Prompt template</label>
-    <textarea id="v3-prompt" class="skill-builder-textarea" rows="6">${state.promptTemplate}</textarea>
+    <label class="skill-builder-editor-label" for="skill-builder-prompt">Prompt template</label>
+    <textarea id="skill-builder-prompt" class="skill-builder-textarea" rows="6">${state.promptTemplate}</textarea>
   `;
   container.appendChild(editor);
-  const textarea = editor.querySelector("#v3-prompt");
+  const textarea = editor.querySelector("#skill-builder-prompt");
 
   // ───── SKILL META FIELDS (skillId + label) ─────
   const meta = document.createElement("section");
@@ -242,20 +242,20 @@ export function renderSkillBuilder(container) {
   meta.innerHTML = `
     <div class="skill-builder-meta-row">
       <div class="skill-builder-meta-field">
-        <label class="skill-builder-meta-label" for="v3-skill-id">skillId</label>
-        <input id="v3-skill-id" class="skill-builder-meta-input" type="text"
+        <label class="skill-builder-meta-label" for="skill-builder-skill-id">skillId</label>
+        <input id="skill-builder-skill-id" class="skill-builder-meta-input" type="text"
                placeholder="skl-my-skill-1" />
       </div>
       <div class="skill-builder-meta-field skill-builder-meta-field-grow">
-        <label class="skill-builder-meta-label" for="v3-skill-label">label</label>
-        <input id="v3-skill-label" class="skill-builder-meta-input" type="text"
+        <label class="skill-builder-meta-label" for="skill-builder-skill-label">label</label>
+        <input id="skill-builder-skill-label" class="skill-builder-meta-input" type="text"
                placeholder="My new skill" />
       </div>
     </div>
   `;
   container.appendChild(meta);
-  const skillIdInput    = meta.querySelector("#v3-skill-id");
-  const skillLabelInput = meta.querySelector("#v3-skill-label");
+  const skillIdInput    = meta.querySelector("#skill-builder-skill-id");
+  const skillLabelInput = meta.querySelector("#skill-builder-skill-label");
 
   // ───── VALIDATE + RUN + SAVE BUTTONS + PROVIDER TOGGLE + PANELS ─────
   const actions = document.createElement("section");
@@ -264,12 +264,12 @@ export function renderSkillBuilder(container) {
   actions.innerHTML = `
     <div class="skill-builder-provider-row" role="radiogroup" aria-label="LLM provider">
       <label class="skill-builder-provider-label">
-        <input type="radio" name="v3-provider" value="mock" checked />
+        <input type="radio" name="skill-builder-provider" value="mock" checked />
         <span class="skill-builder-provider-name">Mock LLM</span>
         <span class="skill-builder-provider-meta">canned responses, no key needed</span>
       </label>
       <label class="skill-builder-provider-label">
-        <input type="radio" name="v3-provider" value="real" />
+        <input type="radio" name="skill-builder-provider" value="real" />
         <span class="skill-builder-provider-name">Real LLM</span>
         <span class="skill-builder-provider-meta skill-builder-provider-status">
           ${escapeHtml(initialStatus.label)} ${initialStatus.ready
@@ -299,7 +299,7 @@ export function renderSkillBuilder(container) {
   // Provider radio: switches state.providerMode. The Run handler reads
   // it; Mock path uses the canned responses, Real path uses the v2.x
   // chatCompletion adapter.
-  actions.querySelectorAll('input[name="v3-provider"]').forEach(input => {
+  actions.querySelectorAll('input[name="skill-builder-provider"]').forEach(input => {
     input.addEventListener("change", e => {
       state.providerMode = e.target.value;
       // Re-fetch readiness in case the user just opened AI Settings + saved.
@@ -337,7 +337,7 @@ export function renderSkillBuilder(container) {
     step2.style.display = (state.skillType === "click-to-run") ? "" : "none";
   }
 
-  step1.querySelectorAll('input[name="v3-scope"]').forEach(input => {
+  step1.querySelectorAll('input[name="skill-builder-scope"]').forEach(input => {
     input.addEventListener("change", e => {
       state.skillType = e.target.value;
       state.entityKind = (state.skillType === "click-to-run") ? "driver" : null;
@@ -370,7 +370,7 @@ export function renderSkillBuilder(container) {
     state.entityKind     = seed.entityKind || null;
     state.promptTemplate = seed.promptTemplate;
     // Sync UI
-    step1.querySelectorAll('input[name="v3-scope"]').forEach(inp => {
+    step1.querySelectorAll('input[name="skill-builder-scope"]').forEach(inp => {
       inp.checked = (inp.value === seed.skillType);
     });
     if (seed.entityKind) {
@@ -421,7 +421,7 @@ export function renderSkillBuilder(container) {
     skillIdInput.value    = saved.skillId;
     skillLabelInput.value = saved.label;
     // Sync UI
-    step1.querySelectorAll('input[name="v3-scope"]').forEach(inp => {
+    step1.querySelectorAll('input[name="skill-builder-scope"]').forEach(inp => {
       inp.checked = (inp.value === saved.skillType);
     });
     if (saved.entityKind) {
@@ -595,7 +595,7 @@ async function runSeedSkill(seedId, state) {
   // runtime ships in v3.1.
   const envelope = await runSkill(skillToRun, ctx, provider, {
     runTimestamp: new Date().toISOString(),
-    runIdSeed:    "v3-lab-" + seedId
+    runIdSeed:    "skill-builder-run-" + seedId
   });
 
   return { resolvedPrompt, envelope };

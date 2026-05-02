@@ -315,13 +315,17 @@ function exitPickMode(body, picked) {
     if (picked.entity) {
       var hint = document.createElement("div");
       hint.className = "ai-pick-status-hint";
+      // Show humanized field names instead of raw template syntax. Skill
+      // authors who DO need the path see it in the chip palette in the
+      // Skill Builder; the picker hint just confirms which fields are
+      // populated on the entity they grabbed.
       var keys = Object.keys(picked.entity).filter(function(k) {
         var v = picked.entity[k];
         return v != null && v !== "";
       });
-      hint.textContent = "Available in templates: " +
-        keys.slice(0, 8).map(function(k) { return "{{context.picked.entity." + k + "}}"; }).join("  ") +
-        (keys.length > 8 ? "  …" : "");
+      hint.textContent = "Fields available: " +
+        keys.slice(0, 8).map(humanizeFieldName).join(", ") +
+        (keys.length > 8 ? ", …" : "");
       status.appendChild(hint);
     }
     setTimeout(function() { if (status) status.style.display = "none"; }, 5000);
@@ -571,6 +575,24 @@ function escapeText(s) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+// Convert internal field names to human-readable labels so the entity-
+// picker hint never leaks raw camelCase identifiers to the user.
+//   "layerId"             -> "Layer"
+//   "environmentId"       -> "Environment"
+//   "businessDriverId"    -> "Business driver"
+//   "createdAt"           -> "Created at"
+//   "vendor"              -> "Vendor"
+function humanizeFieldName(field) {
+  if (typeof field !== "string" || field.length === 0) return "";
+  // Drop trailing "Id" / "Ids" so users see the related entity name,
+  // not the FK suffix.
+  var trimmed = field.replace(/(Id|Ids)$/, "");
+  if (trimmed.length === 0) trimmed = field;
+  // CamelCase -> sentence case
+  var spaced = trimmed.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 export { isOpen as isAiOverlayOpen };

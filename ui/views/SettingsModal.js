@@ -215,7 +215,7 @@ function buildSettingsBody(section) {
   keyInput.placeholder = hint.keyPlaceholder;
   keyGroup.appendChild(keyInput);
   keyGroup.appendChild(mkt("div", "settings-help-inline",
-    "Stored in browser localStorage. Visible in DevTools. Acceptable for personal use; v3 multi-user moves keys server-side."));
+    "Stored in browser localStorage. Visible in DevTools. Acceptable for personal use; multi-user deployments will move keys server-side."));
   form.appendChild(keyGroup);
 
   // Test-connection probe. Renders an animated indeterminate progress

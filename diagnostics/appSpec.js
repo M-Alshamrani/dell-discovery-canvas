@@ -13168,6 +13168,78 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assertEqual(offenders.length, 0,
         "V-NAME-1: production code naming discipline (per SPEC §S24); offenders: " + offenders.join(" | "));
     });
+
+    // -----------------------------------------------------------------
+    // V-NAME-2 · BUG-014 guard · UI-string anti-leakage in AI surfaces
+    // (extends V-NAME-1 from file paths → user-visible strings rendered
+    //  in the AI chat overlay, AI Assist overlay, Skill Builder).
+    //
+    // Forbidden in user-visible text (rendered via textContent or HTML
+    // template literals) of these specific files:
+    //   - "v3" / "V3" version markers (per SPEC §S24)
+    //   - Internal field paths: "{{context.", "entity.id", ".layerId",
+    //     ".environmentId", ".envCatalogId", ".businessDriverId"
+    //   - Developer references: "SPEC §", "OPEN_QUESTIONS", "RESOLVED.md",
+    //     "per CHANGELOG"
+    //   - "Lab" suffix on Skill Builder title (Phase 4 retiring)
+    // -----------------------------------------------------------------
+
+    it("V-NAME-2 · BUG-014 guard: AI-surface UI files have no v3/internal-field-path/dev-reference leakage in user-visible strings", async () => {
+      const FILES = [
+        "ui/views/CanvasChatOverlay.js",
+        "ui/views/AiAssistOverlay.js",
+        "ui/views/SkillBuilder.js",
+        "ui/views/SettingsModal.js"
+      ];
+
+      // Each rule patterns a line we want to flag as user-leakage.
+      // The source-line check is permissive (any line, not just rendered
+      // context) because these patterns NEVER belong in a user-facing
+      // string — even runtime concatenation. We exclude lines that are
+      // unambiguously internal: import statements, comment lines, and
+      // pure DOM attribute assignments where the value is never shown.
+      const PROHIBITED = [
+        { pat: /\bv3(?!\.\w)/i,
+          reason: "literal 'v3' version marker" },
+        { pat: /\{\{\s*context\./,
+          reason: "raw {{context.*}} template syntax leaks to user (humanize the hint)" },
+        { pat: /\.entity\.(?:id|layerId|environmentId|envCatalogId|businessDriverId|engagementId)\b/,
+          reason: "internal field path entity.* exposed to user" },
+        { pat: /\bOPEN_QUESTIONS_RESOLVED\b|\bSPEC §S\d+|\bper CHANGELOG_PLAN\b/,
+          reason: "developer-doc reference" },
+        { pat: /\bSkill Builder Lab\b/,
+          reason: "'Lab' suffix on Skill Builder (Phase 4 retiring)" }
+      ];
+
+      const offenders = [];
+      for (const file of FILES) {
+        let src;
+        try { src = await (await fetch("/" + file)).text(); }
+        catch (_e) { continue; }
+
+        const lines = src.split("\n");
+        for (let i = 0; i < lines.length; i++) {
+          const ln = lines[i];
+          const trimmed = ln.trim();
+          // Skip pure comment lines (we tolerate v3/etc in comments —
+          // they're code-archaeology context, not user-facing).
+          if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
+          // Skip import / export-from lines (file paths may contain v3).
+          // Also skip multi-line import continuations like `} from "..."`.
+          if (/^\s*(?:import|export\s+\{|from\s+['"])/.test(trimmed)) continue;
+          if (/^\s*\}\s*from\s+['"]/.test(trimmed)) continue;
+
+          for (const rule of PROHIBITED) {
+            if (rule.pat.test(ln)) {
+              offenders.push(file + ":" + (i + 1) + " · " + rule.reason + " · " + trimmed.slice(0, 100));
+            }
+          }
+        }
+      }
+
+      assertEqual(offenders.length, 0,
+        "V-NAME-2: UI-string anti-leakage failed (" + offenders.length + " offender(s)):\n  " + offenders.join("\n  "));
+    });
   });
 
   // -------------------------------------------------------------------

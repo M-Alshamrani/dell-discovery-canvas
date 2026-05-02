@@ -71,7 +71,7 @@ export function openCanvasChat() {
 
   openOverlay({
     title:   "Canvas Chat",
-    lede:    "Ask anything about your discovery canvas. Grounded in the v3 data model + your live engagement.",
+    lede:    "Ask anything about your discovery canvas. Grounded in the data model + your live engagement.",
     body:    body,
     footer:  footer,
     kind:    "canvas-chat",
