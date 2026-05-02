@@ -994,8 +994,7 @@ Context → Architecture → Heatmap → Workload Mapping → Gaps → Reporting
 
 ### Polish + naming
 
-- **v3-native demo engagement** (per BUG-004) — `core/v3DemoEngagement.js` hand-curated schema-valid v3 engagement; "Load demo" button bypasses the v2 → v3 bridge entirely for the demo case. Smaller (~5-10 instances, 3-5 gaps) and tuned to highlight v3 features (provenance, cross-cutting workload mappings, ops gaps). Once shipped, the bridge tightens (loose-shape only for non-demo v2 sessions during the migration window) and eventually retires when sessionState does.
-- AI control panel consolidation — merge "v3.0 Lab" topbar button + "AI Assist" topbar button + "Chat" topbar button into a single "AI" entry with subtabs (Chat | Skill Builder | Saved Skills | Settings). Reduces topbar clutter.
+- AI control panel consolidation — merge "v3.0 Lab" topbar button + "AI Assist" topbar button into a single "AI" entry with subtabs (Chat | Skill Builder | Saved Skills | Settings). Reduces topbar clutter.
 - **Version-prefix purge** per `feedback_no_version_prefix_in_names.md`. Once v2.x sessionStore is no longer imported by any view, rename: `state/v3Adapter.js` → `state/adapter.js`, `state/v3EngagementStore.js` → `state/engagementStore.js`, `state/v3SessionBridge.js` → `state/sessionBridge.js`, `state/v3SkillStore.js` → `state/skillStore.js`, `core/v3SeedSkills.js` → `core/seedSkills.js`, `ui/views/V3SkillBuilder.js` → `ui/views/SkillBuilder.js`. Drop V3 suffix from test import aliases (`addInstanceV3` → `addInstance`, etc.). Drop "v3.0" prefixes from UI strings. One mechanical commit, browser smoke, ship.
 
 ### GA gate
