@@ -607,21 +607,36 @@ function wireFooter() {
     demoBtn.addEventListener("click", function() {
       confirmAction({
         title: "Load demo session?",
-        body: "This replaces the current canvas with the Acme Healthcare / Riyadh + AWS me-south-1 demo. Anything you've typed is lost (use Save to file first if you want to keep it).",
+        body: "This replaces the current canvas with the Acme Healthcare / Riyadh + Jeddah + Sovereign Cloud demo. Anything you've typed is lost (use Save to file first if you want to keep it).",
         confirmLabel: "Load demo",
         danger: true
       }).then(async function(yes) {
         if (!yes) return;
-        // v2.x dispatch (legacy view tabs read sessionState today; bridge
-        // also runs but is customer-only post-revert).
-        resetToDemo();
-        // v3.0 dispatch (per SPEC §S21.4): set the active engagement
-        // directly to the schema-strict v3-native demo. This is what
-        // Canvas Chat + the v3 Lab read through state/v3EngagementStore.
+        // SPEC §S21.5 · single-source-of-truth demo dispatch.
+        // The v3 demo (`core/demoEngagement.js`) is the authoritative
+        // dataset; v2 sessionState is DERIVED from it via the down-
+        // converter (`state/v3ToV2DemoAdapter.js`) so v2 view tabs
+        // and the v3 Canvas Chat see the same customer + drivers +
+        // environments + instances + gaps.
+        // BUG-010 fix: replaces the prior v2-resetToDemo() + v3-
+        // setActiveEngagement() double-load that surfaced two
+        // diverging customer narratives (Acme Financial in v2 vs
+        // Acme Healthcare in v3).
         try {
-          var demoMod   = await import("./core/demoEngagement.js");
-          var storeMod  = await import("./state/engagementStore.js");
-          storeMod.setActiveEngagement(demoMod.loadDemo());
+          var demoMod    = await import("./core/demoEngagement.js");
+          var storeMod   = await import("./state/engagementStore.js");
+          var adapterMod = await import("./state/v3ToV2DemoAdapter.js");
+          var v3eng    = demoMod.loadDemo();
+          var v2sess   = adapterMod.engagementToV2Session(v3eng);
+          // v2 sessionState - derived from v3.
+          replaceSession(v2sess);
+          saveToLocalStorage();
+          // v3 engagement - authoritative.
+          storeMod.setActiveEngagement(v3eng);
+          // Emit AFTER both stores are coherent so subscribers see the
+          // matched pair. The bridge's shallow-merge is a no-op here
+          // (v2 customer already mirrors v3 customer).
+          emitSessionChanged("session-demo", "Loaded demo session");
         } catch (e) {
           console.error("[demo] v3-native demo failed to load:", e);
         }

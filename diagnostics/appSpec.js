@@ -12585,6 +12585,137 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assert(a === b,
         "loadV3Demo must return the SAME engagement reference on repeat calls (module-cached, deterministic)");
     });
+
+    // -----------------------------------------------------------------
+    // V-DEMO-8/9 · v3-rich demo content invariants
+    // After the rich-demo refresh, the demo MUST cover:
+    //   - 3 drivers (multi-driver narrative)
+    //   - all 5 GAP_TYPES (replace + introduce + consolidate + ops + enhance)
+    //   - at least one driver-tied gap per driver
+    // These are content invariants that hold beyond the structural V-DEMO-1..7.
+    // -----------------------------------------------------------------
+
+    it("V-DEMO-8 · rich demo: 3 drivers + 4 envs + every driver linked by ≥1 gap", () => {
+      const eng = loadV3Demo();
+      assertEqual(eng.drivers.allIds.length, 3,
+        "rich demo carries exactly 3 strategic drivers");
+      assertEqual(eng.environments.allIds.length, 4,
+        "rich demo carries exactly 4 environments");
+      const linkedDrivers = new Set();
+      eng.gaps.allIds.forEach(gid => {
+        const g = eng.gaps.byId[gid];
+        if (g.driverId) linkedDrivers.add(g.driverId);
+      });
+      assertEqual(linkedDrivers.size, eng.drivers.allIds.length,
+        "every driver must be linked by ≥1 gap (got " + linkedDrivers.size + " of " + eng.drivers.allIds.length + " linked)");
+    });
+
+    it("V-DEMO-9 · rich demo: gap_type coverage spans all 5 GAP_TYPES + ≥1 desired instance per driver theme", () => {
+      const eng = loadV3Demo();
+      const gapTypes = new Set(eng.gaps.allIds.map(id => eng.gaps.byId[id].gapType));
+      ["replace", "introduce", "consolidate", "ops", "enhance"].forEach(t => {
+        assert(gapTypes.has(t),
+          "demo gaps must include gap_type='" + t + "'; got types: " + Array.from(gapTypes).join(","));
+      });
+      // Every driver-tied gap must reference at least one desired instance OR
+      // an explicit current → solution mapping (replace/consolidate). This
+      // enforces the "driver → gap → Dell solution" narrative.
+      eng.gaps.allIds.forEach(gid => {
+        const g = eng.gaps.byId[gid];
+        if (!g.driverId) return;
+        const hasMapping = g.relatedDesiredInstanceIds.length > 0 || g.relatedCurrentInstanceIds.length > 0;
+        assert(hasMapping,
+          "driver-tied gap '" + g.description.slice(0, 40) + "' must link ≥1 instance");
+      });
+    });
+
+    // -----------------------------------------------------------------
+    // V-FLOW-CHAT-DEMO-1/2 · BUG-010 regression guards
+    // (per feedback_test_or_it_didnt_ship.md: every BUG fix ships a test
+    //  that would have caught the original incident)
+    //
+    // BUG-010: state/sessionBridge clobbered v3 engagement back to a
+    // customer-only translation on every v2 session-changed emit. Chat
+    // then truthfully reported "canvas is empty."
+    // -----------------------------------------------------------------
+
+    it("V-FLOW-CHAT-DEMO-1 · BUG-010 guard: emitting v2 session-changed AFTER setActiveEngagement(v3demo) does NOT clobber v3 gaps/instances", async () => {
+      const sessionMod = await import("../state/sessionStore.js");
+      const storeMod   = await import("../state/engagementStore.js");
+      const eventsMod  = await import("../core/sessionEvents.js");
+
+      // Set the v3 demo as active engagement.
+      const demoEng = loadV3Demo();
+      storeMod.setActiveEngagement(demoEng);
+      const beforeGapCount      = storeMod.getActiveEngagement().gaps.allIds.length;
+      const beforeInstanceCount = storeMod.getActiveEngagement().instances.allIds.length;
+      const beforeDriverCount   = storeMod.getActiveEngagement().drivers.allIds.length;
+
+      // Simulate ANY v2 session-changed event (a save, an edit, the bridge
+      // boot, etc.). Pre-fix this clobbered the engagement back to 0 gaps.
+      eventsMod.emitSessionChanged("v-flow-chat-demo-1-probe", "regression test");
+
+      const after = storeMod.getActiveEngagement();
+      assertEqual(after.gaps.allIds.length, beforeGapCount,
+        "v3 engagement gaps SHALL NOT be clobbered by a v2 session-changed emit (got " + after.gaps.allIds.length + ", expected " + beforeGapCount + ")");
+      assertEqual(after.instances.allIds.length, beforeInstanceCount,
+        "v3 engagement instances SHALL NOT be clobbered (got " + after.instances.allIds.length + ", expected " + beforeInstanceCount + ")");
+      assertEqual(after.drivers.allIds.length, beforeDriverCount,
+        "v3 engagement drivers SHALL NOT be clobbered (got " + after.drivers.allIds.length + ", expected " + beforeDriverCount + ")");
+    });
+
+    it("V-FLOW-CHAT-DEMO-2 · bridge SHALL shallow-merge v2 customer changes into v3 engagement (preserves v3 gaps/instances/drivers)", async () => {
+      const sessionMod = await import("../state/sessionStore.js");
+      const storeMod   = await import("../state/engagementStore.js");
+      const eventsMod  = await import("../core/sessionEvents.js");
+
+      // Seed with the v3 demo + remember its gap count
+      const demoEng = loadV3Demo();
+      storeMod.setActiveEngagement(demoEng);
+      const startGapCount = storeMod.getActiveEngagement().gaps.allIds.length;
+
+      // Edit v2 customer.name (simulates a v2 view edit)
+      sessionMod.session.customer.name    = "Acme Healthcare Group (Renamed)";
+      sessionMod.session.customer.vertical = "Healthcare";
+      eventsMod.emitSessionChanged("v-flow-chat-demo-2-probe", "v2 customer edit");
+
+      const after = storeMod.getActiveEngagement();
+      assertEqual(after.customer.name, "Acme Healthcare Group (Renamed)",
+        "v2 customer.name change SHALL propagate into v3 engagement (shallow-merge)");
+      assertEqual(after.gaps.allIds.length, startGapCount,
+        "v3 gaps SHALL be preserved during the shallow-merge (got " + after.gaps.allIds.length + ", expected " + startGapCount + ")");
+      assert(after.drivers.allIds.length > 0,
+        "v3 drivers SHALL be preserved during the shallow-merge");
+    });
+
+    it("V-DEMO-V2-1 · v3→v2 demo down-converter produces a v2-shaped session that mirrors v3 customer + drivers + envs + counts", async () => {
+      const adapterMod = await import("../state/v3ToV2DemoAdapter.js");
+      const eng = loadV3Demo();
+      const v2sess = adapterMod.engagementToV2Session(eng);
+
+      assertEqual(v2sess.customer.name, eng.customer.name,
+        "v2 customer.name mirrors v3");
+      assertEqual(v2sess.customer.vertical, eng.customer.vertical,
+        "v2 customer.vertical mirrors v3");
+      assertEqual(v2sess.customer.region, eng.customer.region,
+        "v2 customer.region mirrors v3");
+      assertEqual(v2sess.customer.drivers.length, eng.drivers.allIds.length,
+        "v2 customer.drivers count mirrors v3 drivers");
+      assertEqual(v2sess.environments.length, eng.environments.allIds.length,
+        "v2 environments count mirrors v3");
+      assertEqual(v2sess.instances.length, eng.instances.allIds.length,
+        "v2 instances count mirrors v3");
+      assertEqual(v2sess.gaps.length, eng.gaps.allIds.length,
+        "v2 gaps count mirrors v3");
+      // Driver shape: v2 stores businessDriverId as the v2 driver.id (catalog typeId, not UUID).
+      assert(v2sess.customer.drivers.every(d => typeof d.id === "string" && !d.id.includes("-")),
+        "v2 driver.id must be the catalog typeId (e.g. 'cyber_resilience'), not a v3 UUID");
+      // Environment shape: v2 stores envCatalogId as the v2 env.id.
+      assert(v2sess.environments.every(e => typeof e.id === "string" && !e.id.includes("-")),
+        "v2 env.id must be the catalog typeId (e.g. 'coreDc'), not a v3 UUID");
+      assertEqual(v2sess.isDemo, true,
+        "v2 session is flagged isDemo=true");
+    });
   });
 
   // -------------------------------------------------------------------
