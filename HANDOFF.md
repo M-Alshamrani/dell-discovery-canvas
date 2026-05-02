@@ -1,6 +1,23 @@
 # Dell Discovery Canvas , Session Handoff
 
-**Last session end**: 2026-05-01. **v3.0.0-rc.1 TAGGED on `origin/v3.0-data-architecture`.** APP_VERSION = `3.0.0-rc.1`. Every directive SPEC backend section (§S2 schema · §S4 storage · §S5 selectors · §S6 catalogs · §S7 skill builder · §S8 provenance · §S9 migrator · §S10 integrity · §S11 perf) closed and tested. **NEW for rc.1** (4 commits on top of beta): SPEC §S19 v3.0 → v2.x consumption adapter authored spec-and-test-first; `state/v3Adapter.js` + `state/v3EngagementStore.js` impl with V-ADP-1..10 GREEN; `state/v3SessionBridge.js` co-existence bridge auto-populates engagement on boot + every `session-changed`; V-MFG-1 manifest drift gate (was empty placeholder, now FNV-1a hash + per-kind structural counts). 1011/1011 GREEN banner. **Architecture memory locked 2026-05-01**: `project_v3_no_file_migration_burden.md` — v3 schema is NOT bent for file-format migration; the real-customer `.canvas` migration smoke gate is DROPPED. **NEXT UP**: AI items 1+2 (AI Assist surfaces v3.0 saved skills, dispatches via `runSkill` against active engagement) → AI item 4 (catalog drift banner) → AI item 6 (real-LLM smoke) → 6 per-view migrations → AI item 3 (provenance icons) → tag `v3.0.0` GA.
+**Last session end**: 2026-05-02. **v3.0.0-rc.1 TAGGED on `origin/v3.0-data-architecture`.** APP_VERSION = `3.0.0-rc.1`. Every directive SPEC backend section (§S2 schema · §S4 storage · §S5 selectors · §S6 catalogs · §S7 skill builder · §S8 provenance · §S9 migrator · §S10 integrity · §S11 perf) closed and tested. rc.1 added: SPEC §S19 v3.0 → v2.x consumption adapter; `state/v3Adapter.js` + `state/v3EngagementStore.js` impl with V-ADP-1..10 GREEN; `state/v3SessionBridge.js` co-existence bridge auto-populates engagement on boot + every `session-changed`; V-MFG-1 manifest drift gate. 1011/1011 GREEN banner.
+
+**Architecture memories locked 2026-05-01 → 2026-05-02**:
+- `project_v3_no_file_migration_burden.md` — v3 schema is NOT bent for file-format migration; real-customer `.canvas` migration smoke gate DROPPED.
+- `feedback_no_version_prefix_in_names.md` — version numbers live in git tags + APP_VERSION + changelogs only; never in filenames, exports, or UI labels. Schedule a v3-prefix purge before GA.
+- `feedback_test_what_to_test.md` (2026-05-02 escalation) — V-FLOW or it didn't ship. Property tests are necessary but never sufficient; every interactive UX element must have a V-FLOW vector that asserts the FULL effect (state mutation + user-visible feedback + dispatchability after realistic prior flows).
+
+**Bug log opened 2026-05-02**: `docs/BUG_LOG.md` tracks regressions. BUG-001 (propagate-criticality toast wrong-urgency) + BUG-002 (propagate button stuck after multi-disposition cycle) reported by user during rc.1 manual smoke; both scheduled for rc.2 polish bucket; both fixes ship with V-FLOW regression tests.
+
+**NEXT UP**: rc.2 sequence per `docs/CHANGELOG_PLAN.md`:
+1. **Canvas Chat** — top priority. SPEC §S20 + TESTS §T20 V-CHAT-* + RULES delta → RED-first → impl in chunks. Layered context architecture, tool-use over context-dump, Anthropic prompt caching, streaming, per-engagement session memory, read-only v1. Quality + correctness over breadth (user direction 2026-05-02). All prerequisites are in place.
+2. **BUG-001 + BUG-002 fixes** — each with a V-FLOW regression test.
+3. **Suite 50 · V-FLOW · interaction-completeness** — top ~10 user flows.
+4. AI items 1+2 (saved skills in tile picker, de-prioritized vs Chat) → AI item 4 (drift banner) → AI item 6 (real-LLM smoke).
+5. View migrations × 6 (Context → Architecture → Heatmap → Workload → Gaps → Reporting) per SPEC §S19.4.
+6. AI item 3 (provenance icons — lights up as views migrate).
+7. Polish: AI control panel consolidation (merge Lab + AI Assist into one "AI" topbar entry with subtabs); v3-prefix purge mechanical rename pass.
+8. Tag `v3.0.0` GA after real-workshop validation run.
 
 **v2.4.17 work-in-progress preserved**: 14 commits on local `main` (NOT pushed) + tag `v2.4.17-wip-snapshot` at commit `58660b7`. Rollback recoverable per HANDOVER_v2.4.17_to_v3.0.md §7.3 if needed.
 

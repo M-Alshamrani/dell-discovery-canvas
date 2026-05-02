@@ -946,12 +946,60 @@ Banner: **1011/1011 GREEN** (1001 baseline + 10 V-ADP). Browser smoke verified b
 
 **Architecture decision recorded as memory**: per `project_v3_no_file_migration_burden.md` (saved 2026-05-01), the original "real-customer `.canvas` migration smoke" GA gate is **dropped**. v3 architecture is not bent for file-format migration; the existing v2→v3 file migrator stays as-is on synthetic fixtures.
 
-**Remaining work for non-suffix `3.0.0` GA** (rc.2 → GA arc):
-1. AI items 1+2 — global AI Assist surfaces v3.0 saved skills + dispatches via `runSkill` against `getActiveEngagement()`.
-2. AI item 4 — catalog drift banner + re-validate flow on suggestions.
-3. AI item 6 — Real-LLM commit-time smoke (user-driven Run with Real toggle).
-4. View migrations × 6 (Context → Architecture → Heatmap → Workload Mapping → Gaps → Reporting), one commit + browser smoke per view per SPEC §S19.4. Last view migrated unlocks AI item 3 (provenance icons on canvas fields).
-5. Real-workshop validation run with browser-smoke evidence.
+**Remaining work for non-suffix `3.0.0` GA** (rc.2 → GA arc, sequenced 2026-05-02):
+
+### Top priority — Canvas Chat (NEW · SPEC §S20 to be authored)
+
+User direction 2026-05-02: a context-aware AI chat surface with the full v3 data architecture as binding context. Quality and architecture > feature breadth.
+
+**Locked principles for the spec**:
+- **Layered context architecture** — system prompt assembled from 5 layers (role / data model definition / bindable paths catalog / engagement snapshot / available analytical views). Each layer has its own token budget. Anti-hallucination is the headline goal: every claim the model makes must trace to data we passed.
+- **Tool-use over context-dump** — wherever the provider supports function-calling (Anthropic, OpenAI, Gemini), expose the §S5 selectors as tools the LLM can call rather than dumping every entity into the prompt. v1 may fall back to context-dump for providers without tool-use, but tool-use is the optimized default per industry best practice.
+- **Anthropic prompt caching** — the system prompt prefix (role + data model + manifest) is stable across turns; cache it for ~90% input-token reduction on Anthropic.
+- **Streaming responses** — token-stream from provider to UI for chat-shape latency feel; existing `chatCompletion` may need a streaming variant.
+- **Per-engagement session memory** — chat transcript persisted to `localStorage` keyed by `engagementId` with a rolling N-message window; older turns summarized into a "previous context" pseudo-message rather than truncated. Switching engagements = fresh transcript. Explicit "Clear chat" button.
+- **Read-only v1** — no write-back from chat. The model proposes (e.g. "rename gap g-001 to X"), the user clicks "apply" later. Mutate-by-natural-language is a v3.1 surface with provenance + undo.
+- **Provider-aware** — same Mock | Real provider toggle the Lab uses; chat respects the user's active provider config.
+- **Token-budget visible to user** — the chat overlay shows estimated input-token usage per turn so the user understands cost (BYOK).
+
+**Prerequisites** (verify before SPEC authoring):
+- ✅ v3 schema + engagement store (rc.1)
+- ✅ Bridge populating engagement (rc.1)
+- ✅ Manifest generator (beta)
+- ✅ `chatCompletion` in `core/aiClient.js` (multi-turn capable)
+- ✅ Provider config + selection UI (beta)
+- ✅ `loadAllCatalogs()` (beta)
+- ✅ Selectors: `selectMatrixView`, `selectGapsKanban`, `selectVendorMix`, `selectHealthSummary`, `selectExecutiveSummaryInputs`, `selectLinkedComposition`, `selectProjects` (beta)
+
+All prerequisites are in place; Canvas Chat is timing-correct as the rc.2 leading work. Sequence: SPEC §S20 + TESTS §T20 V-CHAT-* + RULES delta → RED-first scaffold → impl in chunks (system-prompt assembler → memory layer → tool-use dispatcher → chat overlay UI → streaming).
+
+### Bug fixes (logged in `docs/BUG_LOG.md`)
+
+- BUG-001 — propagate-criticality toast text shows wrong urgency value. Each fix ships with V-FLOW regression test.
+- BUG-002 — propagate button non-dispatchable after multi-disposition cycle. Each fix ships with V-FLOW regression test.
+
+### Test-framework upgrade — Suite 50 · V-FLOW
+
+Per `feedback_test_what_to_test.md` 2026-05-02 escalation. NEW interaction-completeness test category. Top ~10 user flows each get a vector that asserts: click → state mutation → user-visible feedback → dispatchability after. Slow but honest. Property tests stay; V-FLOW adds.
+
+### AI surface (de-prioritized vs. Canvas Chat, but still GA-required)
+
+- AI items 1 + 2 — saved skills in global AI Assist tile picker + dispatch via `runSkill`. (Once Canvas Chat ships, the tile picker is mainly for "execute a known workflow" muscle-memory; less differentiated than chat. Still ships.)
+- AI item 4 — catalog drift banner + re-validate flow.
+- AI item 6 — real-LLM commit-time smoke (user-driven; exercises Chat + Lab + tile picker in one pass).
+
+### View migrations × 6 (per SPEC §S19.4)
+
+Context → Architecture → Heatmap → Workload Mapping → Gaps → Reporting. One commit + browser smoke per view. Last view migrated unlocks AI item 3 (provenance icons on canvas fields).
+
+### Polish + naming
+
+- AI control panel consolidation — merge "v3.0 Lab" topbar button + "AI Assist" topbar button into a single "AI" entry with subtabs (Chat | Skill Builder | Saved Skills | Settings). Reduces topbar clutter.
+- **Version-prefix purge** per `feedback_no_version_prefix_in_names.md`. Once v2.x sessionStore is no longer imported by any view, rename: `state/v3Adapter.js` → `state/adapter.js`, `state/v3EngagementStore.js` → `state/engagementStore.js`, `state/v3SessionBridge.js` → `state/sessionBridge.js`, `state/v3SkillStore.js` → `state/skillStore.js`, `core/v3SeedSkills.js` → `core/seedSkills.js`, `ui/views/V3SkillBuilder.js` → `ui/views/SkillBuilder.js`. Drop V3 suffix from test import aliases (`addInstanceV3` → `addInstance`, etc.). Drop "v3.0" prefixes from UI strings. One mechanical commit, browser smoke, ship.
+
+### GA gate
+
+- Real-workshop validation run.
 
 **Status of original BETA gates**:
 - ~~Real-customer `.canvas` migration smoke~~ → **DROPPED** per architectural memory.
