@@ -12,17 +12,24 @@
 //   - git tags — runtime code doesn't read git; this string is the
 //     runtime-visible version.
 //
-// "3.0.0-rc.1" — release candidate. Adapter (SPEC §S19) + engagement
-// store + session bridge + V-MFG-1 manifest drift gate all shipped on
-// 2026-05-01. v2.x view tabs continue to read sessionState today; their
-// per-view migration to state/v3Adapter.js is the rc.2 / GA arc.
+// "3.0.0-rc.2" — release candidate. Closes the chat-perfection arc:
+// data contract (`core/dataContract.js`) → first-turn handshake →
+// markdown rendering → ack chip → Real-Anthropic tool-use →
+// cache_control on stable prefix → SSE per-token streaming. Cleanup
+// arc completed (BUG-003..009 architectural fix; v3-prefix purged on
+// 5 paths; production mock providers lifted out of tests/). Banner
+// 1048/1048 GREEN at tag time. SPEC §S20 / §S25 / §S20.16-19 + RULES
+// §16 CH14-CH19 + RULES §17 PR1-PR7 (production-import discipline)
+// drive the contract.
 //
 // Per project_v3_no_file_migration_burden.md the original "real-customer
 // .canvas migration smoke" gate is DROPPED. Path to non-suffix "3.0.0":
-//   - 5 v2.x view tabs migrated to read via state/v3Adapter.js
+//   - 5 v2.x view tabs migrated to read via state/adapter.js
 //     (Context → Architecture → Heatmap → Workload → Gaps → Reporting)
 //   - AI Assist surfaces v3.0 saved skills + dispatches via
-//     state/v3EngagementStore.js (AI items 1+2 in the rc-arc plan)
+//     state/engagementStore.js (AI items 1+2 in the rc-arc plan)
 //   - At least one real workshop run against a v3.0 engagement
+//   - Real-Anthropic streaming smoke against live key (mock smoke
+//     covers all code paths today)
 
-export const APP_VERSION = "3.0.0-rc.1";
+export const APP_VERSION = "3.0.0-rc.2";

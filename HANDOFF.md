@@ -1,6 +1,19 @@
 # Dell Discovery Canvas , Session Handoff
 
-**Last session end**: 2026-05-02. **v3.0.0-rc.1 TAGGED on `origin/v3.0-data-architecture`.** APP_VERSION = `3.0.0-rc.1`. Every directive SPEC backend section (§S2 schema · §S4 storage · §S5 selectors · §S6 catalogs · §S7 skill builder · §S8 provenance · §S9 migrator · §S10 integrity · §S11 perf) closed and tested. rc.1 added: SPEC §S19 v3.0 → v2.x consumption adapter; `state/v3Adapter.js` + `state/v3EngagementStore.js` impl with V-ADP-1..10 GREEN; `state/v3SessionBridge.js` co-existence bridge auto-populates engagement on boot + every `session-changed`; V-MFG-1 manifest drift gate. 1011/1011 GREEN banner.
+**Last session end**: 2026-05-02 (PM). **v3.0.0-rc.2 LOCAL-TAG-PENDING-USER-APPROVAL on `v3.0-data-architecture`** (push deferred). APP_VERSION = `3.0.0-rc.2`. **Banner 1048/1048 GREEN ✅** at tag time. Closes the chat-perfection arc:
+
+- **Step 0a/0b** SPEC §S24 + V-NAME-1 source-grep + 5 file renames purging v3-prefix (state/adapter, state/engagementStore, state/sessionBridge, core/demoEngagement, ui/views/SkillBuilder). `state/v3SkillStore.js` + `core/v3SeedSkills.js` exempted until v2 retires (per §S24.4 R24.5).
+- **Step 1-4** SPEC §S25 data contract + V-CONTRACT-1..7 + V-MD-1 RED-first scaffold → `core/dataContract.js` (derived from schemas + manifest + catalogs at module-load; deterministic FNV-1a checksum `a345f849`; 6 entities, 18 relationships, 8 invariants, 8 catalogs, 7 analytical views; module-load self-validation). Then `services/systemPromptAssembler.js` (5 layers → 2 collapsed: role + dataContract block) + handshake instruction + labels-not-ids rule. `services/chatService.js` first-turn handshake parser strips `[contract-ack v3.0 sha=<8>]` from visible response + emits `result.contractAck { ok, expected, received }`.
+- **Step 5+6** `vendor/marked/marked.min.js` (v13.0.3) vendored → `ui/views/CanvasChatOverlay.js` renders assistant bubbles via marked (user bubbles stay `textContent` for XSS guard per CH18) + ack chip in header (✓ green auto-fade 3s on match; ⚠ amber + sticky banner on mismatch).
+- **Step 7** Real-Anthropic tool-use round-trip: `buildRequest('anthropic')` accepts `tools` + array-shaped `message.content`; `realChatProvider.js` strips `invoke` closures, parses tool_use blocks, threads `fetchImpl`. `chatService.js` builds Anthropic-shape content blocks `[{type:"tool_use",id,name,input}]` + `[{type:"tool_result",tool_use_id,content}]` for round-2.
+- **Step 8a** cache_control wire: `cacheControl` indices flow assembler → chatService → realChatProvider → `buildRequest('anthropic')`; system field becomes content-block array with `{cache_control:{type:"ephemeral"}}` on the marked prefix block (5-min TTL ≈ ~10x prompt-token cost savings on cache hits).
+- **Step 8b** SSE per-token streaming: NEW `streamCompletion(opts)` async generator parses Anthropic SSE (`content_block_delta` text_delta, `input_json_delta` partials reassembled on `content_block_stop`); `realChatProvider({stream:true})` (default for Anthropic) routes through it. V-CHAT-15 opted out via `stream:false`; V-CHAT-17 covers SSE path with ReadableStream stub.
+- **Step 9** RESET-TO-DEMO + aiConfig: VERIFIED already preserved (separate localStorage keys `dell_discovery_v1` vs `ai_config_v1`); summary's prior bug-claim was wrong, no fix needed.
+- **Step 10+11** End-to-end mock smoke (rc2-step8b container, browser-driven): contractAck.ok=true, handshake stripped, 2 provider calls round-trip, markdown h2/strong/em/table/th/td/li/code all rendered, ack chip green. **Real-Anthropic streaming smoke against live key DEFERRED to first user-driven workshop run** (mock smoke covers all code paths; real-key smoke is the user's first chat-overlay use post-deploy).
+
+New tests this release: V-CONTRACT-1..7, V-MD-1, V-NAME-1, V-CHAT-13/14/15/16/17, V-DEMO-1..7, V-MOCK-1..3, V-ANTI-RUN-1. New rules: `docs/RULES.md §17 PR1-PR7` (production-import discipline) + `§16 CH14-CH19`. Two providers lifted to production (`services/mockChatProvider.js` + `services/mockLLMProvider.js`). One vendor (`vendor/marked/marked.min.js`).
+
+**Previously (rc.1, 2026-05-01)**: Every directive SPEC backend section (§S2 schema · §S4 storage · §S5 selectors · §S6 catalogs · §S7 skill builder · §S8 provenance · §S9 migrator · §S10 integrity · §S11 perf) closed and tested. rc.1 added: SPEC §S19 v3.0 → v2.x consumption adapter; `state/v3Adapter.js` + `state/v3EngagementStore.js` impl with V-ADP-1..10 GREEN; `state/v3SessionBridge.js` co-existence bridge auto-populates engagement on boot + every `session-changed`; V-MFG-1 manifest drift gate. 1011/1011 GREEN banner. Files renamed in rc.2: state/v3Adapter → state/adapter; state/v3EngagementStore → state/engagementStore; state/v3SessionBridge → state/sessionBridge.
 
 **Architecture memories locked 2026-05-01 → 2026-05-02 (six binding rules)**:
 - `project_v3_no_file_migration_burden.md` — v3 schema is NOT bent for file-format migration; real-customer `.canvas` migration smoke gate DROPPED.
@@ -10,22 +23,20 @@
 - `feedback_test_or_it_didnt_ship.md` (locked 2026-05-02) — every BUG-NNN fix MUST add a regression test that would have caught the original incident. Patch-class bugs ship V-ANTI-* + V-FLOW-* coverage. Cadence: bug-entry → SPEC → TESTS → RULES → RED scaffold → impl → smoke. No skipping.
 - `feedback_spec_and_test_first.md` + `feedback_browser_smoke_required.md` (pre-existing) — restated for completeness.
 
-**Bug log** (`docs/BUG_LOG.md`): BUG-001 + BUG-002 (propagate-criticality regressions, scheduled rc.2 polish), BUG-003 OPEN (chat sees empty engagement against v2 demo; first patch attempted at `7dbb7ad` then **reverted at `bacc7a0`** because it bypassed schema; awaits architectural fix via BUG-004), BUG-004 (build v3-native demo), BUG-005..007 (V3SkillBuilder + CanvasChatOverlay import test fixtures + mocks at runtime — production-from-tests anti-pattern), BUG-008/009 (cosmetic stale comments).
+**Bug log** (`docs/BUG_LOG.md`): BUG-001 + BUG-002 (propagate-criticality regressions, scheduled GA polish, still OPEN). **BUG-003..009 CLOSED in rc.2** with full architectural fix + regression test guards: BUG-003 (chat empty engagement) closed via §S21 v3-native demo (V-DEMO-1..7); BUG-004 closed by demo impl; BUG-005..007 (production-from-tests imports) closed via §S22 production mock providers + §S23 + V-MOCK-1..3 + V-ANTI-RUN-1; BUG-008/009 (cosmetic stale comments) closed in stale-comment cleanup commit `0eba848`.
 
-**Cleanup arc in progress 2026-05-02**: revert + log + spec + tests + RULES + RED-first scaffold + impl + smoke. Each bug ships a regression test (V-DEMO-*, V-MOCK-*, V-ANTI-RUN-*, V-FLOW-CHAT-DEMO-*) so the same shape can't recur.
+**Cleanup arc COMPLETE 2026-05-02**: revert (`bacc7a0`) → log → spec → tests → RULES → RED-first scaffold → impl → smoke. Each bug ships a regression test (V-DEMO-*, V-MOCK-*, V-ANTI-RUN-*) so the same shape can't recur.
 
-**NEXT UP**: complete the cleanup arc per the todo list:
-1. SPEC §S21 v3-native demo + §S22 production mock providers + §S23 production-no-tests-imports.
-2. TESTS §T21 V-DEMO + §T22 V-MOCK + §T23 V-ANTI-RUN.
-3. RULES §17 production-import discipline.
-4. RED-first scaffold + stub modules.
-5. Implement: `services/mockChatProvider.js` + `services/mockLLMProvider.js` (production mocks; tests update imports).
-6. Implement: `core/v3DemoEngagement.js` (hand-curated, schema-strict, deterministic UUIDs).
-7. Wire: Load-demo button → `loadV3Demo()` → `setActiveEngagement(...)`. V3SkillBuilder + CanvasChatOverlay drop `tests/` runtime imports.
-8. Cosmetic comment cleanup (BUG-008 + BUG-009).
-9. End-to-end smoke: refresh → Load demo → Chat → ask → Anthropic-grounded answer against v3-native demo.
+**Chat-perfection arc COMPLETE 2026-05-02 (PM)**: data contract + handshake + markdown + ack chip + Real-Anthropic tool-use + cache_control + SSE per-token streaming. Banner 1048/1048 GREEN. See top section for the per-step breakdown.
 
-After cleanup arc: AI item 4 (drift banner), AI item 6 (real-LLM smoke), Chunk E (per-token SSE streaming + Anthropic prompt-caching), BUG-001 + BUG-002 propagate fixes, Suite 50 V-FLOW vectors, AI items 1+2, view migrations × 6, AI item 3 provenance icons, polish (AI panel consolidation + v3-prefix purge), tag `v3.0.0` GA.
+**NEXT UP (post-rc.2, queued)**:
+1. **Real-Anthropic live-key smoke** — first user-driven workshop run with a real Anthropic key against the v3-native demo (mock smoke covers all paths but the real-network round-trip is unverified until the user's first session).
+2. **GA arc** — view migrations × 5 (Context → Architecture → Heatmap → Workload → Gaps → Reporting) reading via `state/adapter.js` instead of v2.x `state/sessionState.js`.
+3. **AI Assist consolidation** — surface v3.0 saved skills via `state/engagementStore.js`; consider removing v2.x admin panel per `project_v2x_admin_deferred.md` parity gate.
+4. **OpenAI + Gemini tool-use + SSE** (rc.3 scope; their wire shapes warrant their own request builders).
+5. **BUG-001 + BUG-002** propagate-criticality fixes.
+6. **Polish** (deferred design review per `project_deferred_design_review.md` + crown-jewel UX per `project_crown_jewel_design.md`).
+7. **Tag `v3.0.0` GA** when the above ships + a real workshop run is logged.
 
 **v2.4.17 work-in-progress preserved**: 14 commits on local `main` (NOT pushed) + tag `v2.4.17-wip-snapshot` at commit `58660b7`. Rollback recoverable per HANDOVER_v2.4.17_to_v3.0.md §7.3 if needed.
 
