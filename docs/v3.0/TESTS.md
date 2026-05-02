@@ -827,7 +827,91 @@ it("V-ADP-1 · adaptContextView is identity-stable on unchanged engagement refer
 
 ---
 
-## §T20 · Banner target reconciliation
+## §T20 · V-CHAT — Canvas Chat (context-aware AI assistant)
+
+**Coverage**: SPEC §S20.
+
+**Approximate count**: 12 vectors.
+
+| Vector | Assertion |
+|---|---|
+| V-CHAT-1 | `buildSystemPrompt({engagement, manifest, catalogs})` returns the 5-layer structure with the expected section markers (role / data-model / manifest / engagement / views) in order |
+| V-CHAT-2 | Layer-4 token-budget switch: small engagement (≤20 instances + ≤20 gaps + ≤5 drivers) → full inline; larger engagement → counts-only summary (~500 tokens) |
+| V-CHAT-3 | `CHAT_TOOLS` enumerates one entry per §S5 selector (`selectMatrixView`, `selectGapsKanban`, `selectVendorMix`, `selectHealthSummary`, `selectExecutiveSummaryInputs`, `selectLinkedComposition`, `selectProjects`); each entry's `name` matches the selector function name; each entry's `invoke(eng, args)` returns `===`-equal output to calling the selector directly |
+| V-CHAT-4 | Mock provider: `streamChat({engagement, transcript:[], userMessage:"hi", providerConfig:{providerKey:"mock"}, onToken, onComplete})` against `createMockChatProvider({responses:["hello there"]})` calls `onToken` once per token in expected order, then `onComplete` with the full text |
+| V-CHAT-5 | Tool-call round-trip with mock: provider emits `tool_use {name:"selectGapsKanban"}` → dispatcher invokes `selectGapsKanban(eng)` → tool_result fed back as a user-role message → provider emits final text → `onComplete({response, provenance})` |
+| V-CHAT-6 | `state/chatMemory.js` round-trip: `saveTranscript(engId, t)` → `loadTranscript(engId)` returns deep-equal transcript |
+| V-CHAT-7 | `summarizeIfNeeded(transcript)` against a transcript of length > CHAT_TRANSCRIPT_WINDOW collapses older turns into one `{role:"system", content:"PRIOR CONTEXT: ..."}` message; idempotent on re-run (running it twice does not double-summarize) |
+| V-CHAT-8 | `clearTranscript(engId)` removes the localStorage key; `loadTranscript(engId)` after clear returns `{messages:[], summary:null}` |
+| V-CHAT-9 | V-ANTI-CHAT-1: source grep — none of `services/chatService.js`, `services/systemPromptAssembler.js`, `services/chatTools.js`, `state/chatMemory.js`, `ui/views/CanvasChatOverlay.js` import from `state/collections/` (no §S4 action calls in chat layer; read-only v1 invariant) |
+| V-CHAT-10 | Empty engagement: `streamChat` against `createEmptyEngagement()` does not throw; the `buildSystemPrompt` output for an empty engagement contains the literal phrase "the canvas is empty" or equivalent (so the model is grounded to say so) |
+| V-CHAT-11 | `providerCapabilities("anthropic").caching === true`; `providerCapabilities("openai-compatible").caching === false`; both return `streaming === true` and `toolUse === true`; `providerCapabilities("mock")` returns `{streaming: true, toolUse: true, caching: false}` for deterministic test paths |
+| V-CHAT-12 | `buildSystemPrompt({..., providerKind:"anthropic"})` emits `cache_control: {type:"ephemeral"}` on the prefix block (layers 1+2+3+5-descriptions); `buildSystemPrompt({..., providerKind:"openai-compatible"})` produces the same content WITHOUT the cache_control marker |
+
+### T20.1 · Sample vector body (V-CHAT-3 · selector ↔ tool consistency)
+
+```js
+it("V-CHAT-3 · CHAT_TOOLS has one entry per §S5 selector with matching invoke", () => {
+  const SELECTORS = {
+    selectMatrixView, selectGapsKanban, selectVendorMix, selectHealthSummary,
+    selectExecutiveSummaryInputs, selectLinkedComposition, selectProjects
+  };
+  const toolNames = CHAT_TOOLS.map(t => t.name).sort();
+  assertEqual(toolNames.join(","), Object.keys(SELECTORS).sort().join(","),
+    "CHAT_TOOLS names must match §S5 selector function names exactly");
+
+  const eng = loadReference("acme-financial.canvas");
+  for (const tool of CHAT_TOOLS) {
+    const direct = SELECTORS[tool.name](eng);
+    const viaTool = tool.invoke(eng, {});
+    assert(direct === viaTool || JSON.stringify(direct) === JSON.stringify(viaTool),
+      "tool dispatcher for " + tool.name + " must return selector output verbatim");
+  }
+});
+```
+
+### T20.2 · Sample vector body (V-CHAT-5 · tool-call round-trip with mock)
+
+```js
+it("V-CHAT-5 · tool-call round-trip: question → tool_use → resolve → tool_result → final text", async () => {
+  const eng = loadReference("acme-financial.canvas");
+  setActiveEngagement(eng);
+
+  // Mock provider script: first response is a tool_use; second response is final text.
+  const provider = createMockChatProvider({
+    responses: [
+      { kind: "tool_use", name: "selectGapsKanban", input: {} },
+      { kind: "text",     text: "There are 7 open gaps with High urgency." }
+    ]
+  });
+
+  const tokens = [];
+  const result = await streamChat({
+    engagement:     eng,
+    transcript:     [],
+    userMessage:    "How many High-urgency gaps are open?",
+    providerConfig: { providerKey: "mock" },
+    provider,
+    onToken:        t => tokens.push(t),
+  });
+
+  assertEqual(provider.callsRecorded.length, 2, "exactly 2 provider calls (initial + post-tool-result)");
+  assertEqual(provider.callsRecorded[1].messages.find(m => m.role === "user" && m.content.includes("tool_result")) != null,
+    true, "second call carries the tool_result back to the provider");
+  assert(result.response.includes("7 open gaps"), "final text from second call surfaces");
+});
+```
+
+### T20.3 · Forbidden test patterns
+
+- **F20T.1** · Stubbing `services/systemPromptAssembler.js` internals; build prompts end-to-end against deterministic mock engagement + manifest fixtures.
+- **F20T.2** · Comparing assembled prompt text byte-for-byte (brittle as wording evolves); use structural assertions (sections present, cache markers in expected positions, tool-defs match selectors).
+- **F20T.3** · Asserting LLM output semantics ("the model should say X"). We can't test LLM output. Only test the assembler / dispatcher / memory layers; provider response is mocked deterministically.
+- **F20T.4** · Mocking `state/v3EngagementStore.js` to bypass the bridge; tests use `setActiveEngagement(loadReference(...))` to drive the real store.
+
+---
+
+## §T21 · Banner target reconciliation
 
 Per SPEC §S14.6:
 
@@ -851,25 +935,26 @@ Per SPEC §S14.6:
 | V-MULTI | 8 | T17 (8) |
 | V-ANTI | 5 | T18 (5) |
 | V-ADP | 10 | T19 (10) |
-| **TOTAL** | **~411** | **~414** |
+| V-CHAT | 12 | T20 (12) |
+| **TOTAL** | **~423** | **~426** |
 
-Final banner target after merging: **616 (v2.4.16 baseline) - obsolete (~120 v2.4.x vectors that test fields/shapes that no longer exist) + 411 new = ~907 GREEN**. Provisional pending Suite 49 land + obsolete-vector audit. v3.0.0-beta currently shows 1001/1001 because actual implementation enumerates per-fixture / per-invariant; "approximate count" here is the planning floor, not a ceiling.
+Final banner target after merging: **616 (v2.4.16 baseline) - obsolete (~120 v2.4.x vectors that test fields/shapes that no longer exist) + 423 new = ~919 GREEN**. Provisional pending Suite 49 land + obsolete-vector audit. v3.0.0-rc.1 currently shows 1011/1011 because actual implementation enumerates per-fixture / per-invariant; "approximate count" here is the planning floor, not a ceiling.
 
 ---
 
-## §T21 · Open items
+## §T22 · Open items
 
 | Item | Section | Tag |
 |---|---|---|
 | V-SCH-12 default — `.strict()` vs `.strip()` for unknown fields | §T2.2 | TO RESOLVE (default `.strict()` for v3.0) |
 | V-MFG-10 manifest entry count expected size table | §T7 | TO LOCK at SPEC §S7.2.1 implementation |
 | V-ANTI-4 strict R-number → vector enforcement | §T18.1 | TO UPGRADE in v3.1 (smoke-check floors in v3.0) |
-| Banner target obsolete-vector audit | §T20 | TO RUN at Suite 49 land time (count which v2.4.x vectors test fields that v3.0 removes) |
+| Banner target obsolete-vector audit | §T21 | TO RUN at Suite 49 land time (count which v2.4.x vectors test fields that v3.0 removes) |
 | V-PROD mock LLM response keyed by prompt hash format | §T16.4 | TO AUTHOR alongside `services/llm/mockProvider.js` |
 
 ---
 
-## §T22 · Document control
+## §T23 · Document control
 
 - **Authored**: 2026-05-01 alongside MIGRATION.md.
 - **Owner**: spec writer (Claude Opus 4.7 1M context, this session and successors).
@@ -882,5 +967,6 @@ Final banner target after merging: **616 (v2.4.16 baseline) - obsolete (~120 v2.
 |---|---|---|
 | 2026-05-01 | All | Initial draft. 17 vector categories + ~404 vector ids enumerated. Banner target ~897 GREEN. |
 | 2026-05-01 | §T19 + §T20 + §T21 + §T22 | NEW §T19 V-ADP-1..10 vectors for SPEC §S19 v3.0 → v2.x consumption adapter. Existing §T19/T20/T21 meta-sections renumbered to §T20/T21/T22. Banner target bumps from ~897 to ~907. |
+| 2026-05-02 | §T20 + §T21 + §T22 + §T23 | NEW §T20 V-CHAT-1..12 vectors for SPEC §S20 Canvas Chat. Existing §T20/T21/T22 meta-sections (banner target / open items / document control) renumbered to §T21/T22/T23. Banner target bumps from ~907 to ~919. Sample bodies for V-CHAT-3 (selector ↔ tool consistency) + V-CHAT-5 (tool-call round-trip with mock). |
 
 End of TESTS.

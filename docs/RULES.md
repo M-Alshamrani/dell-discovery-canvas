@@ -411,6 +411,32 @@ The adapter is the cutover boundary between the v2.x `state/sessionState.js` sto
 
 ---
 
+## 16 · Canvas Chat — context-aware AI assistant (`services/chatService.js` + friends) · NEW v3.0.0-rc.2 (QUEUED 2026-05-02)
+
+**Status**: SPEC §S20 + TESTS §T20 V-CHAT-1..12 authored 2026-05-02; implementation queued. **Rules below are normative once Suite 51 V-CHAT-1..12 lands GREEN.**
+
+The chat surface gives the user a conversational interface to the live engagement, with the full v3 data architecture (entities, FKs, invariants, manifest, analytical views) bound into the system prompt. The invariants in this section guard against the two failure modes the user explicitly called out: hallucination (data the model invents because we didn't ground it) and bloat (sending the entire dataset every turn instead of optimizing transmission).
+
+| # | Rule | Tier | When it fires |
+|---|---|---|---|
+| CH1 | Chat layer module imports `state/sessionState.js` | 🔴 HARD | review-time + V-CHAT-9 enforcement |
+| CH2 | Chat layer module imports any `state/collections/*Actions.js` (i.e. calls a §S4 action function from chat) | 🔴 HARD | read-only v1 boundary; V-CHAT-9 enforcement |
+| CH3 | System prompt assembled with the full engagement on every turn regardless of size (must respect S20.6 layered budget — counts-only summary when engagement exceeds threshold) | 🔴 HARD | code review + V-CHAT-2 |
+| CH4 | `CHAT_TOOLS` entries diverge from §S5 selector signatures (each tool name MUST match a selector function name; each `invoke` MUST return what the selector returns directly) | 🔴 HARD | tested by V-CHAT-3 |
+| CH5 | Transcript persisted with API keys, OAuth tokens, or any field tagged sensitive in `core/aiConfig.js` | 🔴 HARD | code review + lint of `state/chatMemory.js` |
+| CH6 | "v3" prefix in any new chat-related module name | 🔴 HARD | per `feedback_no_version_prefix_in_names.md`; chat ships with canonical names from day one |
+| CH7 | Streaming response handler swallows network errors silently | 🔴 HARD | failures MUST surface as a chat assistant message; existing `aiService.chatCompletion` retry logic still applies as the underlying transport |
+| CH8 | Anthropic responses use `cache_control: {"type":"ephemeral"}` on the prefix block (layers 1+2+3+5-descriptions); other providers omit the marker | 🔵 AUTO | tested by V-CHAT-12 |
+| CH9 | Chat session memory is keyed by `engagementId`; switching engagements (when v3.1 multi-engagement lands) yields a fresh transcript | 🔵 AUTO | localStorage key shape: `dell-canvas-chat::<engagementId>` |
+| CH10 | Tool-call round-trip is ALWAYS one round when the provider supports tool-use (one `tool_use` → one in-browser dispatch → one `tool_result` back → one final text response). Multi-turn tool chains are NOT supported in v1 | 🔵 AUTO | tested by V-CHAT-5; v3.1 may extend |
+| CH11 | Rolling-window summarization triggers when transcript exceeds CHAT_TRANSCRIPT_WINDOW (default 30 messages) OR CHAT_TRANSCRIPT_TOKEN_BUDGET (default ~12K tokens); older turns collapse into one synthetic `{role:"system", content:"PRIOR CONTEXT: <summary>"}` message | 🔵 AUTO | tested by V-CHAT-7 |
+| CH12 | When the model emits a proposal (rename / re-classify / re-link), the chat surface renders an "Open in Tab N" affordance that switches tabs + pre-fills the input — but mutation happens through normal v2.x / v3.0 UI paths, NEVER from chat | 🔵 AUTO | code review; aligns with CH2 |
+| CH13 | Chat respects the user's active provider config (Mock | Real toggle, same as v3.0 Skill Builder Lab); when Mock is active, chat uses `tests/mocks/mockChatProvider.js` deterministic provider | 🔵 AUTO | tested by V-CHAT-4 + V-CHAT-11 |
+
+**Cross-references**: SPEC §S20 + TESTS §T20 V-CHAT-1..12. Memory anchors: `feedback_spec_and_test_first.md` (this entire section is the spec-first artifact), `feedback_no_version_prefix_in_names.md` (CH6 enforcement), `feedback_browser_smoke_required.md` (per-commit smoke for chat UI changes), `feedback_test_what_to_test.md` 2026-05-02 escalation (V-CHAT vectors include interaction completeness — clicking send actually streams + tool dispatches + memory persists).
+
+---
+
 ## v2.4.15 · UI surfaces that make rules visible
 
 Rules without visible UI are surprises. v2.4.11 added the original surfaces; v2.4.12-15 extended them. Updated to reflect v2.4.15 ship state.

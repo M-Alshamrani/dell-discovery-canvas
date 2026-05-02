@@ -8668,6 +8668,19 @@ import {
   _resetForTests as _resetEngagementStoreForTests
 } from "../state/v3EngagementStore.js";
 
+// rc.2 . SPEC §S20 V-CHAT . Canvas Chat (context-aware AI assistant).
+// Imports the STUB modules — Suite 49 §T20 V-CHAT-1..12 fails RED
+// against these stubs by design until impl lands.
+import { streamChat, providerCapabilities }      from "../services/chatService.js";
+import { buildSystemPrompt }                     from "../services/systemPromptAssembler.js";
+import { CHAT_TOOLS }                            from "../services/chatTools.js";
+import {
+  loadTranscript, saveTranscript, clearTranscript, summarizeIfNeeded,
+  CHAT_TRANSCRIPT_WINDOW, TRANSCRIPT_KEY_PREFIX,
+  _resetForTests as _resetChatMemoryForTests
+} from "../state/chatMemory.js";
+import { createMockChatProvider }                from "../tests/mocks/mockChatProvider.js";
+
 // ============================================================================
 // Suite 49 · v3.0 data architecture rebuild · RED-first vector scaffold
 //
@@ -11898,6 +11911,287 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assert(reportv !== null, "adaptReportingView is non-null after roundtrip");
       assertEqual(ctx.customer.name, "RT Customer",
         "round-tripped customer.name surfaces through adapter");
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // §T20 · V-CHAT · Canvas Chat (per SPEC §S20)
+  // RED-first: services/chatService.js, services/systemPromptAssembler.js,
+  // services/chatTools.js, state/chatMemory.js, tests/mocks/mockChatProvider.js
+  // are STUBS. V-CHAT-{1,2,3,4,5,6,7,10,11,12} fail against the stubs
+  // and go GREEN as the chat layer ships per the SPEC §S20 sequence.
+  // V-CHAT-8 + V-CHAT-9 may pass against stubs by design (they are
+  // constraint tests that hold even when the impl is empty).
+  // -------------------------------------------------------------------
+  describe("§T20 · V-CHAT · Canvas Chat", () => {
+
+    function _resetChatEnv() {
+      _resetEngagementStoreForTests();
+      _resetChatMemoryForTests();
+    }
+
+    it("V-CHAT-1 · buildSystemPrompt returns the 5-layer structure with role + data-model + manifest + engagement + views sections", () => {
+      _resetChatEnv();
+      const eng = createEmptyEngagement();
+      const result = buildSystemPrompt({ engagement: eng });
+      assert(result && Array.isArray(result.messages),
+        "buildSystemPrompt returns { messages: [...], cacheControl: [...] }");
+      // Concatenate all message contents to scan for layer markers.
+      // The real impl emits explicit layer markers (== Layer 1: Role ==
+      // or similar) so we can structurally verify all 5 are present.
+      const concatenated = result.messages
+        .map(m => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)))
+        .join("\n");
+      const requiredMarkers = ["role", "data model", "bindable paths", "engagement", "analytical views"];
+      for (const marker of requiredMarkers) {
+        assert(concatenated.toLowerCase().includes(marker),
+          "system prompt must include layer marker for: " + marker);
+      }
+    });
+
+    it("V-CHAT-2 · Layer-4 token-budget switch: small engagement inlined; large engagement counts-only", () => {
+      _resetChatEnv();
+      // Small engagement: empty default → trivially small.
+      const small = createEmptyEngagement();
+      const smallPrompt = buildSystemPrompt({ engagement: small });
+      const smallText = smallPrompt.messages.map(m =>
+        typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n");
+      // Small engagements should inline the customer object (engagement.customer.name visible).
+      assert(smallText.includes(small.customer.name) || smallText.includes('"customer"'),
+        "small engagement: customer block inlined in layer 4");
+
+      // Large engagement: 30+ instances + 30+ gaps. Build via actions.
+      let large = createEmptyEngagement();
+      large = addEnvironment(large, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const envId = large.environments.allIds[0];
+      for (let i = 0; i < 25; i++) {
+        large = addInstanceV3(large, { state:"current", layerId:"compute", environmentId: envId,
+          label:"Asset-" + i, vendor:"Dell", vendorGroup:"dell", criticality:"Medium", disposition:"keep" }).engagement;
+      }
+      for (let i = 0; i < 25; i++) {
+        large = addGapV3(large, { description: "Gap " + i,
+          gapType: "ops", urgency: "Medium", phase: "now", status: "open",
+          layerId: "infrastructure", affectedLayers: ["infrastructure"] }).engagement;
+      }
+      const largePrompt = buildSystemPrompt({ engagement: large });
+      const largeText = largePrompt.messages.map(m =>
+        typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n");
+      // Large engagements should NOT inline every instance label — counts-only.
+      const labelInlineCount = (largeText.match(/Asset-/g) || []).length;
+      assert(labelInlineCount < 5,
+        "large engagement: counts-only (no full per-instance labels in layer 4); got " + labelInlineCount);
+    });
+
+    it("V-CHAT-3 · CHAT_TOOLS has one entry per §S5 selector with matching invoke", () => {
+      _resetChatEnv();
+      const SELECTORS = {
+        selectMatrixView, selectGapsKanban, selectVendorMix, selectHealthSummary,
+        selectExecutiveSummaryInputs, selectLinkedComposition, selectProjects
+      };
+      const expectedNames = Object.keys(SELECTORS).sort();
+      const actualNames   = CHAT_TOOLS.map(t => t.name).sort();
+      assertEqual(actualNames.join(","), expectedNames.join(","),
+        "CHAT_TOOLS names must match §S5 selector function names exactly");
+
+      // Each tool's invoke(eng, args) must produce the same shape as the
+      // selector called directly.
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      for (const tool of CHAT_TOOLS) {
+        const direct = SELECTORS[tool.name](eng);
+        const viaTool = tool.invoke(eng, {});
+        // selectMatrixView accepts {state} arg; tool dispatchers may pass {} as default.
+        // We assert deep-shape via JSON; selectors are pure so this is safe.
+        assertEqual(JSON.stringify(viaTool), JSON.stringify(direct),
+          "tool dispatcher for " + tool.name + " must return selector output verbatim (default args)");
+      }
+    });
+
+    it("V-CHAT-4 · streamChat against mock provider yields text via onToken in expected order", async () => {
+      _resetChatEnv();
+      const eng = createEmptyEngagement();
+      setActiveEngagement(eng);
+      const provider = createMockChatProvider({
+        responses: [{ kind: "text", text: "hello there" }]
+      });
+      const tokens = [];
+      const result = await streamChat({
+        engagement:     eng,
+        transcript:     [],
+        userMessage:    "hi",
+        providerConfig: { providerKey: "mock" },
+        provider:       provider,
+        onToken:        t => tokens.push(t)
+      });
+      assert(typeof result.response === "string" && result.response.length > 0,
+        "streamChat returns { response: string }");
+      assert(tokens.join("") === result.response,
+        "tokens concatenated equal final response");
+    });
+
+    it("V-CHAT-5 · tool-call round-trip: question → tool_use → resolve → tool_result → final text", async () => {
+      _resetChatEnv();
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      eng = addGapV3(eng, { description: "g1", gapType: "ops", urgency: "High", phase: "now",
+        status: "open", layerId: "infrastructure", affectedLayers: ["infrastructure"] }).engagement;
+      setActiveEngagement(eng);
+
+      const provider = createMockChatProvider({
+        responses: [
+          { kind: "tool_use", name: "selectGapsKanban", input: {} },
+          { kind: "text",     text: "There is 1 open gap with High urgency." }
+        ]
+      });
+      const result = await streamChat({
+        engagement:     eng,
+        transcript:     [],
+        userMessage:    "How many High-urgency gaps are open?",
+        providerConfig: { providerKey: "mock" },
+        provider:       provider
+      });
+      assertEqual(provider.callsRecorded.length, 2,
+        "exactly 2 provider calls (initial + post-tool-result)");
+      assert(typeof result.response === "string" && result.response.includes("1"),
+        "final text from second call surfaces");
+    });
+
+    it("V-CHAT-6 · saveTranscript → loadTranscript round-trip preserves messages + summary", () => {
+      _resetChatEnv();
+      const engId = "test-eng-v-chat-6";
+      const t = {
+        messages: [
+          { role: "user",      content: "hi",            at: "2026-05-02T10:00:00.000Z" },
+          { role: "assistant", content: "hello there",   at: "2026-05-02T10:00:01.000Z" }
+        ],
+        summary: null
+      };
+      saveTranscript(engId, t);
+      const loaded = loadTranscript(engId);
+      assertEqual(loaded.messages.length, 2,
+        "loaded transcript has 2 messages");
+      assertEqual(loaded.messages[0].content, "hi", "first message preserved");
+      assertEqual(loaded.messages[1].content, "hello there", "second message preserved");
+      clearTranscript(engId);
+    });
+
+    it("V-CHAT-7 · summarizeIfNeeded collapses older turns into a PRIOR CONTEXT system message; idempotent on re-run", () => {
+      _resetChatEnv();
+      // Build a transcript with more than CHAT_TRANSCRIPT_WINDOW messages.
+      const messages = [];
+      for (let i = 0; i < CHAT_TRANSCRIPT_WINDOW + 5; i++) {
+        messages.push({ role: i % 2 === 0 ? "user" : "assistant",
+          content: "msg " + i, at: "2026-05-02T10:00:00.000Z" });
+      }
+      const big = { messages, summary: null };
+      const summarized = summarizeIfNeeded(big);
+      // After summarization, transcript length should be <= CHAT_TRANSCRIPT_WINDOW.
+      assert(summarized.messages.length <= CHAT_TRANSCRIPT_WINDOW,
+        "post-summarize length within window: " + summarized.messages.length);
+      // The first message should be a synthetic PRIOR CONTEXT system entry.
+      const priorContextSeen = summarized.messages.some(m =>
+        m.role === "system" && typeof m.content === "string" &&
+        m.content.startsWith("PRIOR CONTEXT"));
+      assert(priorContextSeen, "PRIOR CONTEXT system message present after summarization");
+      // Idempotent: re-running compresses no further.
+      const summarizedAgain = summarizeIfNeeded(summarized);
+      assertEqual(summarizedAgain.messages.length, summarized.messages.length,
+        "summarizeIfNeeded is idempotent on already-summarized transcripts");
+    });
+
+    it("V-CHAT-8 · clearTranscript removes the localStorage entry", () => {
+      _resetChatEnv();
+      const engId = "test-eng-v-chat-8";
+      saveTranscript(engId, {
+        messages: [{ role: "user", content: "hi", at: "2026-05-02T10:00:00.000Z" }],
+        summary: null
+      });
+      const before = loadTranscript(engId);
+      assertEqual(before.messages.length, 1, "saved transcript loaded back with 1 message");
+      clearTranscript(engId);
+      const after = loadTranscript(engId);
+      assertEqual(after.messages.length, 0, "after clear, transcript is empty");
+      assertEqual(after.summary, null,       "after clear, summary is null");
+    });
+
+    it("V-CHAT-9 · V-ANTI-CHAT-1 · chat layer source code does NOT import sessionState or §S4 collection actions", async () => {
+      const FILES = [
+        "services/chatService.js",
+        "services/systemPromptAssembler.js",
+        "services/chatTools.js",
+        "state/chatMemory.js",
+        "ui/views/CanvasChatOverlay.js"
+      ];
+      const FORBIDDEN_IMPORTS = [
+        "from \"../state/sessionState.js\"",
+        "from '../state/sessionState.js'",
+        "from \"../../state/sessionState.js\"",
+        "from '../../state/sessionState.js'",
+        "from \"../state/collections/",
+        "from '../state/collections/",
+        "from \"../../state/collections/",
+        "from '../../state/collections/"
+      ];
+      for (const file of FILES) {
+        let src;
+        try {
+          const res = await fetch("/" + file);
+          if (!res.ok) continue;   // file not yet shipped; constraint vacuously holds
+          src = await res.text();
+        } catch (_e) { continue; }
+        for (const forbidden of FORBIDDEN_IMPORTS) {
+          assert(!src.includes(forbidden),
+            "V-CHAT-9: " + file + " must not import a forbidden module: " + forbidden);
+        }
+      }
+    });
+
+    it("V-CHAT-10 · empty engagement: buildSystemPrompt does not throw + grounds the model that the canvas is empty", () => {
+      _resetChatEnv();
+      const eng = createEmptyEngagement();
+      let threw = null;
+      let result = null;
+      try { result = buildSystemPrompt({ engagement: eng }); }
+      catch (e) { threw = e; }
+      assert(threw === null, "buildSystemPrompt does not throw on empty engagement: " + (threw && threw.message));
+      const concatenated = result.messages.map(m =>
+        typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n");
+      assert(/canvas is empty|no instances|no gaps|empty engagement/i.test(concatenated),
+        "system prompt grounds the model that the canvas is empty");
+    });
+
+    it("V-CHAT-11 · providerCapabilities reports streaming + toolUse + caching per provider", () => {
+      const anth = providerCapabilities("anthropic");
+      assertEqual(anth.streaming, true,  "anthropic supports streaming");
+      assertEqual(anth.toolUse,   true,  "anthropic supports toolUse");
+      assertEqual(anth.caching,   true,  "anthropic supports prompt caching");
+
+      const oai = providerCapabilities("openai-compatible");
+      assertEqual(oai.streaming, true, "openai-compatible supports streaming");
+      assertEqual(oai.toolUse,   true, "openai-compatible supports toolUse");
+      assertEqual(oai.caching,   false, "openai-compatible does not support caching");
+
+      const gem = providerCapabilities("gemini");
+      assertEqual(gem.streaming, true, "gemini supports streaming");
+      assertEqual(gem.toolUse,   true, "gemini supports toolUse");
+      assertEqual(gem.caching,   false, "gemini does not support caching");
+
+      const mock = providerCapabilities("mock");
+      assertEqual(mock.streaming, true,  "mock streams deterministically");
+      assertEqual(mock.toolUse,   true,  "mock can emit tool_use blocks");
+      assertEqual(mock.caching,   false, "mock has no caching");
+    });
+
+    it("V-CHAT-12 · Anthropic provider gets cache_control marker on prefix block; non-Anthropic providers do not", () => {
+      _resetChatEnv();
+      const eng = createEmptyEngagement();
+      const anthPrompt = buildSystemPrompt({ engagement: eng, providerKind: "anthropic" });
+      const oaiPrompt  = buildSystemPrompt({ engagement: eng, providerKind: "openai-compatible" });
+
+      assert(Array.isArray(anthPrompt.cacheControl) && anthPrompt.cacheControl.length > 0,
+        "anthropic prompt carries cacheControl markers on the stable prefix");
+      assert(Array.isArray(oaiPrompt.cacheControl) && oaiPrompt.cacheControl.length === 0,
+        "openai-compatible prompt has no cacheControl markers (provider does not support caching)");
     });
   });
 
