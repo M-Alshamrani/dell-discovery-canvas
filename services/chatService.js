@@ -1,45 +1,190 @@
 // services/chatService.js
 //
-// SPEC §S20 · Canvas Chat — chat-shape entry point that wraps aiService
-// for streaming + tool-use + Anthropic prompt-caching. Reuses
-// `aiService.chatCompletion` for the non-streaming, non-tool-use path
-// where appropriate; adds streaming SSE handling, tool-call round-trip,
-// and provider feature detection on top.
+// SPEC §S20 · Canvas Chat — chat-shape entry point. Orchestrates:
+//   1. Assembles the 5-layer system prompt (services/systemPromptAssembler).
+//   2. Streams a provider call, accumulating tokens via onToken.
+//   3. If the provider emits tool_use, resolves the tool locally via
+//      CHAT_TOOLS against the active engagement, feeds the tool_result
+//      back as a user-role message, and streams a second provider call
+//      whose tokens form the final user-visible response.
+//   4. Returns { response, provenance } and emits onComplete.
 //
-// Status: STUB (rc.2 RED-first 2026-05-02). V-CHAT-* fail RED against
-// these stubs by design until impl lands. Per
-// `feedback_spec_and_test_first.md`, the spec + tests + scaffold ship
-// before implementation.
+// Provider injection: opts.provider is required for v1 (the real-
+// provider streaming-over-fetch wiring lands when AI item 6 / real-LLM
+// smoke fires). Test paths inject `createMockChatProvider(...)`; the
+// chat overlay UI injects a thin wrapper around aiService that does
+// streaming + tool_use + cache_control. Both share this orchestration.
 //
-// Forbidden (per RULES §16 + SPEC §S20.13):
-//   - importing state/sessionState.js
-//   - importing state/collections/*Actions.js (read-only v1 boundary)
-//   - mutating engagement state from chat
+// Forbidden (RULES §16 + SPEC §S20.13):
+//   - importing state/sessionState.js (CH1)
+//   - importing state/collections/*Actions.js (CH2 read-only v1)
+//   - mutating engagement (chat is read-only)
 //
-// Authority: docs/v3.0/SPEC.md §S20 · docs/v3.0/TESTS.md §T20 V-CHAT-* ·
+// Authority: docs/v3.0/SPEC.md §S20.5 + §S20.8 ·
+//            docs/v3.0/TESTS.md §T20 V-CHAT-{4,5,11} ·
 //            docs/RULES.md §16.
 
-// streamChat({engagement, transcript, userMessage, providerConfig,
-//             provider?, onToken?, onToolCall?, onComplete?})
-// → Promise<{ response: string, provenance: object }>
-//
-// `provider` is optional injection for tests; production reads from
-// providerConfig and dispatches to the active provider. `onToken` is
-// invoked once per streamed token. `onToolCall` is invoked when the
-// model emits a tool_use; the dispatcher resolves the call locally
-// against the active engagement and feeds the tool_result back.
-export async function streamChat(_opts) {
-  throw new Error("streamChat: not implemented (SPEC §S20 stub; rc.2 RED-first)");
-}
+import { buildSystemPrompt } from "./systemPromptAssembler.js";
+import { CHAT_TOOLS }        from "./chatTools.js";
 
 // providerCapabilities(providerKey)
 // → { streaming: bool, toolUse: bool, caching: bool }
 //
-// Provider feature detection. Determines whether streamChat uses the
-// streaming + tool-use code paths or falls back to context-dump +
-// non-streaming for the given provider.
-export function providerCapabilities(_providerKey) {
-  // Stub default: capabilities all false. Real impl returns true for
-  // known providers (anthropic = streaming+toolUse+caching, etc).
-  return { streaming: false, toolUse: false, caching: false };
+// Static capability table keyed on the provider identifiers used in
+// core/aiConfig.js. Drives both the chat surface (which chooses
+// streaming vs blocking dispatch) and the system-prompt assembler
+// (which emits cache_control markers only for caching-capable
+// providers).
+export function providerCapabilities(providerKey) {
+  switch (providerKey) {
+    case "anthropic":
+      return { streaming: true, toolUse: true, caching: true };
+    case "openai-compatible":
+    case "local":
+      return { streaming: true, toolUse: true, caching: false };
+    case "gemini":
+      return { streaming: true, toolUse: true, caching: false };
+    case "dellSalesChat":
+      // TO CONFIRM with Dell IT contact (per SPEC §S7.4 TO CONFIRM).
+      // Conservative defaults until the streaming + tool-use shape is
+      // documented.
+      return { streaming: false, toolUse: false, caching: false };
+    case "mock":
+      return { streaming: true, toolUse: true, caching: false };
+    default:
+      return { streaming: false, toolUse: false, caching: false };
+  }
+}
+
+// streamChat({engagement, transcript, userMessage, providerConfig,
+//             provider, onToken?, onComplete?, options?})
+//   → Promise<{ response: string, provenance: object }>
+//
+// `transcript` is an array of prior messages [{role, content, ...}].
+// `provider` MUST expose `async *stream({messages, tools})` yielding
+//   - { kind: "text",     token: string }
+//   - { kind: "done",     text:  string }
+//   - { kind: "tool_use", name:  string, input: object }
+// (See `tests/mocks/mockChatProvider.js` for the canonical shape.)
+//
+// One tool-use round trip is supported in v1 (CH10): provider may emit
+// at most one tool_use in the first call; the dispatcher resolves it
+// and runs a second call whose tokens become the visible response.
+// Multi-turn tool chains are v3.1.
+export async function streamChat(opts) {
+  const engagement     = opts && opts.engagement;
+  const transcript     = (opts && opts.transcript) || [];
+  const userMessage    = (opts && opts.userMessage) || "";
+  const providerConfig = (opts && opts.providerConfig) || { providerKey: "mock" };
+  const provider       = opts && opts.provider;
+  const onToken        = (opts && opts.onToken)    || function() {};
+  const onComplete     = (opts && opts.onComplete) || function() {};
+
+  if (!provider || typeof provider.stream !== "function") {
+    throw new Error("streamChat: opts.provider with .stream() is required");
+  }
+
+  // Resolve providerKind for the assembler's cache_control branch.
+  const providerKind = mapProviderKindForAssembler(providerConfig.providerKey);
+
+  // Layer 1+2+3+5+4 — system prompt (cached prefix + volatile snapshot).
+  const systemPrompt = buildSystemPrompt({ engagement, providerKind });
+
+  // Build the initial conversation: system messages + prior transcript +
+  // current user turn. We do not summarize transcript here; that is the
+  // caller's responsibility (chatMemory.summarizeIfNeeded before this).
+  const baseMessages = [].concat(
+    systemPrompt.messages,
+    transcript.map(t => ({ role: t.role, content: t.content })),
+    [{ role: "user", content: userMessage }]
+  );
+
+  // First provider call.
+  const round1 = await streamOneRound(provider, baseMessages, onToken);
+
+  // If the provider emitted a tool_use, resolve + send tool_result back.
+  let finalResponse = round1.text;
+  if (round1.toolUse) {
+    const tool = CHAT_TOOLS.find(t => t.name === round1.toolUse.name);
+    if (!tool) {
+      throw new Error("streamChat: provider requested unknown tool '" + round1.toolUse.name + "'");
+    }
+    const toolResult = tool.invoke(engagement, round1.toolUse.input || {});
+
+    // Append assistant tool_use record + user tool_result record. Real
+    // providers shape these blocks differently (Anthropic content-blocks
+    // vs OpenAI tool calls); for the v1 mock-driven path we use a
+    // textual JSON envelope so the assertion in V-CHAT-5 (looks for
+    // "tool_result" in the second call's user message) is honored.
+    const followupMessages = baseMessages.concat([
+      {
+        role:    "assistant",
+        content: JSON.stringify({ tool_use: { name: round1.toolUse.name, input: round1.toolUse.input || {} } })
+      },
+      {
+        role:    "user",
+        content: "tool_result " + safeStringify(toolResult)
+      }
+    ]);
+
+    const round2 = await streamOneRound(provider, followupMessages, onToken);
+    finalResponse = round2.text;
+  }
+
+  // Provenance per SPEC §S8.1 — every assistant turn carries the
+  // model + runId + timestamp + (when known) catalogVersions.
+  const provenance = {
+    model:           providerConfig.providerKey || "unknown",
+    runId:           genRunId(),
+    timestamp:       new Date().toISOString(),
+    catalogVersions: (engagement && engagement.meta && engagement.meta.catalogVersions) || {}
+  };
+
+  const result = { response: finalResponse, provenance };
+  try { onComplete(result); } catch (e) { console.warn("[chatService] onComplete threw:", e && e.message); }
+  return result;
+}
+
+// streamOneRound: drains one provider.stream() call. Returns the
+// accumulated text + at most one tool_use envelope. v1 enforces "at
+// most one tool_use" per round per CH10; if the provider emits more,
+// only the first is honored.
+async function streamOneRound(provider, messages, onToken) {
+  let text = "";
+  let toolUse = null;
+  const iter = provider.stream({ messages, tools: CHAT_TOOLS });
+  for await (const evt of iter) {
+    if (!evt) continue;
+    if (evt.kind === "text" && typeof evt.token === "string") {
+      text += evt.token;
+      try { onToken(evt.token); } catch (e) { console.warn("[chatService] onToken threw:", e && e.message); }
+    } else if (evt.kind === "tool_use" && !toolUse) {
+      toolUse = { name: evt.name, input: evt.input || {} };
+    }
+    // evt.kind === "done" is informational; we accumulate text directly.
+  }
+  return { text, toolUse };
+}
+
+function mapProviderKindForAssembler(providerKey) {
+  switch (providerKey) {
+    case "anthropic":         return "anthropic";
+    case "gemini":            return "gemini";
+    case "mock":              return "mock";
+    case "openai-compatible":
+    case "local":
+    default:                  return "openai-compatible";
+  }
+}
+
+function genRunId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "run-" + Date.now() + "-" + Math.floor(Math.random() * 1e9).toString(16);
+}
+
+function safeStringify(value) {
+  try { return JSON.stringify(value); }
+  catch (_e) { return "<unserializable>"; }
 }
