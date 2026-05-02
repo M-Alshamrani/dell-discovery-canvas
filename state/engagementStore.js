@@ -1,4 +1,4 @@
-// state/v3EngagementStore.js
+// state/engagementStore.js
 //
 // SPEC §S19.3 · active-engagement source-of-truth for v3.0.
 // Single in-memory engagement object + pub/sub. Co-exists with v2.x
@@ -33,7 +33,7 @@ export function subscribeActiveEngagement(fn) {
 function _emit() {
   _subs.forEach(fn => {
     try { fn(_active); }
-    catch (e) { console.error("[v3EngagementStore] subscriber threw:", e); }
+    catch (e) { console.error("[engagementStore] subscriber threw:", e); }
   });
 }
 

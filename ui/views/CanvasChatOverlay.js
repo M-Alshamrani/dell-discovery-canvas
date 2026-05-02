@@ -6,7 +6,7 @@
 // modal frame so it inherits Esc/X/backdrop close + persist semantics.
 //
 // Wires:
-//   - state/v3EngagementStore   (active engagement is the chat context)
+//   - state/engagementStore     (active engagement is the chat context)
 //   - state/chatMemory          (per-engagement transcript persistence)
 //   - services/chatService      (streamChat orchestration)
 //   - tests/mocks/mockChatProvider  (default Mock provider)
@@ -21,7 +21,7 @@
 //            docs/RULES.md §16.
 
 import { openOverlay, closeOverlay }         from "../components/Overlay.js";
-import { getActiveEngagement }                from "../../state/v3EngagementStore.js";
+import { getActiveEngagement }                from "../../state/engagementStore.js";
 import {
   loadTranscript, saveTranscript, clearTranscript, summarizeIfNeeded
 }                                              from "../../state/chatMemory.js";

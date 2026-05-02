@@ -8659,14 +8659,14 @@ import {
   commitInstanceEdit,
   commitWorkloadMapping,
   commitGapEdit
-} from "../state/v3Adapter.js";
+} from "../state/adapter.js";
 import {
   getActiveEngagement,
   setActiveEngagement,
   subscribeActiveEngagement,
   commitAction,
   _resetForTests as _resetEngagementStoreForTests
-} from "../state/v3EngagementStore.js";
+} from "../state/engagementStore.js";
 
 // rc.2 . SPEC §S20 V-CHAT . Canvas Chat (context-aware AI assistant).
 // Imports the STUB modules — Suite 49 §T20 V-CHAT-1..12 fails RED
@@ -8684,7 +8684,7 @@ import { createMockChatProvider }                from "../tests/mocks/mockChatPr
 // rc.2 . SPEC §S21+S22+S23 . Cleanup arc imports (RED-first stubs).
 // V-DEMO + V-MOCK + V-ANTI-RUN-1 fail RED against stubs until impl
 // commits land per the spec-and-test-first cadence.
-import { loadV3Demo, describeV3Demo }            from "../core/v3DemoEngagement.js";
+import { loadDemo as loadV3Demo, describeDemo as describeV3Demo } from "../core/demoEngagement.js";
 import { createMockChatProvider as createMockChatProviderProd } from "../services/mockChatProvider.js";
 import { createMockLLMProvider  as createMockLLMProviderProd  } from "../services/mockLLMProvider.js";
 
@@ -11700,7 +11700,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 
   // -------------------------------------------------------------------
   // §T19 · V-ADP · v3.0 → v2.x consumption adapter (per SPEC §S19)
-  // RED-first: state/v3Adapter.js + state/v3EngagementStore.js are
+  // RED-first: state/adapter.js + state/engagementStore.js (was state/v3*) were
   // STUBS. V-ADP-3..9 + V-ADP-10 will fail against the stubs and go
   // GREEN as the real adapter implementation lands in the next commit.
   // V-ADP-1, V-ADP-2 pass with stubs (purity holds for null returns;
@@ -12204,9 +12204,11 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 
   // -------------------------------------------------------------------
   // §T21 · V-DEMO · v3-native demo engagement (per SPEC §S21)
-  // RED-first: core/v3DemoEngagement.js is a STUB that throws on
-  // loadV3Demo(). V-DEMO-1..7 all fail RED until the real curated
-  // demo ships per the architectural fix for BUG-003 / BUG-004.
+  // RED-first historical context: core/demoEngagement.js (was
+  // core/v3DemoEngagement.js pre-rc.2 rename) was a STUB that threw on
+  // loadDemo(). V-DEMO-1..7 failed RED until the real curated demo
+  // shipped per the architectural fix for BUG-003 / BUG-004. Test
+  // imports use `loadDemo as loadV3Demo` alias for source stability.
   // -------------------------------------------------------------------
   describe("§T21 · V-DEMO · v3-native demo engagement", () => {
 
@@ -12218,9 +12220,9 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         (result.success ? "" : JSON.stringify(result.error.issues.slice(0, 5))));
     });
 
-    it("V-DEMO-2 · core/v3DemoEngagement.js performs EngagementSchema.parse at module load (build-time guarantee, not runtime hope)", async () => {
-      const res = await fetch("/core/v3DemoEngagement.js");
-      assert(res.ok, "core/v3DemoEngagement.js must be fetchable");
+    it("V-DEMO-2 · core/demoEngagement.js performs EngagementSchema.parse at module load (build-time guarantee, not runtime hope)", async () => {
+      const res = await fetch("/core/demoEngagement.js");
+      assert(res.ok, "core/demoEngagement.js must be fetchable");
       const src = await res.text();
       // The module MUST call EngagementSchema.parse(...) at top level
       // (outside any function body) so module-load fails loudly on drift.
@@ -12228,12 +12230,12 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       // and NOT inside a fenced function body that returns. Heuristic:
       // require at least one top-level pattern "EngagementSchema.parse(" that is
       // NOT inside a function body. We approximate by requiring the parse
-      // call to appear OUTSIDE the loadV3Demo / describeV3Demo functions.
+      // call to appear OUTSIDE the loadDemo / describeDemo functions.
       const hasParse  = /EngagementSchema\s*\.\s*parse\s*\(/.test(src);
       const topLevel  = /^const\s+\w+\s*=\s*EngagementSchema\s*\.\s*parse\s*\(/m.test(src) ||
                         /^EngagementSchema\s*\.\s*parse\s*\(/m.test(src);
       assert(hasParse,
-        "core/v3DemoEngagement.js must call EngagementSchema.parse(...) at module load");
+        "core/demoEngagement.js must call EngagementSchema.parse(...) at module load");
       assert(topLevel,
         "EngagementSchema.parse(...) must be at top level (not inside a function body)");
     });

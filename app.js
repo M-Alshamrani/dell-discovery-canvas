@@ -17,8 +17,8 @@ import "./state/filterState.js";
 // subscribes to session-changed and runs the v2->v3 migrator into
 // the v3EngagementStore on every emission (and once at boot). v2.x
 // views keep reading sessionState today; per-view migration in
-// later commits flips reads over to state/v3Adapter.js.
-import "./state/v3SessionBridge.js";
+// later commits flips reads over to state/adapter.js.
+import "./state/sessionBridge.js";
 import { confirmAction, notifyError, notifyInfo, notifySuccess } from "./ui/components/Notify.js";
 import { buildSaveEnvelope, parseFileEnvelope, applyEnvelope, suggestFilename, FILE_MIME } from "./services/sessionFile.js";
 import { renderContextView }         from "./ui/views/ContextView.js";
@@ -68,7 +68,7 @@ document.addEventListener("DOMContentLoaded", function() {
   wireSettingsBtn();
   wireUndoBtn();
   wireTopbarAiBtn();
-  wireTopbarV3LabBtn();
+  wireTopbarLabBtn();
   wireTopbarChatBtn();
   // v2.4.13 S2A . repaint the secondary line whenever the save status
   // bus emits, so "Saving..." -> "Saved just now" without a full
@@ -141,26 +141,27 @@ function wireSettingsBtn() {
   if (btn) btn.addEventListener("click", openSettingsModal);
 }
 
-// v3.0 · "v3.0 Lab" topbar button. Opens the V3SkillBuilder panel as a
-// fullscreen overlay. First user-visible v3.0 surface (per SPEC §S7.5).
-// Lazily imports the builder module so we don't load schema/zod on every
-// page (only when the user actually opens the lab).
-function wireTopbarV3LabBtn() {
-  var btn = document.getElementById("topbarV3LabBtn");
+// "Skill Builder Lab" topbar button. Opens the SkillBuilder panel as a
+// fullscreen overlay. (Per SPEC §S7.5; this surface predates rc.2 - the
+// "v3.0 Lab" prefix was purged in the rc.2 naming-discipline pass per
+// SPEC §S24.) Lazily imports the builder module so we don't load
+// schema/zod on every page (only when the user opens the lab).
+function wireTopbarLabBtn() {
+  var btn = document.getElementById("topbarLabBtn");
   if (!btn) return;
   btn.addEventListener("click", async function() {
-    var existing = document.getElementById("v3SkillBuilderOverlay");
+    var existing = document.getElementById("skillBuilderOverlay");
     if (existing) { existing.remove(); return; }
     var overlay = document.createElement("div");
-    overlay.id = "v3SkillBuilderOverlay";
-    overlay.className = "v3-skill-builder-overlay";
-    overlay.innerHTML = '<button class="v3-skill-builder-overlay-close" aria-label="Close">×</button>' +
-                        '<div class="v3-skill-builder-overlay-host" style="width:100%;"></div>';
+    overlay.id = "skillBuilderOverlay";
+    overlay.className = "skill-builder-overlay";
+    overlay.innerHTML = '<button class="skill-builder-overlay-close" aria-label="Close">×</button>' +
+                        '<div class="skill-builder-overlay-host" style="width:100%;"></div>';
     document.body.appendChild(overlay);
     overlay.addEventListener("click", function(e) {
       if (e.target === overlay) overlay.remove();
     });
-    overlay.querySelector(".v3-skill-builder-overlay-close")
+    overlay.querySelector(".skill-builder-overlay-close")
       .addEventListener("click", function() { overlay.remove(); });
     document.addEventListener("keydown", function escHandler(e) {
       if (e.key === "Escape" && document.body.contains(overlay)) {
@@ -169,13 +170,13 @@ function wireTopbarV3LabBtn() {
       }
     });
 
-    var host = overlay.querySelector(".v3-skill-builder-overlay-host");
+    var host = overlay.querySelector(".skill-builder-overlay-host");
     try {
-      var mod = await import("./ui/views/V3SkillBuilder.js");
-      mod.renderV3SkillBuilder(host);
+      var mod = await import("./ui/views/SkillBuilder.js");
+      mod.renderSkillBuilder(host);
     } catch (e) {
       host.innerHTML = '<div style="padding:24px;color:#a52a2a;background:#fff;border-radius:8px;">' +
-                       'Failed to load v3.0 Skill Builder: ' + e.message + '</div>';
+                       'Failed to load Skill Builder: ' + e.message + '</div>';
     }
   });
 }
@@ -618,9 +619,9 @@ function wireFooter() {
         // directly to the schema-strict v3-native demo. This is what
         // Canvas Chat + the v3 Lab read through state/v3EngagementStore.
         try {
-          var demoMod   = await import("./core/v3DemoEngagement.js");
-          var storeMod  = await import("./state/v3EngagementStore.js");
-          storeMod.setActiveEngagement(demoMod.loadV3Demo());
+          var demoMod   = await import("./core/demoEngagement.js");
+          var storeMod  = await import("./state/engagementStore.js");
+          storeMod.setActiveEngagement(demoMod.loadDemo());
         } catch (e) {
           console.error("[demo] v3-native demo failed to load:", e);
         }

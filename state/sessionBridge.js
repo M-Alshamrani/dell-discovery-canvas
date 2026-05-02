@@ -1,12 +1,12 @@
-// state/v3SessionBridge.js
+// state/sessionBridge.js
 //
 // SPEC §S19.3 · co-existence-window bridge.
 //
 // Subscribes to the v2.x session-changed bus; on every emit (and once
 // at module boot), translates the live v2 session into a valid v3.0
-// engagement and stores it in v3EngagementStore. View tabs (once
+// engagement and stores it in engagementStore. View tabs (once
 // migrated per S19.4) read fresh data after every user edit through
-// state/v3Adapter.js.
+// state/adapter.js.
 //
 // **Translation policy** (per project_v3_no_file_migration_burden.md):
 // the bridge does NOT exercise the full v2→v3 file migrator. The
@@ -23,7 +23,7 @@
 // / commitInstanceEdit / etc. one commit at a time.
 //
 // Forbidden:
-//   - importing state/v3Adapter.js from here (the bridge sits BENEATH
+//   - importing state/adapter.js from here (the bridge sits BENEATH
 //     the adapter: view -> adapter -> store <- bridge <- session)
 //   - mutating the v2 session
 //   - widening this translator to back-port v3 schema choices
@@ -32,7 +32,7 @@
 import { session as liveSession }     from "./sessionStore.js";
 import { onSessionChanged }            from "../core/sessionEvents.js";
 import { createEmptyEngagement, EngagementSchema } from "../schema/engagement.js";
-import { setActiveEngagement }         from "./v3EngagementStore.js";
+import { setActiveEngagement }         from "./engagementStore.js";
 
 let _running   = false;
 let _lastError = null;
@@ -86,13 +86,13 @@ async function bridgeOnce(reason) {
         message: "v2 → v3 in-memory translator produced an invalid engagement",
         issues:  validation.error.issues
       };
-      console.warn("[v3SessionBridge] bridge falling back to empty engagement (" +
+      console.warn("[sessionBridge] bridge falling back to empty engagement (" +
         (reason || "boot") + "): " + _lastError.message);
       setActiveEngagement(createEmptyEngagement());
     }
   } catch (e) {
     _lastError = { code: "BRIDGE_THREW", message: e && e.message };
-    console.error("[v3SessionBridge] bridge threw:", e);
+    console.error("[sessionBridge] bridge threw:", e);
     try { setActiveEngagement(createEmptyEngagement()); } catch (_e) { /* swallow */ }
   } finally {
     _running = false;

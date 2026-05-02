@@ -1,4 +1,4 @@
-// state/v3Adapter.js
+// state/adapter.js
 //
 // SPEC §S19 · v3.0 → v2.x consumption adapter.
 // SPEC-only annex (not in data-architecture-directive.md). The five
@@ -30,7 +30,7 @@
 import { memoizeOne } from "../services/memoizeOne.js";
 import { selectMatrixView }    from "../selectors/matrix.js";
 import { selectHealthSummary } from "../selectors/healthSummary.js";
-import { commitAction }        from "./v3EngagementStore.js";
+import { commitAction }        from "./engagementStore.js";
 import { updateCustomer }      from "./collections/customerActions.js";
 import {
   updateInstance,

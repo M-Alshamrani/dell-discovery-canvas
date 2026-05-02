@@ -1,4 +1,4 @@
-// core/v3DemoEngagement.js
+// core/demoEngagement.js
 //
 // SPEC §S21 · v3-native demo engagement. Hand-curated, schema-strict
 // engagement that bypasses the v2 → v3 bridge entirely for the demo
@@ -369,11 +369,11 @@ const _DEMO_ENGAGEMENT = EngagementSchema.parse(buildDemoEngagement());
 
 // ─── Public API ──────────────────────────────────────────────────────
 
-export function loadV3Demo() {
+export function loadDemo() {
   return _DEMO_ENGAGEMENT;
 }
 
-export function describeV3Demo() {
+export function describeDemo() {
   const e = _DEMO_ENGAGEMENT;
   return {
     customerName: e.customer.name,
