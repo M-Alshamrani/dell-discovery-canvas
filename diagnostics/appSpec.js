@@ -12481,6 +12481,64 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "envLabel mirrors the env.alias for human-readable citation");
     });
 
+    it("V-CHAT-24 · BUG-016 guard: handshake stripping is BRACKET-OPTIONAL (Gemini emits without brackets) + applies globally to remnants", async () => {
+      _resetChatEnv();
+      const eng = createEmptyEngagement();
+      setActiveEngagement(eng);
+      const sha = (await import("../core/dataContract.js")).getContractChecksum();
+
+      // Bracketless handshake (real Gemini behavior 2026-05-02 PM).
+      const provider = createMockChatProvider({
+        responses: [
+          { kind: "text", text: "contract-ack v3.0 sha=" + sha + "\n\nThe customer is Acme Healthcare Group." }
+        ]
+      });
+      const result = await streamChat({
+        engagement:     eng,
+        transcript:     [{ role: "user", content: "x" }, { role: "assistant", content: "y" }],
+        userMessage:    "what is the customer name",
+        providerConfig: { providerKey: "mock" },
+        provider:       provider
+      });
+
+      assert(typeof result.response === "string",
+        "response is a string");
+      assert(!/contract-ack/i.test(result.response),
+        "bracketless handshake stripped from response (got: '" + result.response.slice(0, 80) + "')");
+      assert(result.response.includes("Acme Healthcare Group"),
+        "actual answer text preserved");
+    });
+
+    it("V-CHAT-25 · BUG-016 guard: chatMemory.loadTranscript heals old transcripts that have handshake leaks persisted in assistant content", async () => {
+      _resetChatEnv();
+      const engId = "test-eng-handshake-backfill";
+      // Persist a transcript with the handshake leaked into an assistant
+      // message (simulates pre-fix data).
+      saveTranscript(engId, {
+        messages: [
+          { role: "user",      content: "what is the client name", at: "2026-05-02T10:00:00Z" },
+          { role: "assistant", content: "[contract-ack v3.0 sha=a345f849]\n\nThe client name is Acme Healthcare Group.",
+                               at: "2026-05-02T10:00:01Z" },
+          // also bracketless variant
+          { role: "user",      content: "anything else?", at: "2026-05-02T10:01:00Z" },
+          { role: "assistant", content: "contract-ack v3.0 sha=a345f849\n\nWe also have 8 open gaps.",
+                               at: "2026-05-02T10:01:01Z" }
+        ],
+        summary: null
+      });
+      const loaded = loadTranscript(engId);
+      assertEqual(loaded.messages.length, 4, "transcript count preserved");
+      assert(!/contract-ack/i.test(loaded.messages[1].content),
+        "bracketed handshake stripped on load (got: '" + loaded.messages[1].content.slice(0, 80) + "')");
+      assert(loaded.messages[1].content.includes("Acme Healthcare Group"),
+        "answer text preserved (bracketed)");
+      assert(!/contract-ack/i.test(loaded.messages[3].content),
+        "bracketless handshake stripped on load");
+      assert(loaded.messages[3].content.includes("8 open gaps"),
+        "answer text preserved (bracketless)");
+      clearTranscript(engId);
+    });
+
     it("V-CHAT-23 · BUG-015 guard: handshake prefix is silently stripped on SUBSEQUENT turns when the model disobeys 'first turn only'", async () => {
       _resetChatEnv();
       const eng = createEmptyEngagement();

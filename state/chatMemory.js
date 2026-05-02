@@ -24,6 +24,15 @@ function emptyTranscript() {
 }
 
 // loadTranscript(engagementId) → { messages, summary }
+//
+// BUG-015 / BUG-016 backfill (2026-05-02 PM): pre-fix, the handshake
+// prefix `[contract-ack v3.0 sha=<8>]` could leak into assistant
+// messages and get persisted to localStorage. On reload the leak
+// reappears even after the chatService strip is fixed. We strip it
+// at LOAD time too so old transcripts heal automatically — same
+// regex chatService uses post-fix (bracket-optional, global).
+const HANDSHAKE_STRIP_RE_LOAD = /(?:^|[\s*_>])\[?\s*contract-ack\s+v3\.0\s+sha=[0-9a-f]{8}\s*\]?\s*\n?/gi;
+
 export function loadTranscript(engagementId) {
   if (!engagementId) return emptyTranscript();
   try {
@@ -32,7 +41,14 @@ export function loadTranscript(engagementId) {
     const parsed = JSON.parse(raw);
     if (!parsed || !Array.isArray(parsed.messages)) return emptyTranscript();
     return {
-      messages: parsed.messages,
+      messages: parsed.messages.map(m => {
+        if (m && m.role === "assistant" && typeof m.content === "string") {
+          return Object.assign({}, m, {
+            content: m.content.replace(HANDSHAKE_STRIP_RE_LOAD, "").replace(/^\s+/, "")
+          });
+        }
+        return m;
+      }),
       summary:  parsed.summary || null
     };
   } catch (_e) {

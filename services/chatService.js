@@ -28,10 +28,21 @@ import { buildSystemPrompt }  from "./systemPromptAssembler.js";
 import { CHAT_TOOLS }         from "./chatTools.js";
 import { getContractChecksum } from "../core/dataContract.js";
 
-// SPEC §S20.16 + §S25.5 first-turn handshake regex.
+// SPEC §S20.16 + §S25.5 handshake regex.
 // LLM is instructed to emit `[contract-ack v3.0 sha=<8-char-hex>]` as
-// the EXACT first line of its first response.
-const HANDSHAKE_RE = /^\[contract-ack\s+v3\.0\s+sha=([0-9a-f]{8})\]\s*\n?/i;
+// the EXACT first line of its first response. Two regexes:
+//
+//   HANDSHAKE_RE — strict, anchored, captures the sha. Used for the
+//   first-turn ack validation (was the contract acknowledged correctly?).
+//
+//   HANDSHAKE_STRIP_RE — permissive, global, strips ANY occurrence
+//   (with or without brackets, with or without preceding whitespace
+//   or markdown emphasis like ** or _). Defensive against models that
+//   disobey "first turn only" (Gemini repeats it; BUG-015) or omit
+//   the brackets (Gemini sometimes does; BUG-016 / 2026-05-02 PM
+//   user report). Applied to the visible response unconditionally.
+const HANDSHAKE_RE = /^\s*\[contract-ack\s+v3\.0\s+sha=([0-9a-f]{8})\]\s*\n?/i;
+const HANDSHAKE_STRIP_RE = /(?:^|[\s*_>])\[?\s*contract-ack\s+v3\.0\s+sha=[0-9a-f]{8}\s*\]?\s*\n?/gi;
 
 // SPEC §S20.5.2 + RULES §16 CH10 — multi-round tool chaining safety cap.
 // Prevents runaway tool loops if the model never emits a text-only
@@ -205,11 +216,11 @@ export async function streamChat(opts) {
   // actually matters); on subsequent turns we silently strip + leave
   // contractAck null.
   let contractAck = null;
-  let visibleResponse = finalResponse;
+  // Always strip the handshake — strict + permissive passes. Strict
+  // pass captures the sha for first-turn ack validation; permissive
+  // pass scrubs any remnant (bracketless, multiple, mid-response).
   const handshakeMatch = HANDSHAKE_RE.exec(finalResponse);
-  if (handshakeMatch) {
-    visibleResponse = finalResponse.slice(handshakeMatch[0].length).replace(/^\s*\n/, "");
-  }
+  let visibleResponse = finalResponse.replace(HANDSHAKE_STRIP_RE, "").replace(/^\s+/, "");
   if (transcript.length === 0) {
     const expected = getContractChecksum();
     if (handshakeMatch) {

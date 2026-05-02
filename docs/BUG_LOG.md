@@ -382,6 +382,123 @@ No specific regression test (cosmetic).
 
 ---
 
+## BUG-015 · Handshake prefix leaks on subsequent turns when LLM disobeys "first turn only" rule (CLOSED)
+
+**Status**: CLOSED 2026-05-02 PM · v3.0.0-rc.2 · commit `eb2ffc8`
+**Reporter**: User (chat workshop validation)
+**Severity**: Medium (cosmetic but unprofessional in front of executives)
+
+### Repro (pre-fix)
+1. Have an active chat session (any model, more common with Gemini)
+2. Ask a follow-up question (transcript non-empty)
+3. → Response begins with `[contract-ack v3.0 sha=a345f849]\n\nThe answer is...`
+
+### Root cause
+`services/chatService.js` only ran the handshake parser when `transcript.length === 0`. Models that disobey the role-section "first turn only" instruction (Gemini does this intermittently) leak the prefix on every turn.
+
+### Fix (in commit `eb2ffc8`)
+- Compute `handshakeMatch` always; strip from `visibleResponse` regardless of turn
+- ContractAck still ONLY populated on first turn (the truth signal only matters there)
+- V-CHAT-23 regression test: subsequent-turn handshake stripped silently
+
+---
+
+## BUG-016 · Handshake leak: BRACKET-OPTIONAL strip + chatMemory backfill heal (CLOSED)
+
+**Status**: CLOSED 2026-05-02 PM · v3.0.0-rc.2 · commit (this fix)
+**Reporter**: User (workshop validation, "this is still showing in the chat")
+**Severity**: Medium (BUG-015 was incomplete)
+
+### Repro (pre-fix)
+1. After BUG-015 fix landed, user reported still seeing `contract-ack v3.0 sha=a345f849` in responses
+2. Specifically against Gemini
+
+### Root cause
+- `HANDSHAKE_RE` required literal `[...]` brackets. Gemini emits the prefix WITHOUT brackets ("contract-ack v3.0 sha=a345f849"). The regex didn't match, so no strip.
+- Old transcripts persisted to localStorage carry the leak; the chatService strip only fires on NEW responses, not on load. Reloading the chat surfaces the historical leak.
+
+### Fix (in commit this entry references)
+1. `services/chatService.js`: NEW `HANDSHAKE_STRIP_RE` (global, bracket-optional, scrubs any occurrence). Applied to every response unconditionally. `HANDSHAKE_RE` (strict, anchored) still used for first-turn ack capture.
+2. `state/chatMemory.js`: `loadTranscript` now strips the same handshake regex from every assistant message at load time, so old transcripts heal automatically.
+3. V-CHAT-24: bracketless handshake stripped
+4. V-CHAT-25: chatMemory.loadTranscript heals persisted leaks (both bracketed + bracketless)
+
+### Out of scope
+- Tightening the role section to also forbid the bracketless variant (the model should not emit it at all). Defer to Phase 4 polish; the strip is bullet-proof regardless.
+
+---
+
+## BUG-017 · Mock provider toggle clutters chat header (UNCONFIRMED — awaiting user direction)
+
+**Status**: OPEN · Reported 2026-05-02 PM · v3.0.0-rc.2 · Scheduled NEXT (awaiting direction)
+**Reporter**: User
+**Severity**: Low (UX polish; no functional impact)
+
+### User feedback
+"What is Mock? I did not ask for it nor I think I will need it. I did not even know what it does. Can you explain it and remove it if no need for it. Don't want rubbish unused. We can use connection warning and informational messages about the AI status if not connected."
+
+### What Mock does today
+The Canvas Chat overlay header has a 2-button segmented toggle: **Mock | Real**.
+- **Mock**: in-memory deterministic provider (`services/mockChatProvider.js`); responds to any question with a hard-coded "[mock] you asked: '...'. Switch to a Real provider in the header to dispatch this against your live LLM."
+- **Real**: uses the user's configured provider (Anthropic / Gemini / etc. from Settings)
+
+It exists to (a) test chat without burning provider credits, (b) demo offline. For a presales workshop tool with real providers configured, it's dead weight.
+
+### Proposed fix paths
+**Path A (recommended)**: Remove the Mock toggle from the chat header. Replace with a connection-status chip: "Connected to Claude" / "Connected to Gemini" / "No provider configured — open Settings ⚙". Click chip → opens Settings modal. Mock provider stays available to tests (`createMockChatProvider` is the test fixture; not user-facing).
+
+**Path B**: Hide Mock behind a `?dev=1` query-param dev mode. Same UX as A for the default user; Mock still accessible for in-browser dev/debug.
+
+### Fix plan (when scheduled)
+1. Update `ui/views/CanvasChatOverlay.js` injectHeaderExtras: remove Mock|Real segmented toggle; add connection-status chip
+2. Wire chip click → openSettingsModal({ section: "providers" })
+3. V-CHAT-26 test: chip text reflects active provider; click opens Settings
+4. Update RULES §16 CH13 (chat respects active provider; remove "Mock | Real toggle")
+
+---
+
+## BUG-018 · Gemini hangs / no response for tool-required questions (UNCONFIRMED — needs investigation)
+
+**Status**: OPEN · Reported 2026-05-02 PM · v3.0.0-rc.2 · Scheduled NEXT
+**Reporter**: User
+**Severity**: High (Gemini provider broken for selector-tool questions)
+
+### Repro (user-reported)
+1. Set Gemini as active provider in Settings
+2. Open Canvas Chat
+3. Ask "How many High urgency gaps are open?"
+4. → Spinner stuck on "thinking..."; no response ever arrives
+
+### Suspected root cause
+- The Anthropic tool-use round-trip is wired (BUG-012 fix); Gemini is NOT
+- `services/aiService.js` `buildRequest('gemini')` does NOT pass the tools array
+- `services/realChatProvider.js` `supportsToolUse = providerKey === "anthropic"` — Gemini gets `false`
+- For a question that NEEDS a tool, Gemini sees the system prompt with selector descriptions but no native tool-use protocol. Likely Gemini either:
+  - Emits text describing what it WOULD do but can't (preamble hang)
+  - Hits an internal timeout or rate-limit silently
+  - Returns empty content the chat overlay doesn't surface
+
+### Investigation needed
+- Browser DevTools network tab: what does the Gemini call return?
+- Console: any errors from chatCompletion?
+- Does Gemini respond to NON-tool questions (e.g., "Summarize the customer's drivers")?
+
+### Fix paths
+**Path A**: Wire Gemini tool-use (it has its own `functionDeclarations` schema). New `buildRequest('gemini')` adds `tools: [{ functionDeclarations: [...] }]`; `extractText` parses `functionCall` parts; multi-round chain like Anthropic.
+
+**Path B**: Detect Gemini failure + surface clearly ("Gemini doesn't support tool-use yet — this question needs a selector. Switch to Claude or rephrase to use only the inlined snapshot.").
+
+### Fix plan
+1. Reproduce the hang in browser with DevTools open; capture network + console
+2. Decide Path A or B based on root cause
+3. If A: V-CHAT-27 (Gemini tools schema) + V-CHAT-28 (Gemini tool round-trip)
+4. If B: V-CHAT-27 (Gemini falls back to text-only with clear message when tool needed)
+
+### Out of scope (long-term)
+- Full Gemini parity with Anthropic (streaming, caching) is rc.3 scope per CH19
+
+---
+
 ## Format reference for new entries
 
 ```
