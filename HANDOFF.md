@@ -1,8 +1,30 @@
 # Dell Discovery Canvas , Session Handoff
 
-**Last session end**: 2026-05-02 (LATE EVENING). **v3.0.0-rc.2 TAGGED + PUSHED + 7 hotfixes shipped on top.** APP_VERSION = `3.0.0-rc.2`. **Banner 1063/1063 GREEN ✅** (was 1048 at rc.2 tag).
+**Last session end**: 2026-05-02 (LATE EVENING — extended). **v3.0.0-rc.2 TAGGED + PUSHED + 14 hotfixes / architecture commits shipped on top.** APP_VERSION = `3.0.0-rc.2`. **Banner 1079/1079 GREEN ✅** (was 1048 at rc.2 tag; +31 net tests this session).
 
-**Today's PM session shipped 7 commits (all on `origin/v3.0-data-architecture`)** — workshop-validation feedback + AI UX overhaul Phases 1-3:
+**3-PHASE AI ARCHITECTURE PLAN: COMPLETE.** Chat surface is now data-aware + concept-aware + app-aware, vendor-neutral (OpenAI canonical lingua franca with Anthropic + Gemini translation shims), with 5-round multi-tool chaining across all providers. The LLM has THREE grounding layers:
+- **Structural** (`core/dataContract.js`) — entities, relationships, invariants, FKs, catalogs, bindablePaths, analyticalViews
+- **Definitional** (`core/conceptManifest.js`) — 62 concepts × 13 categories with definition + example + whenToUse + vsAlternatives + typicalDellSolutions; TOC inlined, full bodies via `selectConcept(id)` tool
+- **Procedural** (`core/appManifest.js`) — 16 workflows + 19 recommendations + 5 tabs + 6 actions; TOC + recommendations inlined, full workflow bodies via `selectWorkflow(id)` tool
+
+**Today's session shipped 14 commits (all on `origin/v3.0-data-architecture`)**:
+
+| # | Commit | What |
+|---|---|---|
+| 1-7 | early today | BUG-010..017 + Phase 1-3 chat shell + connection-status chip |
+| 8 | `0d4d6d9` | HANDOFF + 3-phase plan capture |
+| 9 | `e8d17e4` | **Phase A1** — generic OpenAI tool-use connector (closes BUG-018; unblocks Gemini + vLLM + local + any OpenAI-compat) |
+| 10 | `0344df7` | Phase B draft (62-concept dictionary) |
+| 11 | `9778f25` | **Phase B2** — concept dictionary wired + selectConcept tool |
+| 12 | `066cfc6` | BUG-019..022 logged with fix plans |
+| 13 | `5a05d84` | Phase C draft (16 workflows + 19 recommendations + APP_SURFACES) |
+| 14 | `5fb48f3` | **Phase C2** — workflow manifest wired + selectWorkflow tool. **3-phase plan COMPLETE.** |
+
+Tests added this session (+25 since session start, +31 since rc.2 tag): V-FLOW-CHAT-DEMO-1/2 + V-DEMO-V2-1 + V-DEMO-8/9 (BUG-010); V-CHAT-18/19 (BUG-012); V-CHAT-20/21/22 (BUG-013); V-NAME-2 (BUG-014); V-CHAT-23 (BUG-015); V-CHAT-24/25 (BUG-016); V-CHAT-26 (BUG-017); V-CHAT-27..32 (Phase A); V-CONCEPT-1..5 (Phase B); V-WORKFLOW-1..5 (Phase C).
+
+**rc.2 tagged 2026-05-02 (PM, earlier today)** — closes the chat-perfection arc. Per-step breakdown preserved in commit `2fde117` body + `docs/BUG_LOG.md`. Rolled into rc.2: SPEC §S20-§S25 annexes (data contract, demo, mock providers, naming, anti-leakage), 5 v3-prefix file renames, vendored `marked@13`, Anthropic tool-use round-trip, Anthropic cache_control on prefix, SSE per-token streaming, first-turn handshake echo-back. Banner went 1011 → 1048 at rc.2 tag.
+
+**Today's PM-LATE-EVENING session shipped 7 hotfixes + the 3-phase AI architecture (additional context retained for handoff)**:
 
 | # | Commit | Fix |
 |---|---|---|
