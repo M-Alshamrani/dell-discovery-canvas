@@ -99,9 +99,9 @@ Likely one of:
 
 ---
 
-## BUG-003 · v2 demo content invisible to Canvas Chat (REOPENED — patch reverted)
+## BUG-003 · v2 demo content invisible to Canvas Chat (CLOSED — architectural fix shipped)
 
-**Status**: OPEN · Reported 2026-05-02 · v3.0.0-rc.2 dev · Patch attempted at `7dbb7ad` then **reverted at `bacc7a0`** because it bypassed the v3 schema.
+**Status**: **CLOSED 2026-05-02** · Architectural fix shipped at commit `49de7a2` (`core/v3DemoEngagement.js`) + `3ce2575` (Load-demo button wires v3 path). Original patch attempt at `7dbb7ad` was REVERTED at `bacc7a0` because it bypassed the v3 schema. **Regression guards**: V-DEMO-1..7 (schema strict + content shape + cross-cutting features + provenance), V-ANTI-RUN-1 (production code does not reach into tests/).
 **Reporter**: User during chunk D smoke
 **Severity**: High (chat surface returns "the canvas is empty" against any v2 session — the demo and any user-loaded session both)
 **Regression**: No (new feature; bridge was scoped to customer-only in rc.1 by design)
@@ -155,9 +155,9 @@ Also add **V-DEMO-1..N** schema-validity vectors (per BUG-004 fix plan).
 
 ---
 
-## BUG-005 · V3SkillBuilder uses test fixture as production runtime engagement
+## BUG-005 · V3SkillBuilder uses test fixture as production runtime engagement (CLOSED)
 
-**Status**: OPEN · Reported 2026-05-02 (audit) · v3.0.0-beta legacy · Predates rc.2
+**Status**: **CLOSED 2026-05-02** · Architectural fix shipped at commit `3ce2575`. V3SkillBuilder now uses `getActiveEngagement()` (live engagement set by Load-demo → loadV3Demo() OR by the bridge for non-demo v2 sessions) with a `loadV3Demo()` fallback. The `tests/perf/buildReferenceEngagement` import was dropped entirely from `ui/views/V3SkillBuilder.js`. **Regression guard**: V-ANTI-RUN-1 (source-grep over production modules; FILES list includes ui/views/V3SkillBuilder.js).
 **Reporter**: Codebase audit (2026-05-02 trust-rebuild)
 **Severity**: Major debt (v3 production code reaches into `tests/` for runtime data; layer separation broken; no V-ANTI gate)
 **Regression**: No (architectural choice from beta build)
@@ -200,9 +200,9 @@ it("V-ANTI-RUN-1 · production code does not import from tests/ at runtime", asy
 
 ---
 
-## BUG-006 · V3SkillBuilder imports test mock provider at runtime
+## BUG-006 · V3SkillBuilder imports test mock provider at runtime (CLOSED)
 
-**Status**: OPEN · Reported 2026-05-02 (audit) · v3.0.0-beta legacy
+**Status**: **CLOSED 2026-05-02** · Architectural fix shipped at commits `1c792e3` (`services/mockLLMProvider.js` impl + `tests/mocks/mockLLMProvider.js` thin re-export) + `3ce2575` (V3SkillBuilder import path flipped to `services/mockLLMProvider.js`). **Regression guards**: V-MOCK-1..3 (production-path import + contract + determinism), V-ANTI-RUN-1 (source-grep).
 **Reporter**: Codebase audit (2026-05-02 trust-rebuild)
 **Severity**: Debt (test code at runtime; production-imports-from-tests anti-pattern)
 **Regression**: No (architectural choice from beta build)
@@ -221,9 +221,9 @@ V-ANTI-RUN-1 (shared with BUG-005 + BUG-007); V-MOCK-1: assert `services/mockLLM
 
 ---
 
-## BUG-007 · CanvasChatOverlay imports test mock provider at runtime
+## BUG-007 · CanvasChatOverlay imports test mock provider at runtime (CLOSED)
 
-**Status**: OPEN · Reported 2026-05-02 (audit) · v3.0.0-rc.2 dev (shipped chunk D)
+**Status**: **CLOSED 2026-05-02** · Architectural fix shipped at commits `1c792e3` (`services/mockChatProvider.js` impl + `tests/mocks/mockChatProvider.js` thin re-export) + `3ce2575` (CanvasChatOverlay import path flipped to `services/mockChatProvider.js`). **Regression guards**: V-MOCK-1..3 + V-ANTI-RUN-1.
 **Reporter**: Codebase audit (2026-05-02 trust-rebuild)
 **Severity**: Debt (same anti-pattern as BUG-006; introduced this session by copying the established wrong pattern)
 **Regression**: No (new feature; same architectural choice as the Lab)
@@ -242,9 +242,9 @@ V-ANTI-RUN-1; V-MOCK-2: assert `services/mockChatProvider.js` exists and exports
 
 ---
 
-## BUG-008 · `services/canvasFile.js` stale comment claims migrator is a stub
+## BUG-008 · `services/canvasFile.js` stale comment claims migrator is a stub (CLOSED)
 
-**Status**: OPEN · Reported 2026-05-02 (audit) · v3.0.0-beta legacy
+**Status**: **CLOSED 2026-05-02** · Comment replaced at commit `0eba848` with current behavior description (parses + dispatches via migrator on older schemaVersion, validates strict, runs §S10 sweep, hydrates secondary indexes, reattaches transient fields).
 **Severity**: Cosmetic
 **Regression**: No
 
@@ -260,9 +260,9 @@ No specific regression test (cosmetic). Future doc-rot prevention is covered by 
 
 ---
 
-## BUG-009 · `services/skillRunner.js` stale comment claims structured output is TODO
+## BUG-009 · `services/skillRunner.js` stale comment claims structured output is TODO (CLOSED)
 
-**Status**: OPEN · Reported 2026-05-02 (audit) · v3.0.0-beta legacy
+**Status**: **CLOSED 2026-05-02** · Comment replaced at commit `0eba848` with current behavior description (parses LLM response as JSON, validates against registered Zod schema, catalog-membership checks with MAX_CATALOG_RETRIES retry budget, validationStatus 'invalid' on exhaustion).
 **Severity**: Cosmetic
 **Regression**: No
 
