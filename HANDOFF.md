@@ -1,17 +1,41 @@
 # Dell Discovery Canvas , Session Handoff
 
-**Last session end**: 2026-05-02 (PM). **v3.0.0-rc.2 LOCAL-TAG-PENDING-USER-APPROVAL on `v3.0-data-architecture`** (push deferred). APP_VERSION = `3.0.0-rc.2`. **Banner 1048/1048 GREEN ✅** at tag time. Closes the chat-perfection arc:
+**Last session end**: 2026-05-02 (LATE EVENING). **v3.0.0-rc.2 TAGGED + PUSHED + 7 hotfixes shipped on top.** APP_VERSION = `3.0.0-rc.2`. **Banner 1063/1063 GREEN ✅** (was 1048 at rc.2 tag).
 
-- **Step 0a/0b** SPEC §S24 + V-NAME-1 source-grep + 5 file renames purging v3-prefix (state/adapter, state/engagementStore, state/sessionBridge, core/demoEngagement, ui/views/SkillBuilder). `state/v3SkillStore.js` + `core/v3SeedSkills.js` exempted until v2 retires (per §S24.4 R24.5).
-- **Step 1-4** SPEC §S25 data contract + V-CONTRACT-1..7 + V-MD-1 RED-first scaffold → `core/dataContract.js` (derived from schemas + manifest + catalogs at module-load; deterministic FNV-1a checksum `a345f849`; 6 entities, 18 relationships, 8 invariants, 8 catalogs, 7 analytical views; module-load self-validation). Then `services/systemPromptAssembler.js` (5 layers → 2 collapsed: role + dataContract block) + handshake instruction + labels-not-ids rule. `services/chatService.js` first-turn handshake parser strips `[contract-ack v3.0 sha=<8>]` from visible response + emits `result.contractAck { ok, expected, received }`.
-- **Step 5+6** `vendor/marked/marked.min.js` (v13.0.3) vendored → `ui/views/CanvasChatOverlay.js` renders assistant bubbles via marked (user bubbles stay `textContent` for XSS guard per CH18) + ack chip in header (✓ green auto-fade 3s on match; ⚠ amber + sticky banner on mismatch).
-- **Step 7** Real-Anthropic tool-use round-trip: `buildRequest('anthropic')` accepts `tools` + array-shaped `message.content`; `realChatProvider.js` strips `invoke` closures, parses tool_use blocks, threads `fetchImpl`. `chatService.js` builds Anthropic-shape content blocks `[{type:"tool_use",id,name,input}]` + `[{type:"tool_result",tool_use_id,content}]` for round-2.
-- **Step 8a** cache_control wire: `cacheControl` indices flow assembler → chatService → realChatProvider → `buildRequest('anthropic')`; system field becomes content-block array with `{cache_control:{type:"ephemeral"}}` on the marked prefix block (5-min TTL ≈ ~10x prompt-token cost savings on cache hits).
-- **Step 8b** SSE per-token streaming: NEW `streamCompletion(opts)` async generator parses Anthropic SSE (`content_block_delta` text_delta, `input_json_delta` partials reassembled on `content_block_stop`); `realChatProvider({stream:true})` (default for Anthropic) routes through it. V-CHAT-15 opted out via `stream:false`; V-CHAT-17 covers SSE path with ReadableStream stub.
-- **Step 9** RESET-TO-DEMO + aiConfig: VERIFIED already preserved (separate localStorage keys `dell_discovery_v1` vs `ai_config_v1`); summary's prior bug-claim was wrong, no fix needed.
-- **Step 10+11** End-to-end mock smoke (rc2-step8b container, browser-driven): contractAck.ok=true, handshake stripped, 2 provider calls round-trip, markdown h2/strong/em/table/th/td/li/code all rendered, ack chip green. **Real-Anthropic streaming smoke against live key DEFERRED to first user-driven workshop run** (mock smoke covers all code paths; real-key smoke is the user's first chat-overlay use post-deploy).
+**Today's PM session shipped 7 commits (all on `origin/v3.0-data-architecture`)** — workshop-validation feedback + AI UX overhaul Phases 1-3:
 
-New tests this release: V-CONTRACT-1..7, V-MD-1, V-NAME-1, V-CHAT-13/14/15/16/17, V-DEMO-1..7, V-MOCK-1..3, V-ANTI-RUN-1. New rules: `docs/RULES.md §17 PR1-PR7` (production-import discipline) + `§16 CH14-CH19`. Two providers lifted to production (`services/mockChatProvider.js` + `services/mockLLMProvider.js`). One vendor (`vendor/marked/marked.min.js`).
+| # | Commit | Fix |
+|---|---|---|
+| 1 | `7172737` | BUG-010 — rich Acme Healthcare demo (3 drivers / 4 envs / 23 instances / 8 gaps with full driver→Dell-solution narrative) + `state/sessionBridge.js` shallow-merge (no longer clobbers v3) + NEW `state/v3ToV2DemoAdapter.js` (single source of truth from v3 demo into v2 sessionState) |
+| 2 | `ddc54fc` | BUG-012 — multi-round tool chaining (`chatService.MAX_TOOL_ROUNDS=5`); previously 1-round cap stuck Q1 + Q2 on round-2 preamble |
+| 3 | `d324971` | BUG-013 — anti-leakage role section + selector label enrichment (`selectGapsKanban.gapsSummary` includes description/urgencyLabel/driverLabel/layerLabel; `selectVendorMix.byEnvironment[id].envLabel` populated) |
+| 4 | `4ee35ca` | BUG-014 / Phase 2 — UI-string anti-leakage purge in 4 AI-surface files; V-NAME-2 source-grep test |
+| 5 | `eb2ffc8` | Phase 3 — Canvas Chat shell redesign (`size:"chat"` 1180×88vh; row layout with collapsible Skills right-rail) + BUG-015 (handshake silent-strip on subsequent turns) |
+| 6 | `7a84b72` | BUG-016 — handshake strip is now BRACKET-OPTIONAL (Gemini emits without brackets) + `chatMemory.loadTranscript` heals persisted leaks at load time |
+| 7 | `5052d8a` | BUG-017 — Mock provider toggle removed from chat header; replaced with **connection-status chip** (green dot "Connected to Claude" / amber "Configure provider", click → opens Settings); always uses active aiConfig provider; chip state from `isActiveProviderReady` |
+
+**+9 net new tests this session** (1054 → 1063): V-FLOW-CHAT-DEMO-1/2, V-DEMO-V2-1, V-DEMO-8/9 (BUG-010); V-CHAT-18/19 (BUG-012); V-CHAT-20/21/22 (BUG-013); V-NAME-2 (BUG-014); V-CHAT-23 (BUG-015); V-CHAT-24/25 (BUG-016); V-CHAT-26 (BUG-017).
+
+**3-PHASE PLAN APPROVED (NEXT SESSIONS)** — generic AI connector + concept manifest + app-awareness layer. User direction 2026-05-02 LATE EVENING: "I want a generic connector that is automatically compatible with any LLM... the AI assist will need to understand how to talk to the app, the data meta model, the relationships and connections between choices and linkage... not only data and context aware but also app structure and data model and data relationship aware for multi-stage queries... should be a help tool... define all these items to the AI in a very clever way without overwhelming with file dumps."
+
+| Phase | Scope | Effort |
+|---|---|---|
+| **A** | Generic OpenAI tool-use connector (lingua franca: openai-compatible function-calling shape; translation shims for Anthropic + Gemini in their wire builders). Closes BUG-018 (Gemini hangs) + unblocks vLLM/local LLM tool questions. | ~3-4 commits, ~2 hrs |
+| **B** | Concept manifest — NEW `core/conceptManifest.js` (~50 concepts: 5 gap_types, 6 layers, 3 urgencies, 3 phases, 7 dispositions, 8 drivers, 8 envs, ~30 Dell products, plus current vs desired, engagement, skill, click-to-run vs session-wide). Each: definition + example + whenToUse + vsAlternatives. Inline TOC + headlines (~1.5KB) in system prompt; full body fetched on demand via NEW `selectConcept(id)` tool. Module-load self-validation + checksum (same discipline as `core/dataContract.js`). | ~3-4 commits, ~2 hrs |
+| **C** | App / workflow manifest — NEW `core/appManifest.js`. Workflows ("Identify gaps from current vs desired" → tab + steps + relatedConcepts) + recommendations (regex-trigger → answer). Inline TOC + recommendations (~1.5KB); full workflow body via `selectWorkflow(id)` tool. | ~2-3 commits, ~1.5 hrs |
+
+**Total estimated**: ~8-11 commits, ~5-6 hrs across multiple sessions. Each phase is tested + smoked + committed independently. Token-budget impact: ~3KB inline addition + tools for full bodies; cached via `cache_control` so essentially free after first turn.
+
+**Before Phase A coding**: confirm 50-concept dictionary content scope + (optional) draft together. User comfortable with me drafting first for review.
+
+**OUTSTANDING bugs (queued; logged in `docs/BUG_LOG.md` with fix plans)**:
+- **BUG-001 + BUG-002** — propagate-criticality regressions; scheduled GA polish; still OPEN since rc.2.
+- **BUG-011** — Settings can't save Anthropic API key; UNCONFIRMED in my probe (save flow worked); awaiting user repro details (clicked Save vs Close? "✓ Saved" flash visible? key field state on reopen?).
+- **BUG-018** — Gemini hangs on tool-required questions (no `tool_use` round-trip wired for Gemini today); CLOSES via Phase A landing.
+
+
+
+**rc.2 tagged 2026-05-02 (PM, earlier today)** — closes the chat-perfection arc. Per-step breakdown preserved in commit `2fde117` body + `docs/BUG_LOG.md`. Rolled into rc.2: SPEC §S20-§S25 annexes (data contract, demo, mock providers, naming, anti-leakage), 5 v3-prefix file renames, vendored `marked@13`, Anthropic tool-use round-trip, Anthropic cache_control on prefix, SSE per-token streaming, first-turn handshake echo-back. Banner went 1011 → 1048 at rc.2 tag.
 
 **Previously (rc.1, 2026-05-01)**: Every directive SPEC backend section (§S2 schema · §S4 storage · §S5 selectors · §S6 catalogs · §S7 skill builder · §S8 provenance · §S9 migrator · §S10 integrity · §S11 perf) closed and tested. rc.1 added: SPEC §S19 v3.0 → v2.x consumption adapter; `state/v3Adapter.js` + `state/v3EngagementStore.js` impl with V-ADP-1..10 GREEN; `state/v3SessionBridge.js` co-existence bridge auto-populates engagement on boot + every `session-changed`; V-MFG-1 manifest drift gate. 1011/1011 GREEN banner. Files renamed in rc.2: state/v3Adapter → state/adapter; state/v3EngagementStore → state/engagementStore; state/v3SessionBridge → state/sessionBridge.
 
@@ -29,14 +53,13 @@ New tests this release: V-CONTRACT-1..7, V-MD-1, V-NAME-1, V-CHAT-13/14/15/16/17
 
 **Chat-perfection arc COMPLETE 2026-05-02 (PM)**: data contract + handshake + markdown + ack chip + Real-Anthropic tool-use + cache_control + SSE per-token streaming. Banner 1048/1048 GREEN. See top section for the per-step breakdown.
 
-**NEXT UP (post-rc.2, queued)**:
-1. **Real-Anthropic live-key smoke** — first user-driven workshop run with a real Anthropic key against the v3-native demo (mock smoke covers all paths but the real-network round-trip is unverified until the user's first session).
-2. **GA arc** — view migrations × 5 (Context → Architecture → Heatmap → Workload → Gaps → Reporting) reading via `state/adapter.js` instead of v2.x `state/sessionState.js`.
-3. **AI Assist consolidation** — surface v3.0 saved skills via `state/engagementStore.js`; consider removing v2.x admin panel per `project_v2x_admin_deferred.md` parity gate.
-4. **OpenAI + Gemini tool-use + SSE** (rc.3 scope; their wire shapes warrant their own request builders).
-5. **BUG-001 + BUG-002** propagate-criticality fixes.
-6. **Polish** (deferred design review per `project_deferred_design_review.md` + crown-jewel UX per `project_crown_jewel_design.md`).
-7. **Tag `v3.0.0` GA** when the above ships + a real workshop run is logged.
+**Longer queue (after Phases A/B/C above)**:
+1. **GA arc** — view migrations × 5 (Context → Architecture → Heatmap → Workload → Gaps → Reporting) reading via `state/adapter.js` instead of v2.x `state/sessionState.js`.
+2. **AI Assist consolidation Phases 4-5** — right-rail populates with saved-skill cards (clickable → drops pre-filled prompt into chat); skill editor slide-over inside chat overlay; Lab tab deprecated; "Use AI" buttons rewired to drop prompts into chat; top-bar consolidation (one AI button instead of three); `project_v2x_admin_deferred.md` parity gate evaluation.
+3. **BUG-001 + BUG-002** propagate-criticality fixes.
+4. **Polish** (deferred design review per `project_deferred_design_review.md` + crown-jewel UX per `project_crown_jewel_design.md`).
+5. **Backlog cleanup pass** — supersede + drop redundant items in HANDOFF / BUG_LOG / CHANGELOG_PLAN.
+6. **Tag `v3.0.0` GA** when the above ships + a real workshop run is logged.
 
 **v2.4.17 work-in-progress preserved**: 14 commits on local `main` (NOT pushed) + tag `v2.4.17-wip-snapshot` at commit `58660b7`. Rollback recoverable per HANDOVER_v2.4.17_to_v3.0.md §7.3 if needed.
 
