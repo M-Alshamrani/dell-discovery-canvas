@@ -29,25 +29,33 @@
 //            `services/aiService.js` chatCompletion contract ·
 //            docs/RULES.md §16 CH19.
 
-import { chatCompletion } from "./aiService.js";
+import { chatCompletion, streamCompletion } from "./aiService.js";
 
 // createRealChatProvider({ providerKey, baseUrl, model, fallbackModels?,
-//                          apiKey?, fetchImpl? })
-//   → { stream({messages, tools}) → AsyncIterable<event>, callsRecorded,
-//        capabilities }
+//                          apiKey?, stream?, fetchImpl? })
+//   → { stream({messages, tools, cacheControl}) → AsyncIterable<event>,
+//        callsRecorded, capabilities }
 //
 // `messages` is the system + transcript + user message array assembled
 // by chatService. `tools` is the CHAT_TOOLS array (with `invoke`); we
-// strip the function before forwarding to chatCompletion since closures
-// are not serializable. `fetchImpl` is an optional override for tests
-// (V-CHAT-15 uses this to stub the Anthropic /v1/messages endpoint).
+// strip the function before forwarding to the wire builder since
+// closures are not serializable. `cacheControl` is the array of message
+// indices that carry the Anthropic ephemeral cache_control marker.
+//
+// `stream:true` (default for Anthropic) routes through streamCompletion
+// (SSE per-token). `stream:false` keeps the legacy non-streaming path
+// (V-CHAT-15 uses this for stub-fetch tests where building a real
+// ReadableStream is fiddly). `fetchImpl` is an optional override for
+// tests.
 export function createRealChatProvider(opts) {
   const providerConfig = opts || {};
   const callsRecorded = [];
-  // toolUse capability is true ONLY for Anthropic in rc.2; OpenAI +
-  // Gemini wire builders ship in rc.3.
+  // toolUse + caching capabilities are true ONLY for Anthropic in rc.2;
+  // OpenAI + Gemini wire builders ship in rc.3.
   const supportsToolUse = providerConfig.providerKey === "anthropic";
-  const capabilities = { streaming: false, toolUse: supportsToolUse, caching: supportsToolUse };
+  // SSE streaming defaults ON for Anthropic; opt-out via stream:false.
+  const wantsStream = providerConfig.stream !== false && supportsToolUse;
+  const capabilities = { streaming: wantsStream, toolUse: supportsToolUse, caching: supportsToolUse };
 
   return {
     callsRecorded,
@@ -69,25 +77,45 @@ export function createRealChatProvider(opts) {
         messages,
         tools:        wireTools,
         cacheControl: cacheControl,
+        streaming:    wantsStream,
         at:           new Date().toISOString()
       });
 
+      const wireOpts = {
+        providerKey:    providerConfig.providerKey,
+        baseUrl:        providerConfig.baseUrl,
+        model:          providerConfig.model,
+        fallbackModels: providerConfig.fallbackModels || [],
+        apiKey:         providerConfig.apiKey || "",
+        messages,
+        tools:          wireTools.length > 0 ? wireTools : undefined,
+        cacheControl:   cacheControl.length > 0 ? cacheControl : undefined,
+        fetchImpl:      providerConfig.fetchImpl
+      };
+
+      // SSE streaming path (Anthropic only in rc.2). Yields events 1:1
+      // from streamCompletion's generator — text tokens stream as they
+      // arrive; tool_use surfaces on content_block_stop with the
+      // accumulated input JSON.
+      if (wantsStream) {
+        try {
+          for await (const evt of streamCompletion(wireOpts)) {
+            yield evt;
+          }
+        } catch (e) {
+          const msg = "Provider error: " + (e && e.message || String(e));
+          yield { kind: "text", token: msg };
+          yield { kind: "done", text:  msg };
+        }
+        return;
+      }
+
+      // Non-streaming path (default for non-Anthropic; opt-in for
+      // Anthropic via stream:false — used by V-CHAT-15 stub).
       let response;
       try {
-        response = await chatCompletion({
-          providerKey:    providerConfig.providerKey,
-          baseUrl:        providerConfig.baseUrl,
-          model:          providerConfig.model,
-          fallbackModels: providerConfig.fallbackModels || [],
-          apiKey:         providerConfig.apiKey || "",
-          messages,
-          tools:          wireTools.length > 0 ? wireTools : undefined,
-          cacheControl:   cacheControl.length > 0 ? cacheControl : undefined,
-          fetchImpl:      providerConfig.fetchImpl
-        });
+        response = await chatCompletion(wireOpts);
       } catch (e) {
-        // Surface upstream errors as a chat-shape text event so the chat
-        // overlay can render the failure inline rather than crashing.
         const msg = "Provider error: " + (e && e.message || String(e));
         yield { kind: "text", token: msg };
         yield { kind: "done", text:  msg };

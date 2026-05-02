@@ -308,6 +308,109 @@ export function extractText(providerKind, json) {
   return "";
 }
 
+// streamCompletion(opts) — async generator over Anthropic SSE events.
+//
+// Yields:
+//   { kind: "text",     token:  string }
+//   { kind: "tool_use", id, name, input }
+//   { kind: "done",     text:   string }
+//
+// Uses the same buildRequest('anthropic') wire shape as chatCompletion +
+// adds body.stream=true. Reads response.body as a ReadableStream and
+// parses SSE per Anthropic's documented event grammar (`event: <name>\n
+// data: <json>\n\n` blocks). Tool-use input arrives as a sequence of
+// input_json_delta partials that we accumulate and JSON.parse on
+// content_block_stop. NO retry/fallback here — the stream is committed
+// once headers come back; recovery from a mid-stream drop is the
+// caller's problem (in v1, surfacing the error to the chat overlay).
+//
+// SPEC §S20.19. Anthropic-only for rc.2; OpenAI + Gemini SSE deferred.
+export async function* streamCompletion(opts) {
+  if ((opts.providerKey || "") !== "anthropic") {
+    throw new Error("streamCompletion: only providerKey='anthropic' supported in rc.2; got " + (opts.providerKey || "(none)"));
+  }
+  var fetchImpl = opts.fetchImpl || (typeof window !== "undefined" ? window.fetch.bind(window) : null);
+  if (!fetchImpl) throw new Error("streamCompletion: no fetch implementation available");
+
+  var built = buildRequest("anthropic", opts);
+  built.body.stream = true;
+
+  var resp = await fetchImpl(built.url, {
+    method:  "POST",
+    headers: built.headers,
+    body:    JSON.stringify(built.body)
+  });
+  if (!resp.ok) {
+    var bodyText = "";
+    try { bodyText = await resp.text(); } catch (_e) {}
+    throw buildHttpError("anthropic", resp.status, bodyText);
+  }
+  if (!resp.body || typeof resp.body.getReader !== "function") {
+    throw new Error("streamCompletion: Anthropic response.body is not a ReadableStream (browser-only path)");
+  }
+
+  var reader  = resp.body.getReader();
+  var decoder = new TextDecoder();
+  var buffer  = "";
+  // Track in-flight tool_use blocks by content-block index so input_json_delta
+  // partials accumulate until content_block_stop.
+  var toolBlocks = {}; // index → { id, name, partialJson }
+  var fullText = "";
+
+  while (true) {
+    var chunk = await reader.read();
+    if (chunk.done) break;
+    buffer += decoder.decode(chunk.value, { stream: true });
+
+    // SSE events are separated by a blank line (\n\n). Drain complete
+    // events; leave a trailing partial event in the buffer.
+    var idx;
+    while ((idx = buffer.indexOf("\n\n")) >= 0) {
+      var block = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      var dataLine = "";
+      var lines = block.split("\n");
+      for (var li = 0; li < lines.length; li++) {
+        if (lines[li].slice(0, 6) === "data: ") {
+          dataLine += lines[li].slice(6);
+        }
+      }
+      if (!dataLine) continue;
+      var parsed;
+      try { parsed = JSON.parse(dataLine); } catch (_e) { continue; }
+      if (!parsed) continue;
+
+      if (parsed.type === "content_block_start" && parsed.content_block) {
+        var cb = parsed.content_block;
+        if (cb.type === "tool_use") {
+          toolBlocks[parsed.index] = {
+            id: cb.id || null,
+            name: cb.name || "",
+            partialJson: ""
+          };
+        }
+      } else if (parsed.type === "content_block_delta" && parsed.delta) {
+        if (parsed.delta.type === "text_delta" && typeof parsed.delta.text === "string") {
+          fullText += parsed.delta.text;
+          yield { kind: "text", token: parsed.delta.text };
+        } else if (parsed.delta.type === "input_json_delta") {
+          var tb1 = toolBlocks[parsed.index];
+          if (tb1) tb1.partialJson += (parsed.delta.partial_json || "");
+        }
+      } else if (parsed.type === "content_block_stop") {
+        var tb2 = toolBlocks[parsed.index];
+        if (tb2) {
+          var input = {};
+          try { input = JSON.parse(tb2.partialJson || "{}"); } catch (_e) { input = {}; }
+          yield { kind: "tool_use", id: tb2.id, name: tb2.name, input: input };
+        }
+      }
+      // message_start / message_delta / message_stop / ping → informational
+    }
+  }
+  yield { kind: "done", text: fullText };
+}
+
 // Convenience: run a tiny "Reply OK" probe to verify wiring. Returns
 // { ok: true, sample: "..." } or { ok: false, error: "..." }.
 export async function testConnection(opts) {

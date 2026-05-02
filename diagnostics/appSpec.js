@@ -12355,6 +12355,9 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         baseUrl:     "/api/anthropic",
         model:       "claude-opus-4-7",
         apiKey:      "sk-test",
+        // V-CHAT-15 covers the legacy non-streaming path; the SSE
+        // streaming path is exercised by V-CHAT-17.
+        stream:      false,
         fetchImpl:   stubFetch
       });
       const result = await streamChat({
@@ -12367,6 +12370,74 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assertEqual(callIdx, 2, "two fetches: round1 (tool_use) + round2 (final text)");
       assert(typeof result.response === "string" && result.response.includes("1"),
         "final text from round2 surfaces");
+    });
+
+    it("V-CHAT-17 · realChatProvider with Anthropic SSE-shape stub yields per-token text events progressively + closes with done", async () => {
+      const { createRealChatProvider } = await import("../services/realChatProvider.js");
+      _resetChatEnv();
+      let eng = createEmptyEngagement();
+      setActiveEngagement(eng);
+
+      // Build a minimal Anthropic SSE event stream: text_delta x3 then message_stop.
+      const sse =
+        'event: message_start\n' +
+        'data: {"type":"message_start","message":{"id":"msg_01","role":"assistant","content":[],"stop_reason":null}}\n\n' +
+        'event: content_block_start\n' +
+        'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n' +
+        'event: content_block_delta\n' +
+        'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}\n\n' +
+        'event: content_block_delta\n' +
+        'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" "}}\n\n' +
+        'event: content_block_delta\n' +
+        'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"world"}}\n\n' +
+        'event: content_block_stop\n' +
+        'data: {"type":"content_block_stop","index":0}\n\n' +
+        'event: message_stop\n' +
+        'data: {"type":"message_stop"}\n\n';
+
+      const stubFetch = async (url, init) => {
+        // Verify the request actually requested streaming.
+        const sentBody = JSON.parse(init.body);
+        if (sentBody.stream !== true) {
+          throw new Error("V-CHAT-17: SSE path must set body.stream=true; got " + JSON.stringify(sentBody.stream));
+        }
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(sse));
+            controller.close();
+          }
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" }
+        });
+      };
+
+      const provider = createRealChatProvider({
+        providerKey: "anthropic",
+        baseUrl:     "/api/anthropic",
+        model:       "claude-opus-4-7",
+        apiKey:      "sk-test",
+        stream:      true,
+        fetchImpl:   stubFetch
+      });
+
+      const tokensSeen = [];
+      const result = await streamChat({
+        engagement:     eng,
+        transcript:     [],
+        userMessage:    "Say hello",
+        providerConfig: { providerKey: "anthropic" },
+        provider:       provider,
+        onToken:        function(t) { tokensSeen.push(t); }
+      });
+
+      assert(tokensSeen.length >= 3,
+        "at least 3 text_delta tokens streamed via onToken (got " + tokensSeen.length + ")");
+      assertEqual(tokensSeen.join(""), "Hello world",
+        "concatenated tokens equal full text");
+      assert(typeof result.response === "string" && result.response.indexOf("Hello world") >= 0,
+        "final response carries full streamed text (got: '" + result.response + "')");
     });
   });
 
