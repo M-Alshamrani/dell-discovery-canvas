@@ -2232,6 +2232,206 @@ V-NAME-1 in TESTS.md §T24.
 
 ---
 
+## §S25 · Data contract — LLM grounding meta-model (SPEC-only annex)
+
+**Status**: NEW 2026-05-02. SPEC-only annex. Authored as the centerpiece of Canvas Chat perfection per user direction:
+
+> "AI Chat does not seem to be aware of the full data model definitions, bindings, and what is related to what and how, as data metamodel and metadata. This has to happen initially as a standard backend prompt pushed to the AI when we click on chat. It becomes environment aware, and context aware and can query the environment for the data points it needs to provide accurate answers without hallucinating."
+
+> "I want to emphasize the LLM provider needs to know the binding correctly, and binding handshake to confirm awareness of what it means as check ... this is the most big win if done correctly."
+
+The data contract is THE single artifact that grounds every LLM turn. It's derived (never hand-maintained) from schemas + manifest + catalogs at module load, validates itself on import, carries a deterministic checksum, and gets serialized into the chat system prompt as the authoritative reference. The first-turn handshake (§S20.16) verifies the LLM has loaded it.
+
+**Authority cascade**: SPEC §S25 → `docs/RULES.md §16 CH15..CH18` (handshake / labels-not-ids / contract-traceability) → `docs/v3.0/TESTS.md §T25` V-CONTRACT-1..7 → Suite 49 RED-first → `core/dataContract.js` → `services/systemPromptAssembler.js` updates → `services/chatService.js` handshake parser → `ui/views/CanvasChatOverlay.js` ack indicator → smoke.
+
+### S25.1 · Goals
+
+- **Single source of truth**: every binding, relationship, invariant, and catalog metadata in one structured object the LLM references for every claim.
+- **Drift-free**: derived at module load from schemas (`schema/*.js`), manifest (`generateManifest()`), and catalogs (`loadAllCatalogs()`). Adding a field to a schema regenerates the contract; the new checksum becomes the new expected handshake value automatically.
+- **Verifiable**: deterministic FNV-1a checksum over the serialized contract. The first-turn handshake (per S20.16) has the LLM echo the first 8 chars; chat overlay verifies match → ✓ ack indicator; mismatch → ⚠ "contract handshake failed" banner.
+- **Catalog metadata for human-readable answers**: every catalog entry's id + label + description so the model can render labels (not bare ids) in user-facing prose.
+- **Self-validating at module load**: build fails (module throws on import) if the contract structure drifts.
+
+### S25.2 · Module shape
+
+```
+core/
+  dataContract.js
+```
+
+Exports:
+
+```js
+// Returns the structured data contract. Module-cached (referentially
+// stable across calls).
+export function getDataContract();
+
+// First 8 chars of the FNV-1a checksum of the serialized contract.
+// Used by §S20.16 handshake.
+export function getContractChecksum();
+
+// Module-load self-validates: if any field declared in the contract
+// doesn't actually exist in schemas / catalogs / manifest, the module
+// throws at import time. Build fails. Same shape as core/demoEngagement.js
+// EngagementSchema.parse() at module load.
+```
+
+### S25.3 · Contract structure
+
+```
+{
+  schemaVersion: "3.0",
+  checksum:      "<8-char hex of FNV-1a over the serialized contract>",
+  generatedAt:   "<ISO timestamp at module load>",
+
+  entities: [
+    {
+      kind: "gap",
+      description: "Discrete improvement opportunities derived from current↔desired delta + business drivers",
+      fields: [
+        { name: "description",  type: "string",  required: true,  description: "..." },
+        { name: "urgency",      type: "enum",    values: ["High","Medium","Low"], required: true, ... },
+        { name: "phase",        type: "enum",    values: ["now","next","later"],  required: true, ... },
+        { name: "gapType",      type: "catalogRef", catalog: "GAP_TYPES", required: true, ... },
+        ...
+      ]
+    },
+    ...   // 7 entity kinds
+  ],
+
+  relationships: [
+    {
+      from:        "gap.driverId",
+      to:          "drivers.id",
+      cardinality: "0..1",
+      description: "Gap is rationalized by a driver (optional). Drives the 'why' question on every gap detail."
+    },
+    {
+      from:        "gap.affectedEnvironments[]",
+      to:          "environments.id",
+      cardinality: "1..n",
+      description: "Gap touches one or more environments (cross-cutting per S3.7). Multi-env gaps are counted once globally, not per-env."
+    },
+    {
+      from:        "instance.mappedAssetIds[]",
+      to:          "instances.id",
+      cardinality: "0..n",
+      constraint:  "ONLY on layerId='workload'; mapped assets MAY span environments (cross-cutting)",
+      description: "A workload's underlying compute / storage / dataProtection assets. Defines what the workload depends on for its function."
+    },
+    {
+      from:        "instance.originId",
+      to:          "instances.id (state='current')",
+      cardinality: "0..1",
+      constraint:  "ONLY on state='desired'; replace-lifecycle link from desired back to the current it replaces",
+      description: "Replace-lifecycle anchor. When a desired carries originId, it means this desired is the planned replacement for that current."
+    },
+    ...   // 12-15 relationships covering all FK declarations + cross-cutting
+  ],
+
+  invariants: [
+    { id: "G6",  description: "gap.affectedLayers[0] === gap.layerId — primary-layer rule. The first entry in affectedLayers IS the primary layer; the rest are spillover layers." },
+    { id: "I9",  description: "instance.mappedAssetIds non-empty only on layerId='workload'. Compute / storage / dataProtection / virtualization / infrastructure instances cannot have asset mappings." },
+    { id: "AL7", description: "An ops-typed gap requires at least one of {links, notes, mappedDellSolutions} — no empty placeholder gaps." },
+    ...   // 8-10 invariants total
+  ],
+
+  catalogs: [
+    {
+      id: "BUSINESS_DRIVERS", version: "2026.04",
+      description: "CxO-priority drivers presales engages on. Used as the rationale on every gap (gap.driverId).",
+      entries: [
+        { id: "cyber_resilience", label: "Cyber Resilience",   description: "We must recover from attacks without paying, and prove it." },
+        { id: "ai_data",          label: "AI & Data Platforms", description: "We need to get real value from AI and our data, fast." },
+        ...
+      ]
+    },
+    { id: "ENV_CATALOG",            ...   /* coreDc / drDc / edge / publicCloud */ },
+    { id: "LAYERS",                 ...   /* workload / compute / storage / dataProtection / virtualization / infrastructure */ },
+    { id: "GAP_TYPES",              ...   /* enhance / replace / introduce / consolidate / ops */ },
+    { id: "DISPOSITION_ACTIONS",    ...   /* keep / enhance / replace / consolidate / retire / introduce */ },
+    { id: "SERVICE_TYPES",          ...   /* assessment / design / migration / operate / etc */ },
+    { id: "CUSTOMER_VERTICALS",     ...   /* Healthcare / Financial Services / Government / etc */ },
+    { id: "DELL_PRODUCT_TAXONOMY",  ...   /* PowerEdge / PowerStore / PowerProtect / APEX / etc — corrected per SPEC §S6.2.1 (no Boomi/Taegis/VxRail/SmartFabric Director) */ }
+  ],
+
+  bindablePaths: { ... manifest output unchanged ... },
+
+  analyticalViews: [
+    {
+      name: "selectGapsKanban",
+      description: "Returns all gaps grouped by phase × status with totals. PREFER over manual counting.",
+      inputSchema:  { type: "object", properties: {} },
+      outputShape:  "{ totalsByStatus, byPhase: { now: [...], next: [...], later: [...] } }"
+    },
+    ...   // 7 views, one per §S5 selector
+  ]
+}
+```
+
+### S25.4 · R-numbered requirements
+
+| R | Requirement | Trace |
+|---|---|---|
+| **R25.1** | `core/dataContract.js` exports `getDataContract()` returning the structured object per S25.3. The function returns the SAME object reference on every call (module-cached) | V-CONTRACT-1 |
+| **R25.2** | `core/dataContract.js` derives every field from existing artifacts: entity fields from `<Entity>Schema._def.shape()`, relationships from `<entity>FkDeclarations` + cross-cutting fields docs, invariants from a maintained list, catalogs from `loadAllCatalogs()`, bindablePaths from `generateManifest()`, analyticalViews from `CHAT_TOOLS`. NO hand-maintained content | V-CONTRACT-2 |
+| **R25.3** | `getContractChecksum()` returns the first 8 chars of an FNV-1a hash over `JSON.stringify(getDataContract(), null, 0)` (deterministic). Same checksum across module loads when nothing changed | V-CONTRACT-3 |
+| **R25.4** | The module performs structural self-validation at module load: every catalog declared has at least one entry, every relationship's `from` references an entity declared in `entities[]`, every invariant id is unique. Module throws on drift | V-CONTRACT-4 |
+| **R25.5** | `services/systemPromptAssembler.js` consumes the contract: Layers 2 (data model) + 3 (manifest) + 6 (catalog metadata) collapse into ONE structured contract block; the role section instructs the LLM to trace every claim back to the contract; the role section also adds the handshake instruction per S20.16 | V-CONTRACT-5 + V-CONTRACT-7 |
+| **R25.6** | The catalog metadata enables label-not-id rendering (per CH16). System prompt instructs: "Catalog refs in the engagement snapshot are wrapped `{id, label, description}` envelopes. Use the LABEL when speaking to the user, NOT the id." | V-CONTRACT-6 |
+| **R25.7** | The contract module imports ONLY from `schema/`, `services/manifestGenerator.js`, `services/catalogLoader.js`, `services/chatTools.js`. Forbidden: importing from `tests/` (per RULES §17). Production-canonical only | V-ANTI-RUN-1 |
+
+### S25.5 · The handshake protocol (cross-ref §S20.16)
+
+The role section in the system prompt (§S20.4.1) gains the handshake clause:
+
+> *"On your FIRST response in this session, you MUST start with exactly one line: `[contract-ack v3.0 sha=<8-char-checksum>]` (where the 8-char checksum is the value `getContractChecksum()` provided to you in the data contract above). After that one line, blank line, then your normal response. This proves you've loaded the data contract. Subsequent turns do NOT include this prefix; only the first turn."*
+
+The chat overlay (`ui/views/CanvasChatOverlay.js`) parses the first line of the first assistant turn:
+- Match → strip the prefix from the rendered message + show subtle ✓ "data contract loaded" indicator in the overlay header (fades after 3s).
+- Mismatch (line missing OR sha doesn't equal `getContractChecksum()`) → ⚠ "data contract handshake failed — answers may be ungrounded" banner above the transcript.
+
+The handshake is poor-man's verification but real: a model that hallucinated everything else can't fake the right sha (it isn't in its training data).
+
+### S25.6 · Forbidden patterns
+
+- **F25.6.1** · Hand-maintaining any content in `core/dataContract.js` that could be derived. Adding a hardcoded entity/relationship/invariant that isn't in a schema/declaration is the start of drift.
+- **F25.6.2** · Skipping the module-load self-validation. The whole point is build-time guarantees; if validation only runs in tests, drift escapes to production.
+- **F25.6.3** · Keying the handshake on anything other than the contract checksum. Don't accept "v3.0 ack" without the sha — that's not verifiable.
+- **F25.6.4** · The chat overlay silently swallowing a handshake mismatch. Failures MUST be visible to the user.
+
+### S25.7 · Test contract for §S25
+
+V-CONTRACT-1..7 in TESTS.md §T25.
+
+---
+
+## §S20 extensions (chat-perfection)
+
+These extend the existing §S20 (Canvas Chat). Bullet-form for compactness; contract details live in the dedicated §S25 above.
+
+### §S20.16 · First-turn handshake (per §S25.5)
+
+R20.16: role section in the system prompt instructs the LLM to emit `[contract-ack v3.0 sha=<checksum>]` as the first line of the first assistant turn. `chatService.streamChat({...})` returns `{ response, provenance, contractAck: { ok: bool, expected, received } }` so the overlay can render the indicator. Prefix is stripped from the user-rendered text. Subsequent turns do NOT include the prefix.
+
+### §S20.17 · Markdown rendering (assistant bubbles only)
+
+R20.17: assistant message bubbles render their content via `marked@13` (vendored at `vendor/marked/marked.min.js`). User bubbles stay plain text (no markdown render — avoids prompt-injection-as-render). Sanitization: `marked` doesn't sanitize by default; we strip `<script>` + `javascript:` patterns before passing to marked, then render via `innerHTML`. Standard markdown elements supported: headers (h1-h6), `**bold**` / `*italic*`, `` `code` ``, fenced code blocks, ordered + unordered lists, tables, links, blockquotes.
+
+### §S20.18 · Real-Anthropic tool-use round-trip
+
+R20.18: `services/realChatProvider.js` extends to (a) build Anthropic-shape `tools` array from `CHAT_TOOLS`, (b) parse `content_block_delta` events for `tool_use` blocks, (c) round-trip via `chatService` orchestration (same shape as mock — chatService is provider-agnostic). OpenAI + Gemini are scheduled for follow-on commits.
+
+### §S20.19 · Anthropic prompt-caching at the wire
+
+R20.19: Anthropic-targeted requests carry `cache_control: {"type":"ephemeral"}` markers on the stable-prefix message blocks (Layers 1+2+3+5-descriptions per §S20.4 / §S20.7). Repeat turns within the 5-minute TTL bill input tokens at ~10% rate.
+
+### §S20 test contract additions
+
+V-CONTRACT-5 / V-CONTRACT-7 / V-MD-1 in TESTS.md §T25 + §T26.
+
+---
+
 ## §15 · Out of scope (explicit)
 
 Per directive §15. Re-listed here for SPEC traceability:
@@ -2305,5 +2505,6 @@ These are tractable; they do not block §1-§4 implementation.
 | 2026-05-02 | §S20 | NEW SPEC-only annex · Canvas Chat — context-aware AI assistant. R20.1–R20.15 + module shape (`services/chatService.js` + `services/systemPromptAssembler.js` + `services/chatTools.js` + `state/chatMemory.js` + `ui/views/CanvasChatOverlay.js`) + 5-layer system prompt (role / data-model / manifest / engagement / views) + tool-use round-trip + Anthropic prompt caching + streaming + per-engagement memory + read-only v1 boundary + V-CHAT-1..12 test pointer. Top-priority rc.2 work per user direction 2026-05-02 ("focus on getting it right ... no hallucinations ... best industry practice"). |
 | 2026-05-02 | §S21 + §S22 + §S23 | NEW SPEC-only annexes authoring the architectural fix for BUG-003..007. §S21 v3-native demo engagement (R21.1-R21.10 + `core/v3DemoEngagement.js` module shape + module-load schema-strict self-validation + deterministic UUIDs + V-DEMO-1..7 pointer). §S22 mock providers as production services (R22.1-R22.4 + `services/mockChatProvider.js` + `services/mockLLMProvider.js` shape + V-MOCK-1..3 pointer). §S23 production-no-tests-imports rule (R23.1-R23.3 + V-ANTI-RUN-1 source-grep). Drives the BUG-003 patch revert (`bacc7a0`) → cleanup arc → re-greening sequence per `feedback_no_patches_flag_first.md` + `feedback_test_or_it_didnt_ship.md`. |
 | 2026-05-02 | §S24 | NEW SPEC-only annex · production code naming discipline. R24.1–R24.5 operationalize `feedback_no_version_prefix_in_names.md` into a structural lint with V-NAME-1 source-grep test. Defines purgeable-now scope (5 file renames + 2 symbol renames + 4 UI string changes) and items blocked by v2 collision (`state/v3SkillStore.js`, `core/v3SeedSkills.js`, test-import aliases — drop when v2 retires per R24.3). Authored as the architectural prerequisite for chat-perfection so new modules land on a clean tree. |
+| 2026-05-02 | §S25 + §S20 ext | NEW SPEC-only annex · data contract LLM grounding meta-model. R25.1-R25.7 + module shape `core/dataContract.js` (derived from schemas + manifest + catalogs at module load; deterministic FNV-1a checksum; module-load self-validation) + structured contract: entities + relationships + invariants + catalog metadata + bindablePaths + analyticalViews. Plus §S20 extensions: §S20.16 first-turn handshake (LLM echoes `[contract-ack v3.0 sha=<8>]`; chat overlay verifies + ✓/⚠ indicator); §S20.17 markdown rendering on assistant bubbles via vendored `marked`; §S20.18 real-Anthropic tool-use round-trip; §S20.19 Anthropic prompt-caching at wire. Top-priority chat-perfection sequence per user direction 2026-05-02. |
 
 End of SPEC.

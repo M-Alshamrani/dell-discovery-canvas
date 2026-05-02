@@ -1136,7 +1136,101 @@ it("V-NAME-1 · production code naming discipline (per SPEC §S24)", async () =>
 
 ---
 
-## §T25 · Banner target reconciliation
+## §T25 · V-CONTRACT — Data contract (LLM grounding meta-model)
+
+**Coverage**: SPEC §S25 + §S20.16 (handshake).
+
+**Approximate count**: 7 vectors.
+
+| Vector | Assertion |
+|---|---|
+| V-CONTRACT-1 | `getDataContract()` returns the same object reference on every call (module-cached). Returned object has top-level keys: `schemaVersion`, `checksum`, `generatedAt`, `entities`, `relationships`, `invariants`, `catalogs`, `bindablePaths`, `analyticalViews` |
+| V-CONTRACT-2 | Contract content is DERIVED, not hand-maintained. Per-kind: `entities[].fields` count for `gap` matches `Object.keys(GapSchema._def.shape()).length` (within ±2 for cross-cutting fields handling); every `relationships[].from` references an entity declared in `entities[]`; every `catalogs[].entries[].id` is unique within its catalog |
+| V-CONTRACT-3 | `getContractChecksum()` returns an 8-char lowercase hex string. Two calls return identical strings (deterministic). Modifying any contract content (e.g. adding a synthetic catalog entry in a test fixture) yields a DIFFERENT checksum |
+| V-CONTRACT-4 | Module-load self-validation: `core/dataContract.js` source contains a top-level validation block that throws if any catalog has zero entries OR any relationship's `from` references an undeclared entity OR any invariant id is duplicated (verified by source-grep) |
+| V-CONTRACT-5 | `services/systemPromptAssembler.js buildSystemPrompt({...})` includes the data contract in its message block (verified by checking the concatenated content for the contract's checksum + at least one catalog entry's label) |
+| V-CONTRACT-6 | The role section instructs the LLM to use catalog labels (not bare ids) in user-facing prose AND to emit the first-turn handshake `[contract-ack v3.0 sha=<8>]` (verified by string match in the assembled prompt) |
+| V-CONTRACT-7 | `services/chatService.streamChat({...}).onComplete` result includes `contractAck: { ok: bool, expected: string, received: string|null }`. When the mock provider scripts a response starting with the right ack prefix → `ok: true`. When the prefix is missing or sha mismatches → `ok: false` with diagnostic detail |
+
+### T25.1 · Sample vector body (V-CONTRACT-1)
+
+```js
+it("V-CONTRACT-1 · getDataContract returns module-cached structured contract", () => {
+  const a = getDataContract();
+  const b = getDataContract();
+  assert(a === b, "module-cached: same reference on repeat calls");
+  assert(typeof a.schemaVersion === "string" && a.schemaVersion === "3.0", "schemaVersion 3.0");
+  assert(typeof a.checksum === "string" && /^[0-9a-f]{8}$/.test(a.checksum), "8-char lowercase hex checksum");
+  assert(Array.isArray(a.entities) && a.entities.length >= 6, "≥6 entity kinds (engagementMeta + customer + 5 collections)");
+  assert(Array.isArray(a.relationships) && a.relationships.length >= 8, "≥8 relationships");
+  assert(Array.isArray(a.invariants) && a.invariants.length >= 5, "≥5 named invariants");
+  assert(Array.isArray(a.catalogs) && a.catalogs.length >= 6, "≥6 catalogs");
+  assert(typeof a.bindablePaths === "object" && a.bindablePaths !== null, "bindablePaths present");
+  assert(Array.isArray(a.analyticalViews) && a.analyticalViews.length === 7, "7 analytical views (one per §S5 selector)");
+});
+```
+
+### T25.2 · Sample vector body (V-CONTRACT-7 · handshake parser)
+
+```js
+it("V-CONTRACT-7 · streamChat onComplete carries contractAck { ok, expected, received }", async () => {
+  _resetChatEnv();
+  const eng = createEmptyEngagement();
+  setActiveEngagement(eng);
+  const expected = getContractChecksum();
+  const provider = createMockChatProviderProd({
+    responses: [{ kind: "text", text: "[contract-ack v3.0 sha=" + expected + "]\n\nHello, ready to chat about this empty canvas." }]
+  });
+  let captured = null;
+  await streamChat({
+    engagement:     eng,
+    transcript:     [],
+    userMessage:    "hi",
+    providerConfig: { providerKey: "mock" },
+    provider:       provider,
+    onComplete:     r => { captured = r; }
+  });
+  assert(captured && captured.contractAck, "onComplete result includes contractAck");
+  assertEqual(captured.contractAck.ok, true, "ack ok when sha matches");
+  assertEqual(captured.contractAck.expected, expected, "expected sha echoed");
+  assertEqual(captured.contractAck.received, expected, "received sha matches expected");
+});
+```
+
+### T25.3 · Forbidden test patterns
+
+- **F25T.1** · Mocking `getDataContract()` to return a fixture. The contract IS the production artifact under test; mock it and you erase the V-CONTRACT-2 derived-from-schemas guarantee.
+- **F25T.2** · Asserting specific catalog entry labels by literal string (catalog content evolves; assert by id presence + non-empty label instead).
+
+---
+
+## §T26 · V-MD — Markdown rendering on assistant chat bubbles
+
+**Coverage**: SPEC §S20.17.
+
+**Approximate count**: 1 vector.
+
+| Vector | Assertion |
+|---|---|
+| V-MD-1 | After CanvasChatOverlay renders an assistant message containing `**bold**` and a bullet list, the rendered DOM has `<strong>` elements + `<ul><li>` structure (i.e. markdown was parsed, not surfaced as raw text). User bubbles for the same content show RAW `**bold**` (no markdown render — prevents prompt-injection-as-render) |
+
+### T26.1 · Sample vector body
+
+```js
+it("V-MD-1 · assistant bubbles render markdown; user bubbles stay plain", async () => {
+  // ... drive openCanvasChat + simulate an assistant message with markdown text
+  // ... assert overlay.querySelector('.canvas-chat-msg-assistant strong') exists
+  // ... assert overlay.querySelector('.canvas-chat-msg-user') content is escaped (textContent === raw)
+});
+```
+
+### T26.2 · Forbidden test patterns
+
+- **F26T.1** · Asserting markdown renders by checking the assistant's `.textContent` (markdown converts to HTML structure, not content). Always assert via DOM-tree probes.
+
+---
+
+## §T27 · Banner target reconciliation
 
 Per SPEC §S14.6:
 
@@ -1165,25 +1259,27 @@ Per SPEC §S14.6:
 | V-MOCK | 3 | T22 (3) |
 | V-ANTI-RUN | 1 | T23 (1) |
 | V-NAME | 1 | T24 (1) |
-| **TOTAL** | **~435** | **~438** |
+| V-CONTRACT | 7 | T25 (7) |
+| V-MD | 1 | T26 (1) |
+| **TOTAL** | **~443** | **~446** |
 
 Final banner target after merging: **616 (v2.4.16 baseline) - obsolete (~120 v2.4.x vectors that test fields/shapes that no longer exist) + 434 new = ~930 GREEN**. Provisional pending Suite 49 land + obsolete-vector audit. v3.0.0-rc.1 currently shows 1023/1023 (post-V-CHAT) because actual implementation enumerates per-fixture / per-invariant; "approximate count" here is the planning floor, not a ceiling.
 
 ---
 
-## §T26 · Open items
+## §T28 · Open items
 
 | Item | Section | Tag |
 |---|---|---|
 | V-SCH-12 default — `.strict()` vs `.strip()` for unknown fields | §T2.2 | TO RESOLVE (default `.strict()` for v3.0) |
 | V-MFG-10 manifest entry count expected size table | §T7 | TO LOCK at SPEC §S7.2.1 implementation |
 | V-ANTI-4 strict R-number → vector enforcement | §T18.1 | TO UPGRADE in v3.1 (smoke-check floors in v3.0) |
-| Banner target obsolete-vector audit | §T25 | TO RUN at Suite 49 land time (count which v2.4.x vectors test fields that v3.0 removes) |
+| Banner target obsolete-vector audit | §T27 | TO RUN at Suite 49 land time (count which v2.4.x vectors test fields that v3.0 removes) |
 | V-PROD mock LLM response keyed by prompt hash format | §T16.4 | TO AUTHOR alongside `services/llm/mockProvider.js` |
 
 ---
 
-## §T27 · Document control
+## §T29 · Document control
 
 - **Authored**: 2026-05-01 alongside MIGRATION.md.
 - **Owner**: spec writer (Claude Opus 4.7 1M context, this session and successors).
@@ -1199,5 +1295,6 @@ Final banner target after merging: **616 (v2.4.16 baseline) - obsolete (~120 v2.
 | 2026-05-02 | §T20 + §T21 + §T22 + §T23 | NEW §T20 V-CHAT-1..12 vectors for SPEC §S20 Canvas Chat. Existing §T20/T21/T22 meta-sections (banner target / open items / document control) renumbered to §T21/T22/T23. Banner target bumps from ~907 to ~919. Sample bodies for V-CHAT-3 (selector ↔ tool consistency) + V-CHAT-5 (tool-call round-trip with mock). |
 | 2026-05-02 | §T21 + §T22 + §T23 + §T24 + §T25 + §T26 | NEW §T21 V-DEMO-1..7 (SPEC §S21 v3-native demo). NEW §T22 V-MOCK-1..3 (SPEC §S22 mocks as production services). NEW §T23 V-ANTI-RUN-1 (SPEC §S23 production-no-tests-imports). Existing §T21/T22/T23 meta-sections (banner target / open items / document control) renumbered to §T24/T25/T26. Banner target bumps from ~919 to ~930. Sample bodies for V-DEMO-1 / V-DEMO-4 / V-MOCK-1 / V-ANTI-RUN-1. Authored as the architectural fix for the BUG-003 patch revert per `feedback_no_patches_flag_first.md` + `feedback_test_or_it_didnt_ship.md`. |
 | 2026-05-02 | §T24 + §T25 + §T26 + §T27 | NEW §T24 V-NAME-1 (SPEC §S24 production code naming discipline). Existing §T24/T25/T26 meta-sections renumbered to §T25/T26/T27. Banner target +1 (~930 → ~931). V-NAME-1 source-grep enforces no version-prefix in production file names + no v3 references in user-visible UI strings (with documented time-bounded exceptions for v2-collision items). Authored as the architectural prerequisite for chat-perfection: new modules in the chat-perfection sequence land on a tree where the discipline is already enforced. |
+| 2026-05-02 | §T25 + §T26 + §T27 + §T28 + §T29 | NEW §T25 V-CONTRACT-1..7 (SPEC §S25 data contract LLM grounding meta-model + §S20.16 first-turn handshake). NEW §T26 V-MD-1 (SPEC §S20.17 markdown rendering on assistant bubbles). Existing §T25/T26/T27 meta-sections renumbered to §T27/T28/T29. Banner target +8 (~931 → ~439). Sample bodies for V-CONTRACT-1 (module-cached structured contract) + V-CONTRACT-7 (handshake parser surfaces contractAck on onComplete). Centerpiece of the chat-perfection arc per user direction 2026-05-02 ("the LLM provider needs to know the binding correctly... binding handshake to confirm awareness... this is the most big win if done correctly"). |
 
 End of TESTS.

@@ -8688,6 +8688,11 @@ import { loadDemo as loadV3Demo, describeDemo as describeV3Demo } from "../core/
 import { createMockChatProvider as createMockChatProviderProd } from "../services/mockChatProvider.js";
 import { createMockLLMProvider  as createMockLLMProviderProd  } from "../services/mockLLMProvider.js";
 
+// rc.2 . SPEC §S25 . Data contract LLM grounding meta-model + §S20.16 handshake.
+// V-CONTRACT-1..7 fail RED against the STUB core/dataContract.js until
+// the real derived contract ships in Step 2 of the chat-perfection arc.
+import { getDataContract, getContractChecksum } from "../core/dataContract.js";
+
 // ============================================================================
 // Suite 49 · v3.0 data architecture rebuild · RED-first vector scaffold
 //
@@ -12402,6 +12407,171 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       const r2 = await llm2.complete({ prompt: "p" });
       assertEqual(r1.text, r2.text,
         "two mock LLM providers with identical defaultResponse yield identical text");
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // §T25 · V-CONTRACT · Data contract LLM grounding meta-model (per SPEC §S25)
+  // RED-first: core/dataContract.js is a STUB that throws on
+  // getDataContract() and getContractChecksum(). V-CONTRACT-1..7 fail
+  // RED until real impl ships in Step 2 of the chat-perfection arc.
+  // -------------------------------------------------------------------
+  describe("§T25 · V-CONTRACT · Data contract", () => {
+
+    it("V-CONTRACT-1 · getDataContract returns module-cached structured contract with all top-level keys", () => {
+      const a = getDataContract();
+      const b = getDataContract();
+      assert(a === b, "module-cached: same reference on repeat calls");
+      assert(typeof a.schemaVersion === "string" && a.schemaVersion === "3.0", "schemaVersion is '3.0'");
+      assert(typeof a.checksum === "string" && /^[0-9a-f]{8}$/.test(a.checksum),
+        "checksum is 8-char lowercase hex");
+      assert(typeof a.generatedAt === "string", "generatedAt is ISO timestamp string");
+      assert(Array.isArray(a.entities) && a.entities.length >= 6,
+        "≥6 entity kinds (engagementMeta + customer + 5 collections)");
+      assert(Array.isArray(a.relationships) && a.relationships.length >= 8, "≥8 relationships");
+      assert(Array.isArray(a.invariants) && a.invariants.length >= 5, "≥5 named invariants");
+      assert(Array.isArray(a.catalogs) && a.catalogs.length >= 6, "≥6 catalogs");
+      assert(typeof a.bindablePaths === "object" && a.bindablePaths !== null, "bindablePaths present");
+      assert(Array.isArray(a.analyticalViews) && a.analyticalViews.length === 7,
+        "exactly 7 analytical views (one per §S5 selector)");
+    });
+
+    it("V-CONTRACT-2 · contract content is derived (not hand-maintained); structural cross-checks hold", () => {
+      const c = getDataContract();
+      // gap entity field count is anchored to GapSchema (within ±2 for cross-cutting handling).
+      const gapEntity = c.entities.find(e => e.kind === "gap");
+      assert(gapEntity && Array.isArray(gapEntity.fields), "gap entity declared with fields[]");
+      assert(gapEntity.fields.length >= 10,
+        "gap entity carries the ~12-15 schema fields (description, gapType, urgency, phase, status, layerId, affectedLayers, affectedEnvironments, ...)");
+
+      // Every relationship's `from` references an entity declared in entities[].
+      const declaredKinds = new Set(c.entities.map(e => e.kind));
+      for (const rel of c.relationships) {
+        const fromKind = (rel.from || "").split(".")[0];
+        assert(declaredKinds.has(fromKind),
+          "relationship.from '" + rel.from + "' references undeclared entity kind '" + fromKind + "'");
+      }
+
+      // Every catalog has at least one entry; entry ids are unique within their catalog.
+      for (const cat of c.catalogs) {
+        assert(Array.isArray(cat.entries) && cat.entries.length >= 1,
+          "catalog '" + cat.id + "' has at least one entry");
+        const ids = cat.entries.map(e => e.id);
+        assert(new Set(ids).size === ids.length,
+          "catalog '" + cat.id + "' entry ids are unique");
+      }
+
+      // Every invariant id is unique.
+      const invIds = c.invariants.map(i => i.id);
+      assert(new Set(invIds).size === invIds.length, "invariant ids are unique");
+    });
+
+    it("V-CONTRACT-3 · getContractChecksum returns deterministic 8-char hex", () => {
+      const a = getContractChecksum();
+      const b = getContractChecksum();
+      assertEqual(a, b, "checksum is deterministic across calls");
+      assert(/^[0-9a-f]{8}$/.test(a), "checksum is 8-char lowercase hex");
+      // It MUST equal contract.checksum.
+      assertEqual(a, getDataContract().checksum, "getContractChecksum() === getDataContract().checksum");
+    });
+
+    it("V-CONTRACT-4 · core/dataContract.js performs structural self-validation at module load", async () => {
+      const res = await fetch("/core/dataContract.js");
+      assert(res.ok, "core/dataContract.js fetchable");
+      const src = await res.text();
+      // The module MUST have validation logic that throws on drift. We
+      // require at least one explicit `throw new Error(` outside of
+      // the exported public functions (i.e. a top-level guard).
+      const hasTopLevelThrow = /^[^/].*throw\s+new\s+Error\(/m.test(src);
+      assert(hasTopLevelThrow,
+        "core/dataContract.js must contain top-level throw guards for module-load self-validation");
+      // Must NOT import from tests/ (per RULES §17).
+      assert(!/from\s+["'](?:\.\.?\/)+tests\//.test(src),
+        "core/dataContract.js must not import from tests/ (per RULES §17 PR1)");
+    });
+
+    it("V-CONTRACT-5 · buildSystemPrompt embeds the data contract block (with checksum + at least one catalog label)", () => {
+      const eng = createEmptyEngagement();
+      const result = buildSystemPrompt({ engagement: eng });
+      const concatenated = result.messages.map(m =>
+        typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n");
+      assert(concatenated.includes(getContractChecksum()),
+        "system prompt embeds the contract checksum");
+      // Find at least one catalog label in the prompt (e.g. "Cyber Resilience").
+      const c = getDataContract();
+      const businessDriversCat = c.catalogs.find(cc => cc.id === "BUSINESS_DRIVERS");
+      assert(businessDriversCat && businessDriversCat.entries.length >= 1,
+        "data contract has BUSINESS_DRIVERS catalog with entries");
+      const sampleLabel = businessDriversCat.entries[0].label;
+      assert(concatenated.includes(sampleLabel),
+        "system prompt includes catalog labels (sample: '" + sampleLabel + "')");
+    });
+
+    it("V-CONTRACT-6 · role section instructs LLM to use labels-not-ids AND emit first-turn handshake", () => {
+      const eng = createEmptyEngagement();
+      const result = buildSystemPrompt({ engagement: eng });
+      const concatenated = result.messages.map(m =>
+        typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n");
+      assert(/labels?[^.]*not[^.]*ids?/i.test(concatenated) || /label[^.]*\bnot[^.]*id/i.test(concatenated),
+        "role section instructs LLM to use labels not ids");
+      assert(/contract-ack v3\.0 sha=/.test(concatenated),
+        "role section instructs LLM to emit first-turn handshake [contract-ack v3.0 sha=...]");
+    });
+
+    it("V-CONTRACT-7 · streamChat onComplete carries contractAck { ok, expected, received }", async () => {
+      _resetEngagementStoreForTests();
+      const eng = createEmptyEngagement();
+      setActiveEngagement(eng);
+      const expected = getContractChecksum();
+      const provider = createMockChatProviderProd({
+        responses: [{
+          kind: "text",
+          text: "[contract-ack v3.0 sha=" + expected + "]\n\nHello, ready to chat about this empty canvas."
+        }]
+      });
+      let captured = null;
+      await streamChat({
+        engagement:     eng,
+        transcript:     [],
+        userMessage:    "hi",
+        providerConfig: { providerKey: "mock" },
+        provider:       provider,
+        onComplete:     r => { captured = r; }
+      });
+      assert(captured && captured.contractAck,
+        "onComplete result includes contractAck");
+      assertEqual(captured.contractAck.ok, true,
+        "ack ok when sha matches the expected checksum");
+      assertEqual(captured.contractAck.expected, expected,
+        "expected sha echoed in contractAck");
+      assertEqual(captured.contractAck.received, expected,
+        "received sha matches expected");
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // §T26 · V-MD · Markdown rendering on assistant chat bubbles (per SPEC §S20.17)
+  // RED-first: vendor/marked/* not yet vendored; CanvasChatOverlay
+  // renders content as plain text. V-MD-1 fails RED until Step 6.
+  // -------------------------------------------------------------------
+  describe("§T26 · V-MD · Markdown rendering", () => {
+
+    it("V-MD-1 · vendor/marked exists and CanvasChatOverlay assistant bubbles render parsed markdown", async () => {
+      // Probe 1: vendor/marked/marked.min.js is fetchable.
+      const res = await fetch("/vendor/marked/marked.min.js");
+      assert(res.ok, "vendor/marked/marked.min.js must be vendored at canonical path");
+
+      // Probe 2: CanvasChatOverlay source contains a marked import + uses it on assistant bubbles only.
+      const overlaySrc = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
+      assert(/from\s+["']\.\.\/\.\.\/vendor\/marked\//.test(overlaySrc),
+        "CanvasChatOverlay imports marked from vendor/marked/ (production-canonical path)");
+      // The assistant-bubble rendering MUST go through marked; user bubbles MUST stay plain.
+      // We assert presence of conditional-render logic by string match.
+      assert(/canvas-chat-msg-assistant[\s\S]{0,400}\bmarked\b/.test(overlaySrc) ||
+             /\bmarked\b[\s\S]{0,400}canvas-chat-msg-assistant/.test(overlaySrc),
+        "CanvasChatOverlay routes assistant content through marked");
+      assert(!/canvas-chat-msg-user[\s\S]{0,200}\bmarked\b/.test(overlaySrc),
+        "CanvasChatOverlay does NOT route user content through marked (XSS guard)");
     });
   });
 
