@@ -278,6 +278,110 @@ No specific regression test (cosmetic).
 
 ---
 
+## BUG-010 · Canvas Chat says "canvas is empty" against the v3 demo (CLOSED — architectural fix shipped)
+
+**Status**: CLOSED 2026-05-02 PM · v3.0.0-rc.2 · commit `7172737`
+**Reporter**: User (workshop validation against rc.2 build)
+**Severity**: High (chat-perfection arc headline feature unusable against demo)
+**Regression**: Yes — from rc.2 chat-perfection arc landing on top of unchanged v2/v3 demo dual-source-of-truth + bridge clobber
+
+### Repro (pre-fix)
+1. Click Load demo
+2. Open Canvas Chat
+3. Ask "what are my highest priority gaps?"
+4. → "the canvas is empty" / "no gaps in the engagement"
+
+### Root cause
+`state/sessionBridge.js` overwrote the active engagement with a customer-only translation of the v2 session on EVERY v2 session-changed emit. The Load-demo handler's `setActiveEngagement(loadDemo())` set the rich v3 engagement, but any subsequent v2 emit (boot, save, edit) clobbered drivers/envs/instances/gaps back to 0. Chat then truthfully reported the canvas was empty.
+
+### Fix
+3 coordinated changes in commit `7172737`:
+1. **Rich v3 demo** (`core/demoEngagement.js`): Acme Healthcare Group narrative with 3 drivers (cyber resilience / AI & data / sovereign cloud), 4 envs, 14 current + 9 desired instances, 8 gaps spanning all 5 GAP_TYPES with full driver→Dell-solution mapping.
+2. **Bridge shallow merge** (`state/sessionBridge.js`): the bridge now patches ONLY fields it explicitly translates today (customer.{name,vertical,region,notes}). Drivers/envs/instances/gaps in the active engagement are preserved across emits.
+3. **v3→v2 down-converter** (`state/v3ToV2DemoAdapter.js` NEW): pure function `engagementToV2Session(eng)`. Demo-load now derives v2 sessionState from the v3 demo so v2 view tabs see the same data as chat.
+
+### Regression tests (in commit)
+- V-FLOW-CHAT-DEMO-1: emit v2 session-changed AFTER setActiveEngagement(v3demo) does NOT clobber gaps/instances/drivers
+- V-FLOW-CHAT-DEMO-2: bridge shallow-merges v2 customer changes WITHOUT clobbering v3 entities
+- V-DEMO-V2-1: down-converter mirrors customer/drivers/envs/counts; envIds/driverIds re-keyed to catalog typeIds
+- V-DEMO-8: rich demo carries 3 drivers + 4 envs + every driver linked by ≥1 gap
+- V-DEMO-9: gap_type coverage spans all 5 types
+
+---
+
+## BUG-011 · Settings modal: cannot save Anthropic API key (UNCONFIRMED — needs user repro)
+
+**Status**: OPEN · Reported 2026-05-02 PM · v3.0.0-rc.2 · Scheduled rc.2-polish
+**Reporter**: User
+**Severity**: High (blocks Real-Anthropic chat path) — IF reproducible; my probe shows save works
+**Regression**: Unknown
+
+### Repro (user-reported)
+1. Open Settings (gear icon) → AI Providers tab
+2. Click "Anthropic Claude" provider pill
+3. Type API key in the password field
+4. Click Save
+5. → User reports key not saved (close + reopen shows empty? unclear)
+
+### Investigation 2026-05-02 PM
+- Probed Save flow in browser: clicked Anthropic pill → typed key → clicked Save → localStorage `ai_config_v1.providers.anthropic.apiKey` matched typed value → close+reopen showed the field repopulated with the saved key
+- Save handler walks `.overlay-body` finding `_settings` ref, writes to `refs.config.providers[refs.activeKey].apiKey`, calls `saveAiConfig(refs.config)` → `localStorage.setItem('ai_config_v1', ...)`. All paths green.
+- Possible explanations not yet verified:
+  - User clicked Close (gray, left) instead of Save (blue, right) — easy to confuse in dark theme
+  - "✓ Saved" feedback flashes for only 1500ms then resets — user may have missed the confirmation
+  - Some specific browser / extension / private-mode interaction not in my repro
+  - Bug specifically triggered by a flow path I didn't try (e.g., switch from Skills tab → Providers, then save)
+
+### Fix plan
+1. Get user repro details:
+   - Was Save (blue, right) vs Close (gray, left) clicked?
+   - Was the green "✓ Saved" flash visible on the button?
+   - On reopen with Anthropic selected, was the key field empty/dots/something else?
+   - Did "Test connection" report success after save?
+2. If reproducible:
+   - Likely fix: lengthen success-feedback dwell from 1500ms to 4-5s; add a persistent "Last saved at HH:MM" timestamp under the field
+   - Regression test: V-FLOW-SETTINGS-SAVE-1 — drive the full open→pill→type→save→close→reopen DOM flow and assert key persists
+3. If NOT reproducible after detailed probe:
+   - Close as "could not reproduce after investigation"
+
+---
+
+## BUG-013 · Canvas Chat output leaks UUIDs / internal field names / version markers in user-facing prose
+
+**Status**: OPEN · Reported 2026-05-02 PM · v3.0.0-rc.2 · Scheduled NEXT (Path A polish)
+**Reporter**: User (workshop validation after BUG-012 fix landed)
+**Severity**: Low (cosmetic — not data-correctness; explicitly flagged "non-critical" by user)
+**Regression**: No (pre-existing surface from v3.0.0-rc.2 chat-perfection landing)
+
+### Repro
+1. Click Load demo
+2. Open Canvas Chat
+3. Ask any question that triggers tool-use
+4. → Response sometimes contains:
+   - Long instance UUIDs (`00000000-0000-4000-8000-00f100000005`) instead of human labels
+   - Internal field names (`layerId`, `environmentId`, `affectedEnvironments`)
+   - Version markers (`v3`, `engagement.meta.schemaVersion`) in user-facing prose
+
+### Suspected root cause
+- The data contract role section says "Use HUMAN-READABLE LABELS, not bare ids" but doesn't explicitly forbid UUIDs in prose or internal field names
+- Selectors return UUID-keyed structures (e.g., `selectGapsKanban.byPhase.now.open` is `[gapId, gapId]` not `[gapDescription, gapDescription]`); the LLM has to manually JOIN to get labels and may forget
+- No anti-leakage assertion in tests today
+
+### Fix plan (Path A · 1-2 commits)
+1. **Tighten role section** in `services/systemPromptAssembler.js`: explicit prohibition on UUID emission, internal field names, and version markers in user-facing text. Reframe "labels not ids" rule as enforced by NEVER-emit list.
+2. **Enrich selector outputs** so the LLM doesn't have to manually join:
+   - `selectGapsKanban`: per-gap entry includes `description` + `urgencyLabel` + `driverLabel` alongside `id`
+   - `selectVendorMix.byEnvironment`: include `envAlias` alongside UUID key (mirrors `selectMatrixView.cells` which already does this)
+   - `selectLinkedComposition`: ensure all linked-entity records include human labels
+3. **Regression test V-CHAT-20** (anti-leakage): drive a chat turn against the rich demo with a mock provider that scripts a "leaky" response (contains UUIDs + `layerId`); assert post-processing strips them OR the role-section instruction prevents emission. Also: scripted "clean" response passes through unchanged.
+4. Update RULES §16 CH3 (LLM presentation contract) to reflect the strengthened anti-leakage rule.
+
+### Out of scope
+- Refactoring all selectors to be label-first (would break 7+ existing test vectors). Limit enrichment to ADDITIVE fields (UUIDs preserved, labels added).
+- Post-processing the LLM's text output to scrub UUIDs (fragile, defer to v3.1 if Path A enrichment + role section are insufficient).
+
+---
+
 ## Format reference for new entries
 
 ```

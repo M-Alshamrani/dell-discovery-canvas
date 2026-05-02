@@ -12403,6 +12403,84 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "final text from the LAST round surfaces (got: '" + (result.response || "").slice(0, 80) + "')");
     });
 
+    it("V-CHAT-20 · BUG-013 guard: role section explicitly forbids UUID emission, internal field names, and version markers in user-facing prose", async () => {
+      _resetChatEnv();
+      const eng = createEmptyEngagement();
+      const sp = buildSystemPrompt({ engagement: eng, providerKind: "anthropic" });
+      const roleMsg = sp.messages.find(m => m.role === "system" && m.content.includes("== Role =="));
+      assert(!!roleMsg, "role section must be present");
+      const role = roleMsg.content;
+
+      // Source-grep: must explicitly enumerate the never-emit patterns
+      // (UUID, internal field names like layerId/environmentId, version
+      // markers like 'v3'). The presence of 'NEVER' next to each
+      // pattern is what enforces the contract on every model response.
+      const patterns = [
+        { name: "UUID prohibition",          re: /\bNEVER\b[^.]{0,200}\bUUID/i },
+        { name: "internal field-name prohibition", re: /\bNEVER\b[^.]{0,200}(?:layerId|environmentId|internal field name|field path)/i },
+        { name: "version-marker prohibition", re: /\bNEVER\b[^.]{0,200}(?:'v3'|version marker|version prefix)/i }
+      ];
+      patterns.forEach(p => {
+        assert(p.re.test(role),
+          "role section must include " + p.name + " near a NEVER directive");
+      });
+    });
+
+    it("V-CHAT-21 · BUG-013 fix: selectGapsKanban output includes gapsSummary[gapId]={description,urgencyLabel,driverLabel,layerLabel} so LLM has labels inline", async () => {
+      _resetChatEnv();
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      eng = addGapV3(eng, { description: "Replace legacy backup", gapType: "replace",
+        urgency: "High", phase: "now", status: "open",
+        layerId: "dataProtection", affectedLayers: ["dataProtection"] }).engagement;
+      setActiveEngagement(eng);
+
+      const { selectGapsKanban } = await import("../selectors/gapsKanban.js");
+      const out = selectGapsKanban(eng);
+
+      assert(out && typeof out.gapsSummary === "object",
+        "selectGapsKanban output includes gapsSummary map");
+      const firstGapId = eng.gaps.allIds[0];
+      const summary = out.gapsSummary[firstGapId];
+      assert(summary && typeof summary === "object",
+        "gapsSummary contains an entry per gap (keyed by gapId)");
+      assertEqual(summary.description, "Replace legacy backup",
+        "gapsSummary.description mirrors the raw gap.description");
+      assertEqual(summary.urgencyLabel, "High",
+        "gapsSummary.urgencyLabel mirrors the urgency");
+      assert(typeof summary.layerLabel === "string" && summary.layerLabel.length > 0,
+        "gapsSummary.layerLabel humanizes the layerId (e.g. 'Data Protection & Recovery')");
+      // driverLabel is null when the gap has no driver, but the field must exist.
+      assert("driverLabel" in summary,
+        "gapsSummary.driverLabel field exists (may be null when gap has no driver)");
+    });
+
+    it("V-CHAT-22 · BUG-013 fix: selectVendorMix.byEnvironment entries include envLabel alongside the UUID key (so LLM cites aliases not UUIDs)", async () => {
+      _resetChatEnv();
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04",
+        alias: "Riyadh Test DC" }).engagement;
+      const envId = eng.environments.allIds[0];
+      // Add at least one instance so the env shows up in vendor mix.
+      eng = addInstanceV3(eng, { state: "current", layerId: "compute",
+        environmentId: envId, label: "test compute", vendor: "Test", vendorGroup: "dell",
+        criticality: "Medium", disposition: "keep" }).engagement;
+      setActiveEngagement(eng);
+
+      const { selectVendorMix } = await import("../selectors/vendorMix.js");
+      const out = selectVendorMix(eng);
+
+      assert(out && typeof out.byEnvironment === "object",
+        "selectVendorMix output includes byEnvironment");
+      const entry = out.byEnvironment[envId];
+      assert(entry && typeof entry === "object",
+        "byEnvironment[envId] entry exists");
+      assert(typeof entry.envLabel === "string" && entry.envLabel.length > 0,
+        "byEnvironment[envId].envLabel populated (got '" + (entry.envLabel || "(empty)") + "')");
+      assertEqual(entry.envLabel, "Riyadh Test DC",
+        "envLabel mirrors the env.alias for human-readable citation");
+    });
+
     it("V-CHAT-19 · BUG-012 guard: tool-chain cap — chatService stops at MAX_TOOL_ROUNDS and surfaces a notice", async () => {
       _resetChatEnv();
       let eng = createEmptyEngagement();

@@ -74,7 +74,18 @@ function compute(engagement) {
 
   finalizeBucket(totals);
   for (const k of Object.keys(byLayer))       finalizeBucket(byLayer[k]);
-  for (const k of Object.keys(byEnvironment)) finalizeBucket(byEnvironment[k]);
+  for (const k of Object.keys(byEnvironment)) {
+    finalizeBucket(byEnvironment[k]);
+    // BUG-013 anti-leakage enrichment: add envLabel inside each
+    // entry so the LLM can cite "Riyadh Core DC" instead of the UUID.
+    // Falls back to envCatalogId, then "(unknown)" when the env was
+    // hidden between the bucket bump and finalization (unreachable
+    // today; defensive).
+    const envRec = engagement.environments.byId[k];
+    byEnvironment[k].envLabel = envRec
+      ? (envRec.alias || envRec.envCatalogId || "(unknown)")
+      : "(unknown)";
+  }
 
   // KPI: most diverse layer = layer with most distinct vendor groups
   // present (1, 2, or 3). Tie -> first by allIds order.

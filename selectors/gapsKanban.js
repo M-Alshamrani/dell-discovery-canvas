@@ -9,8 +9,18 @@
 //       next:  { ... },
 //       later: { ... }
 //     },
-//     totalsByStatus: { open: n, in_progress: n, closed: n, deferred: n }
+//     totalsByStatus: { open: n, in_progress: n, closed: n, deferred: n },
+//     // BUG-013 anti-leakage enrichment (additive; non-breaking):
+//     gapsSummary: Record<GapId, {
+//       description, urgencyLabel, phaseLabel, statusLabel,
+//       layerLabel, driverLabel
+//     }>
 //   }
+//
+// `gapsSummary` is the LLM-citation-friendly companion to byPhase. The
+// LLM uses byPhase to grok structure (gap counts per phase × status)
+// and gapsSummary[gapId] to humanize each gap into a sentence WITHOUT
+// emitting UUIDs or internal field names (per RULES §16 CH3 + V-CHAT-20).
 //
 // Closed-gap rollup exclusion: SPEC S5.2.2 + KD8. totalsByStatus.closed
 // is reported but downstream "active gaps" callers must read the OTHER
@@ -19,13 +29,26 @@
 // to ensure the closed-exclusion contract is centrally enforced.
 
 import { memoizeOne } from "../services/memoizeOne.js";
+import LAYERS_CATALOG           from "../catalogs/snapshots/layers.js";
+import BUSINESS_DRIVERS_CATALOG from "../catalogs/snapshots/business_drivers.js";
 
 const PHASES   = ["now", "next", "later"];
 const STATUSES = ["open", "in_progress", "closed", "deferred"];
 
+const PHASE_LABEL  = { now: "Now", next: "Next", later: "Later" };
+const STATUS_LABEL = { open: "Open", in_progress: "In progress", closed: "Closed", deferred: "Deferred" };
+
 function emptyPhase() {
   return { open: [], in_progress: [], closed: [], deferred: [] };
 }
+
+function buildCatalogLabelMap(catalog) {
+  const m = Object.create(null);
+  for (const e of catalog.entries) m[e.id] = e.label;
+  return m;
+}
+const LAYER_LABEL  = buildCatalogLabelMap(LAYERS_CATALOG);
+const DRIVER_LABEL = buildCatalogLabelMap(BUSINESS_DRIVERS_CATALOG);
 
 function compute(engagement) {
   const byPhase = {
@@ -34,6 +57,7 @@ function compute(engagement) {
     later: emptyPhase()
   };
   const totalsByStatus = { open: 0, in_progress: 0, closed: 0, deferred: 0 };
+  const gapsSummary = Object.create(null);
 
   // Iterate gaps in allIds order (preserves user-visible ordering).
   for (const gapId of engagement.gaps.allIds) {
@@ -42,9 +66,27 @@ function compute(engagement) {
     if (!STATUSES.includes(gap.status)) continue;     // defensive
     byPhase[gap.phase][gap.status].push(gap.id);
     totalsByStatus[gap.status] += 1;
+
+    // Human-readable companion (BUG-013 anti-leakage). Resolves the
+    // driver label inline when the gap is driver-tied. Layer label
+    // comes from the LAYERS catalog (e.g. "dataProtection" → "Data
+    // Protection & Recovery").
+    let driverLabel = null;
+    if (gap.driverId && engagement.drivers.byId[gap.driverId]) {
+      const bdid = engagement.drivers.byId[gap.driverId].businessDriverId;
+      driverLabel = DRIVER_LABEL[bdid] || bdid;
+    }
+    gapsSummary[gap.id] = {
+      description:  gap.description,
+      urgencyLabel: gap.urgency,
+      phaseLabel:   PHASE_LABEL[gap.phase] || gap.phase,
+      statusLabel:  STATUS_LABEL[gap.status] || gap.status,
+      layerLabel:   LAYER_LABEL[gap.layerId] || gap.layerId,
+      driverLabel:  driverLabel    // null when gap has no driver
+    };
   }
 
-  return { byPhase, totalsByStatus };
+  return { byPhase, totalsByStatus, gapsSummary };
 }
 
 export const selectGapsKanban = memoizeOne(compute, ([a], [b]) => a === b);
