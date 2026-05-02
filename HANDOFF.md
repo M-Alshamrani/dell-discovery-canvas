@@ -2,22 +2,30 @@
 
 **Last session end**: 2026-05-02. **v3.0.0-rc.1 TAGGED on `origin/v3.0-data-architecture`.** APP_VERSION = `3.0.0-rc.1`. Every directive SPEC backend section (§S2 schema · §S4 storage · §S5 selectors · §S6 catalogs · §S7 skill builder · §S8 provenance · §S9 migrator · §S10 integrity · §S11 perf) closed and tested. rc.1 added: SPEC §S19 v3.0 → v2.x consumption adapter; `state/v3Adapter.js` + `state/v3EngagementStore.js` impl with V-ADP-1..10 GREEN; `state/v3SessionBridge.js` co-existence bridge auto-populates engagement on boot + every `session-changed`; V-MFG-1 manifest drift gate. 1011/1011 GREEN banner.
 
-**Architecture memories locked 2026-05-01 → 2026-05-02**:
+**Architecture memories locked 2026-05-01 → 2026-05-02 (six binding rules)**:
 - `project_v3_no_file_migration_burden.md` — v3 schema is NOT bent for file-format migration; real-customer `.canvas` migration smoke gate DROPPED.
 - `feedback_no_version_prefix_in_names.md` — version numbers live in git tags + APP_VERSION + changelogs only; never in filenames, exports, or UI labels. Schedule a v3-prefix purge before GA.
-- `feedback_test_what_to_test.md` (2026-05-02 escalation) — V-FLOW or it didn't ship. Property tests are necessary but never sufficient; every interactive UX element must have a V-FLOW vector that asserts the FULL effect (state mutation + user-visible feedback + dispatchability after realistic prior flows).
+- `feedback_test_what_to_test.md` (2026-05-02 escalation) — V-FLOW or it didn't ship. Property tests are necessary but never sufficient.
+- `feedback_no_patches_flag_first.md` (locked 2026-05-02 after BUG-003 patch fallout) — never ship a fix that bypasses v3 schema/validation/architecture without explicit user approval BEFORE coding. The moment "this won't pass schema, but consumers don't validate so..." enters my own thinking → STOP, surface, ask. Same tier as spec-and-test-first.
+- `feedback_test_or_it_didnt_ship.md` (locked 2026-05-02) — every BUG-NNN fix MUST add a regression test that would have caught the original incident. Patch-class bugs ship V-ANTI-* + V-FLOW-* coverage. Cadence: bug-entry → SPEC → TESTS → RULES → RED scaffold → impl → smoke. No skipping.
+- `feedback_spec_and_test_first.md` + `feedback_browser_smoke_required.md` (pre-existing) — restated for completeness.
 
-**Bug log opened 2026-05-02**: `docs/BUG_LOG.md` tracks regressions. BUG-001 (propagate-criticality toast wrong-urgency) + BUG-002 (propagate button stuck after multi-disposition cycle) reported by user during rc.1 manual smoke; both scheduled for rc.2 polish bucket; both fixes ship with V-FLOW regression tests.
+**Bug log** (`docs/BUG_LOG.md`): BUG-001 + BUG-002 (propagate-criticality regressions, scheduled rc.2 polish), BUG-003 OPEN (chat sees empty engagement against v2 demo; first patch attempted at `7dbb7ad` then **reverted at `bacc7a0`** because it bypassed schema; awaits architectural fix via BUG-004), BUG-004 (build v3-native demo), BUG-005..007 (V3SkillBuilder + CanvasChatOverlay import test fixtures + mocks at runtime — production-from-tests anti-pattern), BUG-008/009 (cosmetic stale comments).
 
-**NEXT UP**: rc.2 sequence per `docs/CHANGELOG_PLAN.md`:
-1. **Canvas Chat** — top priority. SPEC §S20 + TESTS §T20 V-CHAT-* + RULES delta → RED-first → impl in chunks. Layered context architecture, tool-use over context-dump, Anthropic prompt caching, streaming, per-engagement session memory, read-only v1. Quality + correctness over breadth (user direction 2026-05-02). All prerequisites are in place.
-2. **BUG-001 + BUG-002 fixes** — each with a V-FLOW regression test.
-3. **Suite 50 · V-FLOW · interaction-completeness** — top ~10 user flows.
-4. AI items 1+2 (saved skills in tile picker, de-prioritized vs Chat) → AI item 4 (drift banner) → AI item 6 (real-LLM smoke).
-5. View migrations × 6 (Context → Architecture → Heatmap → Workload → Gaps → Reporting) per SPEC §S19.4.
-6. AI item 3 (provenance icons — lights up as views migrate).
-7. Polish: AI control panel consolidation (merge Lab + AI Assist into one "AI" topbar entry with subtabs); v3-prefix purge mechanical rename pass.
-8. Tag `v3.0.0` GA after real-workshop validation run.
+**Cleanup arc in progress 2026-05-02**: revert + log + spec + tests + RULES + RED-first scaffold + impl + smoke. Each bug ships a regression test (V-DEMO-*, V-MOCK-*, V-ANTI-RUN-*, V-FLOW-CHAT-DEMO-*) so the same shape can't recur.
+
+**NEXT UP**: complete the cleanup arc per the todo list:
+1. SPEC §S21 v3-native demo + §S22 production mock providers + §S23 production-no-tests-imports.
+2. TESTS §T21 V-DEMO + §T22 V-MOCK + §T23 V-ANTI-RUN.
+3. RULES §17 production-import discipline.
+4. RED-first scaffold + stub modules.
+5. Implement: `services/mockChatProvider.js` + `services/mockLLMProvider.js` (production mocks; tests update imports).
+6. Implement: `core/v3DemoEngagement.js` (hand-curated, schema-strict, deterministic UUIDs).
+7. Wire: Load-demo button → `loadV3Demo()` → `setActiveEngagement(...)`. V3SkillBuilder + CanvasChatOverlay drop `tests/` runtime imports.
+8. Cosmetic comment cleanup (BUG-008 + BUG-009).
+9. End-to-end smoke: refresh → Load demo → Chat → ask → Anthropic-grounded answer against v3-native demo.
+
+After cleanup arc: AI item 4 (drift banner), AI item 6 (real-LLM smoke), Chunk E (per-token SSE streaming + Anthropic prompt-caching), BUG-001 + BUG-002 propagate fixes, Suite 50 V-FLOW vectors, AI items 1+2, view migrations × 6, AI item 3 provenance icons, polish (AI panel consolidation + v3-prefix purge), tag `v3.0.0` GA.
 
 **v2.4.17 work-in-progress preserved**: 14 commits on local `main` (NOT pushed) + tag `v2.4.17-wip-snapshot` at commit `58660b7`. Rollback recoverable per HANDOVER_v2.4.17_to_v3.0.md §7.3 if needed.
 
