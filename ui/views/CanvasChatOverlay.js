@@ -30,6 +30,11 @@ import { createMockChatProvider }             from "../../services/mockChatProvi
 import { createRealChatProvider }             from "../../services/realChatProvider.js";
 import { loadAiConfig }                        from "../../core/aiConfig.js";
 import { confirmAction }                       from "../components/Notify.js";
+// SPEC §S20.17 + RULES §16 CH18 — markdown rendering on assistant bubbles
+// only. User bubbles stay textContent (no HTML interpretation; XSS guard).
+// marked v13 escapes raw HTML by default; we add a defensive sanitize step
+// for javascript: URLs after parsing.
+import { marked }                              from "../../vendor/marked/marked.min.js";
 
 // Module-scope state for the open overlay. Only one chat overlay is
 // open at a time; Overlay.js enforces the singleton pattern.
@@ -231,6 +236,43 @@ function injectHeaderExtras() {
     if (body) paintTranscript(body);
   });
   slot.appendChild(clearBtn);
+
+  // Ack indicator placeholder (filled by renderAckIndicator on first-turn
+  // handshake completion). Empty until the LLM's first response is parsed.
+  const ack = document.createElement("span");
+  ack.className = "canvas-chat-ack";
+  ack.setAttribute("data-canvas-chat-ack", "");
+  ack.style.display = "none";
+  slot.appendChild(ack);
+}
+
+// SPEC §S20.16 — render the contract-ack outcome.
+//   contractAck.ok === true  → green ✓ "grounded" chip in header (auto-fade 3s)
+//   contractAck.ok === false → red ⚠ chip + banner above the transcript
+function renderAckIndicator(contractAck) {
+  const chip = document.querySelector(".overlay[data-kind='canvas-chat'] [data-canvas-chat-ack]");
+  if (!chip) return;
+  chip.style.display = "";
+  if (contractAck.ok) {
+    chip.className = "canvas-chat-ack canvas-chat-ack-ok";
+    chip.title = "Data contract sha=" + contractAck.expected + " acknowledged by LLM";
+    chip.textContent = "✓ grounded";
+    setTimeout(function() { chip.style.display = "none"; }, 3000);
+  } else {
+    chip.className = "canvas-chat-ack canvas-chat-ack-warn";
+    chip.title = "Expected sha=" + contractAck.expected +
+                 ", received " + (contractAck.received || "(none)");
+    chip.textContent = "⚠ ungrounded";
+    // Also paint a banner above the transcript on first-turn mismatch.
+    const scroll = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-transcript");
+    if (scroll && !scroll.querySelector(".canvas-chat-ack-banner")) {
+      const banner = document.createElement("div");
+      banner.className = "canvas-chat-ack-banner";
+      banner.textContent = "Heads up: the LLM did not echo back the data-contract checksum on its first turn. " +
+        "Responses may not be grounded in the live engagement.";
+      scroll.insertBefore(banner, scroll.firstChild);
+    }
+  }
 }
 
 function labelForProvider(providerKey) {
@@ -305,7 +347,11 @@ function buildMessageBubble(msg) {
 
   const content = document.createElement("div");
   content.className = "canvas-chat-msg-content";
-  content.textContent = msg.content || "";
+  if (msg.role === "assistant") {
+    renderAssistantMarkdown(content, msg.content || "");
+  } else {
+    content.textContent = msg.content || "";
+  }
   bubble.appendChild(content);
 
   if (msg.provenance) {
@@ -317,6 +363,21 @@ function buildMessageBubble(msg) {
   }
 
   return bubble;
+}
+
+// Assistant bubbles only. marked v13 escapes raw HTML by default; we add a
+// belt-and-braces sanitize for `javascript:` URLs that some renderers miss.
+// Keep this surface narrow: user bubbles never go through here.
+function renderAssistantMarkdown(node, text) {
+  let html;
+  try {
+    html = marked.parse(text || "", { gfm: true, breaks: true });
+  } catch (_e) {
+    node.textContent = text || "";
+    return;
+  }
+  html = String(html).replace(/\sjavascript:/gi, " ").replace(/^javascript:/gi, "");
+  node.innerHTML = html;
 }
 
 async function handleSend(body) {
@@ -402,16 +463,21 @@ async function handleSend(body) {
       provider:       provider,
       onToken: function(token) {
         assistantMsg.content += token;
-        // Find the last assistant bubble and update its content node.
+        // Re-parse via marked progressively on the last assistant bubble.
         const bubbles = body.querySelectorAll(".canvas-chat-msg-assistant .canvas-chat-msg-content");
         const last = bubbles[bubbles.length - 1];
-        if (last) last.textContent = assistantMsg.content;
+        if (last) renderAssistantMarkdown(last, assistantMsg.content);
         const scroll = body.querySelector(".canvas-chat-transcript");
         if (scroll) scroll.scrollTop = scroll.scrollHeight;
       },
       onComplete: function(result) {
         assistantMsg.content    = result.response;
         assistantMsg.provenance = result.provenance;
+        // SPEC §S20.16 — first-turn handshake outcome surfaces in the header
+        // ack chip + (on mismatch) a banner above the transcript.
+        if (result && result.contractAck) {
+          renderAckIndicator(result.contractAck);
+        }
       }
     });
   } catch (e) {

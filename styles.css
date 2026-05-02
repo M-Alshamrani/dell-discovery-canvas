@@ -5770,6 +5770,96 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
 }
 .canvas-chat-clear-btn:hover { color: #E6EDF3; border-color: #6E7681; }
 
+/* Contract-ack chip (SPEC §S20.16) - sits in the head-extras slot, painted on
+   first-turn handshake completion. Green = sha matched, amber = mismatch. */
+.canvas-chat-ack {
+  display: inline-flex; align-items: center;
+  height: 22px; padding: 0 8px;
+  margin-left: 8px;
+  border-radius: 11px;
+  font: 500 10.5px/1 var(--font-sans, system-ui, sans-serif);
+  letter-spacing: 0.02em;
+  transition: opacity 220ms ease;
+}
+.canvas-chat-ack-ok {
+  background: rgba(63, 185, 80, 0.15);
+  color: #3FB950;
+  border: 1px solid rgba(63, 185, 80, 0.4);
+}
+.canvas-chat-ack-warn {
+  background: rgba(210, 153, 34, 0.15);
+  color: #D29922;
+  border: 1px solid rgba(210, 153, 34, 0.45);
+}
+.canvas-chat-ack-banner {
+  margin: 8px 12px 0;
+  padding: 8px 12px;
+  background: rgba(210, 153, 34, 0.08);
+  border-left: 3px solid #D29922;
+  border-radius: 4px;
+  color: #D29922;
+  font: 500 11.5px/1.45 var(--font-sans, system-ui, sans-serif);
+}
+
+/* Markdown rendering on assistant bubbles (SPEC §S20.17 + RULES §16 CH18). */
+.canvas-chat-msg-assistant .canvas-chat-msg-content p { margin: 0 0 8px; }
+.canvas-chat-msg-assistant .canvas-chat-msg-content p:last-child { margin-bottom: 0; }
+.canvas-chat-msg-assistant .canvas-chat-msg-content ul,
+.canvas-chat-msg-assistant .canvas-chat-msg-content ol { margin: 4px 0 8px; padding-left: 22px; }
+.canvas-chat-msg-assistant .canvas-chat-msg-content li { margin: 2px 0; }
+.canvas-chat-msg-assistant .canvas-chat-msg-content code {
+  background: rgba(110, 118, 129, 0.18);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font: 400 11.5px/1.4 var(--font-mono, ui-monospace, monospace);
+  color: #E6EDF3;
+}
+.canvas-chat-msg-assistant .canvas-chat-msg-content pre {
+  margin: 6px 0 8px;
+  padding: 8px 12px;
+  background: rgba(13, 17, 23, 0.6);
+  border: 1px solid #30363D;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.canvas-chat-msg-assistant .canvas-chat-msg-content pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+.canvas-chat-msg-assistant .canvas-chat-msg-content h1,
+.canvas-chat-msg-assistant .canvas-chat-msg-content h2,
+.canvas-chat-msg-assistant .canvas-chat-msg-content h3 {
+  margin: 8px 0 4px;
+  font-weight: 600;
+  color: #E6EDF3;
+}
+.canvas-chat-msg-assistant .canvas-chat-msg-content h1 { font-size: 14.5px; }
+.canvas-chat-msg-assistant .canvas-chat-msg-content h2 { font-size: 13px; }
+.canvas-chat-msg-assistant .canvas-chat-msg-content h3 { font-size: 12.5px; }
+.canvas-chat-msg-assistant .canvas-chat-msg-content table {
+  border-collapse: collapse;
+  margin: 6px 0 8px;
+  font-size: 11.5px;
+}
+.canvas-chat-msg-assistant .canvas-chat-msg-content th,
+.canvas-chat-msg-assistant .canvas-chat-msg-content td {
+  border: 1px solid #30363D;
+  padding: 4px 8px;
+  text-align: left;
+}
+.canvas-chat-msg-assistant .canvas-chat-msg-content blockquote {
+  margin: 6px 0;
+  padding: 4px 12px;
+  border-left: 3px solid #6E7681;
+  color: #8B949E;
+}
+.canvas-chat-msg-assistant .canvas-chat-msg-content a {
+  color: #58A6FF;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .canvas-chat-footer {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 16px;
