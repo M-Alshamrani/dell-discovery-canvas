@@ -499,6 +499,137 @@ It exists to (a) test chat without burning provider credits, (b) demo offline. F
 
 ---
 
+## BUG-019 · Canvas sometimes initializes with data that the AI chat reports as empty (UNCONFIRMED — needs repro)
+
+**Status**: OPEN · Reported 2026-05-02 LATE EVENING · v3.0.0-rc.2 · Scheduled NEXT (after Phase C)
+**Reporter**: User (workshop validation)
+**Severity**: Medium (intermittent; chat reports "empty canvas" against an actively-populated UI)
+**Regression**: Possibly related to BUG-010 fix area — bridge / engagementStore timing
+
+### Repro (user-reported)
+1. Open the app
+2. Some canvas data is present in the UI
+3. Open Canvas Chat
+4. Ask anything → assistant says the canvas is empty
+
+### Suspected root cause
+- Race condition between v2 sessionStore boot, v2→v3 bridge fire, and the chat overlay reading `getActiveEngagement()` — the engagement store may be empty (or customer-only) at the moment the chat opens, even though the v2 view tabs render with data.
+- Or: a session-changed emit firing AFTER the chat is open but BEFORE the user's first send re-reads the engagement (chatService captures `state.engagement = getActiveEngagement()` on open and on each handleSend, so the latest read should win — but a race in the bridge could overwrite to empty between).
+- Or: a stale localStorage entry that loads as v2 but doesn't translate cleanly to v3 (the bridge's customer-only translator returns an empty engagement; gaps + drivers + envs not populated).
+
+### Investigation needed
+1. Reproduce live with browser DevTools — capture the exact sequence:
+   - Open page → what does `getActiveEngagement()` return BEFORE chat opens?
+   - Open chat → what does the engagement snapshot look like in the system prompt?
+   - Send a message → re-read engagement and compare.
+2. Inspect `localStorage.dell_discovery_v1` content vs `engagementStore` reference at chat-open time.
+3. Check the bridge's `_lastError` (`_getLastBridgeError()`) for validation failures.
+
+### Fix plan
+- After repro: most likely a defensive fix in the chat overlay — `state.engagement = getActiveEngagement()` re-read in `handleSend` already exists; ensure that's the read used for the system prompt build (not a stale one captured at open).
+- Or: trigger an explicit `bridgeOnce("chat-open")` when the chat overlay opens, so the v3 engagement is freshly synced.
+- Regression test V-FLOW-CHAT-DEMO-3: open chat with prior session → engagement reflects current state.
+
+---
+
+## BUG-020 · Handshake `[contract-ack v3.0 sha=...]` STILL leaks intermittently in chat (re-opened after BUG-016)
+
+**Status**: OPEN · Reported 2026-05-02 LATE EVENING · v3.0.0-rc.2 · Scheduled NEXT
+**Reporter**: User (workshop validation; third report)
+**Severity**: Low (cosmetic; not data-correctness; user explicit "don't break working chat to fix this now")
+**Regression**: BUG-015 + BUG-016 fixes covered: subsequent-turn strip, bracket-optional regex, chatMemory backfill heal. Some path STILL surfaces it.
+
+### Repro (user-reported)
+1. Active chat session
+2. AI is "searching information" (i.e., emitting a tool_use round)
+3. Handshake reappears in the rendered output
+
+### Possible remaining vectors (hypotheses)
+1. **Round-N response after N>1 tool calls**: chatService's multi-round loop may stream PARTIAL text via `onToken` BEFORE chatService strips the handshake from `finalResponse`. The chat overlay's `onToken` paints incrementally; the handshake regex only fires in `onComplete`. If the LLM emits handshake mid-stream (rare but Gemini can be wild), the bubble shows it during streaming and a glitch on paint may leave it visible.
+2. **Token-by-token streaming + markdown re-parse**: `renderAssistantMarkdown` is called on every `onToken`; if the accumulated text fragment includes `[contract-ack`, marked may render it as `[link](url)`-style and we don't catch the parse-time leak.
+3. **Pre-strip vs post-strip race**: visibleResponse is computed in chatService.streamChat AFTER the loop closes. The chat overlay's `onComplete` sets `assistantMsg.content = result.response`. If the user reads the bubble during streaming (while it shows un-stripped tokens), they see the leak.
+
+### Fix plan
+- Add a **streaming-time strip in CanvasChatOverlay's `onToken`**: re-apply HANDSHAKE_STRIP_RE to `assistantMsg.content` before each `renderAssistantMarkdown`. Stripping is regex-based + idempotent; cheap.
+- Move the regex constant to a shared spot (`services/chatHandshake.js`?) so chatService + chatMemory + CanvasChatOverlay all use the same source-of-truth pattern.
+- V-CHAT-33 regression: drive a streaming path where the LLM emits handshake mid-stream; assert the bubble's textContent never carries `contract-ack`.
+- ALSO investigate: maybe the role section needs an even stronger "do not emit this prefix EVER except on first turn" instruction. We currently say "subsequent turns do NOT include this prefix; only the first turn." — some models still emit. Add an explicit penalty: "If you emit this prefix on any turn AFTER the first, your response will appear broken to the user."
+
+### Out of scope
+- Switching to a different first-turn ack mechanism (e.g., a structured field in the response) — overkill for v3.0; our regex strip is robust enough once we patch the streaming-time path.
+
+---
+
+## BUG-021 · Performance — Gemini slow + hits rate limits; OpenAI prompt caching not yet wired
+
+**Status**: OPEN · Reported 2026-05-02 LATE EVENING · v3.0.0-rc.2 · Scheduled with the AI completion arc (Phase A3 + future)
+**Reporter**: User (workshop validation)
+**Severity**: Medium (perf + cost; user has to manually tell Gemini "continue" sometimes)
+
+### User feedback
+"The performance in exchanging data with the LLM seems to be not optimal — takes time with Gemini to respond and sometimes I need to tell it to continue because I reach the limit of hits. We need to look into that later. For example, if we can use LLM OpenAI features to cache per session... things like that to enhance LLM utilization and performance as per best practice and modern advice from the LLM vendors."
+
+### Symptoms
+1. Gemini responses are slow / occasionally hang on large prompts.
+2. User hits "continue / next" prompts because Gemini truncates or rate-limits.
+3. We don't yet leverage OpenAI prompt caching (announced 2024 by OpenAI; auto-applied to prompts ≥1024 tokens, ~50% input cost discount on cache hits).
+4. Anthropic prompt caching IS wired (cache_control on stable prefix, 5-min ephemeral TTL), but we haven't optimized further (extended-1h caching, longer-prefix maximization).
+5. Multi-round tool chaining (BUG-012 fix) compounds latency — 5 rounds × ~2s each can feel slow.
+
+### Investigation + fix plan
+1. **Gemini token budgets** — confirm we're under Gemini's per-request token cap; consider compressing engagement snapshot for Gemini specifically (smaller threshold than for Claude).
+2. **OpenAI prompt caching** — automatic; no code change needed BUT verify our prompt structure (stable prefix first, volatile suffix last) maximizes cache hits. Phase A3 streaming for openai-compatible should validate this.
+3. **Anthropic extended caching** — option to use 1-hour cache (Anthropic's "extended" tier) instead of ephemeral 5-min for workshop-length sessions.
+4. **Token-budget visibility** — surface a "tokens used / cached / fresh" hint in the chat header so users see when the cache is hitting.
+5. **Concurrent multi-round** — if Claude emits multiple parallel tool_calls in one round, dispatch in parallel (current loop is serial). Big win for "show me 3 things" questions.
+6. **Streaming for openai-compatible / Gemini** — Phase A3 polish; per-token streaming feels much faster even when total time is similar.
+7. **Provider-specific perf tuning** — e.g., Gemini-2.5-flash defaults to MAX_OUTPUT_TOKENS=8192 which truncates long answers; consider raising or splitting.
+
+### Specific concrete fixes when scheduled
+- [ ] Phase A3: SSE streaming for openai-compatible (OpenAI canonical `data: {...}` event grammar).
+- [ ] Surface cache-hit telemetry in the chat header (e.g., "● 3.2K cached · 412 fresh tokens").
+- [ ] Verify prompt structure: stable prefix (role + dataContract + concept TOC) → cacheable; volatile (engagement + transcript + user msg) → fresh.
+- [ ] V-PERF-1..N regression vectors guarding the cache-hit ratio + per-provider latency budgets.
+
+### Out of scope (long-term)
+- Server-side gateway with per-customer cache + rate-limit pooling — rc.4 / GA scope; today the keys live in browser localStorage (single-user pattern).
+
+---
+
+## BUG-022 · Chat UI polish — modern shell incomplete (large white button, skills tabs not 2026-AI-product, large spacing, status-message UX)
+
+**Status**: OPEN · Reported 2026-05-02 LATE EVENING · v3.0.0-rc.2 · Scheduled Phase 4-5 (already queued)
+**Reporter**: User (workshop validation)
+**Severity**: Low (POC works; production polish pending)
+
+### User feedback
+"The chat UI is not finished — can use some modern look. It has a large white button, the skills tabs are not up to a modern chatbot look and feel. I think this is already scheduled somewhere for later, just wanted to emphasize it. Also the text is shown with large spaces. The status messages can add very good modern look to the app. It is good now as a POC, but for production, I think we can do better."
+
+### Specific items called out
+1. **"Large white button"** — likely the Done/Send button in the footer + the Skills toggle. Need to audit + match the design language of ContextView / SkillBuilder (dark theme, tighter chrome).
+2. **Skills tab design** — Phase 4 will populate the right rail with saved-skill cards; the rail eyebrow + title + empty-state look needs polish for production.
+3. **Text spacing** — chat bubbles + transcript have generous margins; tighten for density.
+4. **Status messages UX** — "thinking…" / "ready" / "no provider" surfaces in the meter row are flat text. Modern chatbots show animated dot loaders, typing indicators, tool-call progress. We should match that.
+
+### Already-queued covering work
+- Phase 4a: replace Mock toggle with connection chip — DONE (BUG-017).
+- Phase 4b: right-rail populates with saved-skill cards.
+- Phase 4c: skill editor slide-over inside chat overlay; Lab tab deprecated.
+- Phase 4d: "Use AI" buttons rewired to drop prompts into chat.
+- Phase 5a: top-bar consolidation — one AI button.
+- Phase 5b-d: smart prompt suggestions, conversation export, better error states.
+
+### NEW polish items from this report (added to Phase 5 scope)
+- [ ] Audit + redesign the Done/Send buttons to match dark-theme density.
+- [ ] Tighten transcript bubble spacing (line-height, padding).
+- [ ] Animated typing/tool-call indicator (dot loader) in the meter row.
+- [ ] Tool-call progress UX — "Calling selectMatrixView…" surfaced briefly per round.
+
+### Fix plan
+Track inside the existing Phase 4 + Phase 5 commits. Each polish item gets a single-purpose commit so the diff is reviewable.
+
+---
+
 ## Format reference for new entries
 
 ```
