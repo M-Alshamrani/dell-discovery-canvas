@@ -11994,26 +11994,32 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "large engagement: counts-only (no full per-instance labels in layer 4); got " + labelInlineCount);
     });
 
-    it("V-CHAT-3 · CHAT_TOOLS has one entry per §S5 selector with matching invoke", () => {
+    it("V-CHAT-3 · CHAT_TOOLS has one selector-backed entry per §S5 selector with matching invoke (additional non-selector tools like selectConcept are allowed)", () => {
       _resetChatEnv();
       const SELECTORS = {
         selectMatrixView, selectGapsKanban, selectVendorMix, selectHealthSummary,
         selectExecutiveSummaryInputs, selectLinkedComposition, selectProjects
       };
       const expectedNames = Object.keys(SELECTORS).sort();
-      const actualNames   = CHAT_TOOLS.map(t => t.name).sort();
-      assertEqual(actualNames.join(","), expectedNames.join(","),
-        "CHAT_TOOLS names must match §S5 selector function names exactly");
+      const actualNames   = CHAT_TOOLS.map(t => t.name);
+      // Subset check (v3.0-rc.2 LATE EVENING): every §S5 selector MUST be
+      // exposed as a CHAT_TOOLS entry, but the converse is no longer
+      // required — Phase B2 added definitional-grounding tools like
+      // selectConcept that don't back a selector.
+      for (const name of expectedNames) {
+        assert(actualNames.indexOf(name) >= 0,
+          "CHAT_TOOLS missing §S5 selector entry: '" + name + "'");
+      }
 
-      // Each tool's invoke(eng, args) must produce the same shape as the
-      // selector called directly.
+      // Each SELECTOR-BACKED tool's invoke(eng, args) must produce the
+      // same shape as the selector called directly. Non-selector tools
+      // (selectConcept) get their own behavior tests in V-CONCEPT-5.
       let eng = createEmptyEngagement();
       eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
       for (const tool of CHAT_TOOLS) {
+        if (!SELECTORS[tool.name]) continue;
         const direct = SELECTORS[tool.name](eng);
         const viaTool = tool.invoke(eng, {});
-        // selectMatrixView accepts {state} arg; tool dispatchers may pass {} as default.
-        // We assert deep-shape via JSON; selectors are pure so this is safe.
         assertEqual(JSON.stringify(viaTool), JSON.stringify(direct),
           "tool dispatcher for " + tool.name + " must return selector output verbatim (default args)");
       }
@@ -12809,6 +12815,96 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assertEqual(callIdx, 2, "two fetches: round-1 (functionCall) + round-2 (final text)");
       assert(typeof result.response === "string" && result.response.includes("1"),
         "final text from round-2 surfaces");
+    });
+
+    // -----------------------------------------------------------------
+    // V-CONCEPT-1..5 · Phase B2 · Concept dictionary grounding
+    // (per SPEC §S27 + RULES §16 CH21). Wires the 62-entry concept
+    // dictionary into the system prompt (TOC inline) + exposes
+    // selectConcept(id) as a chat tool for full-body fetches.
+    // -----------------------------------------------------------------
+    describe("§T27 · V-CONCEPT · Concept dictionary", () => {
+
+      it("V-CONCEPT-1 · core/conceptManifest exports a structural CONCEPTS array; every entry has id+category+label+definition+example+whenToUse populated; ids are unique", async () => {
+        const cm = await import("../core/conceptManifest.js");
+        assert(Array.isArray(cm.CONCEPTS) && cm.CONCEPTS.length >= 50,
+          "CONCEPTS array has ≥50 entries (got " + (cm.CONCEPTS && cm.CONCEPTS.length) + ")");
+        const ids = new Set();
+        cm.CONCEPTS.forEach(c => {
+          assert(typeof c.id === "string" && c.id.length > 0, "concept.id non-empty");
+          assert(typeof c.category === "string" && c.category.length > 0, "concept.category non-empty: " + c.id);
+          assert(typeof c.label === "string" && c.label.length > 0, "concept.label non-empty: " + c.id);
+          assert(typeof c.definition === "string" && c.definition.length > 0, "concept.definition non-empty: " + c.id);
+          assert(typeof c.example === "string" && c.example.length > 0, "concept.example non-empty: " + c.id);
+          assert(typeof c.whenToUse === "string" && c.whenToUse.length > 0, "concept.whenToUse non-empty: " + c.id);
+          assert(!ids.has(c.id), "concept.id unique: '" + c.id + "' duplicated");
+          ids.add(c.id);
+        });
+      });
+
+      it("V-CONCEPT-2 · getConceptTOC() returns one row per concept with id+category+label+definition_headline (the 1-line first sentence of definition)", async () => {
+        const cm = await import("../core/conceptManifest.js");
+        const toc = cm.getConceptTOC();
+        assertEqual(toc.length, cm.CONCEPTS.length, "TOC has same count as CONCEPTS");
+        toc.forEach(t => {
+          assert(t.id && t.category && t.label && t.definition_headline,
+            "TOC entry has all 4 fields: " + JSON.stringify(t).slice(0, 80));
+          // Headline is at most as long as full definition (it's the first sentence, possibly the whole sentence).
+          const full = cm.getConcept(t.id);
+          assert(full && t.definition_headline.length <= full.definition.length,
+            "headline ≤ full definition for " + t.id);
+        });
+      });
+
+      it("V-CONCEPT-3 · API surface: getConcept(id) returns the entry; unknown id returns null; getConceptsByCategory('gap_type') returns the 5 gap_type entries", async () => {
+        const cm = await import("../core/conceptManifest.js");
+        const replace = cm.getConcept("gap_type.replace");
+        assert(replace && replace.label === "Replace",
+          "getConcept('gap_type.replace') returns the entry");
+        assertEqual(cm.getConcept("not.a.real.id"), null,
+          "unknown id returns null");
+        const gapTypes = cm.getConceptsByCategory("gap_type");
+        assertEqual(gapTypes.length, 5, "5 gap_type entries");
+        const gapTypeIds = gapTypes.map(c => c.id).sort();
+        assertEqual(gapTypeIds.join(","),
+          "gap_type.consolidate,gap_type.enhance,gap_type.introduce,gap_type.ops,gap_type.replace",
+          "gap_type members match the 5 GAP_TYPES");
+      });
+
+      it("V-CONCEPT-4 · system prompt embeds the concept dictionary TOC block (inlined on the cached prefix; the role section points at selectConcept)", () => {
+        _resetChatEnv();
+        const eng = createEmptyEngagement();
+        const sp = buildSystemPrompt({ engagement: eng, providerKind: "anthropic" });
+        const all = sp.messages.map(m => m.content).join("\n");
+        assert(/Concept dictionary/i.test(all),
+          "system prompt contains a 'Concept dictionary' section");
+        assert(/gap_type\.replace/.test(all),
+          "TOC includes at least one concept id (e.g. gap_type.replace)");
+        assert(/driver\.cyber_resilience/.test(all),
+          "TOC includes driver concepts (e.g. driver.cyber_resilience)");
+        assert(/selectConcept/.test(all),
+          "role section points at selectConcept tool for full-body fetches");
+        // Cache-control: the concept block should be on the cached prefix
+        // (last cacheControl index covers it for Anthropic).
+        assert(Array.isArray(sp.cacheControl) && sp.cacheControl.length > 0,
+          "anthropic cacheControl marks the stable prefix; concept block is part of it");
+      });
+
+      it("V-CONCEPT-5 · CHAT_TOOLS includes selectConcept; invoke({id:'gap_type.replace'}) returns full body; invoke({id:'not.a.real.id'}) returns ok:false", async () => {
+        const tools = await import("../services/chatTools.js");
+        const tool = tools.CHAT_TOOLS.find(t => t.name === "selectConcept");
+        assert(tool, "CHAT_TOOLS includes selectConcept entry");
+        assert(typeof tool.invoke === "function", "selectConcept.invoke is a function");
+        assert(tool.input_schema && tool.input_schema.properties && tool.input_schema.properties.id,
+          "selectConcept input_schema declares the id parameter");
+        const ok = tool.invoke(null, { id: "gap_type.replace" });
+        assert(ok && ok.ok === true && ok.concept && ok.concept.label === "Replace",
+          "invoke({id:'gap_type.replace'}) returns ok:true + the full body");
+        const miss = tool.invoke(null, { id: "not.a.real.id" });
+        assert(miss && miss.ok === false && typeof miss.error === "string",
+          "invoke({id:'not.a.real.id'}) returns ok:false + error");
+      });
+
     });
 
     it("V-CHAT-26 · BUG-017 guard: chat overlay header has connection-status chip (no Mock toggle); chip text reflects active provider", async () => {

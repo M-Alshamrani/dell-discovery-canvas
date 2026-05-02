@@ -18,6 +18,7 @@ import { selectHealthSummary }          from "../selectors/healthSummary.js";
 import { selectExecutiveSummaryInputs } from "../selectors/executiveSummary.js";
 import { selectLinkedComposition }      from "../selectors/linkedComposition.js";
 import { selectProjects }               from "../selectors/projects.js";
+import { getConcept }                   from "../core/conceptManifest.js";
 
 export const CHAT_TOOLS = [
   {
@@ -76,5 +77,30 @@ export const CHAT_TOOLS = [
     description: "Returns the engagement's projects (gap groupings by phase × env × gapType) in deterministic order.",
     input_schema: { type: "object", properties: {} },
     invoke: (engagement) => selectProjects(engagement)
+  },
+  // SPEC §S27 + RULES §16 CH21 — definitional grounding tool.
+  // Fetches the full body of a concept from core/conceptManifest.js.
+  // The TOC is inlined on the cached prefix; this tool is called when
+  // the user asks for full definition + example + when-to-use +
+  // vsAlternatives + typical Dell solutions on a specific concept.
+  // Engagement-agnostic (the dictionary is static).
+  {
+    name: "selectConcept",
+    description: "Fetch the full body of a single concept from the app's concept dictionary by id (e.g. 'gap_type.replace', 'driver.cyber_resilience', 'layer.dataProtection'). Returns {definition, example, whenToUse, vsAlternatives?, typicalDellSolutions?}. Use when the user asks for deeper explanation of a concept the prompt's TOC headline doesn't cover, or when comparing siblings (vsAlternatives requires fetching both ids).",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Concept id, formatted '<category>.<member>' (e.g. 'gap_type.replace')." }
+      },
+      required: ["id"]
+    },
+    invoke: (engagement, args) => {
+      const id = args && args.id;
+      const c = getConcept(id);
+      if (!c) {
+        return { ok: false, error: "Unknown concept id: '" + (id || "(missing)") + "'. Call selectConcept with one of the ids in the TOC." };
+      }
+      return { ok: true, concept: c };
+    }
   }
 ];

@@ -2613,6 +2613,88 @@ Tests in `docs/v3.0/TESTS.md §T26` (NEW):
 - **V-CHAT-31**: `buildRequest('gemini')` translates array content → parts[] with `functionCall` / `functionResponse`
 - **V-CHAT-32**: `realChatProvider` against a gemini stub fetch yielding `functionCall` in `candidates[0].content.parts[]` yields `{kind:"tool_use",...}` event + completes round-trip via `streamChat`
 
+---
+
+## §S27 · Concept dictionary — definitional grounding for the AI assistant
+
+**Status**: NEW 2026-05-02 LATE EVENING. SPEC-only annex. Authored as the architectural fix for the user's strategic ask: "the AI assist will need to understand how to talk to the app... not only data and context aware but also app structure and data model and data relationship aware... should be a help tool... define all these items to the AI in a very clever way without overwhelming with file dumps."
+
+`core/dataContract.js` (per §S25) is the STRUCTURAL grounding (entities + relationships + invariants + catalogs + bindablePaths + analyticalViews — derived from schemas). `core/conceptManifest.js` is the DEFINITIONAL grounding — a hand-curated dictionary of domain terms, each with a one-sentence definition, concrete example, when-to-use rule, and (where siblings compete) vsAlternatives. The two layers complement each other: structural metadata answers "what fields/relationships exist", definitional metadata answers "what does this WORD mean and when should the user pick it".
+
+### S27.1 · Categories + scope
+
+62 concepts across 13 categories (locked at `CONCEPT_SCHEMA_VERSION = "v3.0-concept-1"`):
+
+| Category | Count | Members |
+|---|---|---|
+| `gap_type` | 5 | replace · consolidate · introduce · enhance · ops |
+| `layer` | 6 | workload · compute · storage · dataProtection · virtualization · infrastructure |
+| `urgency` | 3 | High · Medium · Low |
+| `phase` | 3 | now · next · later |
+| `status` | 4 | open · in_progress · closed · deferred |
+| `disposition` | 7 | keep · enhance · replace · consolidate · retire · introduce · ops |
+| `driver` | 8 | cyber_resilience · ai_data · cost_optimization · cloud_strategy · modernize_infra · ops_simplicity · compliance_sovereignty · sustainability (each carries `typicalDellSolutions`) |
+| `env` | 8 | coreDc · drDc · archiveSite · publicCloud · edge · coLo · managedHosting · sovereignCloud |
+| `vendor_group` | 3 | dell · nonDell · custom |
+| `instance_state` | 2 | current · desired |
+| `entity` | 7 | engagement · customer · driver · environment · instance · gap · project |
+| `relationship` | 3 | workload · mappedAssetIds · originId |
+| `skill` | 3 | skill · click_to_run · session_wide |
+
+### S27.2 · Inline strategy — TOC headline + tool-fetched body
+
+To stay token-efficient, the system prompt INLINES only:
+- A short introduction (`== Concept dictionary ==`)
+- One line per concept: `[<category>] <id> · <label> · <one-line headline>` (the first sentence of definition)
+
+Total inline footprint: ~2–3KB for the full TOC. Cached on the stable prefix (`cache_control: ephemeral` on Anthropic).
+
+For full bodies (definition + example + whenToUse + vsAlternatives + typicalDellSolutions), the LLM calls a NEW analytical-views tool:
+
+```
+selectConcept(id) → { ok, concept: { id, category, label, definition,
+                                      example, whenToUse,
+                                      vsAlternatives?, typicalDellSolutions? } }
+```
+
+`invoke` calls `getConcept(id)` directly (the dictionary is static; no engagement dependency). Same multi-round chaining (per RULES §16 CH10) lets the model fetch multiple concepts across rounds.
+
+### S27.3 · Role-section pointer
+
+Layer 1 (role) gains an explicit clause directing the model to USE the dictionary:
+- When the user asks "what does X mean?" → favor the headline; call `selectConcept(id)` for depth
+- When the user asks "when should I use X vs Y?" → fetch BOTH concepts via the tool, present the `vsAlternatives` decision rule
+- Headlines suffice for ~80% of definitional questions; tool fetches reserved for "explain in depth"
+
+### S27.4 · Module shape
+
+```
+core/conceptManifest.js
+  export const CONCEPT_SCHEMA_VERSION = "v3.0-concept-1"
+  export const CONCEPTS                 // raw array (62 entries)
+  export function getConcept(id)        // single lookup → entry|null
+  export function getConceptTOC()       // [{id, category, label, definition_headline}]
+  export function getConceptsByCategory(category)
+  export function getConceptCategories()
+```
+
+Module-load behavior: pure exports, no side effects, no schema validation (the dictionary is hand-curated text, not derived). V-CONCEPT-3 enforces every entry has the required fields populated.
+
+### S27.5 · Forbidden
+
+- Adding concepts that overlap structural metadata (FK declarations, invariants, paths) — those live in `core/dataContract.js`. The dictionary is for definitional / when-to-use prose only.
+- Marketing-style copy in `typicalDellSolutions`. Keep terse: "PowerStore + PowerProtect DD" not "Dell's flagship modern storage with industry-leading..."
+- Inlining the FULL bodies. The TOC is inline; bodies are tool-fetched. Wire-builder cache_control covers the TOC.
+
+### S27.6 · Test contract pointer
+
+Tests in `docs/v3.0/TESTS.md §T27` (NEW):
+- **V-CONCEPT-1**: structural — `CONCEPTS` is an array; every entry has id, category, label, definition (non-empty), example (non-empty), whenToUse (non-empty); ids are unique
+- **V-CONCEPT-2**: TOC — `getConceptTOC()` returns 62 entries; each has id + category + label + definition_headline; headline ≤ definition length
+- **V-CONCEPT-3**: API surface — `getConcept(id)` returns the entry; unknown id returns null; `getConceptsByCategory('gap_type')` returns the 5 gap_type entries
+- **V-CONCEPT-4**: system prompt embeds the concept dictionary block — "== Concept dictionary ==" header + at least one concept id + one category label appear in the role-or-contract messages
+- **V-CONCEPT-5**: `CHAT_TOOLS` includes `selectConcept` with `invoke({id}) → {ok, concept}`; invoke('gap_type.replace') returns the full body; invoke('not.a.real.id') returns `{ok:false, error}`
+
 ### Change log
 
 | Date | Section | Change |

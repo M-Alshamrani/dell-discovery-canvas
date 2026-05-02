@@ -286,7 +286,16 @@ function buildContract() {
     }))
   }));
 
-  const analyticalViews = CHAT_TOOLS.map(t => ({
+  // analyticalViews surface ONLY the §S5 selectors (one per selector).
+  // Definitional-grounding tools like selectConcept (per SPEC §S27) are
+  // wired into CHAT_TOOLS too but are not analytical views — they fetch
+  // dictionary content, not engagement data.
+  const _SELECTOR_NAMES = new Set([
+    "selectMatrixView", "selectGapsKanban", "selectVendorMix",
+    "selectHealthSummary", "selectExecutiveSummaryInputs",
+    "selectLinkedComposition", "selectProjects"
+  ]);
+  const analyticalViews = CHAT_TOOLS.filter(t => _SELECTOR_NAMES.has(t.name)).map(t => ({
     name:        t.name,
     description: t.description,
     inputSchema: t.input_schema || { type: "object", properties: {} },
