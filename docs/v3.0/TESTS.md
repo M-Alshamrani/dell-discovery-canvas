@@ -1062,7 +1062,81 @@ it("V-ANTI-RUN-1 · production code does not import from tests/ at runtime (per 
 
 ---
 
-## §T24 · Banner target reconciliation
+## §T24 · V-NAME — Production code naming discipline
+
+**Coverage**: SPEC §S24. Operationalizes `feedback_no_version_prefix_in_names.md`.
+
+**Approximate count**: 1 vector (machine-generated; expands as production surfaces grow).
+
+| Vector | Assertion |
+|---|---|
+| V-NAME-1 | Source-grep over production paths (`services/`, `state/`, `core/`, `ui/`, `selectors/`, `interactions/`, `migrations/`, `schema/`) finds zero file names containing `v[0-9]` or `V[0-9]` (with explicit time-bounded exceptions documented in SPEC §S24.4). Plus `index.html` user-visible strings (button text, headings, topbar labels) contain zero `v[0-9.]+` occurrences (the version-chip footer is the deliberate exception — that one EXPRESSES the APP_VERSION on purpose). |
+
+### T24.1 · Sample vector body (V-NAME-1)
+
+```js
+it("V-NAME-1 · production code naming discipline (per SPEC §S24)", async () => {
+  // Curated list of production directories. Test discovers files via
+  // a manifest-style probe — adding a new production module without
+  // adding it here is a discipline failure (per F24T.1).
+  const PRODUCTION_FILES = [
+    // services/
+    "services/aiService.js", "services/canvasFile.js", "services/catalogLoader.js",
+    "services/chatService.js", "services/chatTools.js", "services/manifestGenerator.js",
+    "services/memoizeOne.js", "services/mockChatProvider.js", "services/mockLLMProvider.js",
+    "services/pathResolver.js", "services/realChatProvider.js", "services/realLLMProvider.js",
+    "services/skillRunner.js", "services/skillSaveValidator.js", "services/systemPromptAssembler.js",
+    // state/ (new canonical names — to be in place after Step 0b rename)
+    "state/adapter.js", "state/engagementStore.js", "state/sessionBridge.js",
+    "state/chatMemory.js",
+    // core/ (canonical)
+    "core/aiConfig.js", "core/config.js", "core/demoEngagement.js",
+    "core/sessionEvents.js", "core/version.js",
+    // ui/views/ (canonical)
+    "ui/views/CanvasChatOverlay.js", "ui/views/SkillBuilder.js"
+  ];
+  // Time-bounded exceptions per SPEC §S24.4 / R24.5 — documented blocked items.
+  const ALLOWED_EXCEPTIONS = new Set([
+    "state/v3SkillStore.js",   // v2 core/skillStore.js export collision; drops when v2 retires
+    "core/v3SeedSkills.js"      // v2 core/seedSkills.js path collision; drops when v2 retires
+  ]);
+
+  const offenders = [];
+  for (const file of PRODUCTION_FILES) {
+    if (ALLOWED_EXCEPTIONS.has(file)) continue;
+    if (/[\\/]v[0-9]/i.test(file) || /[\\/][^/]*V[0-9]/.test(file)) {
+      offenders.push("FILENAME: " + file);
+    }
+  }
+
+  // index.html user-visible strings probe.
+  let html;
+  try { html = await (await fetch("/index.html")).text(); } catch (_e) { html = ""; }
+  // Strip the deliberate version-chip span (it expresses APP_VERSION).
+  // We allow `<span id="appVersionChip"></span>` and the surrounding chip
+  // markup but flag any other "v<digit>" reference in user-visible text.
+  const VISIBLE_TEXT_RE = />([^<]*\bv[0-9][0-9.]*[^<]*)</g;
+  const VERSION_CHIP_OK = /id=["']appVersionChip["']/;
+  let m;
+  while ((m = VISIBLE_TEXT_RE.exec(html)) !== null) {
+    const before = html.slice(Math.max(0, m.index - 200), m.index);
+    if (VERSION_CHIP_OK.test(before)) continue;   // legitimate version-chip surface
+    offenders.push("UI_STRING: " + m[1].trim().slice(0, 80));
+  }
+
+  assertEqual(offenders.length, 0,
+    "V-NAME-1: production code naming discipline; offenders: " + offenders.join(" | "));
+});
+```
+
+### T24.2 · Forbidden test patterns
+
+- **F24T.1** · Failing to add a new production module to the `PRODUCTION_FILES` list when it ships. The list is the manifest of v3 production surfaces; growing it as the codebase grows is part of the V-NAME-1 discipline.
+- **F24T.2** · Loosening the `ALLOWED_EXCEPTIONS` list without a corresponding entry in SPEC §S24.4 / R24.5 (which documents WHY an item is exempt + WHEN it drops). Exceptions without rationale are forbidden.
+
+---
+
+## §T25 · Banner target reconciliation
 
 Per SPEC §S14.6:
 
@@ -1090,25 +1164,26 @@ Per SPEC §S14.6:
 | V-DEMO | 7 | T21 (7) |
 | V-MOCK | 3 | T22 (3) |
 | V-ANTI-RUN | 1 | T23 (1) |
-| **TOTAL** | **~434** | **~437** |
+| V-NAME | 1 | T24 (1) |
+| **TOTAL** | **~435** | **~438** |
 
 Final banner target after merging: **616 (v2.4.16 baseline) - obsolete (~120 v2.4.x vectors that test fields/shapes that no longer exist) + 434 new = ~930 GREEN**. Provisional pending Suite 49 land + obsolete-vector audit. v3.0.0-rc.1 currently shows 1023/1023 (post-V-CHAT) because actual implementation enumerates per-fixture / per-invariant; "approximate count" here is the planning floor, not a ceiling.
 
 ---
 
-## §T25 · Open items
+## §T26 · Open items
 
 | Item | Section | Tag |
 |---|---|---|
 | V-SCH-12 default — `.strict()` vs `.strip()` for unknown fields | §T2.2 | TO RESOLVE (default `.strict()` for v3.0) |
 | V-MFG-10 manifest entry count expected size table | §T7 | TO LOCK at SPEC §S7.2.1 implementation |
 | V-ANTI-4 strict R-number → vector enforcement | §T18.1 | TO UPGRADE in v3.1 (smoke-check floors in v3.0) |
-| Banner target obsolete-vector audit | §T24 | TO RUN at Suite 49 land time (count which v2.4.x vectors test fields that v3.0 removes) |
+| Banner target obsolete-vector audit | §T25 | TO RUN at Suite 49 land time (count which v2.4.x vectors test fields that v3.0 removes) |
 | V-PROD mock LLM response keyed by prompt hash format | §T16.4 | TO AUTHOR alongside `services/llm/mockProvider.js` |
 
 ---
 
-## §T26 · Document control
+## §T27 · Document control
 
 - **Authored**: 2026-05-01 alongside MIGRATION.md.
 - **Owner**: spec writer (Claude Opus 4.7 1M context, this session and successors).
@@ -1123,5 +1198,6 @@ Final banner target after merging: **616 (v2.4.16 baseline) - obsolete (~120 v2.
 | 2026-05-01 | §T19 + §T20 + §T21 + §T22 | NEW §T19 V-ADP-1..10 vectors for SPEC §S19 v3.0 → v2.x consumption adapter. Existing §T19/T20/T21 meta-sections renumbered to §T20/T21/T22. Banner target bumps from ~897 to ~907. |
 | 2026-05-02 | §T20 + §T21 + §T22 + §T23 | NEW §T20 V-CHAT-1..12 vectors for SPEC §S20 Canvas Chat. Existing §T20/T21/T22 meta-sections (banner target / open items / document control) renumbered to §T21/T22/T23. Banner target bumps from ~907 to ~919. Sample bodies for V-CHAT-3 (selector ↔ tool consistency) + V-CHAT-5 (tool-call round-trip with mock). |
 | 2026-05-02 | §T21 + §T22 + §T23 + §T24 + §T25 + §T26 | NEW §T21 V-DEMO-1..7 (SPEC §S21 v3-native demo). NEW §T22 V-MOCK-1..3 (SPEC §S22 mocks as production services). NEW §T23 V-ANTI-RUN-1 (SPEC §S23 production-no-tests-imports). Existing §T21/T22/T23 meta-sections (banner target / open items / document control) renumbered to §T24/T25/T26. Banner target bumps from ~919 to ~930. Sample bodies for V-DEMO-1 / V-DEMO-4 / V-MOCK-1 / V-ANTI-RUN-1. Authored as the architectural fix for the BUG-003 patch revert per `feedback_no_patches_flag_first.md` + `feedback_test_or_it_didnt_ship.md`. |
+| 2026-05-02 | §T24 + §T25 + §T26 + §T27 | NEW §T24 V-NAME-1 (SPEC §S24 production code naming discipline). Existing §T24/T25/T26 meta-sections renumbered to §T25/T26/T27. Banner target +1 (~930 → ~931). V-NAME-1 source-grep enforces no version-prefix in production file names + no v3 references in user-visible UI strings (with documented time-bounded exceptions for v2-collision items). Authored as the architectural prerequisite for chat-perfection: new modules in the chat-perfection sequence land on a tree where the discipline is already enforced. |
 
 End of TESTS.

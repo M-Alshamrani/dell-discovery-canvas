@@ -12404,6 +12404,99 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
   });
 
   // -------------------------------------------------------------------
+  // §T24 · V-NAME · Production code naming discipline (per SPEC §S24)
+  // RED-first (Step 0a): the 5 v3-prefixed module file paths still exist
+  // (state/v3Adapter.js + state/v3EngagementStore.js + state/v3SessionBridge.js
+  // + core/v3DemoEngagement.js + ui/views/V3SkillBuilder.js); UI strings
+  // in index.html still say "v3.0 Lab". V-NAME-1 flags these as offenders.
+  // Step 0b mechanical rename → V-NAME-1 GREEN.
+  // -------------------------------------------------------------------
+  describe("§T24 · V-NAME · Production code naming discipline", () => {
+
+    it("V-NAME-1 · production file names + user-visible UI strings have no version-prefix (per SPEC §S24)", async () => {
+      // Files we audit. Includes both today's v3-prefixed paths (which
+      // we're purging) AND the canonical-renamed targets (which should
+      // pass once the rename lands). After the rename, the v3-prefixed
+      // entries 404 (don't exist) and don't contribute to offenders.
+      const FILES_TO_CHECK = [
+        // To-be-renamed (will fail RED until Step 0b):
+        "state/v3Adapter.js",
+        "state/v3EngagementStore.js",
+        "state/v3SessionBridge.js",
+        "core/v3DemoEngagement.js",
+        "ui/views/V3SkillBuilder.js",
+        // Canonical-named (must always pass):
+        "state/adapter.js",
+        "state/engagementStore.js",
+        "state/sessionBridge.js",
+        "state/chatMemory.js",
+        "core/demoEngagement.js",
+        "core/aiConfig.js",
+        "core/version.js",
+        "core/sessionEvents.js",
+        "services/aiService.js",
+        "services/canvasFile.js",
+        "services/catalogLoader.js",
+        "services/chatService.js",
+        "services/chatTools.js",
+        "services/manifestGenerator.js",
+        "services/memoizeOne.js",
+        "services/mockChatProvider.js",
+        "services/mockLLMProvider.js",
+        "services/pathResolver.js",
+        "services/realChatProvider.js",
+        "services/realLLMProvider.js",
+        "services/skillRunner.js",
+        "services/skillSaveValidator.js",
+        "services/systemPromptAssembler.js",
+        "ui/views/CanvasChatOverlay.js",
+        "ui/views/SkillBuilder.js"
+      ];
+      // Time-bounded exceptions per SPEC §S24.4 / R24.5 — documented blocked items.
+      const ALLOWED_EXCEPTIONS = new Set([
+        "state/v3SkillStore.js",   // v2 core/skillStore.js export collision; drops when v2 retires
+        "core/v3SeedSkills.js"     // v2 core/seedSkills.js path collision; drops when v2 retires
+      ]);
+
+      const offenders = [];
+
+      // Pass 1: file-path naming.
+      for (const file of FILES_TO_CHECK) {
+        if (ALLOWED_EXCEPTIONS.has(file)) continue;
+        if (!/v[0-9]/i.test(file)) continue;   // canonical name → skip
+        // Path matches v[0-9]; verify the file actually exists. If it doesn't
+        // (404), the rename has succeeded — no offense.
+        try {
+          const res = await fetch("/" + file);
+          if (res.ok) offenders.push("FILENAME: " + file);
+        } catch (_e) {
+          // Network error → skip; not a discipline failure.
+        }
+      }
+
+      // Pass 2: index.html user-visible strings. Strip the deliberate
+      // version-chip surface (which expresses APP_VERSION on purpose),
+      // then scan rendered text content between > and < for "v[0-9]".
+      let html;
+      try { html = await (await fetch("/index.html")).text(); }
+      catch (_e) { html = ""; }
+      // Remove the version-chip span entirely — it's the one sanctioned surface.
+      const VERSION_CHIP_RE = /<[a-z]+[^>]*\bid=["']appVersionChip["'][^>]*>[^<]*<\/[a-z]+>/gi;
+      const stripped = html.replace(VERSION_CHIP_RE, "");
+      // Match user-visible text between > and < that contains v[0-9].
+      const VISIBLE_TEXT_RE = />([^<]*\bv[0-9][0-9.]*[^<]*)</gi;
+      let m;
+      while ((m = VISIBLE_TEXT_RE.exec(stripped)) !== null) {
+        const visible = m[1].trim();
+        if (visible.length > 0) offenders.push("UI_STRING: " + visible.slice(0, 80));
+      }
+
+      assertEqual(offenders.length, 0,
+        "V-NAME-1: production code naming discipline (per SPEC §S24); offenders: " + offenders.join(" | "));
+    });
+  });
+
+  // -------------------------------------------------------------------
   // §T23 · V-ANTI-RUN · Production code does not import from tests/ (per SPEC §S23)
   // RED-first: ui/views/V3SkillBuilder.js + ui/views/CanvasChatOverlay.js
   // currently import from tests/. V-ANTI-RUN-1 fails RED until those

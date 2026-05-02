@@ -2163,6 +2163,75 @@ V-ANTI-RUN-1 in TESTS.md §T23.
 
 ---
 
+## §S24 · Production code naming discipline (SPEC-only annex)
+
+**Status**: NEW 2026-05-02. SPEC-only annex. Operationalizes `feedback_no_version_prefix_in_names.md` (locked memory) into a structural lint with `RULES.md §17` enforcement and a TESTS V-NAME-1 vector. Authored as the architectural prerequisite for chat-perfection: every new module added during the chat-perfection sequence (e.g. `core/dataContract.js`) lands on a tree where the discipline is already enforced, not where it's aspirational.
+
+### S24.1 · Goals
+
+Version numbers (v3, v2, v3.0, V3, etc.) belong in:
+- Git tags (`v3.0.0-rc.2`).
+- `core/version.js APP_VERSION`.
+- Documentation contexts (SPEC sections, RULES sections, TESTS categories, CHANGELOG entries, BUG_LOG entries) where the v3 cutover is the topic of the document.
+
+Version numbers do NOT belong in:
+- Production module **file paths** under `services/`, `state/`, `core/`, `ui/`, `selectors/`, `interactions/`, `migrations/`, `schema/`.
+- User-visible **UI strings** in `index.html`, button labels, page headers, topbar entries.
+- (When v2.x retires) production module **export symbol names**.
+
+### S24.2 · Why
+
+`feedback_no_version_prefix_in_names.md` summarizes:
+
+> "Once v3 is the only architecture in the codebase, every 'v3' prefix decays into pure noise — `state/v3Adapter.js` reads 'the adapter for v3' forever, but there is no other adapter; the prefix is now a vestigial marker. Worse, when v4 ships, every occurrence either gets a confusing rename or an even more confusing v3-still-named-v3 alongside v4."
+
+The cost compounds: every new module added under the v3-prefixed convention entrenches the convention; once 5+ modules carry it, removing the prefix is a 50-import edit.
+
+### S24.3 · R-numbered requirements
+
+| R | Requirement | Trace |
+|---|---|---|
+| R24.1 | Production-path file names (under `services/`, `state/`, `core/`, `ui/`, `selectors/`, `interactions/`, `migrations/`, `schema/`) MUST NOT contain `v[0-9]` or `V[0-9]` | V-NAME-1 source-grep |
+| R24.2 | User-visible UI strings in `index.html` (button text, headings, topbar labels, footer chips OTHER than the version-chip itself which deliberately surfaces APP_VERSION) MUST NOT contain `v[0-9]` or `V[0-9]` | V-NAME-1 second pass |
+| R24.3 | Test import-site aliases (e.g. `import { addInstance as addInstanceV3 }`) ARE permitted — time-bounded exception per `feedback_no_version_prefix_in_names.md` cutover-window. Aliases drop in one mechanical commit when v2.x retires | scope of V-NAME-1 (aliases are inside `diagnostics/appSpec.js` import declarations only) |
+| R24.4 | SPEC sections, RULES sections, TESTS categories, CHANGELOG entries, BUG_LOG entries, memory files: documentation context — ARE permitted to mention v3 (subject of the document, not code identity) | scope of V-NAME-1 |
+| R24.5 | Time-bounded blocked items (where v2 collision prevents an immediate rename): keep the v3 prefix until v2 retires; documented inline in the file with a "// TODO purge prefix when v2 X retires" comment so the audit trail is explicit. Currently blocked: `state/v3SkillStore.js` (v2 `core/skillStore.js` collision on `saveSkill`/`loadSkills` exports), `core/v3SeedSkills.js` (v2 `core/seedSkills.js` file-path collision) | code review |
+
+### S24.4 · The 2026-05-02 partial-purge scope (this commit)
+
+Files renameable now (no v2 collision):
+- `state/v3Adapter.js` → `state/adapter.js`
+- `state/v3EngagementStore.js` → `state/engagementStore.js`
+- `state/v3SessionBridge.js` → `state/sessionBridge.js`
+- `core/v3DemoEngagement.js` → `core/demoEngagement.js`
+- `ui/views/V3SkillBuilder.js` → `ui/views/SkillBuilder.js`
+
+Symbols renameable now (no v2 collision):
+- `loadV3Demo` → `loadDemo` (only export of `core/v3DemoEngagement.js` → `core/demoEngagement.js`)
+- `describeV3Demo` → `describeDemo`
+
+UI strings:
+- `index.html` topbar `id="topbarV3LabBtn"` aria-label "Open v3.0 Skill Builder Lab" / text "v3.0 Lab" → `id="topbarLabBtn"` / aria-label "Open Skill Builder Lab" / text "Skill Builder"
+- `styles.css` `.v3-skill-builder-*` selectors → `.skill-builder-*` (and `.topbar-v3-lab-btn` → `.topbar-lab-btn`)
+- The "v3.0 Skill Builder" header inside the Lab → "Skill Builder Lab"
+
+Items left v3-prefixed (blocked by v2 collisions; documented per R24.5):
+- `state/v3SkillStore.js` — exports `saveV3Skill` / `loadV3Skills` etc. would collide with v2's `core/skillStore.js` exports (`saveSkill` / `loadSkills`). Drops when v2 retires.
+- `core/v3SeedSkills.js` — file path would collide with v2's `core/seedSkills.js`. Drops when v2 retires.
+- Test import aliases in `diagnostics/appSpec.js` (`addInstanceV3` / `updateInstanceV3` / `addGapV3` / `updateGapV3` / `loadCanvasV3` / `buildSaveEnvelopeV3` etc.) — collisions with v2 module exports. Drops when v2 retires (per R24.3).
+
+### S24.5 · Forbidden patterns
+
+- **F24.5.1** · Adding a NEW file under production paths with a version prefix in the name. Caught at review by V-NAME-1.
+- **F24.5.2** · Adding a NEW UI string with a version reference (other than the deliberate `core/version.js APP_VERSION` chip).
+- **F24.5.3** · "Just for now" exemptions, the same way `feedback_no_patches_flag_first.md` forbids them on schema bypass. There are none.
+
+### S24.6 · Test contract for §S24
+
+V-NAME-1 in TESTS.md §T24.
+
+---
+
 ## §15 · Out of scope (explicit)
 
 Per directive §15. Re-listed here for SPEC traceability:
@@ -2235,5 +2304,6 @@ These are tractable; they do not block §1-§4 implementation.
 | 2026-05-01 | §S19 | NEW SPEC-only annex · v3.0 → v2.x consumption adapter. R19.1–R19.10 + module shape (`state/v3Adapter.js` + `state/v3EngagementStore.js`) + 6-view migration order + forbidden patterns + V-ADP-1..10 test pointer. Drives non-suffix `3.0.0` GA: with adapter shipped, the existing 5 v2.x view tabs read from v3.0 selectors against the active engagement (today only the Lab does). |
 | 2026-05-02 | §S20 | NEW SPEC-only annex · Canvas Chat — context-aware AI assistant. R20.1–R20.15 + module shape (`services/chatService.js` + `services/systemPromptAssembler.js` + `services/chatTools.js` + `state/chatMemory.js` + `ui/views/CanvasChatOverlay.js`) + 5-layer system prompt (role / data-model / manifest / engagement / views) + tool-use round-trip + Anthropic prompt caching + streaming + per-engagement memory + read-only v1 boundary + V-CHAT-1..12 test pointer. Top-priority rc.2 work per user direction 2026-05-02 ("focus on getting it right ... no hallucinations ... best industry practice"). |
 | 2026-05-02 | §S21 + §S22 + §S23 | NEW SPEC-only annexes authoring the architectural fix for BUG-003..007. §S21 v3-native demo engagement (R21.1-R21.10 + `core/v3DemoEngagement.js` module shape + module-load schema-strict self-validation + deterministic UUIDs + V-DEMO-1..7 pointer). §S22 mock providers as production services (R22.1-R22.4 + `services/mockChatProvider.js` + `services/mockLLMProvider.js` shape + V-MOCK-1..3 pointer). §S23 production-no-tests-imports rule (R23.1-R23.3 + V-ANTI-RUN-1 source-grep). Drives the BUG-003 patch revert (`bacc7a0`) → cleanup arc → re-greening sequence per `feedback_no_patches_flag_first.md` + `feedback_test_or_it_didnt_ship.md`. |
+| 2026-05-02 | §S24 | NEW SPEC-only annex · production code naming discipline. R24.1–R24.5 operationalize `feedback_no_version_prefix_in_names.md` into a structural lint with V-NAME-1 source-grep test. Defines purgeable-now scope (5 file renames + 2 symbol renames + 4 UI string changes) and items blocked by v2 collision (`state/v3SkillStore.js`, `core/v3SeedSkills.js`, test-import aliases — drop when v2 retires per R24.3). Authored as the architectural prerequisite for chat-perfection so new modules land on a clean tree. |
 
 End of SPEC.
