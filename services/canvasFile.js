@@ -87,10 +87,12 @@ function stripForPersist(eng) {
 // loadCanvas — v3.0 load boundary
 // ---------------------------------------------------------------------
 //
-// Parses the envelope, runs migrator if schema version is older
-// (currently a stub — v2.0 migrator integration ships in a later
-// commit), validates the v3.0 result against EngagementSchema,
-// hydrates secondary indexes, attaches transient fields back.
+// Parses the envelope, dispatches via the migrator when the file's
+// schemaVersion is older than CURRENT_SCHEMA_VERSION (per
+// migrations/index.js migrateToVersion), validates the v3.0 result
+// against EngagementSchema strict, runs the §S10 integrity sweep,
+// hydrates secondary indexes (instances.byState rebuilt from byId.state),
+// and re-attaches transient fields (activeEntity, integrityLog).
 //
 // Returns { ok: true, engagement } | { ok: false, error, recoveryHint }.
 

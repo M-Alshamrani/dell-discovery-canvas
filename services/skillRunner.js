@@ -6,7 +6,12 @@
 //
 // Two output modes:
 //   - "free-text": LLM returns a string; wrapped as { value: text, provenance }
-//   - structured: TODO — when first structured-output skill lands
+//   - structured: LLM response is parsed as JSON, validated against the
+//     registered Zod schema (per outputContract.schemaRef → getOutputSchema),
+//     catalog-membership checked on relevant fields with up to
+//     MAX_CATALOG_RETRIES (2) re-prompts on banned-id miss; on retry
+//     exhaustion the envelope is returned with provenance.validationStatus
+//     === "invalid" rather than thrown (per SPEC §S7.4 / S8.2.2).
 //
 // Per SPEC sec S8.1.2, provenance is set ONLY by this module. User-
 // facing edit paths produce { value, provenance: { ..., validationStatus:
