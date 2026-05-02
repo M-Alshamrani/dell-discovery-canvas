@@ -12205,6 +12205,138 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assert(Array.isArray(oaiPrompt.cacheControl) && oaiPrompt.cacheControl.length === 0,
         "openai-compatible prompt has no cacheControl markers (provider does not support caching)");
     });
+
+    // -----------------------------------------------------------------
+    // V-CHAT-13/14/15 · Step 7 chat-perfection · Real-Anthropic tool-use
+    // round-trip (per SPEC §S20.18 + RULES §16 CH19). RED-first until
+    // services/aiService.js + services/realChatProvider.js wire the
+    // tools array + content-block parsing.
+    // -----------------------------------------------------------------
+
+    it("V-CHAT-13 · buildRequest('anthropic') with tools array emits {tools:[{name,description,input_schema}]} and strips invoke", async () => {
+      const { CHAT_TOOLS } = await import("../services/chatTools.js");
+      const wireTools = CHAT_TOOLS.map(t => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.input_schema
+      }));
+      const req = buildRequest("anthropic", {
+        baseUrl: "/api/anthropic",
+        model:   "claude-opus-4-7",
+        apiKey:  "sk-test",
+        messages: [
+          { role: "system", content: "you are grounded" },
+          { role: "user",   content: "how many gaps?" }
+        ],
+        tools: wireTools
+      });
+      assert(Array.isArray(req.body.tools) && req.body.tools.length === wireTools.length,
+        "anthropic body.tools includes one entry per CHAT_TOOLS entry");
+      const first = req.body.tools[0];
+      assert(typeof first.name === "string" && typeof first.description === "string" && first.input_schema,
+        "each tool has name + description + input_schema");
+      assert(typeof first.invoke === "undefined",
+        "invoke fn must be stripped from wire payload (not serializable + leaks closures)");
+    });
+
+    it("V-CHAT-14 · buildRequest('anthropic') passes through array-shaped message.content (tool_use / tool_result content blocks)", () => {
+      const req = buildRequest("anthropic", {
+        baseUrl: "/api/anthropic",
+        model:   "claude-opus-4-7",
+        apiKey:  "sk-test",
+        messages: [
+          { role: "system", content: "sys" },
+          { role: "user",   content: "q" },
+          { role: "assistant", content: [
+            { type: "text",     text: "let me check" },
+            { type: "tool_use", id: "toolu_01abc", name: "selectGapsKanban", input: {} }
+          ] },
+          { role: "user", content: [
+            { type: "tool_result", tool_use_id: "toolu_01abc", content: "{\"counts\":{\"open\":1}}" }
+          ] }
+        ]
+      });
+      const msgs = req.body.messages;
+      // System message collapsed into body.system; remaining: user, assistant, user.
+      assertEqual(msgs.length, 3, "non-system messages preserved in order");
+      assert(Array.isArray(msgs[1].content) && msgs[1].content[1].type === "tool_use",
+        "assistant content-block array passed through verbatim (tool_use intact)");
+      assert(Array.isArray(msgs[2].content) && msgs[2].content[0].type === "tool_result",
+        "user content-block array passed through verbatim (tool_result intact)");
+      assertEqual(msgs[2].content[0].tool_use_id, "toolu_01abc",
+        "tool_use_id correlates the round-trip");
+    });
+
+    it("V-CHAT-15 · realChatProvider with Anthropic-shape stub fetch yields tool_use event then completes the round-trip via streamChat", async () => {
+      const { createRealChatProvider } = await import("../services/realChatProvider.js");
+      _resetChatEnv();
+      let eng = createEmptyEngagement();
+      eng = addGapV3(eng, { description: "stub gap", gapType: "ops", urgency: "High",
+        phase: "now", status: "open", layerId: "infrastructure", affectedLayers: ["infrastructure"] }).engagement;
+      setActiveEngagement(eng);
+
+      // Stub fetchImpl that emulates Anthropic /v1/messages: first call returns
+      // a tool_use stop_reason; second call returns final text.
+      let callIdx = 0;
+      const stubFetch = async (url, init) => {
+        callIdx++;
+        const sent = JSON.parse(init.body);
+        if (callIdx === 1) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              content: [
+                { type: "text", text: "let me check the gaps." },
+                { type: "tool_use", id: "toolu_01xyz", name: "selectGapsKanban", input: {} }
+              ],
+              stop_reason: "tool_use"
+            }),
+            text: async () => ""
+          };
+        }
+        // Round-2 must include the tool_result block in the user message AND the
+        // original assistant tool_use block in the assistant message.
+        const lastUser = sent.messages[sent.messages.length - 1];
+        const prevAssistant = sent.messages[sent.messages.length - 2];
+        if (!Array.isArray(lastUser.content) || lastUser.content[0].type !== "tool_result") {
+          throw new Error("V-CHAT-15: round-2 user message missing tool_result block");
+        }
+        if (!Array.isArray(prevAssistant.content) || !prevAssistant.content.some(b => b.type === "tool_use")) {
+          throw new Error("V-CHAT-15: round-2 assistant message missing tool_use block");
+        }
+        if (lastUser.content[0].tool_use_id !== "toolu_01xyz") {
+          throw new Error("V-CHAT-15: tool_use_id correlation lost");
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            content: [{ type: "text", text: "There is 1 open gap with High urgency." }],
+            stop_reason: "end_turn"
+          }),
+          text: async () => ""
+        };
+      };
+
+      const provider = createRealChatProvider({
+        providerKey: "anthropic",
+        baseUrl:     "/api/anthropic",
+        model:       "claude-opus-4-7",
+        apiKey:      "sk-test",
+        fetchImpl:   stubFetch
+      });
+      const result = await streamChat({
+        engagement:     eng,
+        transcript:     [],
+        userMessage:    "How many High-urgency gaps are open?",
+        providerConfig: { providerKey: "anthropic" },
+        provider:       provider
+      });
+      assertEqual(callIdx, 2, "two fetches: round1 (tool_use) + round2 (final text)");
+      assert(typeof result.response === "string" && result.response.includes("1"),
+        "final text from round2 surfaces");
+    });
   });
 
   // -------------------------------------------------------------------

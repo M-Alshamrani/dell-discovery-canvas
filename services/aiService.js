@@ -182,6 +182,8 @@ export function buildRequest(providerKind, opts) {
     var sys = "";
     var nonSystem = [];
     messages.forEach(function(m) {
+      // System content collapsed; only string-typed system content is
+      // foldable. Array-content system messages are not part of v3.
       if (m.role === "system") { sys = (sys ? sys + "\n\n" : "") + m.content; }
       else                     { nonSystem.push({ role: m.role, content: m.content }); }
     });
@@ -191,6 +193,12 @@ export function buildRequest(providerKind, opts) {
       messages: nonSystem
     };
     if (sys) body.system = sys;
+    // SPEC §S20.18 + RULES §16 CH19 — Anthropic tool-use round-trip.
+    // Caller passes the wire-shape tools array (name + description +
+    // input_schema only; chatService strips `invoke` before this point).
+    if (Array.isArray(opts.tools) && opts.tools.length > 0) {
+      body.tools = opts.tools;
+    }
     return {
       url: joinUrl(baseUrl, "/v1/messages"),
       headers: {

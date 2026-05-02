@@ -117,20 +117,30 @@ export async function streamChat(opts) {
     }
     const toolResult = tool.invoke(engagement, round1.toolUse.input || {});
 
-    // Append assistant tool_use record + user tool_result record. Real
-    // providers shape these blocks differently (Anthropic content-blocks
-    // vs OpenAI tool calls); for the v1 mock-driven path we use a
-    // textual JSON envelope so the assertion in V-CHAT-5 (looks for
-    // "tool_result" in the second call's user message) is honored.
+    // SPEC §S20.18 + RULES §16 CH19 — Anthropic-shape content-block
+    // round-trip. Real Anthropic REQUIRES the assistant message to
+    // replay the same content blocks (preamble text + tool_use with id)
+    // and the user message to carry a tool_result block correlated by
+    // tool_use_id. Mock + OpenAI/Gemini providers ignore the array
+    // shape (mock streams scripted responses; OpenAI/Gemini wire shape
+    // is on the rc.3 roadmap).
+    const toolUseId = round1.toolUse.id || ("toolu_" + Math.random().toString(36).slice(2, 12));
+    const assistantBlocks = [];
+    if (round1.text) assistantBlocks.push({ type: "text", text: round1.text });
+    assistantBlocks.push({
+      type:  "tool_use",
+      id:    toolUseId,
+      name:  round1.toolUse.name,
+      input: round1.toolUse.input || {}
+    });
+    const userBlocks = [{
+      type:         "tool_result",
+      tool_use_id:  toolUseId,
+      content:      safeStringify(toolResult)
+    }];
     const followupMessages = baseMessages.concat([
-      {
-        role:    "assistant",
-        content: JSON.stringify({ tool_use: { name: round1.toolUse.name, input: round1.toolUse.input || {} } })
-      },
-      {
-        role:    "user",
-        content: "tool_result " + safeStringify(toolResult)
-      }
+      { role: "assistant", content: assistantBlocks },
+      { role: "user",      content: userBlocks }
     ]);
 
     const round2 = await streamOneRound(provider, followupMessages, onToken);
@@ -194,7 +204,7 @@ async function streamOneRound(provider, messages, onToken) {
       text += evt.token;
       try { onToken(evt.token); } catch (e) { console.warn("[chatService] onToken threw:", e && e.message); }
     } else if (evt.kind === "tool_use" && !toolUse) {
-      toolUse = { name: evt.name, input: evt.input || {} };
+      toolUse = { name: evt.name, input: evt.input || {}, id: evt.id || null };
     }
     // evt.kind === "done" is informational; we accumulate text directly.
   }
