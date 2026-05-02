@@ -10186,50 +10186,43 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assertEqual(result.errors[0].path, "context.driver.priority",
         "rejection points at the entity-scoped path");
     });
-    it("V-PATH-13 · click-to-run skill missing entityKind blocks save (superRefine)", () => {
-      // SkillSchema's superRefine catches this BEFORE validateSkillSave runs.
-      const draft = {
-        id: "00000000-0000-4000-8000-000000000013",
-        engagementId: "00000000-0000-4000-8000-000000000013",
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
+    it("V-PATH-13 · createEmptySkill auto-migrates legacy click-to-run + entityKind to v3.1 parameters[] (per SPEC §S29.3)", () => {
+      // Pre-rc.3: SkillSchema's superRefine rejected this draft because
+      // click-to-run + null entityKind violated the v3.0 invariant.
+      // Post-rc.3 (SPEC §S29): the (skillType, entityKind) tuple is
+      // RETIRED. createEmptySkill auto-migrates legacy drafts to the
+      // v3.1 shape (parameters[] derived from entityKind). A click-to-run
+      // skill with null entityKind = a v3.1 skill with NO parameters.
+      const skill = createEmptySkill({
         skillId:        "skl-v-path-13",
-        label:          "Bad",
-        version:        "1.0.0",
         skillType:      "click-to-run",
-        entityKind:     null,                  // INVALID for click-to-run
-        promptTemplate: "Hello",
-        bindings:       [],
-        outputContract: "free-text",
-        validatedAgainst:     "3.0",
-        outdatedSinceVersion: null
-      };
-      const result = SkillSchema.safeParse(draft);
-      assertEqual(result.success, false, "superRefine rejects click-to-run with null entityKind");
-      assert(result.error.issues.some(i => i.path[0] === "entityKind"),
-        "rejection points at entityKind");
+        entityKind:     null,                  // dropped by migration
+        promptTemplate: "Hello"
+      });
+      assert(typeof skill.skillType === "undefined",
+        "v3.1 skill SHALL NOT carry legacy skillType field");
+      assert(typeof skill.entityKind === "undefined",
+        "v3.1 skill SHALL NOT carry legacy entityKind field");
+      assertEqual(skill.outputTarget, "chat-bubble",
+        "outputTarget defaults to chat-bubble");
+      assert(Array.isArray(skill.parameters) && skill.parameters.length === 0,
+        "click-to-run + null entityKind migrates to parameters: [] (effectively session-wide)");
     });
-    it("V-PATH-14 · session-wide skill with entityKind set blocks save (superRefine)", () => {
-      const draft = {
-        id: "00000000-0000-4000-8000-000000000014",
-        engagementId: "00000000-0000-4000-8000-000000000014",
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
+    it("V-PATH-14 · validateSkillSave derives entity-kind context from parameters[] (per SPEC §S29.2)", () => {
+      // Pre-rc.3: validator read skill.skillType + skill.entityKind to
+      // decide which entity-scoped paths were valid.
+      // Post-rc.3: validator derives the entity-kind from a parameter
+      // of type='entityId' whose description hints at the kind.
+      const skill = createEmptySkill({
         skillId:        "skl-v-path-14",
-        label:          "Bad",
-        version:        "1.0.0",
-        skillType:      "session-wide",
-        entityKind:     "driver",              // INVALID for session-wide
-        promptTemplate: "Hello",
-        bindings:       [],
-        outputContract: "free-text",
-        validatedAgainst:     "3.0",
-        outdatedSinceVersion: null
-      };
-      const result = SkillSchema.safeParse(draft);
-      assertEqual(result.success, false, "superRefine rejects session-wide with entityKind set");
-      assert(result.error.issues.some(i => i.path[0] === "entityKind"),
-        "rejection points at entityKind");
+        promptTemplate: "Driver priority: {{context.driver.priority}}",
+        parameters: [
+          { name: "driver", type: "entityId", description: "Pick a driver", required: true }
+        ]
+      });
+      const result = validateSkillSave(skill, generateManifest());
+      assert(result.ok === true,
+        "v3.1 driver-parameter skill validates context.driver.* paths cleanly: " + JSON.stringify(result.errors || ""));
     });
     it("V-PATH-15 · save error envelope sorted by template appearance order", () => {});
 
@@ -13001,6 +12994,91 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         const miss = tool.invoke(null, { id: "not.a.real.id" });
         assert(miss && miss.ok === false && typeof miss.error === "string",
           "invoke({id:'not.a.real.id'}) returns ok:false + error");
+      });
+
+    });
+
+    // -----------------------------------------------------------------
+    // V-SKILL-V3-1..2 · rc.3 commit #2 · Skill schema v3.1 + migration
+    // (per SPEC §S29.2 + §S29.3). The (skillType, entityKind) tuple is
+    // RETIRED; outputTarget + parameters[] replaces it. v3.0 records
+    // auto-migrate at load + save boundaries via migrateSkillToV31.
+    // -----------------------------------------------------------------
+    describe("§T29 · V-SKILL-V3 · Skill schema v3.1 (parameterized + outputTarget)", () => {
+
+      it("V-SKILL-V3-1 · SkillSchema strict-parses a v3.1 skill (outputTarget + parameters[]); strict-rejects extra fields like skillType/entityKind", async () => {
+        const { SkillSchema } = await import("../schema/skill.js");
+        const v31Skill = {
+          id:           "00000000-0000-4000-8000-0000000ab001",
+          engagementId: "00000000-0000-4000-8000-0000000ab001",
+          createdAt:    "2026-05-02T00:00:00.000Z",
+          updatedAt:    "2026-05-02T00:00:00.000Z",
+          skillId:      "skl-v3-1",
+          label:        "v3.1 native skill",
+          version:      "1.0.0",
+          outputTarget: "chat-bubble",
+          parameters:   [
+            { name: "gap", type: "entityId", description: "Pick a gap to map to Dell solutions", required: true }
+          ],
+          promptTemplate:       "Map gap to Dell: {{context.gap.description}}",
+          bindings:             [{ path: "context.gap.description", source: "entity" }],
+          outputContract:       "free-text",
+          validatedAgainst:     "3.1",
+          outdatedSinceVersion: null
+        };
+        const ok = SkillSchema.safeParse(v31Skill);
+        assert(ok.success, "v3.1 shape parses cleanly: " + JSON.stringify(ok.error?.issues || []));
+        assertEqual(ok.data.outputTarget, "chat-bubble", "outputTarget preserved");
+        assertEqual(ok.data.parameters.length, 1, "parameters[] preserved");
+        // Strict rejection of legacy fields.
+        const v30Bad = { ...v31Skill, skillType: "click-to-run", entityKind: "gap" };
+        const fail = SkillSchema.safeParse(v30Bad);
+        assertEqual(fail.success, false, "v3.1 schema rejects extra legacy fields (skillType/entityKind)");
+      });
+
+      it("V-SKILL-V3-2 · migrateSkillToV31 round-trip: legacy v3.0 click-to-run + entityKind translates to v3.1 parameters[]; v3.1 input passes through unchanged (idempotent)", async () => {
+        const { migrateSkillToV31, SkillSchema } = await import("../schema/skill.js");
+
+        // v3.0 click-to-run + entityKind=gap → v3.1 parameters auto-derived
+        const v30 = {
+          id:           "00000000-0000-4000-8000-0000000ab002",
+          engagementId: "00000000-0000-4000-8000-0000000ab002",
+          createdAt:    "2026-01-01T00:00:00.000Z",
+          updatedAt:    "2026-01-01T00:00:00.000Z",
+          skillId:      "skl-mig-gap",
+          label:        "Legacy click-to-run skill",
+          version:      "1.0.0",
+          skillType:    "click-to-run",
+          entityKind:   "gap",
+          promptTemplate:       "Map: {{context.gap.description}}",
+          bindings:             [],
+          outputContract:       "free-text",
+          validatedAgainst:     "3.0",
+          outdatedSinceVersion: null
+        };
+        const migrated = migrateSkillToV31(v30);
+        assert(typeof migrated.skillType === "undefined", "skillType dropped");
+        assert(typeof migrated.entityKind === "undefined", "entityKind dropped");
+        assertEqual(migrated.outputTarget, "chat-bubble", "outputTarget defaults to chat-bubble");
+        assertEqual(migrated.parameters.length, 1, "parameters[] derived (1 entry)");
+        assertEqual(migrated.parameters[0].name, "entity", "parameter.name='entity'");
+        assertEqual(migrated.parameters[0].type, "entityId", "parameter.type='entityId'");
+        assert(/gap/i.test(migrated.parameters[0].description), "parameter.description names the entity-kind");
+        assertEqual(migrated.validatedAgainst, "3.1", "validatedAgainst bumped to 3.1");
+        // The migrated record passes the v3.1 strict schema.
+        const ok = SkillSchema.safeParse(migrated);
+        assert(ok.success, "migrated v3.1 record validates strictly");
+
+        // v3.0 session-wide → v3.1 with empty parameters
+        const v30sw = { ...v30, skillId: "skl-mig-sw", skillType: "session-wide", entityKind: null };
+        const migratedSw = migrateSkillToV31(v30sw);
+        assertEqual(migratedSw.parameters.length, 0, "session-wide migrates to empty parameters[]");
+
+        // Idempotency: passing a v3.1 record returns it unchanged.
+        const v31 = migrated;
+        const repassed = migrateSkillToV31(v31);
+        assertEqual(JSON.stringify(repassed), JSON.stringify(v31),
+          "migrateSkillToV31 is idempotent for v3.1 input");
       });
 
     });
