@@ -33,6 +33,13 @@ import { getContractChecksum } from "../core/dataContract.js";
 // the EXACT first line of its first response.
 const HANDSHAKE_RE = /^\[contract-ack\s+v3\.0\s+sha=([0-9a-f]{8})\]\s*\n?/i;
 
+// SPEC §S20.5.2 + RULES §16 CH10 — multi-round tool chaining safety cap.
+// Prevents runaway tool loops if the model never emits a text-only
+// response. Empirically 5 rounds covers every legitimate question
+// against the §S5 selectors (most need 1-2; the densest cross-cuts
+// 3-4). On cap, streamChat surfaces a clear notice in the response.
+export const MAX_TOOL_ROUNDS = 5;
+
 // providerCapabilities(providerKey)
 // → { streaming: bool, toolUse: bool, caching: bool }
 //
@@ -105,46 +112,75 @@ export async function streamChat(opts) {
     [{ role: "user", content: userMessage }]
   );
 
-  // First provider call.
-  const round1 = await streamOneRound(provider, baseMessages, onToken, systemPrompt.cacheControl);
+  // SPEC §S20.5.2 + RULES §16 CH10 — multi-round tool chaining loop.
+  // Stream → if tool_use, dispatch + append assistant content blocks +
+  // user tool_result block → loop. Terminates when the model emits
+  // text-only response (no tool_use) OR MAX_TOOL_ROUNDS hit (safety
+  // cap to prevent runaway chains; surfaces a notice if reached).
+  // Pre-fix (BUG-012): hard-capped at 1 round. Q1 + Q2 in the user's
+  // 2026-05-02 PM transcript stuck on the round-2 preamble because the
+  // chain dropped silently.
+  let messages       = baseMessages;
+  let lastTextResponse = "";   // tracks the most recent text-only LLM response (the "answer")
+  let allRoundsText  = "";     // accumulated text across all rounds (used if cap is hit with no text-only round)
+  let chainCap       = false;  // true if MAX_TOOL_ROUNDS reached without text-only response
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const result = await streamOneRound(provider, messages, onToken, systemPrompt.cacheControl);
+    if (result.text) allRoundsText += (allRoundsText ? "\n\n" : "") + result.text;
 
-  // If the provider emitted a tool_use, resolve + send tool_result back.
-  let finalResponse = round1.text;
-  if (round1.toolUse) {
-    const tool = CHAT_TOOLS.find(t => t.name === round1.toolUse.name);
-    if (!tool) {
-      throw new Error("streamChat: provider requested unknown tool '" + round1.toolUse.name + "'");
+    if (!result.toolUse) {
+      // Text-only response — chain terminates with this as the answer.
+      lastTextResponse = result.text;
+      break;
     }
-    const toolResult = tool.invoke(engagement, round1.toolUse.input || {});
 
-    // SPEC §S20.18 + RULES §16 CH19 — Anthropic-shape content-block
-    // round-trip. Real Anthropic REQUIRES the assistant message to
-    // replay the same content blocks (preamble text + tool_use with id)
-    // and the user message to carry a tool_result block correlated by
-    // tool_use_id. Mock + OpenAI/Gemini providers ignore the array
-    // shape (mock streams scripted responses; OpenAI/Gemini wire shape
-    // is on the rc.3 roadmap).
-    const toolUseId = round1.toolUse.id || ("toolu_" + Math.random().toString(36).slice(2, 12));
+    const tool = CHAT_TOOLS.find(t => t.name === result.toolUse.name);
+    if (!tool) {
+      throw new Error("streamChat: provider requested unknown tool '" + result.toolUse.name + "'");
+    }
+    const toolResult = tool.invoke(engagement, result.toolUse.input || {});
+
+    // Anthropic-shape content blocks (per SPEC §S20.18 + RULES §16 CH19).
+    // Real Anthropic REQUIRES the assistant message to replay all content
+    // blocks (preamble text + tool_use with id), and the user message to
+    // carry the tool_result block correlated by tool_use_id. Mock + non-
+    // Anthropic providers tolerate the array shape (rc.3 will widen).
+    const toolUseId = result.toolUse.id || ("toolu_" + Math.random().toString(36).slice(2, 12));
     const assistantBlocks = [];
-    if (round1.text) assistantBlocks.push({ type: "text", text: round1.text });
+    if (result.text) assistantBlocks.push({ type: "text", text: result.text });
     assistantBlocks.push({
       type:  "tool_use",
       id:    toolUseId,
-      name:  round1.toolUse.name,
-      input: round1.toolUse.input || {}
+      name:  result.toolUse.name,
+      input: result.toolUse.input || {}
     });
     const userBlocks = [{
       type:         "tool_result",
       tool_use_id:  toolUseId,
       content:      safeStringify(toolResult)
     }];
-    const followupMessages = baseMessages.concat([
+    messages = messages.concat([
       { role: "assistant", content: assistantBlocks },
       { role: "user",      content: userBlocks }
     ]);
 
-    const round2 = await streamOneRound(provider, followupMessages, onToken, systemPrompt.cacheControl);
-    finalResponse = round2.text;
+    // If we just consumed the LAST allowed round and the model is still
+    // calling tools, mark the cap and break. The notice is appended below.
+    if (round === MAX_TOOL_ROUNDS - 1) {
+      chainCap = true;
+    }
+  }
+
+  // Compose final response. Three cases:
+  //   - text-only termination → lastTextResponse is the answer
+  //   - cap hit with no text-only → use the accumulated text + cap notice
+  //   - cap hit but the very last round HAD a text preamble → include it + notice
+  let finalResponse = lastTextResponse;
+  if (chainCap) {
+    const accumulated = allRoundsText || "";
+    finalResponse = (accumulated ? accumulated + "\n\n" : "") +
+      "_(tool-call cap reached after " + MAX_TOOL_ROUNDS +
+      " rounds — ask me to continue if you need more detail)_";
   }
 
   // Provenance per SPEC §S8.1 — every assistant turn carries the

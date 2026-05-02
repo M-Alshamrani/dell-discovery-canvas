@@ -12372,6 +12372,65 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "final text from round2 surfaces");
     });
 
+    it("V-CHAT-18 · BUG-012 guard: multi-round tool chain — streamChat loops dispatch → tool_result → next tool_use → final text", async () => {
+      _resetChatEnv();
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      eng = addGapV3(eng, { description: "g1", gapType: "ops", urgency: "High", phase: "now",
+        status: "open", layerId: "infrastructure", affectedLayers: ["infrastructure"] }).engagement;
+      setActiveEngagement(eng);
+
+      // Mock provider scripted as a 2-tool chain: tool_use → text+nothing → tool_use → final text.
+      // chatService MUST loop through both tool dispatches before resolving.
+      const provider = createMockChatProvider({
+        responses: [
+          { kind: "tool_use", name: "selectGapsKanban", input: {} },        // round 1
+          { kind: "tool_use", name: "selectVendorMix",  input: {} },        // round 2 (chain — pre-fix this got dropped)
+          { kind: "text",     text: "Combined answer: 1 open gap; 0 Dell instances (canvas is bare)." }   // round 3
+        ]
+      });
+
+      const result = await streamChat({
+        engagement:     eng,
+        transcript:     [],
+        userMessage:    "Compare gaps + Dell density",
+        providerConfig: { providerKey: "mock" },
+        provider:       provider
+      });
+      assertEqual(provider.callsRecorded.length, 3,
+        "exactly 3 provider calls (2 tool dispatches + 1 final text)");
+      assert(typeof result.response === "string" && result.response.includes("Combined answer"),
+        "final text from the LAST round surfaces (got: '" + (result.response || "").slice(0, 80) + "')");
+    });
+
+    it("V-CHAT-19 · BUG-012 guard: tool-chain cap — chatService stops at MAX_TOOL_ROUNDS and surfaces a notice", async () => {
+      _resetChatEnv();
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      eng = addGapV3(eng, { description: "g1", gapType: "ops", urgency: "High", phase: "now",
+        status: "open", layerId: "infrastructure", affectedLayers: ["infrastructure"] }).engagement;
+      setActiveEngagement(eng);
+
+      // 6 scripted tool_use responses — exceeds the cap (MAX_TOOL_ROUNDS=5).
+      const responses = [];
+      for (let i = 0; i < 6; i++) responses.push({ kind: "tool_use", name: "selectGapsKanban", input: {} });
+
+      const provider = createMockChatProvider({ responses });
+
+      const result = await streamChat({
+        engagement:     eng,
+        transcript:     [],
+        userMessage:    "Loop forever",
+        providerConfig: { providerKey: "mock" },
+        provider:       provider
+      });
+      // Cap is 5 rounds → exactly 5 provider calls. Notice surfaces in response.
+      assertEqual(provider.callsRecorded.length, 5,
+        "provider called exactly MAX_TOOL_ROUNDS=5 times (got " + provider.callsRecorded.length + ")");
+      assert(typeof result.response === "string" && /tool-call cap/i.test(result.response),
+        "user-visible response surfaces the cap notice (got: '" + (result.response || "").slice(0, 120) + "')");
+    });
+
     it("V-CHAT-17 · realChatProvider with Anthropic SSE-shape stub yields per-token text events progressively + closes with done", async () => {
       const { createRealChatProvider } = await import("../services/realChatProvider.js");
       _resetChatEnv();

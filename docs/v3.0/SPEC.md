@@ -1741,7 +1741,7 @@ ui/components/
 | **R20.3** | Layer 4 (engagement snapshot) is token-budgeted per S20.6: small engagements (≤ ENGAGEMENT_INLINE_THRESHOLD entities) are dumped inline; larger engagements have only customer + drivers + counts inlined, with detail fetched via tool-use | S20.4.4 + S20.6 |
 | **R20.4** | Layer 5 (analytical views) is tool definitions when the provider supports tool-use, descriptive prose otherwise; the seven §S5 selectors (`selectMatrixView`, `selectGapsKanban`, `selectVendorMix`, `selectHealthSummary`, `selectExecutiveSummaryInputs`, `selectLinkedComposition`, `selectProjects`) MUST each have a corresponding tool in `services/chatTools.js` | S20.4.5 + S20.5 |
 | **R20.5** | `services/chatService.js` exports `streamChat({engagement, transcript, userMessage, providerConfig, onToken, onToolCall, onComplete}) → Promise<{response, provenance}>` — handles streaming, tool-call resolution, retry inheritance from `aiService.chatCompletion` | S20.5 + S20.8 |
-| **R20.6** | Tool-call dispatch is server-side-equivalent (the LLM emits a tool_use block; we resolve it in-browser by invoking the named selector against the active engagement; we feed the tool_result back; the LLM produces final text). One round of tool-use is required for any provider that supports it | S20.5.2 |
+| **R20.6** | Tool-call dispatch is server-side-equivalent (the LLM emits a tool_use block; we resolve it in-browser by invoking the named selector against the active engagement; we feed the tool_result back; the LLM produces text or another tool_use). MULTI-ROUND chaining is supported up to `MAX_TOOL_ROUNDS=5`: chatService loops until the model emits a text-only response or hits the cap. On cap, the response includes a clear notice. Updated 2026-05-02 PM (was: 1-round only) — closes BUG-012 (multi-tool questions stuck on round-2 preamble) | S20.5.2 |
 | **R20.7** | Anthropic responses use `cache_control: {"type":"ephemeral"}` markers on the role + data-model + manifest blocks (the stable prefix); cost telemetry surfaces `cache_read_input_tokens` to the user via the token-budget meter | S20.7 |
 | **R20.8** | Streaming: every chat call uses the streaming API where supported (Anthropic, OpenAI, Gemini all support streaming on the chat endpoints); each token surfaces via `onToken(text)` so the UI renders progressively. Non-streaming fallback for providers without streaming support | S20.8 |
 | **R20.9** | `state/chatMemory.js` exports `loadTranscript(engagementId)`, `saveTranscript(engagementId, transcript)`, `clearTranscript(engagementId)`, `summarizeIfNeeded(transcript) → transcript'`. localStorage key shape: `dell-canvas-chat::<engagementId>` | S20.9 |
@@ -1847,6 +1847,23 @@ PROVIDER → "There are 7 open gaps with High urgency: [g-001, g-002, ...]"
 ```
 
 This round-trip happens transparently in `streamChat(...)`. The user sees one streamed answer; the tool-call is invisible to them.
+
+**Multi-round chaining (per R20.6 / RULES §16 CH10).** When the model emits another `tool_use` instead of text-only after the first `tool_result`, `streamChat` LOOPS: dispatch the new tool, append assistant + user content blocks to the running message list, stream the next round. Loop terminates when the model emits a text-only response OR `MAX_TOOL_ROUNDS=5` is reached. On cap, the user-visible response is the accumulated text + a clear notice (`_(tool-call cap reached after N rounds — ask me to continue if you need more detail)_`). This closes BUG-012 (2026-05-02 PM) where Q1 + Q2 stuck on round-2 preamble because the prior 1-round cap silently dropped chained calls.
+
+```
+USER: "Which environments have the most non-Dell instances?"
+
+PROVIDER (round 1) → tool_use { name: "selectVendorMix", input: {} }
+client invokes selectVendorMix(eng) → byEnvironment with UUID env ids
+
+PROVIDER (round 2) → text("Now let me get the matrix view to show env aliases")
+                   + tool_use { name: "selectMatrixView", input: { state: "current" } }
+client invokes selectMatrixView(eng, ...) → cells with env aliases
+
+PROVIDER (round 3) → text("Riyadh Core DC has the most non-Dell instances (4):
+                           Cisco UCS B-series, NetApp AFF A400, Veeam B&R, ...")
+[loop terminates: text-only response, no tool_use]
+```
 
 #### S20.5.3 · Tool definitions
 
