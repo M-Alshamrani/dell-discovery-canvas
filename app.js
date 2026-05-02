@@ -69,6 +69,7 @@ document.addEventListener("DOMContentLoaded", function() {
   wireUndoBtn();
   wireTopbarAiBtn();
   wireTopbarV3LabBtn();
+  wireTopbarChatBtn();
   // v2.4.13 S2A . repaint the secondary line whenever the save status
   // bus emits, so "Saving..." -> "Saved just now" without a full
   // re-render. Tick a 30s interval so "Saved 2m ago" keeps incrementing.
@@ -175,6 +176,25 @@ function wireTopbarV3LabBtn() {
     } catch (e) {
       host.innerHTML = '<div style="padding:24px;color:#a52a2a;background:#fff;border-radius:8px;">' +
                        'Failed to load v3.0 Skill Builder: ' + e.message + '</div>';
+    }
+  });
+}
+
+// v3.0.0-rc.2 . Canvas Chat topbar button. Lazily imports the overlay
+// module so we don't load the chat surface on every page (only when
+// the user actually opens Chat). Per the AI control panel polish item,
+// Cmd+K + AI Assist + v3.0 Lab + Chat will eventually merge into one
+// "AI" topbar entry with subtabs; for rc.2 they coexist as separate
+// buttons.
+function wireTopbarChatBtn() {
+  var btn = document.getElementById("topbarChatBtn");
+  if (!btn) return;
+  btn.addEventListener("click", async function() {
+    try {
+      var mod = await import("./ui/views/CanvasChatOverlay.js");
+      mod.openCanvasChat();
+    } catch (e) {
+      console.error("[CanvasChat] failed to open:", e);
     }
   });
 }
