@@ -12267,6 +12267,37 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "tool_use_id correlates the round-trip");
     });
 
+    it("V-CHAT-16 · buildRequest('anthropic') with cacheControl indices emits body.system as content-block array with cache_control marker on the prefix block", () => {
+      const req = buildRequest("anthropic", {
+        baseUrl: "/api/anthropic",
+        model:   "claude-opus-4-7",
+        apiKey:  "sk-test",
+        // Indices 0+1 are stable system; index 2 is volatile (engagement snapshot).
+        messages: [
+          { role: "system", content: "ROLE block (stable)" },
+          { role: "system", content: "CONTRACT block (stable)" },
+          { role: "system", content: "ENGAGEMENT snapshot (volatile)" },
+          { role: "user",   content: "q?" }
+        ],
+        cacheControl: [1]   // mark up to and including the contract block (index 1)
+      });
+      // body.system must be an array (not a flat string) so individual blocks
+      // can carry cache_control. Two system blocks BEFORE index 2 (volatile)
+      // get folded into the cached prefix; the volatile block stays unmarked.
+      assert(Array.isArray(req.body.system),
+        "body.system is an array of content blocks (required for cache_control)");
+      assertEqual(req.body.system.length, 3,
+        "all three system messages preserved as separate blocks");
+      assertEqual(req.body.system[0].type, "text", "block 0 is text");
+      assertEqual(req.body.system[1].type, "text", "block 1 is text");
+      assert(req.body.system[1].cache_control && req.body.system[1].cache_control.type === "ephemeral",
+        "block 1 (last cached prefix index) carries ephemeral cache_control marker");
+      assert(!req.body.system[0].cache_control,
+        "block 0 has NO marker (only the LAST cached index gets the marker; everything before is implicitly cached up to it)");
+      assert(!req.body.system[2].cache_control,
+        "block 2 (volatile engagement) has NO marker");
+    });
+
     it("V-CHAT-15 · realChatProvider with Anthropic-shape stub fetch yields tool_use event then completes the round-trip via streamChat", async () => {
       const { createRealChatProvider } = await import("../services/realChatProvider.js");
       _resetChatEnv();

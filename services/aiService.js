@@ -179,20 +179,40 @@ export function buildRequest(providerKind, opts) {
     };
   }
   if (providerKind === "anthropic") {
-    var sys = "";
+    // Walk messages preserving original indices so cacheControl[] (which
+    // names indices into the full message list) maps cleanly onto the
+    // resulting system blocks.
+    var systemBlocks = [];          // [{ type:"text", text, cache_control? }]
     var nonSystem = [];
-    messages.forEach(function(m) {
-      // System content collapsed; only string-typed system content is
-      // foldable. Array-content system messages are not part of v3.
-      if (m.role === "system") { sys = (sys ? sys + "\n\n" : "") + m.content; }
-      else                     { nonSystem.push({ role: m.role, content: m.content }); }
+    var cacheIdxSet = (Array.isArray(opts.cacheControl) ? opts.cacheControl : [])
+      .reduce(function(acc, i) { acc[i] = true; return acc; }, {});
+    messages.forEach(function(m, idx) {
+      if (m.role === "system") {
+        var block = { type: "text", text: m.content };
+        if (cacheIdxSet[idx]) block.cache_control = { type: "ephemeral" };
+        systemBlocks.push(block);
+      } else {
+        nonSystem.push({ role: m.role, content: m.content });
+      }
     });
     var body = {
       model: model,
       max_tokens: 1024,
       messages: nonSystem
     };
-    if (sys) body.system = sys;
+    if (systemBlocks.length > 0) {
+      // SPEC §S20.19 — emit content-block array when ANY block carries a
+      // cache_control marker so Anthropic honors per-block caching. When
+      // no markers exist (non-Anthropic dispatch path, or cacheControl
+      // omitted), collapse to the legacy single-string system field for
+      // smaller payloads.
+      var anyCacheMarker = systemBlocks.some(function(b) { return !!b.cache_control; });
+      if (anyCacheMarker) {
+        body.system = systemBlocks;
+      } else {
+        body.system = systemBlocks.map(function(b) { return b.text; }).join("\n\n");
+      }
+    }
     // SPEC §S20.18 + RULES §16 CH19 — Anthropic tool-use round-trip.
     // Caller passes the wire-shape tools array (name + description +
     // input_schema only; chatService strips `invoke` before this point).

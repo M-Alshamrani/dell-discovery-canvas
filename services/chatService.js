@@ -106,7 +106,7 @@ export async function streamChat(opts) {
   );
 
   // First provider call.
-  const round1 = await streamOneRound(provider, baseMessages, onToken);
+  const round1 = await streamOneRound(provider, baseMessages, onToken, systemPrompt.cacheControl);
 
   // If the provider emitted a tool_use, resolve + send tool_result back.
   let finalResponse = round1.text;
@@ -143,7 +143,7 @@ export async function streamChat(opts) {
       { role: "user",      content: userBlocks }
     ]);
 
-    const round2 = await streamOneRound(provider, followupMessages, onToken);
+    const round2 = await streamOneRound(provider, followupMessages, onToken, systemPrompt.cacheControl);
     finalResponse = round2.text;
   }
 
@@ -194,10 +194,10 @@ export async function streamChat(opts) {
 // accumulated text + at most one tool_use envelope. v1 enforces "at
 // most one tool_use" per round per CH10; if the provider emits more,
 // only the first is honored.
-async function streamOneRound(provider, messages, onToken) {
+async function streamOneRound(provider, messages, onToken, cacheControl) {
   let text = "";
   let toolUse = null;
-  const iter = provider.stream({ messages, tools: CHAT_TOOLS });
+  const iter = provider.stream({ messages, tools: CHAT_TOOLS, cacheControl: cacheControl || [] });
   for await (const evt of iter) {
     if (!evt) continue;
     if (evt.kind === "text" && typeof evt.token === "string") {

@@ -59,10 +59,17 @@ export function createRealChatProvider(opts) {
         ? toWireTools(call && call.tools)
         : [];
 
+      // SPEC §S20.19 — cacheControl indices flow from systemPromptAssembler
+      // through chatService into the wire builder, so the Anthropic stable
+      // prefix gets `cache_control: ephemeral` on every turn (5-min TTL).
+      // Caching savings only apply for anthropic; other providers ignore.
+      const cacheControl = (call && Array.isArray(call.cacheControl)) ? call.cacheControl : [];
+
       callsRecorded.push({
         messages,
-        tools: wireTools,
-        at:    new Date().toISOString()
+        tools:        wireTools,
+        cacheControl: cacheControl,
+        at:           new Date().toISOString()
       });
 
       let response;
@@ -75,6 +82,7 @@ export function createRealChatProvider(opts) {
           apiKey:         providerConfig.apiKey || "",
           messages,
           tools:          wireTools.length > 0 ? wireTools : undefined,
+          cacheControl:   cacheControl.length > 0 ? cacheControl : undefined,
           fetchImpl:      providerConfig.fetchImpl
         });
       } catch (e) {
