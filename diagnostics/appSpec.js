@@ -13186,6 +13186,56 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
           "migrateSkillToV31 is idempotent for v3.1 input");
       });
 
+      it("V-SKILL-V3-6 · ui/views/CanvasChatOverlay.js right-rail population: imports loadV3Skills + resolveTemplate; renders skill cards (head + form host); click drops resolved prompt into .canvas-chat-input (per SPEC §S29.5)", async () => {
+        const src = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
+
+        // Required imports for the rail population path.
+        assert(/import\s*\{\s*loadV3Skills\s*\}\s*from\s*"\.\.\/\.\.\/state\/v3SkillStore\.js"/.test(src),
+          "loadV3Skills imported from v3SkillStore");
+        assert(/import\s*\{\s*resolveTemplate\s*\}\s*from\s*"\.\.\/\.\.\/services\/pathResolver\.js"/.test(src),
+          "resolveTemplate imported from pathResolver");
+
+        // The painter + builders that materialize cards.
+        assert(/function\s+paintSkillRail\s*\(/.test(src),
+          "paintSkillRail() defined");
+        assert(/function\s+buildSkillCard\s*\(/.test(src),
+          "buildSkillCard() defined");
+        assert(/function\s+buildParameterForm\s*\(/.test(src),
+          "buildParameterForm() defined");
+        assert(/function\s+dropResolvedPromptIntoInput\s*\(/.test(src),
+          "dropResolvedPromptIntoInput() defined");
+
+        // Markup contracts the smoke test (and DOM consumers) rely on.
+        assert(/canvas-chat-rail-card/.test(src),
+          "card markup class present");
+        assert(/canvas-chat-rail-card-head/.test(src),
+          "card head class present");
+        assert(/canvas-chat-rail-card-form/.test(src),
+          "card inline-form host class present");
+        assert(/canvas-chat-rail-use-btn|canvas-chat-rail-form-actions/.test(src),
+          "Use-skill button surface present");
+
+        // The drop-into-input handshake (resolved prompt → chat textarea).
+        assert(/\.canvas-chat-input/.test(src),
+          "drops resolved prompt into the .canvas-chat-input textarea");
+        assert(/resolveTemplate\(/.test(src),
+          "calls resolveTemplate on click");
+
+        // Empty state + populated state both branch on loadV3Skills.
+        assert(/loadV3Skills\(\)/.test(src),
+          "loadV3Skills called to enumerate saved skills");
+
+        // entityId parameter dropdowns must source options from the
+        // engagement (gaps / drivers / environments / instances).
+        assert(/entityKindKeyFromHint|entityKindKeyFromName/.test(src),
+          "entityId parameters resolve their collection via the hint helpers");
+
+        // The painter is wired into buildBody so the rail is populated
+        // when the overlay opens (not just lazily on toggle).
+        assert(/paintSkillRail\(body\)/.test(src),
+          "paintSkillRail invoked from buildBody on overlay open");
+      });
+
       it("V-SKILL-V3-5 · ui/views/SkillBuilder.js source: chip palette + scope picker + entity-kind dropdown + 1-2-3 wizard removed; parameters editor + outputTarget radio + migrateSkillToV31 import present (per SPEC §S29.4)", async () => {
         const src = await (await fetch("/ui/views/SkillBuilder.js")).text();
 

@@ -35,6 +35,11 @@ import { confirmAction }                       from "../components/Notify.js";
 // marked v13 escapes raw HTML by default; we add a defensive sanitize step
 // for javascript: URLs after parsing.
 import { marked }                              from "../../vendor/marked/marked.min.js";
+// rc.3 #5 (SPEC §S29.5) — chat right-rail populated with saved v3.1 skills.
+// Click a card → mini parameter form (or one-shot drop for parameter-less
+// skills) → resolved prompt drops into the chat input.
+import { loadV3Skills }                        from "../../state/v3SkillStore.js";
+import { resolveTemplate }                     from "../../services/pathResolver.js";
 
 // Module-scope state for the open overlay. Only one chat overlay is
 // open at a time; Overlay.js enforces the singleton pattern.
@@ -163,8 +168,10 @@ function buildBody() {
   });
 
   // ── Right rail (Skills) ────────────────────────────────────────
-  // Scaffolded for Phase 4 — currently a placeholder. The rail is
-  // hidden by default; the head-extras toggle flips .is-open.
+  // rc.3 #5 (SPEC §S29.5) — populated with saved v3.1 skills. The rail
+  // is hidden by default; the head-extras toggle flips .is-open. Click
+  // a skill card → mini parameter form (or one-shot drop for parameter-
+  // less skills) → resolved prompt populates the chat input.
   const rail = document.createElement("aside");
   rail.className = "canvas-chat-rail";
   rail.setAttribute("data-canvas-chat-rail", "");
@@ -173,14 +180,257 @@ function buildBody() {
       '<div class="canvas-chat-rail-eyebrow">Shortcuts</div>' +
       '<div class="canvas-chat-rail-title">Skills</div>' +
     '</div>' +
-    '<div class="canvas-chat-rail-body">' +
-      '<div class="canvas-chat-rail-empty">' +
-        'Saved skills will appear here as one-click shortcuts. Click any skill to drop a pre-filled prompt into the chat.' +
-      '</div>' +
-    '</div>';
+    '<div class="canvas-chat-rail-body" data-canvas-chat-rail-body></div>';
   body.appendChild(rail);
+  paintSkillRail(body);
 
   return body;
+}
+
+// paintSkillRail — renders saved-skill cards into the right rail.
+// Called on overlay open and after a skill is run (so future cards
+// reflect the persistent state). Empty state surfaces a friendly hint
+// pointing at the Skill Builder.
+function paintSkillRail(body) {
+  const railBody = body.querySelector("[data-canvas-chat-rail-body]");
+  if (!railBody) return;
+  railBody.innerHTML = "";
+
+  const skillsById = loadV3Skills();
+  const ids = Object.keys(skillsById);
+
+  if (ids.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "canvas-chat-rail-empty";
+    empty.textContent = "Saved skills will appear here as one-click shortcuts. Author one in the Skill Builder, then return here to invoke it.";
+    railBody.appendChild(empty);
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "canvas-chat-rail-list";
+  for (const id of ids) {
+    list.appendChild(buildSkillCard(skillsById[id], body));
+  }
+  railBody.appendChild(list);
+}
+
+// buildSkillCard — one card per saved skill. Click → expand inline
+// parameter form; "Use" submits resolved prompt to the chat input.
+function buildSkillCard(skill, body) {
+  const card = document.createElement("div");
+  card.className = "canvas-chat-rail-card";
+  card.setAttribute("data-canvas-chat-rail-card", "");
+  card.setAttribute("data-skill-id", skill.skillId);
+
+  const head = document.createElement("button");
+  head.type = "button";
+  head.className = "canvas-chat-rail-card-head";
+  const title = document.createElement("div");
+  title.className = "canvas-chat-rail-card-title";
+  title.textContent = skill.label || skill.skillId;
+  head.appendChild(title);
+  if (skill.description) {
+    const desc = document.createElement("div");
+    desc.className = "canvas-chat-rail-card-desc";
+    desc.textContent = skill.description;
+    head.appendChild(desc);
+  }
+  const meta = document.createElement("div");
+  meta.className = "canvas-chat-rail-card-meta";
+  const paramCount = (skill.parameters || []).length;
+  meta.textContent = paramCount === 0
+    ? "Engagement-wide · click to use"
+    : paramCount + " parameter" + (paramCount === 1 ? "" : "s");
+  head.appendChild(meta);
+  card.appendChild(head);
+
+  const formHost = document.createElement("div");
+  formHost.className = "canvas-chat-rail-card-form";
+  formHost.style.display = "none";
+  card.appendChild(formHost);
+
+  head.addEventListener("click", function() {
+    const isOpen = formHost.style.display !== "none";
+    // Close every other open card so only one form is visible.
+    body.querySelectorAll(".canvas-chat-rail-card-form").forEach(function(f) {
+      f.style.display = "none";
+      f.innerHTML = "";
+    });
+    body.querySelectorAll(".canvas-chat-rail-card").forEach(function(c) {
+      c.classList.remove("is-open");
+    });
+    if (isOpen) return;   // toggle close
+
+    if (paramCount === 0) {
+      // Parameter-less skill: resolve immediately and drop into input.
+      dropResolvedPromptIntoInput(skill, {}, body);
+      return;
+    }
+    // Parameterized skill: render the inline form.
+    card.classList.add("is-open");
+    formHost.style.display = "";
+    formHost.appendChild(buildParameterForm(skill, body, formHost));
+  });
+
+  return card;
+}
+
+function buildParameterForm(skill, body, formHost) {
+  const form = document.createElement("form");
+  form.className = "canvas-chat-rail-form";
+  const eng = getActiveEngagement();
+
+  const values = {};
+  for (const p of (skill.parameters || [])) {
+    const field = document.createElement("label");
+    field.className = "canvas-chat-rail-field";
+    const lbl = document.createElement("span");
+    lbl.className = "canvas-chat-rail-field-label";
+    lbl.textContent = p.description || p.name;
+    if (p.required) {
+      const req = document.createElement("span");
+      req.className = "canvas-chat-rail-field-required";
+      req.textContent = " *";
+      lbl.appendChild(req);
+    }
+    field.appendChild(lbl);
+
+    if (p.type === "entityId") {
+      const sel = document.createElement("select");
+      sel.className = "canvas-chat-rail-field-input";
+      const kindKey = entityKindKeyFromHint(p.description) || entityKindKeyFromName(p.name);
+      const collection = (kindKey && eng && eng[kindKey]) || null;
+      const allIds = (collection && collection.allIds) || [];
+      sel.innerHTML = '<option value="">— pick —</option>' +
+        allIds.map(function(id) {
+          const ent = collection.byId[id] || {};
+          const text = ent.label || ent.name || ent.description || id;
+          return '<option value="' + escapeAttr(id) + '">' + escapeText(String(text).slice(0, 60)) + '</option>';
+        }).join("");
+      if (allIds.length === 0) {
+        sel.disabled = true;
+        sel.innerHTML = '<option value="">no ' + (kindKey || "entities") + ' loaded</option>';
+      }
+      sel.addEventListener("change", function(e) { values[p.name] = e.target.value; });
+      field.appendChild(sel);
+    } else {
+      const inp = document.createElement("input");
+      inp.type = p.type === "number" ? "number" : "text";
+      inp.className = "canvas-chat-rail-field-input";
+      inp.placeholder = p.type === "boolean" ? "true / false" : p.type;
+      inp.addEventListener("input", function(e) {
+        values[p.name] = p.type === "number"
+          ? (e.target.value === "" ? "" : Number(e.target.value))
+          : (p.type === "boolean" ? /^true$/i.test(e.target.value) : e.target.value);
+      });
+      field.appendChild(inp);
+    }
+    form.appendChild(field);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "canvas-chat-rail-form-actions";
+  const useBtn = document.createElement("button");
+  useBtn.type = "submit";
+  useBtn.className = "btn-primary canvas-chat-rail-use-btn";
+  useBtn.textContent = "Use skill";
+  actions.appendChild(useBtn);
+  form.appendChild(actions);
+
+  const errEl = document.createElement("div");
+  errEl.className = "canvas-chat-rail-form-error";
+  errEl.style.display = "none";
+  form.appendChild(errEl);
+
+  form.addEventListener("submit", function(e) {
+    e.preventDefault();
+    // Validate required params filled.
+    const missing = (skill.parameters || []).filter(function(p) {
+      return p.required && (values[p.name] === undefined || values[p.name] === "" || values[p.name] === null);
+    });
+    if (missing.length > 0) {
+      errEl.style.display = "";
+      errEl.textContent = "Missing: " + missing.map(function(p) { return p.name; }).join(", ");
+      return;
+    }
+    errEl.style.display = "none";
+    dropResolvedPromptIntoInput(skill, values, body);
+    // Close the form once dropped.
+    formHost.style.display = "none";
+    formHost.innerHTML = "";
+    const card = formHost.closest(".canvas-chat-rail-card");
+    if (card) card.classList.remove("is-open");
+  });
+
+  return form;
+}
+
+// dropResolvedPromptIntoInput — resolves the skill template against the
+// active engagement + the supplied parameter values, and drops the
+// resolved string into the chat input. The user clicks Send to actually
+// dispatch the message; this matches the example-prompt UX so the user
+// always sees what's being sent before send.
+function dropResolvedPromptIntoInput(skill, paramValues, body) {
+  const eng = getActiveEngagement() || {};
+  const ctx = {
+    engagement:     eng,
+    customer:       eng.customer || {},
+    engagementMeta: eng.meta || {},
+    catalogVersions: eng.catalogVersions || {}
+  };
+  // Bind parameter primitives directly, and entityId parameters under
+  // ctx.context.<name>.<field> so {{context.<name>.field}} resolves.
+  for (const p of (skill.parameters || [])) {
+    if (!(p.name in paramValues)) continue;
+    ctx[p.name] = paramValues[p.name];
+    if (p.type === "entityId") {
+      const kindKey = entityKindKeyFromHint(p.description) || entityKindKeyFromName(p.name);
+      const ent = kindKey && eng[kindKey] && eng[kindKey].byId && eng[kindKey].byId[paramValues[p.name]];
+      if (ent) {
+        if (!ctx.context) ctx.context = {};
+        ctx.context[p.name] = ent;
+      }
+    }
+  }
+  const resolved = resolveTemplate(skill.promptTemplate || "", ctx, { skillId: skill.skillId });
+  const input = body.querySelector(".canvas-chat-input");
+  if (input) {
+    input.value = resolved;
+    input.dispatchEvent(new Event("input"));
+    input.focus();
+  }
+}
+
+// Map a parameter description hint to an engagement collection key
+// (mirrors the same helper in ui/views/SkillBuilder.js so the rail
+// resolves entityId parameters with the same convention).
+function entityKindKeyFromHint(description) {
+  if (typeof description !== "string") return null;
+  const lower = description.toLowerCase();
+  if (lower.includes("gap"))         return "gaps";
+  if (lower.includes("driver"))      return "drivers";
+  if (lower.includes("environment")) return "environments";
+  if (lower.includes("instance"))    return "instances";
+  return null;
+}
+
+function entityKindKeyFromName(name) {
+  if (typeof name !== "string") return null;
+  const lower = name.toLowerCase();
+  if (lower === "gap"         || lower === "gapid")         return "gaps";
+  if (lower === "driver"      || lower === "driverid")      return "drivers";
+  if (lower === "environment" || lower === "environmentid") return "environments";
+  if (lower === "instance"    || lower === "instanceid")    return "instances";
+  return null;
+}
+
+function escapeAttr(s) {
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+}
+function escapeText(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function buildFooter() {
