@@ -346,9 +346,9 @@ No specific regression test (cosmetic).
 
 ---
 
-## BUG-013 · Canvas Chat output leaks UUIDs / internal field names / version markers in user-facing prose
+## BUG-013 · Canvas Chat output leaks UUIDs / internal field names / version markers in user-facing prose (CLOSED — Path A + Path B both shipped)
 
-**Status**: OPEN · Reported 2026-05-02 PM · v3.0.0-rc.2 · Scheduled NEXT (Path A polish)
+**Status**: **CLOSED 2026-05-03** · Path A shipped at commit `d324971` (anti-leakage role section + selector label enrichment; V-CHAT-20/21/22). Path B shipped at commit `66810c6` (rc.3 #10) as runtime UUID-to-label scrub via `services/uuidScrubber.js` applied at chat onComplete + streaming-time onToken; defense-in-depth on top of Path A. **Regression guards**: V-CHAT-20/21/22 (Path A) + V-CHAT-36/37/38 (Path B). Internal field-name + version-marker leakage covered by V-CHAT-20 role-section directives + V-NAME-2 UI-string source-grep; runtime scrub for those classes deferred (they appear too often in legitimate code blocks for a regex scrub to be safe).
 **Reporter**: User (workshop validation after BUG-012 fix landed)
 **Severity**: Low (cosmetic — not data-correctness; explicitly flagged "non-critical" by user)
 **Regression**: No (pre-existing surface from v3.0.0-rc.2 chat-perfection landing)
@@ -535,9 +535,9 @@ This is the kind of bug where the app appears completely broken to the user, eve
 
 ---
 
-## BUG-020 · Handshake `[contract-ack v3.0 sha=...]` STILL leaks intermittently in chat (re-opened after BUG-016)
+## BUG-020 · Handshake `[contract-ack v3.0 sha=...]` STILL leaks intermittently in chat (CLOSED — streaming-time strip shipped)
 
-**Status**: OPEN · Reported 2026-05-02 LATE EVENING · v3.0.0-rc.2 · Scheduled NEXT
+**Status**: **CLOSED 2026-05-03** · Architectural fix shipped at commit `987c7e7` (rc.3 #9). NEW `services/chatHandshake.js` module exports `HANDSHAKE_RE` + `HANDSHAKE_STRIP_RE` + `stripHandshake(text)` helper as a single source-of-truth; `chatService` + `chatMemory` + `CanvasChatOverlay.onToken` all import from the shared module. The streaming-time strip (in onToken, before renderAssistantMarkdown) closes the residual leak path that Pre-fix only handled at onComplete. System-prompt role section also reinforced with a CRITICAL ANTI-LEAK RULE forbidding emission on subsequent turns. **Regression guards**: V-CHAT-33 (single-source-of-truth pattern, no inline regex copies) + V-CHAT-34 (stripHandshake idempotency + bracket-omitted + markdown-emphasis variants) + V-CHAT-35 (onToken-applies-stripHandshake-before-renderAssistantMarkdown structural test).
 **Reporter**: User (workshop validation; third report)
 **Severity**: Low (cosmetic; not data-correctness; user explicit "don't break working chat to fix this now")
 **Regression**: BUG-015 + BUG-016 fixes covered: subsequent-turn strip, bracket-optional regex, chatMemory backfill heal. Some path STILL surfaces it.
@@ -633,9 +633,9 @@ Track inside the existing Phase 4 + Phase 5 commits. Each polish item gets a sin
 
 ---
 
-## BUG-023 · Skill-save validator rejects `{{context.<param>.layerId}}` even though the field resolves at run time
+## BUG-023 · Skill-save validator rejects `{{context.<param>.layerId}}` even though the field resolves at run time (CLOSED — gapPathManifest exposes layerId + gapType)
 
-**Status**: OPEN · Reported 2026-05-03 (rc.3 #4 smoke) · v3.0.0-rc.3-dev · Scheduled rc.3 polish bucket
+**Status**: **CLOSED 2026-05-03** · Architectural fix shipped at commit `7cf20ec` (rc.3 #11). `schema/gap.js` `gapPathManifest` now exposes `context.gap.layerId` + `context.gap.gapType` as enum-typed own-paths, so the dell-mapping seed prompt template (and any user skill referencing layer / gap-type fields) validates without "not in the manifest" errors. V-MFG-1 locked snapshot regenerated (8744 → 9106 bytes; hash 3a217459 → 709fe1c2; gap ownPaths 5 → 7). **Regression guards**: V-PATH-31 (gapPathManifest exposes both fields with correct type tag) + V-PATH-32 (integration: skill-save validator no longer rejects the user repro template). Browser smoke verified (Validate panel: "✓ Template paths valid; ready to save.").
 **Reporter**: rc.3 #4 SkillBuilder rebuild smoke (browser smoke per PREFLIGHT.md item 5)
 **Severity**: Low (run path works; only the **save-time validate** preview surfaces a false negative — same outcome user sees after rc.3 #4 lifts the chip-palette guardrail)
 **Regression**: No — pre-existing manifest-generator gap. The v3.0 SkillBuilder hid this by building paths via the chip palette (which only offered manifest-allowlisted paths). The v3.1 builder lets the user (or a migrated seed) reference any field, exposing the manifest-incomplete state.
