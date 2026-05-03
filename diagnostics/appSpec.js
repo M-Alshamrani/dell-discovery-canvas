@@ -13188,6 +13188,53 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 
     });
 
+    // -----------------------------------------------------------------
+    // V-VERSION-1..2 · APP_VERSION discipline (per SPEC §S30 + RULES §16 CH24)
+    // Authored 2026-05-03 after the rc.2-tag freeze drift (18 commits past
+    // tag without bumping APP_VERSION). Catches:
+    //   - Malformed APP_VERSION (V-VERSION-1)
+    //   - Hard-coded chip values that drift from the APP_VERSION export
+    //     (V-VERSION-2)
+    // V-VERSION-3 is the manual browser smoke per PREFLIGHT.md item 5
+    // (chip displays the same value as APP_VERSION at tag time).
+    // -----------------------------------------------------------------
+    describe("§T30 · V-VERSION · APP_VERSION discipline", () => {
+
+      it("V-VERSION-1 · core/version.js APP_VERSION matches semver shape with optional -rc.N + -dev suffixes (per SPEC §S30.1)", async () => {
+        const versionMod = await import("../core/version.js");
+        assert(typeof versionMod.APP_VERSION === "string" && versionMod.APP_VERSION.length > 0,
+          "APP_VERSION export is a non-empty string");
+        // Allowed shapes:
+        //   3.0.0                  (release)
+        //   3.0.0-rc.2             (rc tag)
+        //   3.0.0-rc.2-dev         (between rc.2 and rc.3)
+        //   3.0.0-dev              (pre-first-rc dev)
+        const SEMVER_RE = /^\d+\.\d+\.\d+(-rc\.\d+)?(-dev)?$|^\d+\.\d+\.\d+-dev$/;
+        assert(SEMVER_RE.test(versionMod.APP_VERSION),
+          "APP_VERSION must match semver lifecycle pattern (got: '" + versionMod.APP_VERSION + "')");
+      });
+
+      it("V-VERSION-2 · app.js wires the topbar version chip from the APP_VERSION import (no hard-coded version strings outside core/version.js)", async () => {
+        const appSrc = await (await fetch("/app.js")).text();
+        // Required: the chip element id="appVersionChip" gets its textContent
+        // built from the APP_VERSION import + a literal "Canvas v" prefix.
+        assert(/import\s*\{[^}]*APP_VERSION[^}]*\}\s*from\s*["']\.\/core\/version\.js["']/.test(appSrc),
+          "app.js imports APP_VERSION from core/version.js");
+        assert(/getElementById\(["']appVersionChip["']\)/.test(appSrc),
+          "app.js looks up the chip element by id='appVersionChip'");
+        assert(/textContent\s*=\s*["']Canvas v["']\s*\+\s*APP_VERSION/.test(appSrc),
+          "chip.textContent is built as 'Canvas v' + APP_VERSION (NOT a hard-coded string)");
+
+        // Anti-pattern: no hard-coded "Canvas v3..." literal outside
+        // the version.js comment header. Catches drift where someone
+        // copy-pasted the version into app.js or index.html.
+        const indexSrc = await (await fetch("/index.html")).text();
+        assert(!/Canvas v\d+\.\d+\.\d+/.test(indexSrc.replace(/<!--[^>]*-->/g, "")),
+          "index.html must NOT carry a hard-coded 'Canvas vX.Y.Z' string in rendered text (template uses 'Canvas v.' as a placeholder)");
+      });
+
+    });
+
     it("V-CHAT-26 · BUG-017 guard: chat overlay header has connection-status chip (no Mock toggle); chip text reflects active provider", async () => {
       // Source-grep — the overlay file must NOT carry a 'Mock' provider
       // toggle in its head-extras anymore. The new chip must be present.

@@ -1,6 +1,16 @@
 # Dell Discovery Canvas , Session Handoff
 
-**Last session end**: 2026-05-02 (LATE EVENING — extended). **v3.0.0-rc.2 TAGGED + PUSHED + 14 hotfixes / architecture commits shipped on top.** APP_VERSION = `3.0.0-rc.2`. **Banner 1079/1079 GREEN ✅** (was 1048 at rc.2 tag; +31 net tests this session).
+**Last session end**: 2026-05-03 (early). **v3.0.0-rc.2 TAGGED + 22 commits past tag (3-phase AI architecture + Skill v3.1 schema + recovery)**. APP_VERSION = `3.0.0-rc.3-dev` (per SPEC §S30 / RULES §16 CH24). **Banner 1085/1085 GREEN ✅** (was 1048 at rc.2 tag; +37 net tests across both sessions).
+
+**State**: actively in the rc.3-dev period. Tag `v3.0.0-rc.3` lands when rc.3 #4-#7 of SPEC §S29.9 ships (Skill Builder UI rebuild + chat right-rail population + UseAiButton retirement + top-bar consolidation). See `docs/RELEASE_NOTES_rc3-dev.md` for the full ledger of what's in flight.
+
+**Recovery 2026-05-03 (early)** — closed the rc.2-tag freeze drift surfaced 2026-05-02 LATE EVENING (18 commits past tag without bumping `APP_VERSION` left the topbar chip displaying `Canvas v3.0.0-rc.2` while HEAD diverged). Recovery shipped:
+- R1: `APP_VERSION` → `3.0.0-rc.3-dev` + V-VERSION-1 (semver shape) + V-VERSION-2 (source-grep ensures app.js wires the chip via the import) + SPEC §S30 + RULES §16 CH24.
+- R2: `docs/PREFLIGHT.md` — durable 8-item checklist artifact gating every tag commit (per-arc subset + tag-only items).
+- R3: `docs/RELEASE_NOTES_rc3-dev.md` — captures the 22 in-flight commits + remaining rc.3 work.
+- R4: this rewrite.
+
+**Per-commit discipline was rigorous; per-arc-past-tag wasn't.** The recovery makes both checkable. PREFLIGHT.md + V-VERSION + RULES §16 CH24 close the gap so this drift can't recur.
 
 **3-PHASE AI ARCHITECTURE PLAN: COMPLETE.** Chat surface is now data-aware + concept-aware + app-aware, vendor-neutral (OpenAI canonical lingua franca with Anthropic + Gemini translation shims), with 5-round multi-tool chaining across all providers. The LLM has THREE grounding layers:
 - **Structural** (`core/dataContract.js`) — entities, relationships, invariants, FKs, catalogs, bindablePaths, analyticalViews

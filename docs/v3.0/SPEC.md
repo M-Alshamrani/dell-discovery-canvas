@@ -2873,6 +2873,57 @@ Per the user's pacing direction, the rc.3 arc lands in 5-7 commits over multiple
 | 6 | UseAiButton retirement + V-SKILL-V3-7 + V-ANTI-USE-AI source-grep | Low |
 | 7 (Phase 5) | Top-bar consolidation + Lab tab deprecation + HANDOFF rewrite | Low |
 
+---
+
+## §S30 · APP_VERSION discipline + pre-flight checklist
+
+**Status**: NEW 2026-05-03 (early). SPEC-only annex. Authored as the architectural fix for the meta-discipline drift surfaced 2026-05-02 LATE EVENING: 18 commits shipped past the v3.0.0-rc.2 tag without bumping `APP_VERSION`, leaving the runtime version chip displaying "Canvas v3.0.0-rc.2" while HEAD diverged with significant features (Phase A/B/C + Skill v3.1 schema migration + 7 BUG fixes).
+
+The drift wasn't a code bug — every per-commit assertion passed. It was a **process gap**: the existing `feedback_spec_and_test_first.md` pre-flight checklist (locked memory) was applied per-commit but not per-arc-past-tag. This annex makes the discipline durable + checkable.
+
+### S30.1 · APP_VERSION semantics
+
+`core/version.js` exports `APP_VERSION` — the single runtime-visible source of truth for what build is running. It MUST follow this lifecycle:
+
+| State | APP_VERSION value | When |
+|---|---|---|
+| Tagged release | `<X>.<Y>.<Z>` | At the moment the GA tag is created (e.g., `3.0.0`) |
+| Tagged release candidate | `<X>.<Y>.<Z>-rc.<N>` | At the moment an rc tag is created (e.g., `3.0.0-rc.2`) |
+| In-development (between tags) | `<X>.<Y>.<Z>-rc.<N>-dev` | EVERY commit after a tag, until the next tag is created |
+| Pre-first-release dev | `<X>.<Y>.<Z>-dev` | Before the first rc/release tag of a major version |
+
+**Rule R30.1 (DURABLE)**: When the very first commit past a tag lands, `APP_VERSION` MUST be bumped to add the `-dev` suffix. Failure to do so creates the drift symptom (visible chip displays the tag value while HEAD has diverged).
+
+**Rule R30.2**: At tag creation, `APP_VERSION` MUST exactly equal the tag name. The tag commit drops the `-dev` suffix in the same change.
+
+### S30.2 · Pre-flight checklist (durable artifact)
+
+Captured in `docs/PREFLIGHT.md` (NEW). Every tag commit MUST cite which items were verified:
+
+1. **APP_VERSION** equals the intended tag name (no `-dev` suffix at tag time)
+2. **SPEC §9 phase block** updated for the release scope
+3. **RULES** updated (any new CH-rules added in this arc)
+4. **V-* tests** RED-first → GREEN for every new feature in the arc
+5. **Browser smoke** done against the Acme Healthcare demo for the headline features
+6. **RELEASE_NOTES** capturing what's in the tag (under `docs/RELEASE_NOTES_<tag>.md`)
+7. **HANDOFF.md** rewritten so a fresh session can pick up cleanly
+8. **Banner XX/XX GREEN** at tag time (no RED tests)
+
+Between tags (-dev period), items 2-5 + 8 must be ticked per arc; items 1 + 6 + 7 are tag-only.
+
+### S30.3 · V-VERSION test contract
+
+Tests in `docs/v3.0/TESTS.md §T30` (NEW):
+- **V-VERSION-1**: `APP_VERSION` matches semver shape — `/^\d+\.\d+\.\d+(-[a-z0-9.]+(?:-dev)?)?$/`. Catches malformed/empty values.
+- **V-VERSION-2**: `app.js` reads `APP_VERSION` from `core/version.js` AND wires it into the chip via `chip.textContent = "Canvas v" + APP_VERSION` (source-grep). Catches hard-coded chip values that drift from the export.
+- **V-VERSION-3** (manual smoke per PREFLIGHT.md item 5): the topbar version chip displays the same value as `APP_VERSION` — verified by browser inspection at tag time. This isn't a property test; it's the per-tag smoke check.
+
+### S30.4 · Forbidden / out-of-scope
+
+- Hard-coding the version string anywhere outside `core/version.js`. The chip + any UI surface MUST import `APP_VERSION`.
+- Skipping the `-dev` suffix between tags. The version chip is the user's only fast confirmation of what build they're running.
+- Treating `core/version.js` as a doc-only file. It's runtime-visible truth.
+
 ### Change log
 
 | Date | Section | Change |
