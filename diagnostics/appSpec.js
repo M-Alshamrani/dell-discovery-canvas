@@ -6661,7 +6661,6 @@ describe("44 · Phase 19m · v2.5.0 crown-jewel UI rework", () => {
       "/ui/views/SummaryGapsView.js",
       "/ui/views/SummaryRoadmapView.js",
       "/ui/views/ReportingView.js",
-      "/ui/components/UseAiButton.js",
       "/ui/components/Drawer.js",
       "/state/demoSession.js",
       "/core/seedSkills.js",
@@ -13184,6 +13183,69 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         const repassed = migrateSkillToV31(v31);
         assertEqual(JSON.stringify(repassed), JSON.stringify(v31),
           "migrateSkillToV31 is idempotent for v3.1 input");
+      });
+
+      it("V-SKILL-V3-7 · UseAiButton retired: ui/components/UseAiButton.js no longer served; no production .js imports it (regression guard per SPEC §S29.6)", async () => {
+        // The deleted module must 404 at the previously-served path.
+        const useAiResp = await fetch("/ui/components/UseAiButton.js");
+        assert(!useAiResp.ok && useAiResp.status === 404,
+          "UseAiButton.js should 404; got status=" + useAiResp.status);
+      });
+
+      it("V-ANTI-USE-AI · No production .js file imports the retired UseAiButton (per SPEC §S29.6 + RULES §16 CH25)", async () => {
+        // Source-grep the production paths. We cover every path under
+        // ui/views, ui/components, app.js, interactions/, core/, services/,
+        // schema/, selectors/, state/, migrations/. Anything that even
+        // mentions `UseAiButton` outside of a pure comment line is flagged.
+        const FILES = [
+          "/app.js",
+          "/ui/views/ContextView.js",
+          "/ui/views/MatrixView.js",
+          "/ui/views/GapsEditView.js",
+          "/ui/views/SummaryGapsView.js",
+          "/ui/views/SummaryRoadmapView.js",
+          "/ui/views/ReportingView.js",
+          "/ui/views/CanvasChatOverlay.js",
+          "/ui/views/AiAssistOverlay.js",
+          "/ui/views/SkillBuilder.js",
+          "/ui/views/SettingsModal.js",
+          "/ui/components/Drawer.js",
+          "/ui/components/Notify.js",
+          "/ui/components/Overlay.js",
+          "/interactions/skillCommands.js",
+          "/interactions/aiCommands.js",
+          "/interactions/desiredStateSync.js",
+          "/core/skillStore.js",
+          "/core/aiConfig.js",
+          "/core/seedSkills.js",
+          "/core/v3SeedSkills.js",
+          "/services/chatService.js",
+          "/services/skillRunner.js",
+          "/services/manifestGenerator.js",
+          "/services/skillSaveValidator.js",
+          "/state/v3SkillStore.js"
+        ];
+        const offenders = [];
+        for (const f of FILES) {
+          let src;
+          try {
+            const resp = await fetch(f);
+            if (!resp.ok) continue;
+            src = await resp.text();
+          } catch (_e) { continue; }
+          const lines = src.split("\n");
+          for (let i = 0; i < lines.length; i++) {
+            const ln = lines[i];
+            const t = ln.trim();
+            if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) continue;
+            if (/UseAiButton|useAiButton/.test(ln)) {
+              offenders.push(f + ":" + (i + 1) + " · " + t.slice(0, 100));
+            }
+          }
+        }
+        assertEqual(offenders.length, 0,
+          "V-ANTI-USE-AI: production .js files still reference UseAiButton (" +
+          offenders.length + "):\n  " + offenders.join("\n  "));
       });
 
       it("V-SKILL-V3-6 · ui/views/CanvasChatOverlay.js right-rail population: imports loadV3Skills + resolveTemplate; renders skill cards (head + form host); click drops resolved prompt into .canvas-chat-input (per SPEC §S29.5)", async () => {
