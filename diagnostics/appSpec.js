@@ -13872,6 +13872,300 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 
     });
 
+    // -----------------------------------------------------------------
+    // §T32 · V-THEME · Canvas AI Assistant window-theme contract
+    // (per SPEC §S32 + RULES §16 CH28). Authored 2026-05-03 RED-first as
+    // the Arc 1 contract for the Group B UX consolidation arc. Each
+    // V-THEME-N maps to the SPEC's R32.N rule.
+    // -----------------------------------------------------------------
+    describe("§T32 · V-THEME · Canvas AI Assistant window-theme (per SPEC §S32)", () => {
+
+      // Resolve a CSS variable's COMPUTED value (canonicalizes hex to rgb).
+      function getRootVar(varName) {
+        return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+      }
+      // Hex → rgb canonicalization helper (browser computes hex to rgb).
+      function hexToRgb(hex) {
+        const h = hex.replace(/^#/, "");
+        const r = parseInt(h.slice(0, 2), 16);
+        const g = parseInt(h.slice(2, 4), 16);
+        const b = parseInt(h.slice(4, 6), 16);
+        return "rgb(" + r + ", " + g + ", " + b + ")";
+      }
+
+      it("V-THEME-1 · styles.css :root tokens MUST exactly equal the GPLC sample reference set (R32.1 — 6 deltas reconciled)", async () => {
+        const css = await (await fetch("/styles.css")).text();
+        // Source-grep the canonical lines. Each token MUST resolve to the
+        // GPLC value — not the rc.1-era variation.
+        const expectations = [
+          { token: "--canvas-soft", expected: "#FAFBFC" },
+          { token: "--canvas-alt",  expected: "#F4F6F9" },
+          { token: "--rule",        expected: "#E4E8EE" },
+          { token: "--rule-strong", expected: "#CBD2DC" },
+          { token: "--radius-sm",   expected: "3px" },
+          { token: "--radius-md",   expected: "5px" },
+          { token: "--radius-lg",   expected: "8px" }
+        ];
+        const offenders = [];
+        for (const { token, expected } of expectations) {
+          const re = new RegExp("^\\s*" + token.replace(/-/g, "\\-") + ":\\s*([^;]+);", "m");
+          const m = css.match(re);
+          if (!m) { offenders.push(token + " — declaration not found in :root"); continue; }
+          const got = m[1].trim();
+          if (got.toLowerCase() !== expected.toLowerCase()) {
+            offenders.push(token + " — got '" + got + "', expected '" + expected + "'");
+          }
+        }
+        assertEqual(offenders.length, 0,
+          "V-THEME-1: token reconciliation drift:\n  " + offenders.join("\n  "));
+      });
+
+      it("V-THEME-2 · index.html links Inter + JetBrains Mono Google Fonts CSS (R32.2)", async () => {
+        const html = await (await fetch("/index.html")).text();
+        assert(/fonts\.googleapis\.com\/css2\?family=Inter/.test(html),
+          "index.html must link Inter from Google Fonts");
+        assert(/JetBrains\+Mono/.test(html),
+          "index.html must link JetBrains Mono from Google Fonts");
+      });
+
+      it("V-THEME-3 · Canvas AI Assistant overlay panel computed style matches R32.5 (var(--canvas) bg + var(--rule) border + var(--radius-lg) corners)", async () => {
+        // Open the overlay programmatically.
+        _resetOverlayForTests();
+        closeOverlay();
+        const mod = await import("../ui/views/CanvasChatOverlay.js");
+        mod.openCanvasChat();
+
+        const panel = document.querySelector(".overlay[data-kind='canvas-chat']");
+        assert(panel, "V-THEME-3: overlay panel must exist after openCanvasChat()");
+        const style = getComputedStyle(panel);
+
+        // Background = --canvas (white).
+        assertEqual(style.backgroundColor, hexToRgb("#FFFFFF"),
+          "V-THEME-3: panel background MUST be var(--canvas) = white");
+
+        // Border = 1px solid --rule (#E4E8EE).
+        assertEqual(style.borderTopWidth, "1px",
+          "V-THEME-3: panel border-top-width MUST be 1px");
+        assertEqual(style.borderTopColor, hexToRgb("#E4E8EE"),
+          "V-THEME-3: panel border-top-color MUST be var(--rule) = #E4E8EE (got: " + style.borderTopColor + ")");
+
+        // Border-radius = --radius-lg (8px).
+        assertEqual(style.borderRadius, "8px",
+          "V-THEME-3: panel border-radius MUST be var(--radius-lg) = 8px");
+
+        closeOverlay();
+        _resetOverlayForTests();
+      });
+
+      it("V-THEME-4 · Canvas AI Assistant overlay header displays the renamed title 'Canvas AI Assistant' (R32.13)", async () => {
+        _resetOverlayForTests();
+        closeOverlay();
+        const mod = await import("../ui/views/CanvasChatOverlay.js");
+        mod.openCanvasChat();
+
+        const titleEl = document.querySelector(".overlay[data-kind='canvas-chat'] .overlay-title");
+        assert(titleEl, "V-THEME-4: overlay title element must exist");
+        const titleText = (titleEl.textContent || "").trim();
+        assertEqual(titleText, "Canvas AI Assistant",
+          "V-THEME-4: overlay title MUST read 'Canvas AI Assistant' (got: '" + titleText + "')");
+
+        closeOverlay();
+        _resetOverlayForTests();
+      });
+
+      it("V-THEME-5 · Canvas AI Assistant right-rail card hover/active states match R32.7 (Dell-blue-soft fill + Dell-blue border on .is-open)", async () => {
+        _resetOverlayForTests();
+        closeOverlay();
+        // Synthetic card injected directly into the DOM — bypasses the
+        // saveV3Skill-then-paint flow so the test focuses on the CSS
+        // contract, not on the rail population code path. The rail
+        // paint flow is V-SKILL-V3-6's contract.
+        const card = document.createElement("div");
+        card.className = "canvas-chat-rail-card";
+        document.body.appendChild(card);
+        try {
+          // Inactive baseline.
+          const beforeStyle = getComputedStyle(card);
+          // Active state.
+          card.classList.add("is-open");
+          const activeStyle = getComputedStyle(card);
+          // Active border: --dell-blue (#0076CE = rgb(0, 118, 206)).
+          assertEqual(activeStyle.borderTopColor, hexToRgb("#0076CE"),
+            "V-THEME-5: .is-open card border-color MUST be var(--dell-blue) (got: " + activeStyle.borderTopColor + ")");
+          // Active background: --dell-blue-soft (#E8F2FB).
+          assertEqual(activeStyle.backgroundColor, hexToRgb("#E8F2FB"),
+            "V-THEME-5: .is-open card background MUST be var(--dell-blue-soft) (got: " + activeStyle.backgroundColor + ")");
+        } finally {
+          document.body.removeChild(card);
+        }
+      });
+
+      it("V-THEME-6 · Canvas AI Assistant footer chrome matches R32.8 (canvas-soft bg + 1px rule top border + flex justify-content space-between)", async () => {
+        _resetOverlayForTests();
+        closeOverlay();
+        const mod = await import("../ui/views/CanvasChatOverlay.js");
+        mod.openCanvasChat();
+
+        const footer = document.querySelector(".canvas-chat-footer");
+        assert(footer, "V-THEME-6: footer element must exist");
+        const style = getComputedStyle(footer);
+
+        // Background = --canvas-soft (#FAFBFC).
+        assertEqual(style.backgroundColor, hexToRgb("#FAFBFC"),
+          "V-THEME-6: footer background MUST be var(--canvas-soft)");
+
+        // Top border = 1px solid --rule (#E4E8EE).
+        assertEqual(style.borderTopWidth, "1px",
+          "V-THEME-6: footer border-top-width MUST be 1px");
+        assertEqual(style.borderTopColor, hexToRgb("#E4E8EE"),
+          "V-THEME-6: footer border-top-color MUST be var(--rule)");
+
+        // Layout: flex with space-between (so lede/breadcrumb left, actions right).
+        assertEqual(style.display, "flex",
+          "V-THEME-6: footer display MUST be flex");
+        assertEqual(style.justifyContent, "space-between",
+          "V-THEME-6: footer justify-content MUST be space-between");
+        assertEqual(style.alignItems, "center",
+          "V-THEME-6: footer align-items MUST be center (vertical centering)");
+
+        closeOverlay();
+        _resetOverlayForTests();
+      });
+
+      it("V-THEME-7 · Canvas AI Assistant transcript MUST stay dark (#0D1117 bg) while bubble typography matches R32.10 + R32.11", async () => {
+        _resetOverlayForTests();
+        closeOverlay();
+        const mod = await import("../ui/views/CanvasChatOverlay.js");
+        mod.openCanvasChat();
+
+        const scroll = document.querySelector(".canvas-chat-transcript");
+        assert(scroll, "V-THEME-7: transcript scroll area must exist");
+        const scrollStyle = getComputedStyle(scroll);
+        assertEqual(scrollStyle.backgroundColor, hexToRgb("#0D1117"),
+          "V-THEME-7: transcript background MUST stay #0D1117 (the AI working area)");
+
+        // Inject a synthetic assistant + user bubble pair into the
+        // transcript so we can probe the bubble-level typography.
+        const assistantBubble = document.createElement("div");
+        assistantBubble.className = "canvas-chat-msg canvas-chat-msg-assistant";
+        const assistantContent = document.createElement("div");
+        assistantContent.className = "canvas-chat-msg-content";
+        assistantContent.textContent = "Sample assistant bubble.";
+        assistantBubble.appendChild(assistantContent);
+        scroll.appendChild(assistantBubble);
+
+        const userBubble = document.createElement("div");
+        userBubble.className = "canvas-chat-msg canvas-chat-msg-user";
+        const userContent = document.createElement("div");
+        userContent.className = "canvas-chat-msg-content";
+        userContent.textContent = "Sample user bubble.";
+        userBubble.appendChild(userContent);
+        scroll.appendChild(userBubble);
+
+        const aStyle = getComputedStyle(assistantContent);
+        const uStyle = getComputedStyle(userContent);
+
+        // Assistant body color: #C9D1D9 (lower contrast).
+        assertEqual(aStyle.color, hexToRgb("#C9D1D9"),
+          "V-THEME-7: assistant bubble color MUST be #C9D1D9");
+
+        // User body color: #E6EDF3 (higher contrast).
+        assertEqual(uStyle.color, hexToRgb("#E6EDF3"),
+          "V-THEME-7: user bubble color MUST be #E6EDF3");
+
+        // Body size + line-height per R32.11.
+        assertEqual(aStyle.fontSize, "14px",
+          "V-THEME-7: assistant bubble font-size MUST be 14px");
+        assertEqual(aStyle.lineHeight, Math.round(14 * 1.55) + "px",
+          "V-THEME-7: assistant bubble line-height MUST resolve to 14 × 1.55 = " + Math.round(14 * 1.55) + "px");
+
+        scroll.removeChild(assistantBubble);
+        scroll.removeChild(userBubble);
+        closeOverlay();
+        _resetOverlayForTests();
+      });
+
+      it("V-THEME-8 · Canvas AI Assistant markdown rendering — h1/h2/h3 + inline code + fenced code + tables + blockquote computed styles match R32.11", async () => {
+        _resetOverlayForTests();
+        closeOverlay();
+        const mod = await import("../ui/views/CanvasChatOverlay.js");
+        mod.openCanvasChat();
+
+        // Build a synthetic assistant bubble with a representative
+        // markdown sample. The overlay's renderAssistantMarkdown is
+        // applied via marked at runtime; we render directly into the
+        // bubble's innerHTML to skip the streaming flow.
+        const scroll = document.querySelector(".canvas-chat-transcript");
+        assert(scroll, "V-THEME-8: transcript must exist");
+
+        const bubble = document.createElement("div");
+        bubble.className = "canvas-chat-msg canvas-chat-msg-assistant";
+        const content = document.createElement("div");
+        content.className = "canvas-chat-msg-content";
+        content.innerHTML = '<h1>H1 sample</h1>' +
+                            '<h2>H2 sample</h2>' +
+                            '<h3>H3 sample</h3>' +
+                            '<p>Body para with <code>inline code</code>.</p>' +
+                            '<pre><code>fenced\\ncode\\nblock</code></pre>' +
+                            '<table><thead><tr><th>H</th></tr></thead><tbody><tr><td>r</td></tr></tbody></table>' +
+                            '<blockquote>Quote sample</blockquote>';
+        bubble.appendChild(content);
+        scroll.appendChild(bubble);
+
+        // h1 typography: 22px / weight 700 / letter-spacing -0.022em.
+        const h1 = content.querySelector("h1");
+        const h1s = getComputedStyle(h1);
+        assertEqual(h1s.fontSize, "22px", "V-THEME-8: h1 font-size = 22px");
+        assertEqual(h1s.fontWeight, "700", "V-THEME-8: h1 font-weight = 700");
+        assertEqual(h1s.color, hexToRgb("#E6EDF3"), "V-THEME-8: h1 color = #E6EDF3");
+
+        // h2: 18px / weight 600.
+        const h2 = content.querySelector("h2");
+        const h2s = getComputedStyle(h2);
+        assertEqual(h2s.fontSize, "18px", "V-THEME-8: h2 font-size = 18px");
+        assertEqual(h2s.fontWeight, "600", "V-THEME-8: h2 font-weight = 600");
+
+        // h3: 15px / weight 600.
+        const h3 = content.querySelector("h3");
+        const h3s = getComputedStyle(h3);
+        assertEqual(h3s.fontSize, "15px", "V-THEME-8: h3 font-size = 15px");
+
+        // Inline code: JetBrains Mono.
+        const inlineCode = content.querySelector("p code");
+        const icStyle = getComputedStyle(inlineCode);
+        assert(/JetBrains Mono/i.test(icStyle.fontFamily),
+          "V-THEME-8: inline code font-family MUST include 'JetBrains Mono' (got: " + icStyle.fontFamily + ")");
+
+        // Fenced code: monospace + 1px outlined block.
+        const fencedCode = content.querySelector("pre code");
+        const fcStyle = getComputedStyle(fencedCode.parentElement);
+        assert(/JetBrains Mono/i.test(getComputedStyle(fencedCode).fontFamily),
+          "V-THEME-8: fenced code font-family MUST include 'JetBrains Mono'");
+
+        // Blockquote: left-border 4px var(--dell-blue).
+        const bq = content.querySelector("blockquote");
+        const bqStyle = getComputedStyle(bq);
+        assertEqual(bqStyle.borderLeftWidth, "4px",
+          "V-THEME-8: blockquote border-left-width MUST be 4px");
+        assertEqual(bqStyle.borderLeftColor, hexToRgb("#0076CE"),
+          "V-THEME-8: blockquote border-left-color MUST be var(--dell-blue)");
+
+        // Table: top + bottom Dell-blue-edge rule (alpha-tinted).
+        const table = content.querySelector("table");
+        const tStyle = getComputedStyle(table);
+        // 1px solid Dell-blue at low alpha → border-top-width 1px is the assertion shape.
+        assertEqual(tStyle.borderTopWidth, "1px",
+          "V-THEME-8: table border-top-width MUST be 1px");
+        assertEqual(tStyle.borderBottomWidth, "1px",
+          "V-THEME-8: table border-bottom-width MUST be 1px");
+
+        scroll.removeChild(bubble);
+        closeOverlay();
+        _resetOverlayForTests();
+      });
+
+    });
+
     it("V-CHAT-26 · BUG-017 guard: chat overlay header has connection-status chip (no Mock toggle); chip text reflects active provider", async () => {
       // Source-grep — the overlay file must NOT carry a 'Mock' provider
       // toggle in its head-extras anymore. The new chip must be present.

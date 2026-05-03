@@ -88,7 +88,9 @@ export function openCanvasChat() {
   const footer = buildFooter();
 
   openOverlay({
-    title:   "Canvas Chat",
+    // Renamed per SPEC §S32 R32.13 (rc.4-dev / Arc 1) — user-facing string
+    // changes; internal symbols (openCanvasChat, .canvas-chat-* CSS) stay.
+    title:   "Canvas AI Assistant",
     lede:    "Ask anything about your discovery canvas. Grounded in the data model + your live engagement.",
     body:    body,
     footer:  footer,
