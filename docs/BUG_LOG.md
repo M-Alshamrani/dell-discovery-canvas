@@ -675,6 +675,59 @@ The save-time path resolver returns ✓ valid because `gap.layerId` is a real sc
 ## Format reference for new entries
 
 ```
+## BUG-024 · Chat assistant leaks raw workflow / concept IDs into user-facing prose (e.g. "you can refer to the workflow.identify_gaps")
+
+**Status**: OPEN · Reported 2026-05-03 (post rc.3 tag) · v3.0.0-rc.3 · Scheduled rc.5 (UX consolidation arc · Group B SPEC rewrite first)
+**Reporter**: User (workshop validation)
+**Severity**: Low (cosmetic; not data-correctness — same class as the BUG-013 UUID leakage)
+**Regression**: No (pre-existing surface from Phase B + Phase C concept/workflow grounding)
+
+### Repro (user-reported)
+1. Open Canvas AI Assistant
+2. Ask any procedural / definitional question
+3. → Assistant sometimes ends with phrasing like "For a full step-by-step procedure, you can refer to the workflow.identify_gaps." (the `workflow.<id>` token is an internal manifest identifier, not user-facing)
+
+### Suspected root cause
+- The system-prompt role section instructs the LLM to use `selectWorkflow(id)` / `selectConcept(id)` for full bodies. But the IDs themselves (e.g. `identify_gaps`) end up in the LLM's prose because the inlined TOC + recommendations enumerate them.
+- BUG-013 Path B (`services/uuidScrubber.js`) handles UUID-shaped tokens; it does NOT scrub `workflow.<id>` / `concept.<id>` patterns.
+
+### Fix plan
+- **Path A** (prompt-time discipline): tighten the role section with an explicit NEVER-emit directive on `workflow.*` / `concept.*` identifiers in user-facing prose. Reframe "use selectWorkflow(id) to fetch full bodies" as "the IDs are internal — never quote them back to the user; if the user wants a workflow, narrate the steps instead."
+- **Path B** (runtime scrub, defense-in-depth): extend the existing `services/uuidScrubber.js` to also detect `workflow.<id>` + `concept.<id>` patterns and replace with the human-readable label from `core/appManifest.js` / `core/conceptManifest.js`. Idempotent + skips fenced + inline code (same shape as the UUID scrub).
+- **Test V-CHAT-NN**: drive a chat turn where a stub LLM emits `workflow.identify_gaps` in its response; assert the rendered bubble shows the workflow's user-facing label, not the ID.
+
+### Out of scope
+- This is folded into the Group B / rc.5 UX consolidation arc per user direction 2026-05-03 — discuss + spec-rewrite FIRST, then fix.
+
+---
+
+## BUG-025 · Cmd+K / Ctrl+K opens the legacy AiAssistOverlay (tile-grid skill picker), not the new Canvas AI Assistant — UX inconsistency between button click and shortcut
+
+**Status**: OPEN · Reported 2026-05-03 (post rc.3 tag) · v3.0.0-rc.3 · Scheduled rc.5 (UX consolidation arc · Group B)
+**Reporter**: User
+**Severity**: Medium (two surfaces both branded "AI Assist" with different shapes — confusing)
+**Regression**: Intentional carry-over from rc.3 #13. Per the tag commit notes: "Cmd+K still opens legacy AiAssistOverlay for power users; full retirement scheduled rc.5."
+
+### Repro (user-reported)
+1. Press Cmd+K (Mac) or Ctrl+K (Windows)
+2. → Legacy v2.4.13 AI Assist tile-grid overlay opens (kind="ai-assist")
+3. (User expectation) → The new Canvas AI Assistant should open (the same surface the topbar AI Assist button opens)
+
+### Suspected root cause
+- `app.js` `wireAiAssistShortcut()` binds Cmd+K → `openAiOverlay({ tabId: currentStep, context: {} })`, which opens the legacy `ui/views/AiAssistOverlay.js`.
+- The topbar AI Assist button (post rc.3 #13) opens Canvas Chat via `mod.openCanvasChat()`.
+- Two surfaces both labelled "AI Assist" with different chrome → confusing for the user.
+
+### Fix plan (Group B / rc.5)
+1. Rebind Cmd+K to open Canvas Chat (the new unified surface).
+2. Retire `ui/views/AiAssistOverlay.js` entirely OR demote to a hidden power-user tile-grid behind a different keybinding (TBD with user during SPEC rewrite).
+3. Update VT25 / V-AI-ASSIST-CMD-K to assert Cmd+K opens kind="canvas-chat".
+
+### Out of scope
+- v2.x AI admin parity-gate evaluation (`project_v2x_admin_deferred.md`) — the legacy AiAssistOverlay is part of the v2.x admin surface; full retirement decision belongs to that arc, not Group B. For Group B we just rebind the keyboard shortcut to the right destination.
+
+---
+
 ## BUG-NNN · One-line headline
 
 **Status**: OPEN · Reported YYYY-MM-DD · vX.Y.Z · Scheduled <bucket>
