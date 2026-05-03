@@ -1,403 +1,178 @@
-# Dell Discovery Canvas , Session Handoff
+# Dell Discovery Canvas — Session Handoff
 
-**Last session end**: 2026-05-03 (early). **v3.0.0-rc.2 TAGGED + 22 commits past tag (3-phase AI architecture + Skill v3.1 schema + recovery)**. APP_VERSION = `3.0.0-rc.3-dev` (per SPEC §S30 / RULES §16 CH24). **Banner 1085/1085 GREEN ✅** (was 1048 at rc.2 tag; +37 net tests across both sessions).
+**Last session end**: 2026-05-03 (late). **`v3.0.0-rc.3` TAGGED on `origin/v3.0-data-architecture`**. APP_VERSION = `"3.0.0-rc.3"` (no `-dev` suffix). **Banner 1103/1103 GREEN ✅**.
 
-**State**: actively in the rc.3-dev period. Tag `v3.0.0-rc.3` lands when rc.3 #4-#7 of SPEC §S29.9 ships (Skill Builder UI rebuild + chat right-rail population + UseAiButton retirement + top-bar consolidation). See `docs/RELEASE_NOTES_rc3-dev.md` for the full ledger of what's in flight.
+**State**: rc.3 closed. The 3-PHASE AI ARCHITECTURE PLAN is COMPLETE (data-aware + concept-aware + app-aware chat with vendor-neutral OpenAI canonical lingua franca). Skill architecture v3.1 is COMPLETE (parameters[] + outputTarget; click-to-run scope retired). Group A AI-correctness consolidation is COMPLETE (all OPEN BUGs that came in for rc.3 — BUG-013, BUG-018, BUG-019, BUG-020, BUG-023 — fixed with regression tests; BUG-011 closed by user confirmation). Topbar consolidated to ONE "AI Assist" button with the v2.4.13 Dell-blue + 8s diamond-glint treatment.
 
-**Recovery 2026-05-03 (early)** — closed the rc.2-tag freeze drift surfaced 2026-05-02 LATE EVENING (18 commits past tag without bumping `APP_VERSION` left the topbar chip displaying `Canvas v3.0.0-rc.2` while HEAD diverged). Recovery shipped:
-- R1: `APP_VERSION` → `3.0.0-rc.3-dev` + V-VERSION-1 (semver shape) + V-VERSION-2 (source-grep ensures app.js wires the chip via the import) + SPEC §S30 + RULES §16 CH24.
-- R2: `docs/PREFLIGHT.md` — durable 8-item checklist artifact gating every tag commit (per-arc subset + tag-only items).
-- R3: `docs/RELEASE_NOTES_rc3-dev.md` — captures the 22 in-flight commits + remaining rc.3 work.
-- R4: this rewrite.
-
-**Per-commit discipline was rigorous; per-arc-past-tag wasn't.** The recovery makes both checkable. PREFLIGHT.md + V-VERSION + RULES §16 CH24 close the gap so this drift can't recur.
-
-**3-PHASE AI ARCHITECTURE PLAN: COMPLETE.** Chat surface is now data-aware + concept-aware + app-aware, vendor-neutral (OpenAI canonical lingua franca with Anthropic + Gemini translation shims), with 5-round multi-tool chaining across all providers. The LLM has THREE grounding layers:
-- **Structural** (`core/dataContract.js`) — entities, relationships, invariants, FKs, catalogs, bindablePaths, analyticalViews
-- **Definitional** (`core/conceptManifest.js`) — 62 concepts × 13 categories with definition + example + whenToUse + vsAlternatives + typicalDellSolutions; TOC inlined, full bodies via `selectConcept(id)` tool
-- **Procedural** (`core/appManifest.js`) — 16 workflows + 19 recommendations + 5 tabs + 6 actions; TOC + recommendations inlined, full workflow bodies via `selectWorkflow(id)` tool
-
-**Today's session shipped 14 commits (all on `origin/v3.0-data-architecture`)**:
-
-| # | Commit | What |
-|---|---|---|
-| 1-7 | early today | BUG-010..017 + Phase 1-3 chat shell + connection-status chip |
-| 8 | `0d4d6d9` | HANDOFF + 3-phase plan capture |
-| 9 | `e8d17e4` | **Phase A1** — generic OpenAI tool-use connector (closes BUG-018; unblocks Gemini + vLLM + local + any OpenAI-compat) |
-| 10 | `0344df7` | Phase B draft (62-concept dictionary) |
-| 11 | `9778f25` | **Phase B2** — concept dictionary wired + selectConcept tool |
-| 12 | `066cfc6` | BUG-019..022 logged with fix plans |
-| 13 | `5a05d84` | Phase C draft (16 workflows + 19 recommendations + APP_SURFACES) |
-| 14 | `5fb48f3` | **Phase C2** — workflow manifest wired + selectWorkflow tool. **3-phase plan COMPLETE.** |
-
-Tests added this session (+25 since session start, +31 since rc.2 tag): V-FLOW-CHAT-DEMO-1/2 + V-DEMO-V2-1 + V-DEMO-8/9 (BUG-010); V-CHAT-18/19 (BUG-012); V-CHAT-20/21/22 (BUG-013); V-NAME-2 (BUG-014); V-CHAT-23 (BUG-015); V-CHAT-24/25 (BUG-016); V-CHAT-26 (BUG-017); V-CHAT-27..32 (Phase A); V-CONCEPT-1..5 (Phase B); V-WORKFLOW-1..5 (Phase C).
-
-**rc.2 tagged 2026-05-02 (PM, earlier today)** — closes the chat-perfection arc. Per-step breakdown preserved in commit `2fde117` body + `docs/BUG_LOG.md`. Rolled into rc.2: SPEC §S20-§S25 annexes (data contract, demo, mock providers, naming, anti-leakage), 5 v3-prefix file renames, vendored `marked@13`, Anthropic tool-use round-trip, Anthropic cache_control on prefix, SSE per-token streaming, first-turn handshake echo-back. Banner went 1011 → 1048 at rc.2 tag.
-
-**Today's PM-LATE-EVENING session shipped 7 hotfixes + the 3-phase AI architecture (additional context retained for handoff)**:
-
-| # | Commit | Fix |
-|---|---|---|
-| 1 | `7172737` | BUG-010 — rich Acme Healthcare demo (3 drivers / 4 envs / 23 instances / 8 gaps with full driver→Dell-solution narrative) + `state/sessionBridge.js` shallow-merge (no longer clobbers v3) + NEW `state/v3ToV2DemoAdapter.js` (single source of truth from v3 demo into v2 sessionState) |
-| 2 | `ddc54fc` | BUG-012 — multi-round tool chaining (`chatService.MAX_TOOL_ROUNDS=5`); previously 1-round cap stuck Q1 + Q2 on round-2 preamble |
-| 3 | `d324971` | BUG-013 — anti-leakage role section + selector label enrichment (`selectGapsKanban.gapsSummary` includes description/urgencyLabel/driverLabel/layerLabel; `selectVendorMix.byEnvironment[id].envLabel` populated) |
-| 4 | `4ee35ca` | BUG-014 / Phase 2 — UI-string anti-leakage purge in 4 AI-surface files; V-NAME-2 source-grep test |
-| 5 | `eb2ffc8` | Phase 3 — Canvas Chat shell redesign (`size:"chat"` 1180×88vh; row layout with collapsible Skills right-rail) + BUG-015 (handshake silent-strip on subsequent turns) |
-| 6 | `7a84b72` | BUG-016 — handshake strip is now BRACKET-OPTIONAL (Gemini emits without brackets) + `chatMemory.loadTranscript` heals persisted leaks at load time |
-| 7 | `5052d8a` | BUG-017 — Mock provider toggle removed from chat header; replaced with **connection-status chip** (green dot "Connected to Claude" / amber "Configure provider", click → opens Settings); always uses active aiConfig provider; chip state from `isActiveProviderReady` |
-
-**+9 net new tests this session** (1054 → 1063): V-FLOW-CHAT-DEMO-1/2, V-DEMO-V2-1, V-DEMO-8/9 (BUG-010); V-CHAT-18/19 (BUG-012); V-CHAT-20/21/22 (BUG-013); V-NAME-2 (BUG-014); V-CHAT-23 (BUG-015); V-CHAT-24/25 (BUG-016); V-CHAT-26 (BUG-017).
-
-**3-PHASE PLAN APPROVED (NEXT SESSIONS)** — generic AI connector + concept manifest + app-awareness layer. User direction 2026-05-02 LATE EVENING: "I want a generic connector that is automatically compatible with any LLM... the AI assist will need to understand how to talk to the app, the data meta model, the relationships and connections between choices and linkage... not only data and context aware but also app structure and data model and data relationship aware for multi-stage queries... should be a help tool... define all these items to the AI in a very clever way without overwhelming with file dumps."
-
-| Phase | Scope | Effort |
-|---|---|---|
-| **A** | Generic OpenAI tool-use connector (lingua franca: openai-compatible function-calling shape; translation shims for Anthropic + Gemini in their wire builders). Closes BUG-018 (Gemini hangs) + unblocks vLLM/local LLM tool questions. | ~3-4 commits, ~2 hrs |
-| **B** | Concept manifest — NEW `core/conceptManifest.js` (~50 concepts: 5 gap_types, 6 layers, 3 urgencies, 3 phases, 7 dispositions, 8 drivers, 8 envs, ~30 Dell products, plus current vs desired, engagement, skill, click-to-run vs session-wide). Each: definition + example + whenToUse + vsAlternatives. Inline TOC + headlines (~1.5KB) in system prompt; full body fetched on demand via NEW `selectConcept(id)` tool. Module-load self-validation + checksum (same discipline as `core/dataContract.js`). | ~3-4 commits, ~2 hrs |
-| **C** | App / workflow manifest — NEW `core/appManifest.js`. Workflows ("Identify gaps from current vs desired" → tab + steps + relatedConcepts) + recommendations (regex-trigger → answer). Inline TOC + recommendations (~1.5KB); full workflow body via `selectWorkflow(id)` tool. | ~2-3 commits, ~1.5 hrs |
-
-**Total estimated**: ~8-11 commits, ~5-6 hrs across multiple sessions. Each phase is tested + smoked + committed independently. Token-budget impact: ~3KB inline addition + tools for full bodies; cached via `cache_control` so essentially free after first turn.
-
-**Before Phase A coding**: confirm 50-concept dictionary content scope + (optional) draft together. User comfortable with me drafting first for review.
-
-**OUTSTANDING bugs (queued; logged in `docs/BUG_LOG.md` with fix plans)**:
-- **BUG-001 + BUG-002** — propagate-criticality regressions; scheduled GA polish; still OPEN since rc.2.
-- **BUG-011** — Settings can't save Anthropic API key; UNCONFIRMED in my probe (save flow worked); awaiting user repro details (clicked Save vs Close? "✓ Saved" flash visible? key field state on reopen?).
-- **BUG-018** — Gemini hangs on tool-required questions (no `tool_use` round-trip wired for Gemini today); CLOSES via Phase A landing.
-
-
-
-**rc.2 tagged 2026-05-02 (PM, earlier today)** — closes the chat-perfection arc. Per-step breakdown preserved in commit `2fde117` body + `docs/BUG_LOG.md`. Rolled into rc.2: SPEC §S20-§S25 annexes (data contract, demo, mock providers, naming, anti-leakage), 5 v3-prefix file renames, vendored `marked@13`, Anthropic tool-use round-trip, Anthropic cache_control on prefix, SSE per-token streaming, first-turn handshake echo-back. Banner went 1011 → 1048 at rc.2 tag.
-
-**Previously (rc.1, 2026-05-01)**: Every directive SPEC backend section (§S2 schema · §S4 storage · §S5 selectors · §S6 catalogs · §S7 skill builder · §S8 provenance · §S9 migrator · §S10 integrity · §S11 perf) closed and tested. rc.1 added: SPEC §S19 v3.0 → v2.x consumption adapter; `state/v3Adapter.js` + `state/v3EngagementStore.js` impl with V-ADP-1..10 GREEN; `state/v3SessionBridge.js` co-existence bridge auto-populates engagement on boot + every `session-changed`; V-MFG-1 manifest drift gate. 1011/1011 GREEN banner. Files renamed in rc.2: state/v3Adapter → state/adapter; state/v3EngagementStore → state/engagementStore; state/v3SessionBridge → state/sessionBridge.
-
-**Architecture memories locked 2026-05-01 → 2026-05-02 (six binding rules)**:
-- `project_v3_no_file_migration_burden.md` — v3 schema is NOT bent for file-format migration; real-customer `.canvas` migration smoke gate DROPPED.
-- `feedback_no_version_prefix_in_names.md` — version numbers live in git tags + APP_VERSION + changelogs only; never in filenames, exports, or UI labels. Schedule a v3-prefix purge before GA.
-- `feedback_test_what_to_test.md` (2026-05-02 escalation) — V-FLOW or it didn't ship. Property tests are necessary but never sufficient.
-- `feedback_no_patches_flag_first.md` (locked 2026-05-02 after BUG-003 patch fallout) — never ship a fix that bypasses v3 schema/validation/architecture without explicit user approval BEFORE coding. The moment "this won't pass schema, but consumers don't validate so..." enters my own thinking → STOP, surface, ask. Same tier as spec-and-test-first.
-- `feedback_test_or_it_didnt_ship.md` (locked 2026-05-02) — every BUG-NNN fix MUST add a regression test that would have caught the original incident. Patch-class bugs ship V-ANTI-* + V-FLOW-* coverage. Cadence: bug-entry → SPEC → TESTS → RULES → RED scaffold → impl → smoke. No skipping.
-- `feedback_spec_and_test_first.md` + `feedback_browser_smoke_required.md` (pre-existing) — restated for completeness.
-
-**Bug log** (`docs/BUG_LOG.md`): BUG-001 + BUG-002 (propagate-criticality regressions, scheduled GA polish, still OPEN). **BUG-003..009 CLOSED in rc.2** with full architectural fix + regression test guards: BUG-003 (chat empty engagement) closed via §S21 v3-native demo (V-DEMO-1..7); BUG-004 closed by demo impl; BUG-005..007 (production-from-tests imports) closed via §S22 production mock providers + §S23 + V-MOCK-1..3 + V-ANTI-RUN-1; BUG-008/009 (cosmetic stale comments) closed in stale-comment cleanup commit `0eba848`.
-
-**Cleanup arc COMPLETE 2026-05-02**: revert (`bacc7a0`) → log → spec → tests → RULES → RED-first scaffold → impl → smoke. Each bug ships a regression test (V-DEMO-*, V-MOCK-*, V-ANTI-RUN-*) so the same shape can't recur.
-
-**Chat-perfection arc COMPLETE 2026-05-02 (PM)**: data contract + handshake + markdown + ack chip + Real-Anthropic tool-use + cache_control + SSE per-token streaming. Banner 1048/1048 GREEN. See top section for the per-step breakdown.
-
-**Longer queue (after Phases A/B/C above)**:
-1. **GA arc** — view migrations × 5 (Context → Architecture → Heatmap → Workload → Gaps → Reporting) reading via `state/adapter.js` instead of v2.x `state/sessionState.js`.
-2. **AI Assist consolidation Phases 4-5** — right-rail populates with saved-skill cards (clickable → drops pre-filled prompt into chat); skill editor slide-over inside chat overlay; Lab tab deprecated; "Use AI" buttons rewired to drop prompts into chat; top-bar consolidation (one AI button instead of three); `project_v2x_admin_deferred.md` parity gate evaluation.
-3. **BUG-001 + BUG-002** propagate-criticality fixes.
-4. **Polish** (deferred design review per `project_deferred_design_review.md` + crown-jewel UX per `project_crown_jewel_design.md`).
-5. **Backlog cleanup pass** — supersede + drop redundant items in HANDOFF / BUG_LOG / CHANGELOG_PLAN.
-6. **Tag `v3.0.0` GA** when the above ships + a real workshop run is logged.
-
-**v2.4.17 work-in-progress preserved**: 14 commits on local `main` (NOT pushed) + tag `v2.4.17-wip-snapshot` at commit `58660b7`. Rollback recoverable per HANDOVER_v2.4.17_to_v3.0.md §7.3 if needed.
-
-**Previously**: v2.4.16 SHIPPED 2026-04-29 (foundations release: discipline reassertion + taxonomy + reporting derivation audit + PillEditor investigation). 616/616 GREEN. Tag `v2.4.16` on `origin/main`. Detail preserved below.
-
-**Previously**: v2.4.15 SHIPPED 2026-04-29 (5 polish iters + 1 hotfix). Detail preserved below. Five polish iterations now absorbed: — Iter 1: dynamic envs + soft-delete + vendor mix segmented bar + modern FilterBar + capsule polish + footer + matrix. Iter 2 (Tier 1 + Tier 2): GPLC `.tag[data-t]` primitive, button-feedback states, AI provider Save fix, blue-dot → Lucide lock, hide-flow drops env column entirely + uses Overlay.js, FilterBar accordion with persistent collapse, vendor mix dimension picker + shimmer + click-to-cross-filter. Iter 3: Gaps filters consolidated into FilterBar (Layer/Env/Domain/Service/Urgency + Quick toggles for "Needs review only" / "Show closed gaps" + "+ Add gap" trailing CTA); Vendor mix Option A redesign (per-layer + per-env standing cards REPLACED with 3 click-to-drill KPI tiles — Dell density / Most diverse layer / Top non-Dell concentration — plus collapsible "All instances" table); AI Assist pick mode morphs overlay into a top-right heartbeat capsule (was full-transparent + separate pill), Esc restores; PICK_SELECTORS extended to include env-tile + service-tile (the v2.4.15 entities). 584 GREEN / 0 RED. **PUSHED to origin/main + tag v2.4.15**. v2.4.14 is the previous tag (now superseded).
-
-**File purpose**: anyone (human or a fresh Claude Code session) opening this folder should read this file first to know exactly where work stopped, what's shipped, what's queued, and how to pick up.
+**Authority**: SPEC §S0..§S31 · RULES §16 CH1–CH27 · PREFLIGHT.md (8-item checklist) · MEMORY index.
 
 ---
 
-## 1 · Where you are
+## 1 · What just shipped (rc.3 ledger)
 
-- **Branch**: `v3.0-data-architecture`. Created 2026-04-30 from `origin/main` (`5614f32`, v2.4.16 ship). Tracks origin/main; ahead by N commits (v3.0 work). NOT yet pushed; per `feedback_no_push_without_approval.md` stays local until user says "tag it" / "push."
-- **Local `main`**: 15 commits ahead of origin (v2.4.17 work-in-progress + the 3 founding docs). NOT pushed. Preserved at tag `v2.4.17-wip-snapshot` (`58660b7`).
-- **`origin/main`**: HEAD on `5614f32` (v2.4.16 ship). Last pushed state.
-- **Rollback anchors** (local-only tags): `v2.4.16-baseline` (`5614f32`) + `v2.4.17-wip-snapshot` (`58660b7`).
-- **Git tags on origin**: 25+ tags `v2.1.1` through `v2.4.16` (plus `v2.4.11.d01` + `v2.4.11.d02` hygiene-pass records on origin only). v2.4.16 is the latest pushed tag.
-- **Working tree**: clean (after scaffold commit).
-- **GitHub**: https://github.com/M-Alshamrani/dell-discovery-canvas (private).
+Full per-commit detail in `docs/RELEASE_NOTES_rc.3.md`. Per-arc summary:
 
-## 2 · What is shipped
-
-Full chronology and commit refs live in `.claude/projects/.../memory/project_current_state.md`. One-line summary per tag:
-
-| Tag | Phase | What it delivered |
+| Arc | Commits | Theme |
 |---|---|---|
-| v2.1.x | 0-14 baseline + reviewer handoff | 5-tab discovery canvas, ~348 assertions |
-| v2.2.0 | 15 Docker | nginx:alpine multi-arch, port 8080, CSP headers |
-| v2.2.1 | 15.1 LAN auth | env-driven HTTP Basic auth |
-| v2.2.2 | 15.2 Dell tokens | Dell palette + Inter typography |
-| v2.2.3 | 15.3 visual depth | tighter radii + heading tracking + mono metrics |
-| v2.3.0 | 18 Gap-link UX | always-visible + warn-but-allow + roadmap dedup |
-| v2.3.1 | 16 Workload Mapping | 6th layer + N-to-N + upward propagation |
-| v2.4.0 | 19a AI foundations | 3-provider client, gear settings modal |
-| v2.4.1 | 19b Skill Builder | admin panel + per-tab dropdown + seed skill |
-| v2.4.2 | 19c Field-pointer | bindable-field chips + JSON coercion + test-skill |
-| v2.4.2.1 | 19c.1 Pill editor | contenteditable editor with binding pills |
-| v2.4.3 | 19d.1 Prompt guards | text-brief footer + Refine-to-CARE + save gate |
-| v2.4.4 | 19d Unified AI platform | SPEC §12 + responseFormat/applyPolicy + writable resolvers + undo + per-skill provider |
-| v2.4.5 | 19e Foundations Refresh | session-changed bus + persistent undo + demoSession module + 6 seed skills + demoSpec (DS1-DS17) + DEMO_CHANGELOG |
-| v2.4.5.1 | 19f AI reliability | Anthropic browser-direct header + retry-with-backoff on 429/5xx + per-provider fallback-model chain (Suite 36 RB1-RB7) |
-| v2.4.6 | 19g UX quick-wins | app version surface + per-tab skill chip + save gate + banner auto-dismiss |
-| v2.4.7 | 19h Fresh-start UX | empty-canvas default + welcome card with Load-demo CTA |
-| v2.4.8 | 17 Phase 17 | 7-term Action taxonomy + link rules + rationalize coercion |
-| v2.4.9 | 19i Primary-layer + projectId | invariant + explicit Gap→Project relationship (pre-crown-jewel rollback anchor) |
-| v2.4.10 | 19j Save/open file | user-owned `.canvas` workbook + PWA file_handlers + Clear-all hardening |
-| v2.4.10.1 | 19j.1 HOTFIX | test-runner localStorage isolation (fixes "Bus Co" pollution) |
-| v2.4.11 | 19k Rules hardening | review-time enforcement + closed-vs-deleted + visible auto-behaviour + Operational/Services clarity + 3 in-flight bug fixes caught by browser smoke |
-| v2.4.12 | 19l Services scope + PR/U + post-smoke hot-patches | `gap.services[]` field + 10-entry `SERVICE_TYPES` catalog + Tab 4 multi-chip selector with "+ Add service" picker (full catalog) + Tab 5.5 project-card chip row + NEW Reporting "Services scope" sub-tab + PR1 ContextView no-op Save preserves `isDemo` + PR2 skillsEvents bus + AI dropdown auto-refresh + U1 removal of D2 ops-gap CTA + M11 migrator backfill + closed-gap rollup exclusion + Reporting Gaps Board side-panel services + Roadmap chip pill CSS. Suite 43 SVC1-15 + DS23 (22 new tests). Total 531/531. |
-| v2.4.13 | 19m Intermediate UX/UI patches | DS1 tokens + DS2 eyebrow + DS5 dash-bullet + A1 em-dash sweep + A2 Dell product accuracy + CD5 services domain + DS24 demo coverage + GPLC topbar foundation + leading-zero stepper + local Dell logo. S0-S8 + S2A: services-scope sub-tab dropped, app-version chip to footer pill, global AI Assist top-right button with Dell-blue "polished glass with quiet glint" pulse, topbar session strip with workshop name + colored save indicator, NEW Overlay.js centered modal with persist + transparent modes, AiAssistOverlay tile-grid skill picker, DemoBanner shared helper on every view, Chrome-style discrete tab-card stepper, MatrixView + SummaryHealthView L.0X / E.0X corner-code headers, brand-blue ratio ~8-10%, Dell-blue-tinted page bg. Six polish iterations: AI Assist luxury glow, settings+Skills overlay match with in-place section swap, pick-mode breathe with floating Dell-blue pill, test-connection probe bar, AI thinking orb, Dell Sales Chat as 4th provider, matrix + heatmap row-band rhythm. Total 545/12/557. |
-| **v2.4.14** | **19m Hygiene + polish + filter system + Lucide + env aliases** | **(1) Test cleanup: deleted 10 obsolete Suite 44 RED tests (drawer module + per-entity AI mount + tag-primitive migration) + Drawer.js stub since drawer-everywhere is parked. (2) Heading case sweep (A3): Architecture Heatmap → Architecture heatmap, etc. Strategic Drivers retained as customer brand convention. (3) Brand-alias sweep (CD1): 147 mechanical replacements var(--brand) → var(--dell-blue) in styles.css, visual outcome unchanged. (4) Gap-card domain hue bars (CD3): pickGapDomain helper + 2px muted-hue ::before on .gap-card[data-domain] mirrors the matrix-layer-bar pattern. (5) Tabular-nums utility (DS8): .metric class + inline on count surfaces. (6) Cmd+K / Ctrl+K shortcut for AI Assist. (7) Browser tab title unsaved indicator: "• Dell Discovery Canvas" while saving. (8) Environment aliases (NEW per user direction): session.environmentAliases + getEnvLabel(envId, session) helper + Tab 1 Environments card with 4 inputs. Every site that rendered env.label now uses the helper (MatrixView + SummaryHealthView + GapsEditView). (9) Filter system (F1-F6 services dimension): NEW state/filterState.js pub/sub with localStorage persistence; chip strip on Tab 4 with 10 services chips; CSS dim rule body[data-filter-services] .gap-card:not(.filter-match-services) → opacity 0.22 grayscale. VT17 + VT18 GREEN. (10) Lucide SVG icon migration: ui/icons.js extended with undo/undoAll/refresh/download/upload/plus/trash/x; index.html undo chips + footer Save/Open/Demo/New/Clear all use inline SVG instead of emoji glyphs. Total 547/0/547 (banner now auto-dismisses on every load).** |
+| Recovery | `7414b36` | APP_VERSION discipline + PREFLIGHT.md (closed rc.2-tag freeze drift) |
+| rc.3 implementation | `5ec646d` `6897321` `83fb93c` `d429b46` | Skill v3.1 UI rebuild + chat right-rail saved-skill cards + UseAiButton retirement + topbar consolidation |
+| Group A AI-correctness | `203ef12` `987c7e7` `66810c6` `7cf20ec` `94d203b` | BUG-019 engagement rehydrate + BUG-020 streaming-time handshake strip + BUG-013 Path B UUID scrub + BUG-023 manifest layerId + BUG-018 closed |
+| AI Assist rebrand | `c975d1f` | Sparkle icon + Dell-blue + 8s diamond-glint pulse |
+| Tag | (this commit) | APP_VERSION drop -dev + SPEC + RULES + RELEASE_NOTES + HANDOFF + PREFLIGHT 1-8 verified |
 
-**Test count**: 547 assertions GREEN, 0 RED across 45 suites in `diagnostics/appSpec.js` + `diagnostics/demoSpec.js`. Banner auto-dismisses after 5s on every page load.
+Plus 14 commits between rc.2 and the recovery commit (Phase A1 generic LLM connector + Phase B concept dictionary + Phase C app workflow manifest + 7 BUG-010..017 fixes + Skill schema v3.1 commits).
 
-## 3 · What closed in v2.4.5 + v2.4.5.1
+**Test deltas**: 1048 (rc.2) → 1103 (rc.3), **+55 net tests**.
 
-All six UX issues from v2.4.4 are resolved, and the two reliability failure modes the user hit in live Gemini / Anthropic use are fixed:
+**SPEC annexes added**: §S26 + §S27 + §S28 + §S29 + §S30 + §S31.
+**RULES added**: §16 CH20–CH27.
 
-- v2.4.5 · session-changed bus → driver tile no longer vanishes on AI apply; tab no longer blanks after undo.
-- v2.4.5 · undo chip tooltip + depth badge + "↶↶ Undo all" chip.
-- v2.4.5 · undo persisted to `localStorage` (`ai_undo_v1`, cap 10, cleared on reset).
-- v2.4.5 · demo session refreshed (Phase 16 workload + Phase 18 multi-link + driverId on every gap); extracted to `state/demoSession.js` with 3 personas.
-- v2.4.5 · seed skill library of 6 (json-scalars exercising writable fields on 4 tabs); deployed by default.
-- v2.4.5 · `diagnostics/demoSpec.js` Suites 31-35 (DS1-DS17) + `docs/DEMO_CHANGELOG.md` audit trail.
-- v2.4.5.1 · Anthropic `anthropic-dangerous-direct-browser-access: true` header fixes the 401 loop.
-- v2.4.5.1 · retry-with-backoff on 429/5xx (3 attempts, 500ms→4s with full jitter).
-- v2.4.5.1 · per-provider `fallbackModels[]` chain (Gemini defaults to `gemini-2.0-flash, gemini-1.5-flash`).
-- v2.4.5.1 · Settings UI exposes the fallback chain; `Test connection` reports which model answered.
+---
 
-## 4 · NEXT UP — v3.0 implementation specification (`docs/v3.0/SPEC.md`)
+## 2 · Where you are right after rc.3 ships
 
-Branch `v3.0-data-architecture` is at scaffold state (founding docs imported + APP_VERSION bumped + CHANGELOG_PLAN entry + this header). The next concrete action is **authoring the v3.0 implementation specification**. Per `data-architecture-directive.md` §0.1:
+- **Branch**: `v3.0-data-architecture` · last commit is the rc.3 tag commit · NOT pushed yet (per `feedback_no_push_without_approval.md`; user must say "push" / "tag it" / "ship it" to push).
+- **APP_VERSION**: `"3.0.0-rc.3"` in `core/version.js` (matches what the tag will be).
+- **Banner**: 1103/1103 GREEN.
+- **Working tree**: clean after the tag commit.
+- **Origin**: `origin/v3.0-data-architecture` is N commits BEHIND local. `origin/main` is on `5614f32` (v2.4.16); v2.4.17-wip-snapshot tag preserved.
 
-> Specification step. Claude Code reads this directive and produces (a) the implementation specification and (b) the migration specification. Anything constrained here is mandatory; anything not constrained is open to the spec writer's judgment but must be justified inline in the spec.
+---
 
-The implementation spec at `docs/v3.0/SPEC.md` covers directive sections 1-18 with concrete contracts:
+## 3 · Architecture — what the app looks like at rc.3 tag
 
-1. **§1 principles** — restate P1-P10 as the invariant table; every later section references back.
-2. **§2 schema layer** — Zod choice locked, `schema/` directory layout, file-per-entity contract, `createEmpty<Entity>()` factory pattern, FK declaration shape, validation boundaries (load / save / commit only).
-3. **§3 entity model** — concrete Zod schema per entity (engagement, customer, driver, environment, instance, gap) with field types + invariants. Cross-cutting relationship table (workload mappedAssetIds, originId, gap.affectedEnvironments) declared as first-class.
-4. **§4 storage** — in-memory `{byId, allIds, indexes}` shape, action functions per collection, persisted shape (flat lists), engagement scoping, FK declaration consumption.
-5. **§5 selectors** — 7 required selectors with shape contracts, memoize-one per `OPEN_QUESTIONS_RESOLVED.md` Q2, forbidden patterns.
-6. **§6 catalogs** — versioned shape, loader interface, 8-catalog inventory with `DELL_PRODUCT_TAXONOMY` corrections.
-7. **§7 skill builder** — skill model, generated chip manifest (snapshot drift fails build), path resolution, structured-output validation, regression suite (production-critical skills per `OPEN_QUESTIONS_RESOLVED.md` Q3).
-8. **§8 provenance** — wrapper schema, catalog validation at suggestion time, UI distinction by icon, drift detection.
-9. **§9 migration** — migrator contract, round-trip fixtures, v2.0 → v3.0 transformation steps, failure handling.
-10. **§10 integrity** — sweep contract, repair rules, denied operations.
-11. **§11 performance** — budgets, calibration multiplier per `OPEN_QUESTIONS_RESOLVED.md` Q1, regression test framework.
-12. **§12 multi-engagement readiness** — what v3.0 stamps, what v3.1 adds.
-13. **§13 backend** — Postgres + Drizzle target, document-DB rejection rationale, mapping rules, Replicache as v3.2 reference.
-14. **§14 tests** — 12 categories, real-execution-only, mocking boundaries, anti-cheat checks.
-15. **§15 out of scope** — explicit non-goals.
-16. **§16 glossary** — engagement / entity / selector / manifest / skill / linked composition / provenance wrapper / catalog / integrity sweep / reference engagement.
-17. **§17 open questions resolved** — pointer to `OPEN_QUESTIONS_RESOLVED.md`.
-18. **§18 document control** — authoring + review log.
+### Three grounding layers (chat surface)
+- **Structural** — `core/dataContract.js` derives entities + relationships + invariants + FKs + catalog metadata + bindablePaths + analyticalViews from schemas at module load with FNV-1a checksum. First-turn handshake: LLM echoes `[contract-ack v3.0 sha=<8>]` to prove ingestion (V-CHAT-13..17).
+- **Definitional** — `core/conceptManifest.js` carries 62 concepts × 13 categories (gap types, layers, urgencies, dispositions, drivers, environments, instances, skills + more). TOC inlined in system prompt; full bodies via `selectConcept(id)` tool (V-CONCEPT-1..5).
+- **Procedural** — `core/appManifest.js` carries 16 workflows + 19 recommendations + 5 tab labels + 6 action labels. TOC + recommendations inlined; full workflow bodies via `selectWorkflow(id)` tool (V-WORKFLOW-1..5).
 
-Each SPEC §N has the shape: `R-numbered requirement set` + `concrete file paths/signatures` + `forbidden patterns` + `test contract pointer (vector ids in TESTS.md)`.
+### Vendor-neutral connector (Phase A1)
+- `services/aiService.js` `buildRequest(provider, ...)` — generic OpenAI-compatible canonical with translation shims:
+  - Anthropic: `tools` array with `input_schema` + `tool_use` content blocks
+  - Gemini: `functionDeclarations` + `functionCall` / `functionResponse` parts
+  - OpenAI / vLLM / local / Mistral / Groq / Together / Anyscale / Dell Sales Chat: native canonical
+- `services/chatService.js` runs up to 5-round multi-tool chains (`MAX_TOOL_ROUNDS=5`) across all providers (V-CHAT-18/19 + V-CHAT-30/31/32).
 
-After SPEC.md: `docs/v3.0/MIGRATION.md` (the v2.0 → v3.0 specification per directive §9.3) + `docs/v3.0/TESTS.md` (test vectors per directive §14, every R-number → ≥1 vector). After all three docs: Suite N RED-first lands in `diagnostics/appSpec.js`. After Suite N: schema layer implementation (directive §2-3).
+### Skill architecture v3.1
+- `schema/skill.js` — drops `skillType` + `entityKind`; adds `parameters[]` + `outputTarget`. `migrateSkillToV31` helper applied at load + save boundaries (idempotent for v3.1 input, derives parameters from legacy click-to-run + entityKind).
+- `services/skillRunner.js` — parameterized invoke (`opts.params` resolves `{{<paramName>}}` + `{{context.<paramName>.<field>}}`); `outputTarget` dispatch (only `chat-bubble` actively rendered; deferred targets throw clear "rc.4" error).
+- `ui/views/SkillBuilder.js` — simplified form (~445 lines, was ~735): name + description + prompt template + parameters[] editor + outputTarget radio. NO chip palette, NO scope picker, NO entity-kind dropdown, NO 1-2-3 wizard.
+- `ui/views/CanvasChatOverlay.js` — right-rail saved-skill cards (click → mini parameter form for entityId / primitive params → resolved prompt drops into chat input). "+ Author new skill" footer button opens the Skill Builder (the only entry point post-rc.3 #7).
 
-**Estimated scope of next session**: SPEC.md authorship is the heaviest single doc; 4-6 hours of careful drafting against the directive. MIGRATION.md + TESTS.md are smaller. Suite N RED-first is mechanical once TESTS.md is locked.
+### v3 engagement persistence (BUG-019 fix)
+- `state/engagementStore.js` persists active engagement to `localStorage.v3_engagement_v1` on every `_emit()`.
+- Module-load `_rehydrateFromStorage()` validates through `EngagementSchema.safeParse` + corrupt-cache safety (wipe + start fresh on malformed/invalid).
+- Bridge's customer-shallow-merge unchanged: rehydrated engagement comes back, latest v2 customer patch applies on top, gaps/drivers/etc. survive across reload.
 
-## 5 · Full backlog (after v2.4.6)
+### Chat-prose anti-leakage (BUG-013 + BUG-020)
+- Shared `services/chatHandshake.js` exports `HANDSHAKE_RE` + `HANDSHAKE_STRIP_RE` + `stripHandshake(text)`. chatService + chatMemory + CanvasChatOverlay all import the single source-of-truth pattern. Streaming-time strip runs on every `onToken` (defense-in-depth).
+- `services/uuidScrubber.js` exports `buildLabelMap(engagement)` + `scrubUuidsInProse(text, labelMap)`. Replaces bare v3-format UUIDs with resolved labels (gap description / driver label / environment alias / instance label) or `[unknown reference]` for orphans. Skips fenced + inline code. Idempotent. Applied at chat onComplete (final pass) AND at streaming-time onToken (mirrors handshake-strip pattern).
 
-Ordered for logical progression. Each bucket has locked scope in memory or SPEC.
+### Topbar single-AI-surface contract
+- ONE button: `#topbarAiBtn` ("AI Assist", sparkle icon, `.topbar-ai-btn` class with `ai-luxury-glow` 8s breathe + `ai-luxury-glint` diamond sweep).
+- Click opens Canvas Chat. Cmd+K / Ctrl+K opens legacy AiAssistOverlay tile-grid (full retirement scheduled rc.5).
+- Skill Builder access: chat right-rail "+ Author new skill" affordance ONLY.
 
-### Bucket A — finish AI platform
-- ✅ A1. v2.4.5 Foundations Refresh (shipped).
-- ✅ A1.1. v2.4.5.1 AI reliability (shipped).
-- ✅ A2. v2.4.6 UX quick-wins (shipped 2026-04-24).
-- ✅ A2.1. v2.4.7 Fresh-start UX (shipped 2026-04-24).
-- ✅ A2.2. v2.4.8 Phase 17 taxonomy (shipped 2026-04-24).
-- ✅ A2.3. v2.4.9 Primary-layer + Gap→Project data model · pre-crown-jewel rollback anchor (shipped 2026-04-24).
-- ✅ A2.4. v2.4.10 User-owned save/open .canvas file (shipped 2026-04-24).
-- ✅ A2.5. v2.4.10.1 HOTFIX · test-runner localStorage isolation (shipped 2026-04-25).
-- ✅ A3. v2.4.11 Rules hardening + Q1-Q4 fixes (shipped 2026-04-25). 21 spec items + 3 browser-smoke-discovered bugs (urgency-lock silently failed because metadata patches re-validated links · demo g-004 was mis-typed Replace with 2 currents · Save button had no dynamic feedback). 509 tests green; verified live in browser before commit per `feedback_browser_smoke_required.md`.
-- ✅ **A4. v2.4.12 Services scope + PR1/PR2/U1 + P1-P3 hot-patches — IMPLEMENTED 2026-04-26.** Full spec in `docs/CHANGELOG_PLAN.md § v2.4.12`. Section S (services): `gap.services[]` field + 10-entry `SERVICE_TYPES` catalog + Tab 4 gap-detail multi-chip + Tab 5.5 project-card chip row + NEW Reporting "Services scope" sub-tab. Section PR: PR1 ContextView no-op Save no longer flips `isDemo`, PR2 skillStore CRUD emits `skills-changed`. Section U: U1 removed the v2.4.11 D2 `+ Add operational / services gap` CTA. **Hot-patches P1-P3** (folded in pre-tag after user smoke): P1 `+ Add service` picker exposes the full catalog (was: only suggested were addable), P2 integrity sweep (M11 migrator backfill + .canvas normalize + closed-gap rollup + apply/undo round-trip), P3 SummaryGapsView side-panel services chip row + Roadmap project-card chip CSS. Tests: Suite 43 SVC1-15 + PR1.a/b + PR2.a/b/c + U1 + DS23. **Issues #3/#5/#6 from user smoke deferred to v2.5.0** (sub-tab visual polish, cross-tab filters, side-panel-as-drawer dynamic UX) — see Bucket B below.
-- **A4.1. v2.4.13 Demo refresh + old-schema purge + per-tab demo banner audit — DEFERRED from v2.4.12 attempt 2026-04-26.** Three items the user chose to defer: (a) demo `g-001` Phase 17 violation (`gapType: replace` with 2 desireds; same shape that was retyped on `g-004` in v2.4.11), (b) localStorage-pollution causing app to default to demo on initial open in user's browser (clean colleagues see fresh-start UX correctly), (c) per-tab demo banner audit — Tab 1 has `.demo-mode-banner` element; Tabs 2-5 do NOT. User did not catch (c) on v2.4.11 so it's gentle; (a) and (b) need a concerted demo refresh that purges any localStorage demo data created under older schemas and rebuilds demos against the v2.4.12+ data model. Opportunity to re-validate every demo gap against current taxonomy + invariants. Effort: ~3 hr.
-- **A5. v2.6.0 Action-command skills** — runtime for `json-commands` response format. Was originally v2.4.6; deferred so UX + crown-jewel land first.
+---
 
-### NEW Bucket B0 · v2.4.13 + v2.4.14 intermediate UX/UI patches · SHIPPED 2026-04-27
+## 4 · What's next (the queue)
 
-v2.4.13 tagged + pushed (eight spec sections + six polish iterations). v2.4.14 tagged + pushed (hygiene + polish + filter system + Lucide + env aliases). Test surface 547/0/547. Drawer-everywhere parked per user direction; v2.5.0 reduced scope folded into v2.4.14 wherever it didn't depend on drawers.
+Per the user-validated release sequence (logged 2026-05-03):
 
-### Bucket B1 · v2.4.15 NEXT UP · dynamic envs + UX polish bundle (spec LOCKED locally, awaiting sign-off)
+| Tag | Theme | Notes |
+|---|---|---|
+| **rc.4** | AI correctness Round 2 | Anything that surfaces during real-customer workshops. Currently OPEN: BUG-001 + BUG-002 propagate-criticality. May also fold real-Anthropic + real-Gemini live-key smoke if not run during rc.3 workshop. |
+| **rc.5** | UX consolidation arc | **Per `feedback_group_b_spec_rewrite.md`: starts with a SPEC rewrite session capturing user expectations BEFORE any UI code lands.** Scope: window/overlay shape contract (Settings vs Chat vs Skill Builder vs AI Assist vs confirmAction inconsistencies), Skill Builder UX rethink (terminology + IA + progressive disclosure, possibly radical re-shape), BUG-022 chat polish, AiAssistOverlay retirement (Cmd+K rebound to Canvas Chat). |
+| **rc.6** | View migration arc | 5 v2.x view tabs migrated to read via `state/adapter.js`. Foundation for crown-jewel polish. |
+| **rc.7** | Crown-jewel polish | Per `project_crown_jewel_design.md` + `project_deferred_design_review.md` (whitespace > drawer IA > icons > tag vocab > color discipline). BUG-021 perf can fold in here. |
+| **rc.8** | Pre-GA hardening | v2.x AI admin parity-gate decision (`project_v2x_admin_deferred.md`); v3-prefix purge (`feedback_no_version_prefix_in_names.md`); backlog cleanup. |
+| **v3.0.0 GA** | Tag | Real workshop run logged + all gates closed. |
 
-User reviewed v2.4.14 ship + raised 9 follow-up items (env model + vendor bar + filter UI + 4 polish tweaks). I scoped them into a single v2.4.15 release because the env model is foundational + the polish items touch the same render surfaces. Full spec committed locally at `c0c6d77` in `docs/CHANGELOG_PLAN.md § v2.4.15` (NOT pushed; per the no-push-without-approval rule).
+---
 
-**Sections:**
-- §1 Dynamic environment model (DE1-DE9): catalog of 8 env types (Main / DR / Vault NEW / Public / Edge / Co-lo NEW / Hosted MSP NEW / Sovereign NEW), `session.environments[]` schema with per-env metadata (alias, location, sizeKw, sqm, tier, notes), migrator drains v2.4.14 `environmentAliases`, Tab 1 Environments card rebuilt as managed list, every render-site swap from `ENVIRONMENTS` constant to `getActiveEnvironments(session)`.
-- §2 Vendor mix segmented bar (VB1-VB3): one horizontal stacked bar per dimension; replaces multi-card SummaryVendorView.
-- §3 Modern collapsible filter bar (FB1-FB6): NEW `ui/components/FilterBar.js`; "Filters . N active" button + collapsible panel + active-pill strip above kanban.
-- §4 Session capsule polish (SC1-SC2): `building-2` icon (was briefcase / shopping-bag); "Updated HH:MM" timestamp segment.
-- §5 Footer alignment (FT1): right-align hint with `\|` divider before version capsule.
-- §6 Matrix tweaks (MT1-MT3): 3px column-gap, invisible corner cell, Load demo icon -> `play-circle`.
+## 5 · Locked behavioral discipline (memory index)
 
-**Tests:** Suite 46 with DE1-DE10 + VB1-VB3 + FB1-FB6 (RED first per spec-and-test-first protocol).
+These are non-negotiable and apply to every commit:
 
-**6 open decisions awaiting user sign-off** (asked at end of last session; user paused for handoff before answering):
-1. **Catalog list** , 8 entries OK as-is, or drop / add types? My picks: Main, Secondary/DR, Vault/3rd site (NEW), Public Cloud, Edge/Remote, Co-location (NEW), Hosted/MSP (NEW), Sovereign Cloud (NEW). Possible additions user might want: "Workplace / VDI" or "Network edge / 5G MEC."
-2. **Default-enabled set** , the original 4 (Main / DR / Public / Edge). Existing sessions auto-enable whatever envs their data references. OK?
-3. **Per-env metadata fields** , alias / location / sizeKw / sqm / tier / notes. Drop / add anything?
-4. **Removing an env that has instances** , my plan: warn user "5 instances tied to this env; removing hides them but keeps them in the saved file." Confirm = remove. OK approach, or hard block?
-5. **Demo metadata** , Riyadh DC . 5 MW . Tier III, Jeddah DR . 2 MW . Tier II, AWS me-south-1, Branch sites x14. Different cities / specs / vertical mix?
-6. **Filter dimensions for v2.4.15 FilterBar** , only services dimension wired through to body data attribute + CSS dim rule (matches v2.4.14). Layer/Domain/Urgency render in panel but don't dim cards yet. OK to ship that way, or wire all 4 now?
+- `feedback_spec_and_test_first.md` — every release sequences spec → tests → code → verify. SPEC + RULES + V-* test contract authored BEFORE implementation. **Pre-flight checklist tickets every box at tag time.**
+- `feedback_test_or_it_didnt_ship.md` — every BUG-NNN fix MUST add a regression test that would have caught the original incident.
+- `feedback_no_patches_flag_first.md` — never ship a fix that bypasses v3 schema/validation/architecture without explicit user approval BEFORE coding.
+- `feedback_browser_smoke_required.md` — every tag MUST include a manual browser smoke against the verification spec via Chrome MCP.
+- `feedback_test_what_to_test.md` — V-FLOW or it didn't ship; property tests are necessary but never sufficient.
+- `feedback_no_push_without_approval.md` — never `git push` without explicit user instruction. Commit locally during work iterations.
+- `feedback_no_version_prefix_in_names.md` — version numbers live in git tags + APP_VERSION + changelogs only; never in filenames, exports, or UI labels.
+- `feedback_dockerfile_whitelist.md` — every new top-level dir MUST be added to `Dockerfile` COPY commands in the same commit.
+- `feedback_import_collision.md` — alias v3.0 imports during v2↔v3 cutover to avoid `SyntaxError: Identifier already declared`.
+- `feedback_foundational_testing.md` — every data-model change ships with demo refresh + seed-skill update + demoSpec assertion + DEMO_CHANGELOG entry.
+- `feedback_naming_standard.md` — AppName-vX.Y.Z naming for committed artifacts; no role labels or casual placeholders.
+- `feedback_docs_inline.md` — update CHANGELOG_PLAN + SPEC in the same turn as the code, not as a backfill.
+- **`feedback_group_b_spec_rewrite.md`** (NEW 2026-05-03) — when work reaches the UX consolidation arc (rc.5), expect intensive SPEC rewrite session BEFORE coding starts.
 
-Effort: ~14 hours, single tag, ~2 focused days.
+User-flagged concerns (non-blocking; rc.5 work):
+- `project_skillbuilder_ux_concern.md` — Lab tab Skill Builder unintuitive
+- `project_ui_ux_consolidation_concern.md` — broader UI/UX + window inconsistency
 
-### Bucket B1.5 · v2.4.16 user feedback backlog (CAPTURED 2026-04-29 · MUST READ before scoping next release)
+---
 
-User raised the following items in the iter-5 review. **They are not in v2.4.15** — captured here so the next release scopes them deliberately. Listed in the user's own ordering:
+## 6 · How a fresh session picks this up
 
-1. **Spec + tests discipline drift** · "testing cases and specifications documents don't seem to be updated and keep up to date with what we have been doing." This is a `feedback_spec_and_test_first.md` violation observed across iter-2 → iter-5. The user wants spec-and-test-first **enforced at the top of every iteration**, not as a backfill. Action for next release: mandate the pre-flight checklist (`SPEC.md §9` block + `RULES.md` updates + `Suite N` red tests committed BEFORE code; checklist box ticked at tag time). Hygiene-pass `.dNN` after v2.4.15 ships should audit the v2.4.15 polish iter-2 → iter-5 SPEC §9 coverage and pay back the gap.
+1. Read this `HANDOFF.md` first.
+2. Read `MEMORY.md` index + the locked feedback memories.
+3. Skim `docs/v3.0/SPEC.md` change log table (find the most recent annexes — §S26..§S31 are the rc.3 additions).
+4. Check `docs/RULES.md §16` (CH1–CH27) for hard contracts.
+5. Run the Docker container (`docker compose up -d`) and verify the banner is GREEN.
+6. Pick the next arc per `§4 What's next` above; before coding, surface it to the user for confirmation (especially rc.5 which expects a SPEC-rewrite session).
 
-2. **AI builder rendering bug** · "I see some data capsules when I click on it spits half text half capsule in the builder textbox." Pill-editor regression — clicking a binding pill in the prompt template doesn't transform cleanly; the half-text/half-pill state implies a malformed contenteditable replacement. Reproduce via Skill Builder → click any field-pointer pill in the template box. Likely culprit: `ui/components/PillEditor.js` selection range handling when the pill is at a word boundary. Logged for v2.4.16 investigation.
+---
 
-3. **Tag + right-panel theme inconsistency app-wide** · "the right panel of the gaps tab is not consistent with the rest of the app theme. Tags also on the tiles and in the main tabs are old style — they need to match what we did for the env styling." Concretely: gap-card tags (`.urgency-badge`, `.gap-card-meta`, etc.), MatrixView tile pills, ReportingView chips all still use pre-iter-3 chip / badge / pill classes. Migrate to the GPLC `.tag[data-t="…"]` primitive everywhere. Right-panel detail across MatrixView / GapsEditView / SummaryHealthView / SummaryRoadmapView / SkillAdmin migrates to the `.detail-panel-v2` shape used today on the env detail. **Single coherent pass** — sprinkling causes drift.
+## 7 · File pointers (post-rc.3)
 
-4. **Data taxonomy + relationships catalog** · "Data taxonomy, relationships, integrity, structure hierarchy, labeling — needs end-to-end catalog and validation. Reporting may be reporting wrong figures because of misconfigurations or undefined links. The definition table for the gaps how they link has to be validated, for example we need one disposition from 'as-is' and nothing when we do retire." User wants:
-   - A human-readable **relationships table** (probably `docs/RULES.md §X` or a new `docs/TAXONOMY.md`) showing every entity, every link, every cardinality, every disposition rule per gap type, every "what triggers what" relationship.
-   - End-to-end validation that what reporting shows matches the underlying counts. Likely an audit of `services/healthMetrics.js`, `services/gapsService.js`, `services/vendorMixService.js`, `services/roadmapService.js` against the live demo session to catch off-by-one / wrong-grouping bugs.
-   - Specific ask: per-gapType disposition rules table (replace = 1 from + 1 to; retire = 1 from + 0 to; consolidate = N from + 1 to; ops = 0 + 0; enhance = 1 + same; newCap = 0 + N). Validate each in code.
+| Concern | File |
+|---|---|
+| Active engagement source-of-truth | `state/engagementStore.js` (persists + rehydrates per SPEC §S31) |
+| v2 sessionState (legacy) | `state/sessionStore.js` (still authoritative for v2.x view tabs) |
+| v2→v3 bridge (customer shallow-merge) | `state/sessionBridge.js` |
+| v3 engagement schema | `schema/engagement.js` |
+| v3 skill schema | `schema/skill.js` (v3.1: parameters[] + outputTarget) |
+| v3 demo engagement | `core/demoEngagement.js` (8 gaps / 3 drivers / 4 envs / 23 instances) |
+| Data contract (LLM grounding) | `core/dataContract.js` |
+| Concept dictionary | `core/conceptManifest.js` |
+| App workflow manifest | `core/appManifest.js` |
+| Chat orchestration | `services/chatService.js` |
+| System prompt assembly | `services/systemPromptAssembler.js` |
+| Tool registry | `services/chatTools.js` |
+| Generic LLM connector | `services/aiService.js` |
+| Real provider (anthropic / gemini / openai / vllm / dell) | `services/realChatProvider.js` |
+| Mock provider (production-path) | `services/mockChatProvider.js` |
+| Handshake regex + strip | `services/chatHandshake.js` |
+| UUID-to-label scrub | `services/uuidScrubber.js` |
+| Skill runner | `services/skillRunner.js` |
+| Skill output schemas | `services/skillOutputSchemas.js` |
+| Skill save validator | `services/skillSaveValidator.js` |
+| Manifest generator | `services/manifestGenerator.js` |
+| Path resolver | `services/pathResolver.js` |
+| Skill Builder UI (v3.1) | `ui/views/SkillBuilder.js` |
+| Skill Builder opener (shared) | `ui/skillBuilderOpener.js` |
+| Canvas Chat overlay | `ui/views/CanvasChatOverlay.js` |
+| AI Assist legacy overlay | `ui/views/AiAssistOverlay.js` (Cmd+K only post-rc.3 #7) |
+| Settings modal | `ui/views/SettingsModal.js` |
+| Skills storage (v3.1) | `state/v3SkillStore.js` |
+| Diagnostic suite | `diagnostics/appSpec.js` (1103 tests) |
+| Test runner | `diagnostics/testRunner.js` |
+| BUG log | `docs/BUG_LOG.md` |
+| Pre-flight checklist | `docs/PREFLIGHT.md` |
+| SPEC | `docs/v3.0/SPEC.md` |
+| RULES | `docs/RULES.md` |
+| Release notes (latest) | `docs/RELEASE_NOTES_rc.3.md` |
 
-5. **Crown-jewel reporting redesign (vendor mix + heatmap)** · already captured in iter-3 as items 4 + 7. The user reaffirms: "the reporting that we have not done yet has to be redesigned to provide tangible value, in both vendors mix and heatmap." Plan was Option A KPI tiles for vendor mix + new "Executive summary" sub-tab. **v2.4.16 still owns this.**
+---
 
-6. **Right-panel utilization optimization** · "Use of the right panel has to be optimized and utilized to provide most value for the user." Tied to item 3 (the unified detail-panel-v2). Each tab's right-panel default state should pull its weight: stats / next-best-action prompts / quick-add CTAs when nothing is selected, not just an empty placeholder.
-
-7. **Single-site preset bug** · FIXED in iter-5 hotfix (commit cd15b53). Materialization fired at click time fixed the empty-`session.environments[]` early-return.
-
-### Bucket B2 · v2.4.16 printable workshop report · QUEUED after v2.4.15
-
-Continuous-page HTML/PDF deliverable for Dell exec audiences. Was originally v2.4.15 in the previous session's plan; reordered because the env model needs to land first so the report can show city-named DCs + metadata ("Riyadh DC . 5 MW . Tier III"). Browser-print-to-PDF via `@media print`. Sections: cover -> drivers -> matrix -> pipeline -> per-project -> exec summary. Visual language matches canvas. Effort: 6-8 hours.
-
-### Bucket B3 · v2.4.17 demo refresh · QUEUED after v2.4.16
-
-Per user direction 2026-04-27: demo content that wows Dell executives without sounding salesy or naive. Real Dell product names, drivers->pain->Dell-tech mapping, realistic-but-tangible coverage. Sequenced AFTER report so the showcase can demo report + env metadata + filters + Cmd+K together. ~3 hours.
-
-### Bucket B4 · v2.4.18 Dell Sales Chat backend · QUEUED for when API info arrives
-
-User to provide Dell Sales Chat API endpoint URL + auth model in coming weeks. Until then: provider entry shipped in v2.4.13 (user-pastes-URL pattern). When credentials arrive, wire `/api/llm/dell-sales-chat` proxy via nginx + update SettingsModal hint copy. ~1 hour.
-
-### v2.5.0 (parked indefinitely)
-
-Drawer-everywhere + universal detail panel + remaining tag-vocab migration parked per user 2026-04-27. The right-panel detail model stays. May revisit if a real friction surfaces.
-
-**Locked decisions** (do NOT re-litigate during implementation):
-
-- §0 Drop the Reporting "Services scope" sub-tab entirely. Services info already on gap and project drawers; sub-tab adds a navigation step without earning value.
-- §1 Move app-version chip from header to footer as a small mono caps capsule. Top bar reserved for functional/interactive elements; metadata in footer.
-- §2 NEW global "AI Assist" top-right button replaces the existing per-driver `useAiButton` mounting. Single source of truth, more discoverable. Solid Dell-blue accent so it reads as the visible primary action in the topbar.
-- §3 NEW `ui/components/Overlay.js` component. Centered modal at `~min(720px, 90vw) wide × min(640px, 80vh) tall`. Backdrop blur. Sticky head + scrollable body + sticky footer. Backdrop / Escape / X all close. Used by AI Assist immediately; v2.5.0 reuses for "+ Add" flows.
-- §4 AI Assist click opens overlay with context-aware skill list (filtered by `currentStep`), prompt preview, in-place result panel.
-- §5 Demo banner renders on all 5 tabs (Tab 1, 2, 3, 4, 5 plus each Reporting sub-tab) when `session.isDemo === true`. Currently only Tab 1. Existing colorful styling kept; user explicitly likes it.
-- §6 Stepper clickability cues: hover background + `.step-num` color shift to Dell-blue + bigger labels (Fitts's Law) + active step gets a `▸` chevron prefix or 3px Dell-blue left mark + bolder weights so "you are here" reads clearly.
-- §7 Layer-name visual treatment in MatrixView (Tabs 2 + 3): bump 11px ink-mute to 14px ink 600, add 4×100% color-coded left bar per layer (signal palette: workload neutral, compute amber, storage amber, network green, dataProtection red, virtualization Dell-blue), mono caps eyebrow above each layer block.
-- §8 Brand-blue ratio calibrated 3% to 8-10%. Specific accent moves on active stepper, primary CTAs, hover states, filter-chip active, card-hover left bars, eyebrow rules.
-- One open clarification deferred to next session: user message ended "the top bar becomes for functional things. we might need to" (sentence cut off). Spec proceeds without the missing piece; flag for next-session pickup.
-
-**Tests**: Suite 45 VT21-VT28 (RED first; covers services-tab removed, version in footer, AI button in topbar, Overlay module, AI overlay open, demo banner all-tabs, stepper hover, layer-name treatment).
-
-**Effort**: ~2 days, single tag.
-
-### Bucket B · Crown-jewel UI rework (v2.5.0 + v2.5.1) · REDUCED SCOPE 2026-04-27
-
-Joint spec in `docs/CHANGELOG_PLAN.md § v2.5.0` (LOCKED 2026-04-26) plus the philosophy alignment from the Dell Advisory Design System document the user provided 2026-04-26 plus the GPLC reference HTML at `C:/Users/Mahmo/Downloads/GPLC Digital Unified Platform v1.0.html`. Carried forward decisions from `project_crown_jewel_design.md` and `project_deferred_design_review.md`.
-
-**v2.5.0, LOCKED 2026-04-26 (revised after user feedback)** (next session, ~4 days, single tag):
-- **§0** Pre-flight audit pass: em-dash sweep, Dell product accuracy (g-003 VxRail, no Boomi, no Secureworks / Taegis post-2025, SmartFabric Director → Manager, CloudIQ under APEX AIOps, VMware as partner not Dell), heading case (Title → sentence), default classification, topbar action audit, anti-pattern sweep on `styles.css`.
-- **§1** Design system foundation (DS1-DS8): tokens (4-tier ink, 3-tier surface, hairline scale, signal palette, hover-only shadows), eyebrow utility, ONE `.tag` primitive with `data-variant`, hairline section, card pattern, callout block (red / blue / green / amber 3px-left-border), shared band, mono tabular-nums.
-- **§2** Topbar + footer (TB1-TB6): white topbar replacing blue gradient; **local Dell logo** (current asset, no CDN dependency, offline-safe); mono uppercase doc-meta strip; no Export PDF / Share; footer 2px Dell-blue top border with 3-col grid; stepper restyle to `01 02 03 04 05` mono leading-zero.
-- **§3** Color discipline (CD1-CD5): brand-blue surface area target ~5% (was ~30%); layered signal mapping (urgency level as chip color, domain as left-bar accent); single primary CTA per surface; everything else ghost / neutral.
-- **§4** Detail panel restructure (DP1-DP10): research-grounded universal template covering all five entity types (gap, current tile, desired tile, project, service, driver). Sticky head with mono crumbs + sentence-case h3 + lede; STATUS STRIP signal chips; KEY ATTRIBUTES tech-grid 2-col mini-cards (Miller chunk); hairline-divided sections each with mono caps blue eyebrow; 6×2px Dell-blue dash bullets; sections render only when relevant data exists (Hick's Law); first-field auto-focus on add-mode; sticky footer with primary CTA bottom-right (Fitts's Law); callout integration for review-needed + AI-applied + closed + auto-driver notices.
-- **§5** Drawer pattern (DR1-DR9), **drawer-everywhere on Tabs 1-5** (was Tab 5 only): NEW `ui/components/Drawer.js` module; click any entity (driver, current tile, desired tile, gap, project, service) opens the drawer slide-in from right at 560px width; backdrop + Escape + ✕ close paths; content-swap on different-card-click; add-new-entity flow with auto-focused first field; left panel takes the FULL viewport width on every tab (free-win extra real estate for kanban / matrix / context form / sub-tabs).
-- **§AI** AI assist mounting (AI1-AI5), **pulled forward from v2.5.1 U4**: every entity drawer body has an AI ASSIST section as the last body section (predictable location, recognition over recall). `useAiButton` mounted in driver / current-tile / desired-tile / gap / project / service drawers, each filtered to the relevant tab's seed-skill list.
-- **§6** Cross-tab filter system (F1-F6): body data-attribute pattern; multi-chip selectors on Tab 4 + Reporting Gaps Board for layer / gapType / services / environment / driver; non-matching items dim to opacity 0.18-0.30 + grayscale(.5); match-mode toggle (default OR); persistence to `localStorage`.
-- **§7** Services scope sub-tab redesign (SR1-SR4): replace primitive table with hero summary card + per-service grid cards + drawer click-to-detail + concentration-risk callouts.
-- **§8** Tag vocabulary migration (TV1-TV9): all 11+ chip / badge / pill classes consolidated to `.tag[data-variant=...]`.
-- **§9** Tests (Suite 44 VT1-VT20 + DS24): token presence, eyebrow utility, single tag primitive, drawer module, content-swap, AI mount on every entity, filter behaviors, dash bullet, em-dash absence, services-scope cards.
-- **§R** Regression guards: v2.4.12 R1-R10 stay green; new R1-R18 cover drawer-everywhere + AI mount + edit-by-default + Dell product accuracy + color audit + em-dash sweep.
-- **Hard rules baked in**: no em dashes anywhere; sentence case headings; **local Dell logo** (no CDN); hover-only shadows; ONE `.tag` primitive; **drawer-everywhere on Tabs 1-5** (the full GPLC interaction model, not hybrid); AI ASSIST on every entity drawer; layered signal colors; **edit-by-default stays** (no view/edit toggle, ever).
-
-**v2.5.1, queued after v2.5.0 sign-off, scope reduced 2026-04-26** (~1.5 days, separate tag):
-- **VC** Vocabulary unification across Gaps (Tab 4) and Roadmap (Tab 5.5).
-- **GV** Visible Gap → Project relationship affordances ("trace this gap to its project", "show me the gaps in this project").
-- **PL** Primary-layer semantics rework (`gap.layerId` vs `affectedLayers[]`). Data model touchpoint, explicit spec round before code.
-- **IC** SVG icon system (Lucide library); replace all emoji with stroke icons at uniform 16 / 20 / 24px sizes.
-
-Pulled into v2.5.0 from the original v2.5.1 list: U4 (AI button placement on Tabs 2-5), drawer-everywhere (was hybrid Tab 5 only), edit-side panel polish (absorbed into §4 universal template). Explicitly NOT added to v2.5.1: view/edit-mode toggle (locked closed per user decision 2026-04-26).
-
-**v2.4.9 remains the pre-crown-jewel rollback anchor**. v2.4.12 is now the safe state; if v2.5.0 sideways, roll to v2.4.12.
-
-### Bucket C — Was user-gated, now done
-- ✅ C1. Phase 17 Taxonomy unification — shipped as v2.4.8 (2026-04-24, sign-off in hand).
-
-### Bucket D — Deployment
-- **D1.** GB10 (or any linux/arm64 host) **multi-arch verification** — the image is multi-arch-tagged but nobody has built/run it on real ARM64 hardware. Recipe in `project_current_state.md § Pending GB10 verification`.
-
-### Bucket E — v3 multi-user
-- **E1.** Backend server (Node/Express or FastAPI) + DB (SQLite → Postgres) + JWT auth + RBAC (presales/manager/director/admin) + analytics + WAF. Separate architecture doc required (`SPEC_v3.md`). AI API keys move server-side from browser localStorage. 2-4 weeks of focused work.
-
-## 6 · How to resume (for the fresh session)
-
-Read these files **in this order**:
-
-1. **This file** (`HANDOFF.md`) — you're here.
-2. `.claude/projects/C--Users-Mahmo-OneDrive-Documents-Claud-AI-PreSales-App/memory/MEMORY.md` — the full memory index.
-3. `.claude/projects/.../memory/project_current_state.md` — exhaustive shipped-state + commit refs.
-4. `.claude/projects/.../memory/feedback_foundational_testing.md` — **the rule that governs every data-model change**.
-5. `.claude/projects/.../memory/project_deferred_design_review.md` — crown-jewel scope.
-6. `SPEC.md § 12` — the AI Platform Specification (including §12.4a reliability contract + §12.5a sessionEvents bus + §12.8 invariants).
-7. `docs/CHANGELOG_PLAN.md` — latest entries at top: v2.4.12 (services scope, NEXT UP), v2.4.11 IMPLEMENTED (rules hardening), v2.4.10.1 hotfix, v2.4.10 save/open file, v2.4.9 rollback anchor.
-8. `docs/RULES.md` — **rules-as-built audit (post-v2.4.11)**. Must read before any rule change. 12 sections, ~90 numbered rules tagged 🔴 HARD / 🟡 SOFT / 🔵 AUTO / 📦 MIGRATE, plus a "v2.4.11 UI surfaces" map.
-9. `docs/DEMO_CHANGELOG.md` — demo + seed surface audit trail (read before touching `state/demoSession.js` or `core/seedSkills.js`).
-10. **Memory `feedback_browser_smoke_required.md`** — locked discipline since v2.4.11: every tag MUST include a manual browser smoke against the verification spec BEFORE commit. Tests pass alone is NOT enough — three v2.4.11 bugs (urgency lock, demo g-004 type, save feedback) only surfaced via browser smoke.
-
-Then verify the build works locally:
+## 8 · Push checklist (when user says "push" / "tag it" / "ship it")
 
 ```bash
-cd C:/Users/Mahmo/Projects/dell-discovery
-docker compose up -d --build   # image cached ~75MB; should start in <10s
-curl http://localhost:8080/health   # → ok
-# Open http://localhost:8080 in incognito → confirm green banner (~416 assertions)
+git push -u origin v3.0-data-architecture
+git tag v3.0.0-rc.3
+git push origin v3.0.0-rc.3
 ```
 
-Then ask the user to confirm the starting point and which bucket to tackle first. **Default next work as of 2026-04-25: v2.4.12 Services scope** — the spec is locked in `docs/CHANGELOG_PLAN.md § v2.4.12`, files to touch are named, two-surface treatment included. Execute on the spec without re-deriving.
-
-**TAG PROTOCOL (mandatory since v2.4.10.1 — written into `feedback_browser_smoke_required.md`)**:
-
-1. Spec committed BEFORE code (locked in `docs/CHANGELOG_PLAN.md`).
-2. Code execution as one coherent pass.
-3. **Manual browser smoke** against the verification spec via Chrome MCP (`mcp__Claude_in_Chrome__navigate` + `javascript_tool` to simulate real user actions and inspect resulting DOM/state). Every "what you'll see" bullet checked in the live app, results reported back to user.
-4. **PAUSE for explicit "tag it" approval.** No tag without it.
-5. Tag, push, update memory + HANDOFF.
-
-The browser smoke is non-negotiable: v2.4.11's three pre-tag bug fixes (urgency lock, demo g-004 type, save feedback) all came from browser smoke catching things the green test banner missed.
-
-## 7 · A suggested opening prompt for the fresh session
-
-Paste this verbatim (or adapt) as your first message in the new session:
-
-> Resume work on the Dell Discovery Canvas project at `C:\Users\Mahmo\Projects\dell-discovery\`. Read, in this exact order, before proposing anything:
->
-> 1. `HANDOFF.md` (this folder).
-> 2. The memory index `.claude/projects/.../memory/MEMORY.md` , then specifically `feedback_no_push_without_approval.md`, `feedback_browser_smoke_required.md`, `feedback_spec_and_test_first.md`, `feedback_foundational_testing.md`, `project_current_state.md`.
-> 3. `docs/CHANGELOG_PLAN.md § v2.4.15` (the spec entry that's already drafted + locked).
->
-> Quick state on resume:
-> - **Latest tag**: `v2.4.15` on `origin/main` (584 GREEN, 0 RED, 584 total).
-> - **Local-only commit** ahead of origin: `c0c6d77` (Spec . v2.4.15 . LOCKED). Do NOT push it on your own; user holds the push trigger per the no-push-without-approval rule.
-> - **v2.4.15 spec is locked but implementation has not started** , awaiting user sign-off on 6 spec decisions (catalog list, default-enabled set, metadata fields, env-removal behaviour, demo metadata, filter dimensions wired in this release). The 6 questions are listed verbatim in HANDOFF.md § Bucket B1.
-> - **Drawer-everywhere is parked** indefinitely. Right-panel detail model stays.
->
-> Before doing any work, confirm back:
-> 1. Current HEAD (should be `c0c6d77` local; `dd6974b` on origin) and that the local-only spec commit is intact.
-> 2. The 6 open spec decisions awaiting sign-off (read them out so user can answer in order).
-> 3. Whether `docker compose up -d --build` still serves 547/0/547 with the auto-dismissing green banner.
->
-> Then wait for the user's answers to the 6 questions before writing any tests or code. Once they answer, follow the locked tag protocol: Suite 46 RED tests committed first, then code execution §1 -> §6, then browser smoke against §R guards, then pause for explicit "tag it" approval.
->
-> If the user wants to redirect away from v2.4.15 (e.g., do the report first, or split the bundle), they'll say so. Don't assume.
-
-## 8 · Process rule for every session going forward
-
-Per `feedback_foundational_testing.md`:
-
-> Every phase that adds or renames a data-model field must, in the SAME commit, (1) update the demo session to exercise the new field, (2) update or add a seed skill that demonstrates the new capability, (3) update `diagnostics/demoSpec.js` with an assertion pinning the new shape, (4) log the change to `docs/DEMO_CHANGELOG.md`.
-
-v2.4.5 is the first release under this rule. Every release after it carries the rule forward. The 416-tests-pass-but-UX-broken pattern that caused v2.4.4's known issues is what this rule prevents.
+Verify on GitHub: branch `v3.0-data-architecture` carries the rc.3 tag commit; `v3.0.0-rc.3` tag exists; `origin/main` still on `5614f32` (v2.4.16, untouched).
