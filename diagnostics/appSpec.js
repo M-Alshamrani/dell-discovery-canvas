@@ -12829,6 +12829,90 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     });
 
     // -----------------------------------------------------------------
+    // V-CHAT-33..35 · BUG-020 fix · streaming-time handshake strip via
+    // shared services/chatHandshake.js (per SPEC §S20.16 + BUG-020
+    // 2026-05-03 user report).
+    // -----------------------------------------------------------------
+
+    it("V-CHAT-33 · BUG-020: services/chatHandshake.js exports HANDSHAKE_RE + HANDSHAKE_STRIP_RE + stripHandshake; shared by chatService + chatMemory + CanvasChatOverlay (regression guard)", async () => {
+      const handshakeMod = await import("../services/chatHandshake.js");
+      assert(typeof handshakeMod.HANDSHAKE_RE === "object" && handshakeMod.HANDSHAKE_RE instanceof RegExp,
+        "HANDSHAKE_RE exported as RegExp");
+      assert(typeof handshakeMod.HANDSHAKE_STRIP_RE === "object" && handshakeMod.HANDSHAKE_STRIP_RE instanceof RegExp,
+        "HANDSHAKE_STRIP_RE exported as RegExp");
+      assertEqual(typeof handshakeMod.stripHandshake, "function",
+        "stripHandshake helper exported");
+
+      // The three sites that strip the handshake import from this module
+      // (no copy-paste regex constants drifting out of sync).
+      const chatServiceSrc = await (await fetch("/services/chatService.js")).text();
+      const chatMemorySrc  = await (await fetch("/state/chatMemory.js")).text();
+      const overlaySrc     = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
+      assert(/from\s*"\.\/chatHandshake\.js"/.test(chatServiceSrc),
+        "chatService.js imports from chatHandshake.js");
+      assert(/from\s*"\.\.\/services\/chatHandshake\.js"/.test(chatMemorySrc),
+        "chatMemory.js imports from chatHandshake.js");
+      assert(/from\s*"\.\.\/\.\.\/services\/chatHandshake\.js"/.test(overlaySrc),
+        "CanvasChatOverlay.js imports from chatHandshake.js");
+      // No duplicate inline definitions remain.
+      const dupes = [
+        { src: chatServiceSrc, file: "chatService.js" },
+        { src: chatMemorySrc,  file: "chatMemory.js" },
+        { src: overlaySrc,     file: "CanvasChatOverlay.js" }
+      ].filter(o =>
+        /^const\s+HANDSHAKE_(?:STRIP_)?RE\s*=/m.test(o.src) ||
+        /HANDSHAKE_STRIP_RE_LOAD/.test(o.src)
+      );
+      assertEqual(dupes.length, 0,
+        "BUG-020 anti-pattern guard: no inline handshake-regex const remains in " + dupes.map(d => d.file).join(", "));
+    });
+
+    it("V-CHAT-34 · stripHandshake: removes the prefix at start, mid-stream, with bracket-optional / leading-whitespace / markdown-emphasis variations; idempotent", async () => {
+      const { stripHandshake } = await import("../services/chatHandshake.js");
+      const SHA = "deadbeef";
+      // Standard at-start strip.
+      assertEqual(stripHandshake("[contract-ack v3.0 sha=" + SHA + "]\nHello world."),
+        "Hello world.", "strips standard at-start handshake");
+      // Mid-stream emit (subsequent turn disobedience).
+      assert(!/contract-ack/i.test(stripHandshake("Sure, here's the answer.\n\n[contract-ack v3.0 sha=" + SHA + "]\nMore text.")),
+        "strips mid-stream handshake (no contract-ack remains anywhere)");
+      // Bracket-omitted variant (Gemini sometimes drops brackets per BUG-016).
+      assert(!/contract-ack/i.test(stripHandshake("contract-ack v3.0 sha=" + SHA + "\nThe answer is...")),
+        "strips bracket-omitted handshake");
+      // Markdown emphasis (** or _) preceding the bracket.
+      assert(!/contract-ack/i.test(stripHandshake("**[contract-ack v3.0 sha=" + SHA + "]**\nText")),
+        "strips handshake even when wrapped in markdown emphasis");
+      // Idempotent: stripping a clean string is a no-op.
+      assertEqual(stripHandshake("Just a normal answer."), "Just a normal answer.",
+        "no-op on clean text");
+      // Idempotent: applying twice yields the same result as once.
+      const once  = stripHandshake("[contract-ack v3.0 sha=" + SHA + "]\nText");
+      const twice = stripHandshake(once);
+      assertEqual(twice, once, "stripHandshake is idempotent");
+      // Non-string inputs pass through unchanged.
+      assertEqual(stripHandshake(null), null, "null passes through");
+      assertEqual(stripHandshake(undefined), undefined, "undefined passes through");
+    });
+
+    it("V-CHAT-35 · BUG-020: CanvasChatOverlay.onToken applies stripHandshake on accumulated content BEFORE renderAssistantMarkdown (streaming-time leak guard)", async () => {
+      const overlaySrc = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
+      // The onToken handler must call stripHandshake on assistantMsg.content
+      // BEFORE renderAssistantMarkdown is invoked.
+      // Source-grep the structural contract.
+      const onTokenMatch = overlaySrc.match(/onToken:\s*function\s*\(token\)\s*\{[\s\S]*?renderAssistantMarkdown/);
+      assert(onTokenMatch !== null,
+        "onToken function block found");
+      assert(/stripHandshake\(assistantMsg\.content\)/.test(onTokenMatch[0]),
+        "onToken applies stripHandshake to assistantMsg.content");
+      // The strip MUST appear before the renderAssistantMarkdown call (so the
+      // bubble never paints unstripped tokens). Index check.
+      const stripIdx  = onTokenMatch[0].indexOf("stripHandshake");
+      const renderIdx = onTokenMatch[0].indexOf("renderAssistantMarkdown");
+      assert(stripIdx > -1 && stripIdx < renderIdx,
+        "stripHandshake call is before renderAssistantMarkdown in onToken");
+    });
+
+    // -----------------------------------------------------------------
     // V-CONCEPT-1..5 · Phase B2 · Concept dictionary grounding
     // (per SPEC §S27 + RULES §16 CH21). Wires the 62-entry concept
     // dictionary into the system prompt (TOC inline) + exposes

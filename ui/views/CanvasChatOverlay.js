@@ -44,6 +44,12 @@ import { marked }                              from "../../vendor/marked/marked.
 import { loadV3Skills }                        from "../../state/v3SkillStore.js";
 import { resolveTemplate }                     from "../../services/pathResolver.js";
 import { openSkillBuilderOverlay }             from "../skillBuilderOpener.js";
+// BUG-020 (2026-05-03) — streaming-time handshake strip. Pre-fix, the
+// chatService strip ran ONLY on onComplete; if a model emitted the
+// handshake mid-stream (Gemini sometimes does on a subsequent turn),
+// the bubble flashed it during streaming. Now onToken applies the
+// shared strip to the accumulated buffer before each markdown re-parse.
+import { stripHandshake }                      from "../../services/chatHandshake.js";
 
 // Module-scope state for the open overlay. Only one chat overlay is
 // open at a time; Overlay.js enforces the singleton pattern.
@@ -769,6 +775,12 @@ async function handleSend(body) {
       provider:       provider,
       onToken: function(token) {
         assistantMsg.content += token;
+        // BUG-020 fix · streaming-time handshake strip. If the model
+        // emits `[contract-ack v3.0 sha=<8>]` mid-stream (subsequent
+        // turn disobedience seen in Gemini), strip it BEFORE the
+        // markdown re-parse so the bubble never displays the artifact.
+        // stripHandshake is idempotent + cheap; safe to run on every token.
+        assistantMsg.content = stripHandshake(assistantMsg.content);
         // Re-parse via marked progressively on the last assistant bubble.
         const bubbles = body.querySelectorAll(".canvas-chat-msg-assistant .canvas-chat-msg-content");
         const last = bubbles[bubbles.length - 1];

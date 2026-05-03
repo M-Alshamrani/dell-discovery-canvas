@@ -15,6 +15,12 @@
 // Authority: docs/v3.0/SPEC.md §S20.9 · docs/v3.0/TESTS.md §T20
 //            V-CHAT-{6,7,8} · docs/RULES.md §16 CH5/CH9/CH11.
 
+// SPEC §S20.16 + BUG-020 fix (2026-05-03) — handshake strip helper now
+// lives in services/chatHandshake.js; chatService + chatMemory + the
+// chat overlay's streaming-time onToken path all share one source-of-
+// truth pattern.
+import { stripHandshake } from "../services/chatHandshake.js";
+
 export const CHAT_TRANSCRIPT_WINDOW = 30;
 export const CHAT_TRANSCRIPT_TOKEN_BUDGET = 12000;
 export const TRANSCRIPT_KEY_PREFIX = "dell-canvas-chat::";
@@ -25,14 +31,12 @@ function emptyTranscript() {
 
 // loadTranscript(engagementId) → { messages, summary }
 //
-// BUG-015 / BUG-016 backfill (2026-05-02 PM): pre-fix, the handshake
-// prefix `[contract-ack v3.0 sha=<8>]` could leak into assistant
-// messages and get persisted to localStorage. On reload the leak
-// reappears even after the chatService strip is fixed. We strip it
-// at LOAD time too so old transcripts heal automatically — same
-// regex chatService uses post-fix (bracket-optional, global).
-const HANDSHAKE_STRIP_RE_LOAD = /(?:^|[\s*_>])\[?\s*contract-ack\s+v3\.0\s+sha=[0-9a-f]{8}\s*\]?\s*\n?/gi;
-
+// BUG-015 / BUG-016 backfill (2026-05-02 PM) + BUG-020 (2026-05-03):
+// pre-fix, the handshake prefix `[contract-ack v3.0 sha=<8>]` could
+// leak into assistant messages and get persisted to localStorage.
+// On reload the leak reappears even after the chatService strip is
+// fixed. We strip it at LOAD time too so old transcripts heal
+// automatically — same shared helper chatService uses post-fix.
 export function loadTranscript(engagementId) {
   if (!engagementId) return emptyTranscript();
   try {
@@ -43,9 +47,7 @@ export function loadTranscript(engagementId) {
     return {
       messages: parsed.messages.map(m => {
         if (m && m.role === "assistant" && typeof m.content === "string") {
-          return Object.assign({}, m, {
-            content: m.content.replace(HANDSHAKE_STRIP_RE_LOAD, "").replace(/^\s+/, "")
-          });
+          return Object.assign({}, m, { content: stripHandshake(m.content) });
         }
         return m;
       }),

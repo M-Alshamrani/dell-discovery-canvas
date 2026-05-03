@@ -27,22 +27,11 @@
 import { buildSystemPrompt }  from "./systemPromptAssembler.js";
 import { CHAT_TOOLS }         from "./chatTools.js";
 import { getContractChecksum } from "../core/dataContract.js";
-
-// SPEC §S20.16 + §S25.5 handshake regex.
-// LLM is instructed to emit `[contract-ack v3.0 sha=<8-char-hex>]` as
-// the EXACT first line of its first response. Two regexes:
-//
-//   HANDSHAKE_RE — strict, anchored, captures the sha. Used for the
-//   first-turn ack validation (was the contract acknowledged correctly?).
-//
-//   HANDSHAKE_STRIP_RE — permissive, global, strips ANY occurrence
-//   (with or without brackets, with or without preceding whitespace
-//   or markdown emphasis like ** or _). Defensive against models that
-//   disobey "first turn only" (Gemini repeats it; BUG-015) or omit
-//   the brackets (Gemini sometimes does; BUG-016 / 2026-05-02 PM
-//   user report). Applied to the visible response unconditionally.
-const HANDSHAKE_RE = /^\s*\[contract-ack\s+v3\.0\s+sha=([0-9a-f]{8})\]\s*\n?/i;
-const HANDSHAKE_STRIP_RE = /(?:^|[\s*_>])\[?\s*contract-ack\s+v3\.0\s+sha=[0-9a-f]{8}\s*\]?\s*\n?/gi;
+// SPEC §S20.16 + §S25.5 + BUG-020 fix (2026-05-03) — handshake regex
+// + strip helper now live in services/chatHandshake.js so chatService,
+// chatMemory, AND CanvasChatOverlay (streaming-time onToken path) all
+// share one source-of-truth pattern + idempotent strip.
+import { HANDSHAKE_RE, HANDSHAKE_STRIP_RE } from "./chatHandshake.js";
 
 // SPEC §S20.5.2 + RULES §16 CH10 — multi-round tool chaining safety cap.
 // Prevents runaway tool loops if the model never emits a text-only

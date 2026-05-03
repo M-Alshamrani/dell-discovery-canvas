@@ -110,7 +110,8 @@ function buildRoleSection(contractChecksum) {
     "== First-turn handshake (REQUIRED on your FIRST response only) ==",
     "On your FIRST response in this session, you MUST start with EXACTLY this single line, then a blank line, then your normal response:",
     "[contract-ack v3.0 sha=" + contractChecksum + "]",
-    "This proves you've loaded the data contract below. Subsequent turns do NOT include this prefix; only the first turn."
+    "This proves you've loaded the data contract below. Subsequent turns do NOT include this prefix; only the first turn.",
+    "CRITICAL ANTI-LEAK RULE: Never emit the `[contract-ack ...]` prefix on any turn AFTER the first one. Never quote it back, never echo it, never include it inside a code block, never mention 'contract-ack' to the user. The prefix is a one-time handshake — if you emit it on turns 2, 3, 4 etc. the user sees a broken-looking artifact. This applies to ALL output: markdown, code blocks, tool-result paraphrases, error responses, and reasoning preambles."
   ].join("\n");
 }
 
