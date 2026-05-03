@@ -38,8 +38,12 @@ import { marked }                              from "../../vendor/marked/marked.
 // rc.3 #5 (SPEC §S29.5) — chat right-rail populated with saved v3.1 skills.
 // Click a card → mini parameter form (or one-shot drop for parameter-less
 // skills) → resolved prompt drops into the chat input.
+// rc.3 #7 (SPEC §S29.7) — Skill Builder access lives inside the right-rail
+// ("+ Author new skill" footer button) since the topbar consolidated to a
+// single AI surface (Chat).
 import { loadV3Skills }                        from "../../state/v3SkillStore.js";
 import { resolveTemplate }                     from "../../services/pathResolver.js";
+import { openSkillBuilderOverlay }             from "../skillBuilderOpener.js";
 
 // Module-scope state for the open overlay. Only one chat overlay is
 // open at a time; Overlay.js enforces the singleton pattern.
@@ -190,7 +194,8 @@ function buildBody() {
 // paintSkillRail — renders saved-skill cards into the right rail.
 // Called on overlay open and after a skill is run (so future cards
 // reflect the persistent state). Empty state surfaces a friendly hint
-// pointing at the Skill Builder.
+// + a button that opens the Skill Builder. Populated state appends a
+// "+ Author new skill" footer button (rc.3 #7 routes Lab access here).
 function paintSkillRail(body) {
   const railBody = body.querySelector("[data-canvas-chat-rail-body]");
   if (!railBody) return;
@@ -202,8 +207,9 @@ function paintSkillRail(body) {
   if (ids.length === 0) {
     const empty = document.createElement("div");
     empty.className = "canvas-chat-rail-empty";
-    empty.textContent = "Saved skills will appear here as one-click shortcuts. Author one in the Skill Builder, then return here to invoke it.";
+    empty.innerHTML = "Saved skills will appear here as one-click shortcuts.<br/>Author one to get started.";
     railBody.appendChild(empty);
+    railBody.appendChild(buildAuthorSkillButton());
     return;
   }
 
@@ -213,6 +219,20 @@ function paintSkillRail(body) {
     list.appendChild(buildSkillCard(skillsById[id], body));
   }
   railBody.appendChild(list);
+  railBody.appendChild(buildAuthorSkillButton());
+}
+
+// buildAuthorSkillButton — secondary affordance routing power-users to
+// the Skill Builder overlay (rc.3 #7 demoted Lab off the topbar).
+function buildAuthorSkillButton() {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "canvas-chat-rail-author-btn";
+  btn.setAttribute("data-canvas-chat-rail-author-btn", "");
+  btn.textContent = "+ Author new skill";
+  btn.title = "Open the Skill Builder to author a new AI skill";
+  btn.addEventListener("click", function() { openSkillBuilderOverlay(); });
+  return btn;
 }
 
 // buildSkillCard — one card per saved skill. Click → expand inline

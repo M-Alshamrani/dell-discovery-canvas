@@ -68,6 +68,7 @@ document.addEventListener("DOMContentLoaded", function() {
   wireSettingsBtn();
   wireUndoBtn();
   wireTopbarAiBtn();
+  wireAiAssistShortcut();
   wireTopbarLabBtn();
   wireTopbarChatBtn();
   // v2.4.13 S2A . repaint the secondary line whenever the save status
@@ -141,44 +142,21 @@ function wireSettingsBtn() {
   if (btn) btn.addEventListener("click", openSettingsModal);
 }
 
-// "Skill Builder Lab" topbar button. Opens the SkillBuilder panel as a
-// fullscreen overlay. (Per SPEC §S7.5; this surface predates rc.2 - the
-// "v3.0 Lab" prefix was purged in the rc.2 naming-discipline pass per
-// SPEC §S24.) Lazily imports the builder module so we don't load
-// schema/zod on every page (only when the user opens the lab).
+// rc.3 #7 (SPEC §S29.7) - Skill Builder access moved off the topbar
+// into a "+ Author new skill" affordance inside the Canvas Chat right-
+// rail. The topbar surface had three buttons (AI Assist + Skill Builder
+// + Chat); the Chat surface (with its right-rail saved-skill cards from
+// rc.3 #5) now subsumes both AI invocation paths. The shared open-
+// Skill-Builder entry point lives in ./ui/skillBuilderOpener.js.
+import { openSkillBuilderOverlay } from "./ui/skillBuilderOpener.js";
+
+// Topbar wiring kept null-safe - the buttons are removed from index.html
+// in rc.3 #7 but these functions stay defined so older bookmarks /
+// integration tests that look up the elements don't blow up.
 function wireTopbarLabBtn() {
   var btn = document.getElementById("topbarLabBtn");
   if (!btn) return;
-  btn.addEventListener("click", async function() {
-    var existing = document.getElementById("skillBuilderOverlay");
-    if (existing) { existing.remove(); return; }
-    var overlay = document.createElement("div");
-    overlay.id = "skillBuilderOverlay";
-    overlay.className = "skill-builder-overlay";
-    overlay.innerHTML = '<button class="skill-builder-overlay-close" aria-label="Close">×</button>' +
-                        '<div class="skill-builder-overlay-host" style="width:100%;"></div>';
-    document.body.appendChild(overlay);
-    overlay.addEventListener("click", function(e) {
-      if (e.target === overlay) overlay.remove();
-    });
-    overlay.querySelector(".skill-builder-overlay-close")
-      .addEventListener("click", function() { overlay.remove(); });
-    document.addEventListener("keydown", function escHandler(e) {
-      if (e.key === "Escape" && document.body.contains(overlay)) {
-        overlay.remove();
-        document.removeEventListener("keydown", escHandler);
-      }
-    });
-
-    var host = overlay.querySelector(".skill-builder-overlay-host");
-    try {
-      var mod = await import("./ui/views/SkillBuilder.js");
-      mod.renderSkillBuilder(host);
-    } catch (e) {
-      host.innerHTML = '<div style="padding:24px;color:#a52a2a;background:#fff;border-radius:8px;">' +
-                       'Failed to load Skill Builder: ' + e.message + '</div>';
-    }
-  });
+  btn.addEventListener("click", openSkillBuilderOverlay);
 }
 
 // v3.0.0-rc.2 . Canvas Chat topbar button. Lazily imports the overlay
@@ -200,19 +178,28 @@ function wireTopbarChatBtn() {
   });
 }
 
-// v2.4.13 S2 + S4 . global AI Assist button click handler. Statically
-// imported so the click opens the overlay synchronously (VT25 contract).
-// v2.4.14 . also responds to Cmd+K / Ctrl+K keyboard shortcut anywhere
-// in the app (industry-standard "command palette" pattern).
+// v2.4.13 S2 + S4 . global AI Assist button click handler.
+// rc.3 #7 (SPEC §S29.7): topbarAiBtn was retired when the topbar
+// consolidated to a single AI surface (Chat). The button-click path
+// is null-safe; the Cmd+K / Ctrl+K shortcut handler is registered
+// UNCONDITIONALLY (lifted out of the button-presence early-return)
+// so it remains the primary AI Assist entry point.
 function wireTopbarAiBtn() {
   var btn = document.getElementById("topbarAiBtn");
-  if (!btn) return;
-  btn.addEventListener("click", function() {
-    openAiOverlay({ tabId: currentStep, context: {} });
-  });
+  if (btn) {
+    btn.addEventListener("click", function() {
+      openAiOverlay({ tabId: currentStep, context: {} });
+    });
+  }
+}
+
+// Cmd+K / Ctrl+K shortcut. Registered unconditionally so it survives
+// the rc.3 #7 topbar-button retirement. Industry-standard "command
+// palette" pattern; opens the AI Assist overlay anywhere in the app.
+function wireAiAssistShortcut() {
   document.addEventListener("keydown", function(e) {
     var isMod = e.metaKey || e.ctrlKey;
-    if (!isMod || e.key !== "k" && e.key !== "K") return;
+    if (!isMod || (e.key !== "k" && e.key !== "K")) return;
     // Don't fire if the user is mid-typing in an input + the OS shortcut
     // would otherwise navigate (forms still get Cmd+K behaviour because
     // browsers don't bind it natively, but we're polite anyway).

@@ -6755,20 +6755,29 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // Section 2 . global AI Assist top-right button (VT23)
+  // Section 2 . AI Assist reachable via keyboard shortcut (VT23 - rc.3 #7)
   // ──────────────────────────────────────────────────────────────────────
+  // Per rc.3 #7 / SPEC §S29.7: the AI Assist topbar button was retired
+  // when the topbar consolidated to a single AI surface (Chat). AI Assist
+  // is still reachable via the Cmd+K / Ctrl+K command-palette shortcut
+  // (industry-standard pattern). VT23 was the topbar-button assertion;
+  // it's been rewritten to assert the keyboard contract instead.
 
-  it("VT23 · Global AI Assist button rendered in topbar with attractive Dell-blue styling", () => {
-    var btn = document.querySelector("#topbarAiBtn, .topbar-ai-btn");
-    assert(btn, "VT23 . v2.4.13 2 . global AI Assist button must exist in the topbar (#topbarAiBtn or .topbar-ai-btn)");
-    var inHeader = !!btn.closest("header, .topbar");
-    assert(inHeader, "VT23 AI Assist button must be inside the topbar");
-    var label = (btn.textContent || "").trim();
-    assert(/AI/i.test(label), "VT23 AI Assist button label must mention AI (got '" + label + "')");
-    var bg = getComputedStyle(btn).backgroundColor;
-    var isDellBlue = /rgb\(0,\s*118,\s*206\)|rgb\(0,\s*99,\s*174\)|rgb\(0,\s*68,\s*124\)/.test(bg);
-    assert(isDellBlue,
-      "VT23 AI Assist button must be solid Dell-blue (visible primary action). Got bg: " + bg);
+  it("VT23 · AI Assist reachable via Cmd+K / Ctrl+K shortcut (rc.3 #7 retired the topbar button per SPEC §S29.7)", async () => {
+    const appSrc = await (await fetch("/app.js")).text();
+    // The keyboard handler registers on `keydown` for Cmd+K / Ctrl+K and
+    // calls openAiOverlay (the AiAssistOverlay entry point).
+    assert(/document\.addEventListener\(\s*"keydown"/.test(appSrc),
+      "VT23 . a global keydown listener must be wired in app.js");
+    assert(/metaKey\s*\|\|\s*\w*\.ctrlKey|metaKey \|\| e\.ctrlKey/.test(appSrc),
+      "VT23 . the keydown handler must check Cmd (metaKey) OR Ctrl (ctrlKey)");
+    assert(/openAiOverlay\s*\(/.test(appSrc),
+      "VT23 . the shortcut must call openAiOverlay (the AI Assist entry point)");
+    // The retired topbar button must NOT be in the served HTML (V-TOPBAR-1
+    // covers this in §T-V3; reasserted here to keep VT23 self-contained).
+    const html = await (await fetch("/index.html")).text();
+    assert(!/id="topbarAiBtn"/.test(html),
+      "VT23 . #topbarAiBtn must be absent from the topbar (retired in rc.3 #7)");
   });
 
   // ──────────────────────────────────────────────────────────────────────
@@ -6805,17 +6814,21 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // Section 4 . AI Assist click opens overlay (VT25)
+  // Section 4 . AI Assist Cmd+K opens overlay (VT25 - rc.3 #7)
   // ──────────────────────────────────────────────────────────────────────
+  // Per rc.3 #7 / SPEC §S29.7: VT25 was the click-on-button assertion;
+  // it's been rewritten to dispatch a Cmd+K KeyboardEvent and assert the
+  // AI Assist overlay opens with the same skill-list contract.
 
-  it("VT25 · Click on global AI Assist button opens an overlay with kind='ai-assist' + a skill list element", () => {
+  it("VT25 · Cmd+K / Ctrl+K dispatches AI Assist overlay (kind='ai-assist' + skill list); button-click path retired per SPEC §S29.7", () => {
     _resetOverlayForTests();
     closeOverlay();
-    var btn = document.querySelector("#topbarAiBtn, .topbar-ai-btn");
-    assert(btn, "VT25 needs the AI Assist button to exist (relies on VT23 fix)");
-    btn.click();
+    // Dispatch the keyboard shortcut that app.js binds globally.
+    document.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "k", ctrlKey: true, bubbles: true
+    }));
     var overlay = document.querySelector(".overlay.open");
-    assert(overlay, "VT25 . AI Assist button click must open an overlay");
+    assert(overlay, "VT25 . Cmd+K / Ctrl+K must open an AI Assist overlay");
     var hasSkillList = overlay.querySelector(".ai-skill-list, [data-skill-list]");
     assert(hasSkillList,
       "VT25 . AI Assist overlay body must include a .ai-skill-list or [data-skill-list] element");
@@ -13183,6 +13196,53 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         const repassed = migrateSkillToV31(v31);
         assertEqual(JSON.stringify(repassed), JSON.stringify(v31),
           "migrateSkillToV31 is idempotent for v3.1 input");
+      });
+
+      it("V-TOPBAR-1 · Topbar consolidated to one AI button (rc.3 #7 / SPEC §S29.7): index.html has only #topbarChatBtn; #topbarAiBtn + #topbarLabBtn removed", async () => {
+        const html = await (await fetch("/index.html")).text();
+        assert(/id="topbarChatBtn"/.test(html),
+          "topbarChatBtn (the kept AI surface) is still present");
+        assert(!/id="topbarAiBtn"/.test(html),
+          "topbarAiBtn (AI Assist) removed from topbar");
+        assert(!/id="topbarLabBtn"/.test(html),
+          "topbarLabBtn (Skill Builder Lab) removed from topbar");
+      });
+
+      it("V-LAB-VIA-CHAT-RAIL · Skill Builder reachable from chat right-rail '+ Author new skill' button (rc.3 #7 / SPEC §S29.7)", async () => {
+        const overlaySrc = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
+        const openerSrc  = await (await fetch("/ui/skillBuilderOpener.js")).text();
+        // The overlay imports + invokes the Skill Builder opener.
+        assert(/openSkillBuilderOverlay/.test(overlaySrc),
+          "CanvasChatOverlay.js references openSkillBuilderOverlay");
+        assert(/from\s*"\.\.\/skillBuilderOpener\.js"/.test(overlaySrc),
+          "CanvasChatOverlay.js imports from the dedicated opener module (no app.js cycle)");
+        // The "+ Author new skill" button is always painted (empty + populated states).
+        assert(/canvas-chat-rail-author-btn/.test(overlaySrc),
+          "right-rail surfaces the '+ Author new skill' affordance class");
+        assert(/buildAuthorSkillButton/.test(overlaySrc),
+          "buildAuthorSkillButton helper defined");
+        // The opener module exports the function the overlay imports.
+        assert(/export\s+async\s+function\s+openSkillBuilderOverlay/.test(openerSrc),
+          "skillBuilderOpener.js exports openSkillBuilderOverlay");
+      });
+
+      it("V-AI-ASSIST-CMD-K · AI Assist is reachable via Cmd+K / Ctrl+K shortcut even though the topbar button was removed (rc.3 #7); shortcut wiring lives outside the button-presence guard", async () => {
+        const appSrc = await (await fetch("/app.js")).text();
+        // The wireTopbarAiBtn function still exists (null-safe when the
+        // button is absent), and a separate wireAiAssistShortcut()
+        // registers the global keydown listener UNCONDITIONALLY so the
+        // shortcut survives the rc.3 #7 topbar consolidation.
+        assert(/function\s+wireTopbarAiBtn\s*\(/.test(appSrc),
+          "wireTopbarAiBtn function defined (null-safe with button removed)");
+        assert(/function\s+wireAiAssistShortcut\s*\(/.test(appSrc),
+          "wireAiAssistShortcut function defined (separate from button wiring)");
+        assert(/wireAiAssistShortcut\(\);/.test(appSrc),
+          "wireAiAssistShortcut() invoked from app init (so the keydown listener registers regardless of button presence)");
+        // Cmd/Ctrl+K shortcut handler must check both modifiers.
+        assert(/metaKey\s*\|\|\s*\w*\.ctrlKey|metaKey \|\| e\.ctrlKey/.test(appSrc),
+          "Cmd+K / Ctrl+K modifier check present");
+        assert(/openAiOverlay/.test(appSrc),
+          "openAiOverlay invoked from the keyboard shortcut path");
       });
 
       it("V-SKILL-V3-7 · UseAiButton retired: ui/components/UseAiButton.js no longer served; no production .js imports it (regression guard per SPEC §S29.6)", async () => {

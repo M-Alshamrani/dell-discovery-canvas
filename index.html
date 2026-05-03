@@ -70,18 +70,10 @@
         <span class="session-strip-updated" data-empty="true"></span>
       </div>
       <div class="topbar-actions">
-        <button id="topbarAiBtn" class="topbar-ai-btn" type="button" aria-label="Open AI Assist">
-          <svg class="topbar-ai-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3z"/>
-            <path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14z"/>
-            <path d="M5 16l.6 1.6L7.2 18l-1.6.4L5 20l-.6-1.6L2.8 18l1.6-.4L5 16z"/>
-          </svg>
-          <span class="topbar-ai-label">AI Assist</span>
-        </button>
-        <button id="topbarLabBtn" class="topbar-lab-btn" type="button" aria-label="Open Skill Builder Lab">
-          Skill Builder
-        </button>
+        <!-- rc.3 #7 (SPEC §S29.7) — topbar consolidated to one AI surface.
+             AI Assist and Skill Builder are reachable from inside the
+             Canvas Chat (right-rail saved skills + "Author new skill" link)
+             and via the Cmd+K / Ctrl+K shortcut for AI Assist power users. -->
         <button id="topbarChatBtn" class="topbar-chat-btn" type="button" aria-label="Open Canvas Chat">
           <svg class="topbar-chat-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
