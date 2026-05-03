@@ -13186,6 +13186,78 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
           "migrateSkillToV31 is idempotent for v3.1 input");
       });
 
+      it("V-SKILL-V3-5 · ui/views/SkillBuilder.js source: chip palette + scope picker + entity-kind dropdown + 1-2-3 wizard removed; parameters editor + outputTarget radio + migrateSkillToV31 import present (per SPEC §S29.4)", async () => {
+        const src = await (await fetch("/ui/views/SkillBuilder.js")).text();
+
+        // ── REMOVED markers (rc.3 #4 strips these v3.0 surfaces) ─────────
+        // Strip pure-comment lines so phrases that survive in archaeology
+        // headers ("dropped chip palette + click-to-run scope") don't
+        // false-positive against runtime-removal assertions.
+        const codeOnly = src.split("\n").filter(ln => {
+          const t = ln.trim();
+          return !(t.startsWith("//") || t.startsWith("*") || t.startsWith("/*"));
+        }).join("\n");
+
+        // Chip palette had a left-side scaffold container + chip rows.
+        assert(!/skill-builder-chip-palette/.test(codeOnly),
+          "chip palette container removed");
+        assert(!/data-chip-row/.test(codeOnly),
+          "chip palette rows removed");
+        // Scope picker (skillType radio: click-to-run | session-wide).
+        assert(!/skill-builder-scope-picker|name="skill-builder-scope"|name="skill-builder-skill-type"/.test(codeOnly),
+          "scope picker (skillType radio) removed");
+        assert(!/value="click-to-run"|value="session-wide"/.test(codeOnly),
+          "click-to-run / session-wide radio values removed");
+        // Entity-kind dropdown (was bound to skillType=click-to-run).
+        assert(!/skill-builder-entity-kind/.test(codeOnly),
+          "entity-kind dropdown removed");
+        // 1-2-3 wizard step labels.
+        assert(!/skill-builder-step-1|skill-builder-step-2|skill-builder-step-3/.test(codeOnly),
+          "1-2-3 wizard step containers removed");
+        // The retired schema fields must not appear in the v3.1 builder.
+        assert(!/state\.skillType/.test(codeOnly),
+          "state.skillType reference removed");
+        assert(!/state\.entityKind/.test(codeOnly),
+          "state.entityKind reference removed");
+
+        // ── ADDED markers (v3.1 surfaces) ────────────────────────────────
+        // Parameters editor.
+        assert(/skill-builder-params/.test(src),
+          "parameters editor section present");
+        assert(/skill-builder-param-row/.test(src),
+          "parameters editor row class present");
+        assert(/skill-builder-param-type/.test(src),
+          "parameter type select present");
+        assert(/skill-builder-param-required/.test(src),
+          "parameter required checkbox present");
+        assert(/skill-builder-params-add/.test(src),
+          "+ Add parameter button present");
+        // Output target radio (chat-bubble enabled; deferred ones disabled).
+        assert(/name="skill-builder-target"/.test(src),
+          "output-target radio group present");
+        // The four target IDs are declared in the OUTPUT_TARGETS array
+        // (rendered into <input value="..."> via template literal).
+        assert(/id:\s*"chat-bubble"/.test(src) && /enabled:\s*true/.test(src),
+          "chat-bubble target declared (enabled)");
+        assert(/id:\s*"structured-card"/.test(src),
+          "structured-card target declared (disabled placeholder)");
+        assert(/id:\s*"reporting-panel"/.test(src),
+          "reporting-panel target declared (disabled placeholder)");
+        assert(/id:\s*"proposed-changes"/.test(src),
+          "proposed-changes target declared (disabled placeholder)");
+        // The state shape uses outputTarget + parameters[].
+        assert(/state\.outputTarget/.test(src),
+          "state.outputTarget reference present");
+        assert(/state\.parameters/.test(src),
+          "state.parameters reference present");
+        // Seed migration boundary at module load.
+        assert(/migrateSkillToV31/.test(src),
+          "migrateSkillToV31 imported / referenced (seeds migrate at load)");
+        // SPEC reference present in the file header.
+        assert(/SPEC §S29\.4|SPEC §S29/.test(src),
+          "SPEC §S29.4 reference present in file header");
+      });
+
     });
 
     // -----------------------------------------------------------------

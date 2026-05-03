@@ -630,6 +630,45 @@ Track inside the existing Phase 4 + Phase 5 commits. Each polish item gets a sin
 
 ---
 
+## BUG-023 · Skill-save validator rejects `{{context.<param>.layerId}}` even though the field resolves at run time
+
+**Status**: OPEN · Reported 2026-05-03 (rc.3 #4 smoke) · v3.0.0-rc.3-dev · Scheduled rc.3 polish bucket
+**Reporter**: rc.3 #4 SkillBuilder rebuild smoke (browser smoke per PREFLIGHT.md item 5)
+**Severity**: Low (run path works; only the **save-time validate** preview surfaces a false negative — same outcome user sees after rc.3 #4 lifts the chip-palette guardrail)
+**Regression**: No — pre-existing manifest-generator gap. The v3.0 SkillBuilder hid this by building paths via the chip palette (which only offered manifest-allowlisted paths). The v3.1 builder lets the user (or a migrated seed) reference any field, exposing the manifest-incomplete state.
+
+### Repro
+1. Demo loaded; engagement has 8 gaps.
+2. Open Skill Builder (Lab tab) → load `dell-mapping` seed.
+3. The migrated v3.1 prompt template references `{{context.gap.layerId}}` (and the run path resolves it to `"dataProtection"` correctly — see V-PATH-* coverage of the resolver).
+4. Click **Validate**.
+
+### Expected
+The save-time path resolver returns ✓ valid because `gap.layerId` is a real schema field that resolves at run time.
+
+### Actual
+> Validation failed
+> context.gap.layerId: Path 'context.gap.layerId' is not in the manifest for (parameter entityKind=gap)
+> Valid paths: customer.name, customer.vertical, customer.region, customer.notes, engagementMeta.engagementDate, engagementMeta.presalesOwner, engagementMeta.status, context.gap.description, …
+
+`context.gap.description` is enumerated; `context.gap.layerId` is not. Yet at run time `Layer: dataProtection` resolves and the mock LLM call succeeds.
+
+### Suspected root cause
+`services/manifestGenerator.js` doesn't include all gap fields under the `(parameter entityKind=gap)` namespace it derives. Suspected miss: any gap field whose schema name ends in `Id` (foreign-key columns) is being filtered out as "not user-facing" or similar — but it's exactly the field a user would want to bind in a prompt.
+
+### Fix plan
+1. **Spec**: SPEC §S?? small annex describing the manifest-generator contract for parameter-bound entity paths (every schema field that resolves at run time must be enumerated as a valid bind path; foreign-key fields included).
+2. **Test (RED first)**: V-PATH-NN saves a skill whose template references every Gap schema field in turn; assert each one validates ✓. RED today on `layerId` (and likely other `*Id` fields).
+3. **Fix**: lift any field-name filter in `manifestGenerator.js` so all schema fields surface.
+4. **Smoke**: Lab tab → load dell-mapping seed → Validate is ✓.
+
+### Why it's safe to ship rc.3 #4 without this fix
+- The **run** path works (resolved prompt + mock LLM both succeed) — this is the contract that rc.3 #5 (chat right-rail) will exercise.
+- Save still works (it doesn't gate on the path validator's "valid paths" reachability — it gates on the schema strict-parse). Users who want to save a skill referencing `layerId` can do so.
+- Validate is a **preview-time** affordance, not a save-time gate; it shows a non-blocking advisory.
+
+---
+
 ## Format reference for new entries
 
 ```
