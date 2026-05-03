@@ -457,9 +457,9 @@ It exists to (a) test chat without burning provider credits, (b) demo offline. F
 
 ---
 
-## BUG-018 · Gemini hangs / no response for tool-required questions (UNCONFIRMED — needs investigation)
+## BUG-018 · Gemini hangs / no response for tool-required questions (CLOSED 2026-05-03)
 
-**Status**: OPEN · Reported 2026-05-02 PM · v3.0.0-rc.2 · Scheduled NEXT
+**Status**: **CLOSED 2026-05-03** · Architectural fix shipped at commit `e8d17e4` (Phase A1 generic OpenAI tool-use connector). Phase A1 wired Gemini tool-use via the `functionDeclarations` schema; multi-round chaining works exactly like Anthropic. **Regression guards**: V-CHAT-27..32 (Phase A wire-format + integration round-trip with stubbed Gemini fetch). Specifically V-CHAT-32 drives the EXACT BUG-018 repro at the integration level: a question requiring `selectGapsKanban` resolves through a 2-round Gemini round-trip and surfaces the final text. Real-Gemini live-key smoke deferred to PREFLIGHT item 5 at tag time per `feedback_browser_smoke_required.md` — the test coverage is solid; the live-key smoke is the additional belt-and-suspenders gate.
 **Reporter**: User
 **Severity**: High (Gemini provider broken for selector-tool questions)
 
