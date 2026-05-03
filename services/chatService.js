@@ -32,6 +32,12 @@ import { getContractChecksum } from "../core/dataContract.js";
 // chatMemory, AND CanvasChatOverlay (streaming-time onToken path) all
 // share one source-of-truth pattern + idempotent strip.
 import { HANDSHAKE_RE, HANDSHAKE_STRIP_RE } from "./chatHandshake.js";
+// BUG-013 Path B (2026-05-03) — defensive UUID scrub. The role section +
+// selector enrichment (Path A, commit `d324971`) reduce but don't
+// eliminate UUID leakage in prose. This runtime scrub replaces bare
+// v3-format UUIDs with resolved labels (or `[unknown reference]`) and
+// is applied to the visible response as a final pass.
+import { buildLabelMap, scrubUuidsInProse } from "./uuidScrubber.js";
 
 // SPEC §S20.5.2 + RULES §16 CH10 — multi-round tool chaining safety cap.
 // Prevents runaway tool loops if the model never emits a text-only
@@ -210,6 +216,12 @@ export async function streamChat(opts) {
   // pass scrubs any remnant (bracketless, multiple, mid-response).
   const handshakeMatch = HANDSHAKE_RE.exec(finalResponse);
   let visibleResponse = finalResponse.replace(HANDSHAKE_STRIP_RE, "").replace(/^\s+/, "");
+  // BUG-013 Path B · final UUID scrub. Replace bare v3-format UUIDs in
+  // the visible response with resolved labels (gap description /
+  // driver label / environment alias / instance label) or
+  // `[unknown reference]` for orphans. Skips fenced + inline code so
+  // legitimate JSON examples remain intact.
+  visibleResponse = scrubUuidsInProse(visibleResponse, buildLabelMap(engagement));
   if (transcript.length === 0) {
     const expected = getContractChecksum();
     if (handshakeMatch) {

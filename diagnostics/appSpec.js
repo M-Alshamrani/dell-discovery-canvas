@@ -12913,6 +12913,132 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     });
 
     // -----------------------------------------------------------------
+    // V-CHAT-36..38 · BUG-013 Path B · runtime UUID scrub via
+    // services/uuidScrubber.js (per BUG-013 fix plan + 2026-05-03
+    // expanded rc.3 scope).
+    // -----------------------------------------------------------------
+
+    it("V-CHAT-36 · BUG-013: services/uuidScrubber.js exports buildLabelMap + scrubUuidsInProse; chatService + CanvasChatOverlay both apply the scrub (regression guard)", async () => {
+      const scrubberMod = await import("../services/uuidScrubber.js");
+      assertEqual(typeof scrubberMod.buildLabelMap, "function",
+        "buildLabelMap helper exported");
+      assertEqual(typeof scrubberMod.scrubUuidsInProse, "function",
+        "scrubUuidsInProse helper exported");
+
+      // chatService applies the scrub on the visibleResponse (after
+      // handshake strip).
+      const chatServiceSrc = await (await fetch("/services/chatService.js")).text();
+      assert(/from\s*"\.\/uuidScrubber\.js"/.test(chatServiceSrc),
+        "chatService.js imports from uuidScrubber.js");
+      assert(/scrubUuidsInProse\(\s*visibleResponse/.test(chatServiceSrc),
+        "chatService applies scrubUuidsInProse to visibleResponse");
+      // The scrub call must happen AFTER the handshake strip (HANDSHAKE_STRIP_RE)
+      // so the order is: strip handshake → scrub UUIDs.
+      const stripIdx = chatServiceSrc.indexOf("HANDSHAKE_STRIP_RE");
+      const scrubIdx = chatServiceSrc.indexOf("scrubUuidsInProse(");
+      assert(stripIdx > -1 && scrubIdx > -1 && stripIdx < scrubIdx,
+        "scrubUuidsInProse runs after HANDSHAKE_STRIP_RE in chatService.streamChat");
+
+      // CanvasChatOverlay applies the scrub at streaming time.
+      const overlaySrc = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
+      assert(/from\s*"\.\.\/\.\.\/services\/uuidScrubber\.js"/.test(overlaySrc),
+        "CanvasChatOverlay.js imports from uuidScrubber.js");
+      assert(/scrubUuidsInProse\(assistantMsg\.content/.test(overlaySrc),
+        "CanvasChatOverlay onToken applies scrubUuidsInProse");
+    });
+
+    it("V-CHAT-37 · scrubUuidsInProse: replaces known UUIDs with labels; replaces orphan UUIDs with [unknown reference]; skips code blocks; idempotent", async () => {
+      const { buildLabelMap, scrubUuidsInProse } = await import("../services/uuidScrubber.js");
+
+      const KNOWN_UUID  = "00000000-0000-4000-8000-00a100000001";
+      const ORPHAN_UUID = "11111111-2222-4333-8444-555555555555";
+
+      const eng = {
+        gaps: {
+          byId: { [KNOWN_UUID]: { description: "Replace Veeam with PowerProtect Data Manager" } },
+          allIds: [KNOWN_UUID]
+        },
+        drivers: { byId: {}, allIds: [] },
+        environments: { byId: {}, allIds: [] },
+        instances: { byId: {}, allIds: [] }
+      };
+      const labelMap = buildLabelMap(eng);
+      assert(typeof labelMap[KNOWN_UUID] === "string" && /Veeam|PowerProtect/i.test(labelMap[KNOWN_UUID]),
+        "buildLabelMap resolves the gap UUID to its description");
+
+      // Known UUID replaced.
+      const text1 = "The gap " + KNOWN_UUID + " needs urgent attention.";
+      const out1  = scrubUuidsInProse(text1, labelMap);
+      assert(!out1.includes(KNOWN_UUID),
+        "known UUID removed from prose (V-CHAT-37: " + out1 + ")");
+      assert(/Veeam|PowerProtect/i.test(out1),
+        "known UUID replaced by its label");
+
+      // Orphan UUID replaced with sentinel.
+      const text2 = "Reference: " + ORPHAN_UUID + ".";
+      const out2  = scrubUuidsInProse(text2, labelMap);
+      assert(!out2.includes(ORPHAN_UUID),
+        "orphan UUID removed from prose");
+      assert(out2.includes("[unknown reference]"),
+        "orphan UUID replaced by [unknown reference] sentinel");
+
+      // Code block skip — UUIDs inside ``` ``` are preserved.
+      const text3 = "Here's a JSON sample:\n```json\n{ \"id\": \"" + KNOWN_UUID + "\" }\n```\nUse it.";
+      const out3  = scrubUuidsInProse(text3, labelMap);
+      assert(out3.includes(KNOWN_UUID),
+        "UUID inside fenced code block is preserved (V-CHAT-37: " + out3 + ")");
+
+      // Inline code skip — UUIDs inside `...` are preserved.
+      const text4 = "Use the id `" + KNOWN_UUID + "` directly.";
+      const out4  = scrubUuidsInProse(text4, labelMap);
+      assert(out4.includes(KNOWN_UUID),
+        "UUID inside inline code is preserved");
+
+      // Idempotency: scrubbing twice yields the same as once (label has
+      // no UUID shape; orphan sentinel has no UUID shape).
+      const once  = scrubUuidsInProse(text1, labelMap);
+      const twice = scrubUuidsInProse(once, labelMap);
+      assertEqual(twice, once, "scrubUuidsInProse is idempotent");
+
+      // Pass-through: clean text unchanged.
+      assertEqual(scrubUuidsInProse("All good here.", labelMap), "All good here.",
+        "no-op on clean text");
+
+      // Empty / null inputs pass through.
+      assertEqual(scrubUuidsInProse("", labelMap), "", "empty string passes through");
+      assertEqual(scrubUuidsInProse(null, labelMap), null, "null passes through");
+    });
+
+    it("V-CHAT-38 · buildLabelMap covers gaps + drivers + environments + instances; missing collections degrade gracefully (empty map)", async () => {
+      const { buildLabelMap } = await import("../services/uuidScrubber.js");
+
+      const GAP_ID = "00000000-0000-4000-8000-aaaaaaaaaaaa";
+      const DRV_ID = "00000000-0000-4000-8000-bbbbbbbbbbbb";
+      const ENV_ID = "00000000-0000-4000-8000-cccccccccccc";
+      const INS_ID = "00000000-0000-4000-8000-dddddddddddd";
+
+      const eng = {
+        gaps: { byId: { [GAP_ID]: { description: "Migrate to PowerStore" } }, allIds: [GAP_ID] },
+        drivers: { byId: { [DRV_ID]: { id: "cyber_resilience", label: "Cyber resilience" } }, allIds: [DRV_ID] },
+        environments: { byId: { [ENV_ID]: { envCatalogId: "coreDc", alias: "Riyadh DC" } }, allIds: [ENV_ID] },
+        instances: { byId: { [INS_ID]: { vendor: "NetApp", roleHint: "Primary storage" } }, allIds: [INS_ID] }
+      };
+      const map = buildLabelMap(eng);
+      assert(/PowerStore/i.test(map[GAP_ID]), "gap → description");
+      assert(map[DRV_ID] === "Cyber resilience", "driver → label");
+      assert(map[ENV_ID] === "Riyadh DC", "environment → alias");
+      assert(/Primary storage|NetApp/i.test(map[INS_ID]), "instance → roleHint or vendor");
+
+      // Graceful empty.
+      assert(typeof buildLabelMap(null) === "object" && Object.keys(buildLabelMap(null)).length === 0,
+        "buildLabelMap(null) returns empty object");
+      assert(typeof buildLabelMap({}) === "object" && Object.keys(buildLabelMap({})).length === 0,
+        "buildLabelMap({}) returns empty object");
+      assert(typeof buildLabelMap({ gaps: null, drivers: null }) === "object",
+        "buildLabelMap with null collections returns empty object (no throw)");
+    });
+
+    // -----------------------------------------------------------------
     // V-CONCEPT-1..5 · Phase B2 · Concept dictionary grounding
     // (per SPEC §S27 + RULES §16 CH21). Wires the 62-entry concept
     // dictionary into the system prompt (TOC inline) + exposes

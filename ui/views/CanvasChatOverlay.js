@@ -50,6 +50,11 @@ import { openSkillBuilderOverlay }             from "../skillBuilderOpener.js";
 // the bubble flashed it during streaming. Now onToken applies the
 // shared strip to the accumulated buffer before each markdown re-parse.
 import { stripHandshake }                      from "../../services/chatHandshake.js";
+// BUG-013 Path B (2026-05-03) — streaming-time UUID scrub. Same
+// defense-in-depth pattern as the handshake: scrub bare v3-format
+// UUIDs in prose with resolved labels at every onToken so the bubble
+// never flashes raw UUIDs even if a model slips one in mid-stream.
+import { buildLabelMap, scrubUuidsInProse }    from "../../services/uuidScrubber.js";
 
 // Module-scope state for the open overlay. Only one chat overlay is
 // open at a time; Overlay.js enforces the singleton pattern.
@@ -781,6 +786,12 @@ async function handleSend(body) {
         // markdown re-parse so the bubble never displays the artifact.
         // stripHandshake is idempotent + cheap; safe to run on every token.
         assistantMsg.content = stripHandshake(assistantMsg.content);
+        // BUG-013 fix · streaming-time UUID scrub. Same defense-in-depth
+        // pattern: replace bare v3-format UUIDs in prose with resolved
+        // labels (or `[unknown reference]` for orphans). Idempotent
+        // (substituted labels have no UUID shape on re-pass). Skips
+        // fenced + inline code so legitimate JSON examples are intact.
+        assistantMsg.content = scrubUuidsInProse(assistantMsg.content, buildLabelMap(state.engagement));
         // Re-parse via marked progressively on the last assistant bubble.
         const bubbles = body.querySelectorAll(".canvas-chat-msg-assistant .canvas-chat-msg-content");
         const last = bubbles[bubbles.length - 1];
