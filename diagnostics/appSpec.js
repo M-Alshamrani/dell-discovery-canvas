@@ -6761,29 +6761,43 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // Section 2 . AI Assist reachable via keyboard shortcut (VT23 - rc.3 #7)
+  // Section 2 . AI Assist topbar button (VT23 - rc.3 #7 + #13)
   // ──────────────────────────────────────────────────────────────────────
-  // Per rc.3 #7 / SPEC §S29.7: the AI Assist topbar button was retired
-  // when the topbar consolidated to a single AI surface (Chat). AI Assist
-  // is still reachable via the Cmd+K / Ctrl+K command-palette shortcut
-  // (industry-standard pattern). VT23 was the topbar-button assertion;
-  // it's been rewritten to assert the keyboard contract instead.
+  // Per rc.3 #7: topbar consolidated to a single AI surface (was 3
+  // buttons — AI Assist + Skill Builder + Chat).
+  // Per rc.3 #13 (user direction 2026-05-03): the kept button is the
+  // resurrected v2.4.13 sparkle-icon + Dell-blue + diamond-glint
+  // "AI Assist" treatment, opening Canvas Chat (the unified chat
+  // surface). The legacy AiAssistOverlay tile-grid (kind="ai-assist")
+  // remains accessible via Cmd+K / Ctrl+K for power users; full
+  // retirement scheduled for rc.5 with the UX consolidation arc.
 
-  it("VT23 · AI Assist reachable via Cmd+K / Ctrl+K shortcut (rc.3 #7 retired the topbar button per SPEC §S29.7)", async () => {
-    const appSrc = await (await fetch("/app.js")).text();
-    // The keyboard handler registers on `keydown` for Cmd+K / Ctrl+K and
-    // calls openAiOverlay (the AiAssistOverlay entry point).
-    assert(/document\.addEventListener\(\s*"keydown"/.test(appSrc),
-      "VT23 . a global keydown listener must be wired in app.js");
-    assert(/metaKey\s*\|\|\s*\w*\.ctrlKey|metaKey \|\| e\.ctrlKey/.test(appSrc),
-      "VT23 . the keydown handler must check Cmd (metaKey) OR Ctrl (ctrlKey)");
-    assert(/openAiOverlay\s*\(/.test(appSrc),
-      "VT23 . the shortcut must call openAiOverlay (the AI Assist entry point)");
-    // The retired topbar button must NOT be in the served HTML (V-TOPBAR-1
-    // covers this in §T-V3; reasserted here to keep VT23 self-contained).
+  it("VT23 · Topbar AI Assist button (#topbarAiBtn) carries Dell-blue + diamond-glint treatment + label 'AI Assist'; click handler opens Canvas Chat (rc.3 #13 / SPEC §S29.7)", async () => {
     const html = await (await fetch("/index.html")).text();
-    assert(!/id="topbarAiBtn"/.test(html),
-      "VT23 . #topbarAiBtn must be absent from the topbar (retired in rc.3 #7)");
+    assert(/id="topbarAiBtn"/.test(html),
+      "VT23 . #topbarAiBtn is present in the topbar");
+    assert(/class="topbar-ai-btn"/.test(html),
+      "VT23 . #topbarAiBtn uses the topbar-ai-btn animated class");
+    assert(/topbar-ai-label[^>]*>AI Assist</.test(html),
+      "VT23 . #topbarAiBtn label reads 'AI Assist'");
+
+    // The CSS animation contract is in styles.css — assert the
+    // Dell-blue gradient + 8s breathing-glow keyframes are wired.
+    const css = await (await fetch("/styles.css")).text();
+    assert(/\.topbar-ai-btn\s*\{[\s\S]*?--dell-blue/.test(css),
+      "VT23 . .topbar-ai-btn CSS uses --dell-blue token");
+    assert(/@keyframes\s+ai-luxury-glow/.test(css),
+      "VT23 . ai-luxury-glow keyframe (the 8s breathe) is defined");
+    assert(/@keyframes\s+ai-luxury-glint/.test(css),
+      "VT23 . ai-luxury-glint keyframe (the diamond sweep) is defined");
+
+    // The click handler in app.js opens Canvas Chat (NOT the legacy
+    // AiAssistOverlay — that stays Cmd+K only per rc.3 #13).
+    const appSrc = await (await fetch("/app.js")).text();
+    const wireMatch = appSrc.match(/function\s+wireTopbarAiBtn\s*\(\)\s*\{[\s\S]*?\n\}/);
+    assert(wireMatch !== null, "VT23 . wireTopbarAiBtn function present");
+    assert(/openCanvasChat/.test(wireMatch[0]),
+      "VT23 . wireTopbarAiBtn click opens Canvas Chat (openCanvasChat)");
   });
 
   // ──────────────────────────────────────────────────────────────────────
@@ -13462,14 +13476,24 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
           "migrateSkillToV31 is idempotent for v3.1 input");
       });
 
-      it("V-TOPBAR-1 · Topbar consolidated to one AI button (rc.3 #7 / SPEC §S29.7): index.html has only #topbarChatBtn; #topbarAiBtn + #topbarLabBtn removed", async () => {
+      it("V-TOPBAR-1 · Topbar consolidated to ONE AI button (rc.3 #7 + #13 / SPEC §S29.7): index.html has #topbarAiBtn labelled 'AI Assist' as the singular AI surface; #topbarLabBtn + #topbarChatBtn removed", async () => {
         const html = await (await fetch("/index.html")).text();
-        assert(/id="topbarChatBtn"/.test(html),
-          "topbarChatBtn (the kept AI surface) is still present");
-        assert(!/id="topbarAiBtn"/.test(html),
-          "topbarAiBtn (AI Assist) removed from topbar");
+        // The kept singular AI surface — sparkle icon + Dell-blue + diamond glint.
+        assert(/id="topbarAiBtn"/.test(html),
+          "#topbarAiBtn (the consolidated AI surface) is present");
+        assert(/class="topbar-ai-btn"/.test(html),
+          "#topbarAiBtn carries the topbar-ai-btn class (Dell-blue + diamond-glint animation)");
+        assert(/topbar-ai-label[^>]*>AI Assist</.test(html),
+          "#topbarAiBtn label reads 'AI Assist'");
+        // The button that previously opened Canvas Chat with a chat-bubble
+        // icon is gone — the same opener is now wired into the AI Assist
+        // button (rc.3 #13 wireTopbarAiBtn).
+        assert(!/id="topbarChatBtn"/.test(html),
+          "#topbarChatBtn (the older standalone Chat button) removed");
+        // Skill Builder is still NOT on the topbar (reachable via the chat
+        // right-rail "+ Author new skill" button per rc.3 #7).
         assert(!/id="topbarLabBtn"/.test(html),
-          "topbarLabBtn (Skill Builder Lab) removed from topbar");
+          "#topbarLabBtn (Skill Builder Lab) remains off the topbar");
       });
 
       it("V-LAB-VIA-CHAT-RAIL · Skill Builder reachable from chat right-rail '+ Author new skill' button (rc.3 #7 / SPEC §S29.7)", async () => {

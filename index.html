@@ -70,16 +70,23 @@
         <span class="session-strip-updated" data-empty="true"></span>
       </div>
       <div class="topbar-actions">
-        <!-- rc.3 #7 (SPEC §S29.7) — topbar consolidated to one AI surface.
-             AI Assist and Skill Builder are reachable from inside the
-             Canvas Chat (right-rail saved skills + "Author new skill" link)
-             and via the Cmd+K / Ctrl+K shortcut for AI Assist power users. -->
-        <button id="topbarChatBtn" class="topbar-chat-btn" type="button" aria-label="Open Canvas Chat">
-          <svg class="topbar-chat-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
+        <!-- rc.3 #7 + #13 (SPEC §S29.7) — topbar consolidated to ONE AI
+             surface. Resurrects the v2.4.13 sparkle-icon + Dell-blue
+             gradient + 8s diamond-glint + breathing-glow animation
+             system on the singular "AI Assist" button so the AI
+             affordance reads as the centerpiece of the topbar. Click
+             opens Canvas Chat (the unified chat surface with the right-
+             rail saved-skill cards + "Author new skill" affordance);
+             Cmd+K / Ctrl+K opens the legacy AI Assist overlay for
+             power users (legacy retirement scheduled for rc.5). -->
+        <button id="topbarAiBtn" class="topbar-ai-btn" type="button" aria-label="Open AI Assist">
+          <svg class="topbar-ai-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            <path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3z"/>
+            <path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14z"/>
+            <path d="M5 16l.6 1.6L7.2 18l-1.6.4L5 20l-.6-1.6L2.8 18l1.6-.4L5 16z"/>
           </svg>
-          <span>Chat</span>
+          <span class="topbar-ai-label">AI Assist</span>
         </button>
         <button id="undoBtn" class="undo-chip" type="button" aria-label="Undo last AI change" style="display:none;">
           <svg class="undo-chip-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"

@@ -70,7 +70,6 @@ document.addEventListener("DOMContentLoaded", function() {
   wireTopbarAiBtn();
   wireAiAssistShortcut();
   wireTopbarLabBtn();
-  wireTopbarChatBtn();
   // v2.4.13 S2A . repaint the secondary line whenever the save status
   // bus emits, so "Saving..." -> "Saved just now" without a full
   // re-render. Tick a 30s interval so "Saved 2m ago" keeps incrementing.
@@ -159,38 +158,30 @@ function wireTopbarLabBtn() {
   btn.addEventListener("click", openSkillBuilderOverlay);
 }
 
-// v3.0.0-rc.2 . Canvas Chat topbar button. Lazily imports the overlay
-// module so we don't load the chat surface on every page (only when
-// the user actually opens Chat). Per the AI control panel polish item,
-// Cmd+K + AI Assist + v3.0 Lab + Chat will eventually merge into one
-// "AI" topbar entry with subtabs; for rc.2 they coexist as separate
-// buttons.
-function wireTopbarChatBtn() {
-  var btn = document.getElementById("topbarChatBtn");
+// rc.3 #7 + #13 dropped wireTopbarChatBtn - the standalone "Chat" button
+// is gone; the consolidated "AI Assist" button (wireTopbarAiBtn below)
+// opens Canvas Chat directly.
+
+// v2.4.13 S2 + S4 . global AI Assist button click handler.
+// rc.3 #7 + #13 (SPEC §S29.7) consolidation: the topbar now carries a
+// SINGLE "AI Assist" button (resurrected from v2.4.13 sparkle styling)
+// that opens Canvas Chat - the unified chat surface with the right-rail
+// saved-skill cards and "+ Author new skill" affordance. The legacy
+// AiAssistOverlay (kind="ai-assist", tile-grid skill picker) is no
+// longer reachable via the topbar; it remains accessible only via
+// Cmd+K / Ctrl+K for power users (retirement scheduled rc.5 with the
+// broader UX consolidation arc).
+function wireTopbarAiBtn() {
+  var btn = document.getElementById("topbarAiBtn");
   if (!btn) return;
   btn.addEventListener("click", async function() {
     try {
       var mod = await import("./ui/views/CanvasChatOverlay.js");
       mod.openCanvasChat();
     } catch (e) {
-      console.error("[CanvasChat] failed to open:", e);
+      console.error("[CanvasChat] failed to open from AI Assist button:", e);
     }
   });
-}
-
-// v2.4.13 S2 + S4 . global AI Assist button click handler.
-// rc.3 #7 (SPEC §S29.7): topbarAiBtn was retired when the topbar
-// consolidated to a single AI surface (Chat). The button-click path
-// is null-safe; the Cmd+K / Ctrl+K shortcut handler is registered
-// UNCONDITIONALLY (lifted out of the button-presence early-return)
-// so it remains the primary AI Assist entry point.
-function wireTopbarAiBtn() {
-  var btn = document.getElementById("topbarAiBtn");
-  if (btn) {
-    btn.addEventListener("click", function() {
-      openAiOverlay({ tabId: currentStep, context: {} });
-    });
-  }
 }
 
 // Cmd+K / Ctrl+K shortcut. Registered unconditionally so it survives
