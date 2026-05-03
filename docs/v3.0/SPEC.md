@@ -2958,6 +2958,102 @@ Tests in `docs/v3.0/TESTS.md §T31` (NEW):
 - Skipping the schema validation on rehydrate. Untrusted user-storage; must validate.
 - Mutating the persisted entry from outside `engagementStore.js`. Only the store's own `_persist()` writes the key; no other module reads or writes it.
 
+## §S32 · Canvas AI Assistant window-theme contract — Arc 1 of Group B (DRAFT pending user approval)
+
+**Status**: DRAFT 2026-05-03 (post rc.3 tag). Authored under the `feedback_group_b_spec_rewrite.md` discipline — SPEC FIRST, then V-* tests RED, then code. This annex is the Arc 1 contract; user review + approval gates implementation.
+
+**Authority**: `docs/RULES.md §16` (CH28 to be added) · `reference_gplc_sample.md` memory (`C:/Users/Mahmo/Downloads/GPLC Digital Unified Platform v1.0.html` is the visual target) · BUG-022 (chat UI polish).
+
+The Canvas Chat overlay was authored at rc.2 with a self-contained dark theme that did not align with the rest of the app. User feedback 2026-05-03 (post rc.3 tag): the chat window's chrome should match the app's overall design language (inherited from the GPLC sample); ONLY the prompt input + transcript bubbles should retain a dark "AI working area" treatment so that working-area is the visible cue for "this is where the AI replies." The overlay also gets renamed "Canvas Chat" → "Canvas AI Assistant" to match how users describe it.
+
+### S32.1 · Token alignment with GPLC sample
+
+The app's existing CSS tokens (in `styles.css`) mostly match the GPLC sample but carry minor variations from rc.1-era authoring. R32.1 reconciles them so every surface (Canvas AI Assistant included) sits on the same token rhythm.
+
+- **R32.1** (🔴 HARD) — `styles.css` `:root` tokens MUST exactly equal the GPLC sample's values for the canonical 4-set (canvas + ink + rule + radius). Existing deltas to reconcile:
+  - `--canvas-soft: #F4F8FC` → `#FAFBFC` (GPLC value; less blue-tinted)
+  - `--canvas-alt: #ECF1F7` → `#F4F6F9` (GPLC value)
+  - `--rule: #DCE3EC` → `#E4E8EE` (GPLC value)
+  - `--rule-strong: #C4CDDA` → `#CBD2DC` (GPLC value)
+  - `--radius-sm: 4px` → `3px` (GPLC value; tighter)
+  - `--radius` → introduce `--radius-md: 5px` (GPLC name + value); keep `--radius` as alias for backwards-compat during the migration; new code uses `--radius-md`
+  - `--radius-lg: 10px` → `8px` (GPLC value)
+- **R32.2** (🔴 HARD) — Inter (sans, 300-800) + JetBrains Mono (mono, 400-600) loaded once at app boot from Google Fonts (matching GPLC). Existing `--font-sans` / `--font` aliases stay; new code uses `--sans` / `--mono` to match GPLC vocabulary.
+- **R32.3** (🔵 AUTO) — Existing surfaces using the old token values may stay on them during the migration window — the visual delta is minor and a single big-bang migration risks regressions on every screen. Per-surface reconciliation rolls out arc by arc; Canvas AI Assistant is the first surface fully on the GPLC tokens.
+
+### S32.2 · Canvas AI Assistant outer chrome
+
+The overlay's outer chrome (header, footer, side rail, backdrop) MUST match the app's design language — light surfaces, ink text, GPLC typography rhythm.
+
+- **R32.4** (🔴 HARD) — Overlay backdrop: `rgba(11, 42, 74, 0.45)` (uses `--ink` color at 45% alpha for cohesion with the ink-soft text family).
+- **R32.5** (🔴 HARD) — Overlay panel background: `var(--canvas)` (white). Border: `1px solid var(--rule)`. Border-radius: `var(--radius-lg)` (8px). Shadow: `var(--shadow-lg)`.
+- **R32.6** (🔴 HARD) — Overlay header (top strip): `var(--canvas)` background; `1px solid var(--rule)` bottom border; padding `12px 20px`. Title typography: 16px / weight 600 / `var(--ink)` / letter-spacing -0.01em (matches GPLC `.brand-text .t1`). Subtitle typography: mono 10.5px / letter-spacing 0.06em / uppercase / `var(--ink-mute)` (matches GPLC `.doc-meta`).
+- **R32.7** (🔴 HARD) — Overlay right-rail (Skills): `var(--canvas-soft)` background; `1px solid var(--rule)` left border. Inner cards: `var(--canvas)` background + `1px solid var(--rule)` border + `var(--radius-md)` (5px) corners + 12px padding. Hover: `border-color: var(--rule-strong)`. Active/open: `background: var(--dell-blue-soft)` + `border-color: var(--dell-blue)`.
+- **R32.8** (🔴 HARD) — Overlay footer: `var(--canvas-soft)` background; `1px solid var(--rule)` top border; padding `10px 20px`. Provenance breadcrumb left, actions right, vertically centered with `align-items: center`. Provenance typography: mono 10.5px / letter-spacing 0.05em / `var(--ink-mute)`. Actions: 12px sans / `var(--ink-soft)` ghost styling (matches GPLC `.btn-ghost`).
+
+### S32.3 · Canvas AI Assistant working area (transcript + prompt)
+
+The transcript scroll area and prompt input MUST stay dark — the "AI working area" affordance.
+
+- **R32.9** (🔴 HARD) — Transcript scroll area: background `#0D1117` (existing dark canvas value, kept for cohesion with the chat overlay's prior identity). Padding `16px 20px`. Bubbles share this dark canvas; no per-bubble background fill, distinction by typography only.
+- **R32.10** (🔴 HARD) — User bubble typography: 14px / line-height 1.55 / `#E6EDF3` (light ink on dark, matches existing token). Right-aligned with subtle `var(--dell-blue-soft)`-tinted accent rule.
+- **R32.11** (🔴 HARD) — Assistant bubble typography (markdown-rendered):
+  - body: 14px / line-height 1.55 / `#C9D1D9` (lower contrast than user — quieter, the "we're listening" register)
+  - h1: 22px / weight 700 / line-height 1.15 / letter-spacing -0.022em / `#E6EDF3`
+  - h2: 18px / weight 600 / line-height 1.2 / letter-spacing -0.018em / `#E6EDF3`
+  - h3: 15px / weight 600 / line-height 1.3 / `#E6EDF3`
+  - code (inline): JetBrains Mono 12.5px / `var(--dell-blue-faint)` color / `rgba(110, 118, 129, 0.4)` background / 4px padding
+  - code (fenced): JetBrains Mono 12.5px / `#0D1117` background with `1px solid rgba(110, 118, 129, 0.4)` border / 12px padding / `var(--radius-md)` corners
+  - tables: 1px Dell-blue-edge top + bottom (Dell-blue at 0.4 alpha); cells `padding: 6px 10px`; mono 12px headers; sans 13px body
+  - lists: 14px / line-height 1.6 / `--canvas-alt`-equivalent inset markers
+  - blockquote: 4px left border `var(--dell-blue)` / 12px padding-left / italics / `#9AA5B8`
+- **R32.12** (🔴 HARD) — Prompt input textarea: background `#161B22` (existing token, mid-dark). Border: `1px solid #30363D`. Focus: `border-color: var(--dell-blue)` + soft Dell-blue glow. Typography: 14px / line-height 1.55 / `#E6EDF3`.
+
+### S32.4 · Renaming contract
+
+- **R32.13** (🔴 HARD) — All user-facing strings rename "Canvas Chat" → "Canvas AI Assistant" inclusive of:
+  - Overlay title (`openOverlay({ title: ... })`)
+  - Topbar AI Assist button's tooltip (already says "Open AI Assist"; harmonize with overlay title)
+  - confirmAction dialogs ("Clear chat?" → "Clear assistant transcript?" — verb stays "Clear" but noun upgrades)
+  - Documentation in `docs/v3.0/SPEC.md §S20`, `docs/RULES.md §16 CH9–CH18` change-log rows, HANDOFF.md
+  - Code comments referring to "Canvas Chat" outside historical commit-message archaeology
+- **R32.14** (🔵 AUTO) — Internal symbol names (e.g. `openCanvasChat`, `CanvasChatOverlay.js`, CSS classes `.canvas-chat-*`) MAY stay as-is for v3.0-rc.4 to avoid a sweeping rename diff during the window-theme refactor. A separate rename pass (rc.5+ or GA cleanup) MAY consolidate them. This rule explicitly ALLOWS the asymmetry: USER strings change now, INTERNAL symbols can change later. Anti-pattern guard: V-NAME-2 (UI-string anti-leakage) ensures the renamed external strings don't leak `Canvas Chat` back through any code path.
+
+### S32.5 · V-THEME-1..8 test contract
+
+Tests in `docs/v3.0/TESTS.md §T32` (NEW):
+
+- **V-THEME-1**: `styles.css` `:root` token values MUST exactly equal the GPLC reference set (R32.1). Source-grep + literal-value comparison (e.g. `--canvas-soft:` line resolves to `#FAFBFC`).
+- **V-THEME-2**: `index.html` `<head>` MUST link the Inter + JetBrains Mono Google Fonts CSS file (R32.2). Source-grep for the canonical Google Fonts URL.
+- **V-THEME-3**: Canvas AI Assistant overlay outer chrome — when opened, the `.overlay[data-kind="canvas-chat"] > .overlay-panel` MUST resolve to `var(--canvas)` background + `var(--rule)` border + `var(--radius-lg)` corners + `var(--shadow-lg)` shadow (R32.5). Live DOM check via `getComputedStyle`.
+- **V-THEME-4**: Overlay header MUST display the renamed title "Canvas AI Assistant" (R32.13). Live DOM check.
+- **V-THEME-5**: Overlay right-rail card hover/active states MUST resolve to the prescribed border + background colors (R32.7). Programmatic state simulation.
+- **V-THEME-6**: Overlay footer MUST be `var(--canvas-soft)` background with the provenance breadcrumb left-aligned + actions right-aligned, all vertically centered (R32.8). Live DOM check.
+- **V-THEME-7**: Transcript scroll area + bubbles MUST stay dark — `.canvas-chat-transcript` background `#0D1117`; assistant bubble body color `#C9D1D9`; user bubble body color `#E6EDF3` (R32.9–R32.11). Live DOM check.
+- **V-THEME-8**: Markdown-rendered code blocks + tables + blockquotes inside assistant bubbles MUST resolve to the prescribed monospace + Dell-blue-edge styling (R32.11). Renders a synthetic markdown sample into a stub bubble + asserts computed styles.
+
+### S32.6 · Forbidden / out-of-scope
+
+- Renaming internal symbols (`openCanvasChat`, `CanvasChatOverlay.js`, `.canvas-chat-*` CSS classes) in this arc. R32.14 explicitly defers the symbol rename to a later cleanup pass.
+- Aligning OTHER overlays (Settings, Skill Builder, AI Assist legacy) to the GPLC tokens during Arc 1. Each overlay's reconciliation belongs to its own arc; Arc 1 is Canvas AI Assistant ONLY.
+- Touching the chat header's provider switcher (Arc 2) or the prompt's thinking affordances (Arc 3) — those are separate arcs with their own SPEC annexes (§S33, §S34).
+- Skill Builder consolidation (Arc 4 / SPEC §S35) — independent track.
+- Big-bang migration of every existing surface to the new tokens. Per R32.3, surfaces stay on old tokens until their own arc reconciles them.
+
+### S32.7 · User review checklist (before this DRAFT promotes)
+
+The user review gate, per `feedback_group_b_spec_rewrite.md`:
+1. Confirm the **outer chrome = light, transcript = dark** split matches expectation
+2. Confirm the renamed title ("Canvas AI Assistant") matches expectation
+3. Confirm the typography rhythm (markdown body 14px / 1.55 / lower-contrast color) matches expectation, OR redirect (e.g. "tighter line-height" / "use a different gray")
+4. Confirm the right-rail Card hover/active visual treatment (Dell-blue-soft fill + Dell-blue border) matches expectation
+5. Confirm the footer chrome alignment (mono breadcrumb left, ghost actions right) matches expectation
+6. Confirm the token reconciliation scope (only the 6 deltas in R32.1) matches expectation, OR widen/narrow
+
+Once all 6 confirmed → V-THEME-1..8 RED-first → impl → live smoke → commit.
+
+---
+
 ### Change log
 
 | Date | Section | Change |
@@ -2973,6 +3069,7 @@ Tests in `docs/v3.0/TESTS.md §T31` (NEW):
 | 2026-05-02 | RELEASE v3.0.0-rc.2 | **TAGGED 2026-05-02.** Closes the chat-perfection arc (Steps 0–11). Banner 1048/1048 GREEN ✅. Cleanup arc (BUG-003..009 architectural fix) + chat-perfection (data contract + handshake + markdown + ack chip + Real-Anthropic tool-use + cache_control on stable prefix + SSE per-token streaming). New tests this release: V-CONTRACT-1..7, V-MD-1, V-NAME-1, V-CHAT-13/14/15/16/17, V-DEMO-1..7, V-MOCK-1..3, V-ANTI-RUN-1. New rules: RULES §17 (PR1-PR7 production-import discipline) + §16 CH14-CH19. Five file renames purging v3-prefix (state/adapter, state/engagementStore, state/sessionBridge, core/demoEngagement, ui/views/SkillBuilder; `state/v3SkillStore.js` + `core/v3SeedSkills.js` exempted until v2 retires per §S24.4). Two providers lifted to production (`services/mockChatProvider.js` + `services/mockLLMProvider.js`). One vendor (`vendor/marked/marked.min.js` v13.0.3). Real-Anthropic streaming smoke against live key DEFERRED to first user-driven workshop run (mock smoke covers all paths). |
 | 2026-05-03 | §S29 + §S30 + APP_VERSION recovery | Skill architecture v3.1 (parameters[] + outputTarget; click-to-run scope retired) authored as §S29; APP_VERSION discipline + 8-item PREFLIGHT checklist authored as §S30 after rc.2-tag freeze drift surfaced (18 commits past tag without bumping `APP_VERSION`). New tests: V-SKILL-V3-1..7, V-VERSION-1..2, V-CONCEPT-1..5 (Phase B concept dictionary), V-WORKFLOW-1..5 (Phase C app manifest), V-CHAT-27..32 (Phase A1 generic OpenAI tool-use connector). New rules: §16 CH20–CH26 (generic connector + concept dict + workflow manifest + skill v3.1 + APP_VERSION + topbar single-AI-surface). |
 | 2026-05-03 | §S31 | NEW SPEC-only annex · v3 engagement persistence + rehydrate-on-boot. R31.1–R31.5 + `localStorage.v3_engagement_v1` storage shape + V-FLOW-REHYDRATE-1..3 test pointer. Architectural fix for BUG-019 (page-reload race: v2 sessionState rehydrated, v3 engagement stayed null, AI chat reported "empty" against a populated UI). Authored 2026-05-03 as part of the rc.3 expanded scope (Group A AI-correctness consolidation per user direction). |
+| 2026-05-03 | §S32 (DRAFT) | NEW SPEC-only annex · Canvas AI Assistant window-theme contract — Arc 1 of the Group B UX consolidation arc per `feedback_group_b_spec_rewrite.md`. R32.1–R32.10 + token alignment with GPLC sample HTML reference + rename "Canvas Chat" → "Canvas AI Assistant" + V-THEME-1..8 test contract. Authored 2026-05-03 (post rc.3 tag) for user review BEFORE any code lands. |
 | 2026-05-03 | RELEASE v3.0.0-rc.3 | **TAGGED 2026-05-03.** Closes the rc.3 implementation arc + AI-correctness consolidation. Banner 1103/1103 GREEN ✅ (was 1048 at rc.2; +55 tests). Rolled in: Phase A1 generic LLM connector (BUG-018 closed) + Phase B concept dictionary + Phase C workflow manifest + Skill v3.1 schema + Skill Builder UI rebuild + chat right-rail saved-skill cards + UseAiButton retirement + topbar consolidation to one "AI Assist" button (Dell-blue + diamond-glint 8s breathe) + APP_VERSION discipline + PREFLIGHT.md + Group A AI-correctness fixes (BUG-019 engagement rehydrate, BUG-020 streaming-time handshake strip, BUG-013 Path B UUID scrub, BUG-023 manifest layerId, BUG-011 + BUG-018 closed). New SPEC annexes: §S26 + §S27 + §S28 + §S29 + §S30 + §S31. New RULES: §16 CH20–CH27. New tests: V-CHAT-18..38, V-CONCEPT-1..5, V-WORKFLOW-1..5, V-SKILL-V3-1..7, V-VERSION-1..2, V-FLOW-REHYDRATE-1..3, V-PATH-31/32, V-TOPBAR-1, V-LAB-VIA-CHAT-RAIL, V-AI-ASSIST-CMD-K, V-ANTI-USE-AI, V-NAME-2, V-DEMO-V2-1 + V-DEMO-8/9 + V-FLOW-CHAT-DEMO-1/2. Real-Gemini live-key smoke deferred to first user-driven workshop run (V-CHAT-32 mock-fetch round-trip covers the protocol).  |
 
 End of SPEC.
