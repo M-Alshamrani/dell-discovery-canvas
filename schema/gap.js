@@ -91,6 +91,14 @@ export const gapPathManifest = [
   ownPath("context.gap.phase",           "enum",   "Gap phase"),
   ownPath("context.gap.status",          "enum",   "Gap status"),
   ownPath("context.gap.notes",           "string", "Gap notes"),
+  // BUG-023 fix (2026-05-03) — layerId + gapType are user-meaningful
+  // scalars referenced by the dell-mapping seed prompt and by any user
+  // skill that wants to author per-layer / per-action prompts. Pre-fix
+  // the manifest omitted them, so the skill-save validator rejected
+  // `{{context.gap.layerId}}` even though the run-time path resolver
+  // resolved it correctly.
+  ownPath("context.gap.layerId",         "enum",   "Gap layer (primary)"),
+  ownPath("context.gap.gapType",         "enum",   "Gap type (replace / augment / new / decommission / consolidate)"),
   linkedPath("context.gap.driver.priority", "enum", "Linked driver priority",
     "engagement.drivers.byId[gap.driverId]"),
   linkedPath("context.gap.relatedCurrentInstances[*].label", "string",

@@ -10060,12 +10060,16 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       //   3. Update the LOCKED_* constants below with the new values.
       //   4. Re-run the test → GREEN.
 
-      // Locked snapshot — v3.0.0-rc.1 baseline (2026-05-01).
-      const LOCKED_BYTES        = 8744;
-      const LOCKED_HASH         = "3a217459";
+      // Locked snapshot — v3.0.0-rc.3 baseline (2026-05-03).
+      // Updated 2026-05-03 per BUG-023 fix: gapPathManifest now exposes
+      // `context.gap.layerId` and `context.gap.gapType` so user-authored
+      // skills referencing them validate cleanly. gap ownPaths: 5 → 7;
+      // bytes 8744 → 9106; hash 3a217459 → 709fe1c2.
+      const LOCKED_BYTES        = 9106;
+      const LOCKED_HASH         = "709fe1c2";
       const LOCKED_SESSION_PATH_COUNT = 7;
       const LOCKED_ENTITY_KINDS = ["currentInstance","desiredInstance","driver","environment","gap","project"];
-      const LOCKED_OWN_COUNT    = { driver: 5, currentInstance: 7, desiredInstance: 7, gap: 5, environment: 6, project: 0 };
+      const LOCKED_OWN_COUNT    = { driver: 5, currentInstance: 7, desiredInstance: 7, gap: 7, environment: 6, project: 0 };
       const LOCKED_LINKED_COUNT = { driver: 2, currentInstance: 1, desiredInstance: 1, gap: 2, environment: 2, project: 1 };
 
       // FNV-1a 32-bit. Deterministic, no crypto dependency, browser+test safe.
@@ -10317,6 +10321,50 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-PATH-28 · resolveTemplate handles 200-character template within budget", () => {});
     it("V-PATH-29 · resolveTemplate handles deep linked-composition path (.driver.linkedGaps[*].relatedInstances[*].label)", () => {});
     it("V-PATH-30 · resolveTemplate stable across invocations (deterministic)", () => {});
+
+    it("V-PATH-31 · BUG-023 fix: gapPathManifest exposes context.gap.layerId + context.gap.gapType (per schema fields used by dell-mapping seed)", async () => {
+      const { gapPathManifest } = await import("../schema/gap.js");
+      const paths = gapPathManifest.map(p => p.path);
+      assert(paths.includes("context.gap.layerId"),
+        "V-PATH-31: gapPathManifest exposes context.gap.layerId (BUG-023 fix; was missing pre-rc.3)");
+      assert(paths.includes("context.gap.gapType"),
+        "V-PATH-31: gapPathManifest exposes context.gap.gapType (companion field)");
+      // Both must be enum-typed scalars (matches the schema definition + the
+      // type-tag the manifest contract uses).
+      const layer = gapPathManifest.find(p => p.path === "context.gap.layerId");
+      const gtype = gapPathManifest.find(p => p.path === "context.gap.gapType");
+      assertEqual(layer.type, "enum", "context.gap.layerId is type='enum'");
+      assertEqual(gtype.type, "enum", "context.gap.gapType is type='enum'");
+    });
+
+    it("V-PATH-32 · BUG-023 fix: skill-save validator accepts a template referencing context.gap.layerId without surfacing 'not in manifest' error", async () => {
+      const { generateManifest } = await import("../services/manifestGenerator.js");
+      const { validateSkillSave } = await import("../services/skillSaveValidator.js");
+      const { createEmptySkill } = await import("../schema/skill.js");
+
+      // Mirror the dell-mapping seed shape: a skill with a parameter
+      // typed entityId and a prompt referencing context.<param>.layerId.
+      const skill = createEmptySkill({
+        skillId: "skl-bug23-probe",
+        label:   "BUG-023 probe — references context.gap.layerId",
+        promptTemplate: "Map gap '{{context.gap.description}}' on layer {{context.gap.layerId}} to Dell solutions.",
+        parameters: [
+          { name: "gap", type: "entityId", description: "Pick a gap", required: true }
+        ],
+        outputTarget: "chat-bubble"
+      });
+      const result = validateSkillSave(skill, generateManifest());
+      // Either the validator treats `{{context.gap.layerId}}` as valid
+      // (✓ ok) OR — if the validator's parameter-resolution still has
+      // gaps — it MUST NOT cite "not in manifest" specifically for
+      // context.gap.layerId. Pre-fix, it surfaced exactly that error.
+      const layerIdError = (result.errors || []).find(e =>
+        typeof e.path === "string" && e.path.indexOf("context.gap.layerId") >= 0
+      );
+      assert(!layerIdError,
+        "V-PATH-32 (BUG-023 regression guard): skill validator no longer rejects context.gap.layerId. Got: " +
+        (layerIdError ? JSON.stringify(layerIdError) : "(no error — pass)"));
+    });
 
     // Resolver purity (V-PATH-PURE-*)
     it("V-PATH-PURE-1 · resolveTemplate is pure (same input → same output across calls)", () => {
