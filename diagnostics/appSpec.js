@@ -32,6 +32,12 @@
 
 import { createTestRunner, runIsolated } from "./testRunner.js";
 import { emitSessionChanged, onSessionChanged } from "../core/sessionEvents.js";
+// SPEC §S31 · post-test in-memory rehydrate for the v3 engagement store.
+// The afterRestore callback below uses this to keep _active in sync with
+// the restored localStorage snapshot — without it, BUG-019 would surface
+// after every page reload (tests blow in-memory state away; localStorage
+// is restored but in-memory engagement stays null until a user click).
+import { _rehydrateFromStorage as _rehydrateEngagementFromStorage } from "../state/engagementStore.js";
 // v2.4.13 S2A · post-test indicator restore (see runAllTests below).
 import { markSaved as _markSaved, markIdle as _markIdle, markSaving as _markSaving } from "../core/saveStatus.js";
 // v2.4.15 · Suite 46 · synchronous filterState + FilterBar imports for FB tests.
@@ -13479,6 +13485,111 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 
     });
 
+    // -----------------------------------------------------------------
+    // §T31 · V-FLOW-REHYDRATE · BUG-019 architectural fix per SPEC §S31
+    // -----------------------------------------------------------------
+    // BUG-019: on page reload, v2 sessionState rehydrates from localStorage
+    // (canvas tabs render with full content) but the v3 engagement starts
+    // null → bridge fires → empty engagement + customer patch only → AI
+    // chat reports "canvas is empty" against a populated UI. Confirmed by
+    // user 2026-05-03. Fix: state/engagementStore.js persists active
+    // engagement to localStorage.v3_engagement_v1 on every state change,
+    // rehydrates from that key at module load (validating through
+    // EngagementSchema.safeParse + corrupt-cache safety).
+    describe("§T31 · V-FLOW-REHYDRATE · v3 engagement persistence + boot rehydrate", () => {
+
+      const STORAGE_KEY = "v3_engagement_v1";
+
+      it("V-FLOW-REHYDRATE-1 · After loadDemo + setActiveEngagement, the engagement persists to localStorage; _resetForTests + _rehydrateFromStorage round-trip restores all 8 gaps (per SPEC §S31.1 R31.1 + R31.2)", async () => {
+        const storeMod = await import("../state/engagementStore.js");
+        const demoMod  = await import("../core/demoEngagement.js");
+
+        // Clean slate.
+        storeMod._resetForTests();
+        localStorage.removeItem(STORAGE_KEY);
+
+        // Populate engagement (mirrors the user repro: Load demo).
+        storeMod.setActiveEngagement(demoMod.loadDemo());
+
+        // Persistence side-effect MUST have happened (R31.1 — every _emit persists).
+        const raw = localStorage.getItem(STORAGE_KEY);
+        assert(typeof raw === "string" && raw.length > 0,
+          "V-FLOW-REHYDRATE-1: localStorage.v3_engagement_v1 written on setActiveEngagement");
+
+        const parsed = JSON.parse(raw);
+        assert(Array.isArray(parsed?.gaps?.allIds) && parsed.gaps.allIds.length === 8,
+          "V-FLOW-REHYDRATE-1: persisted engagement carries the demo's 8 gaps");
+
+        // Simulate page reload: drop in-memory state without touching
+        // localStorage; explicitly re-rehydrate (the helper the module-load
+        // path uses).
+        storeMod._resetForTests({ keepStorage: true });
+        assert(storeMod.getActiveEngagement() === null,
+          "V-FLOW-REHYDRATE-1: _resetForTests with keepStorage:true clears in-memory but preserves localStorage");
+
+        const ok = storeMod._rehydrateFromStorage();
+        assert(ok === true,
+          "V-FLOW-REHYDRATE-1: _rehydrateFromStorage returns true on success");
+
+        const eng = storeMod.getActiveEngagement();
+        assert(eng !== null,
+          "V-FLOW-REHYDRATE-1: getActiveEngagement returns the rehydrated engagement (no second loadDemo click required)");
+        assertEqual(eng.gaps.allIds.length, 8,
+          "V-FLOW-REHYDRATE-1: rehydrated engagement carries all 8 gaps (the user-visible repro)");
+        assertEqual(eng.customer.name, "Acme Healthcare Group",
+          "V-FLOW-REHYDRATE-1: customer round-trips intact");
+
+        // Cleanup.
+        storeMod._resetForTests();
+        localStorage.removeItem(STORAGE_KEY);
+      });
+
+      it("V-FLOW-REHYDRATE-2 · Corrupt localStorage value (malformed JSON OR schema-invalid object) starts fresh + does NOT throw; subsequent operations work normally (per SPEC §S31.2 corrupt-cache safety + R31.2)", async () => {
+        const storeMod = await import("../state/engagementStore.js");
+        storeMod._resetForTests();
+
+        // Case A: malformed JSON.
+        localStorage.setItem(STORAGE_KEY, "{not valid json");
+        const okA = storeMod._rehydrateFromStorage();
+        assertEqual(okA, false,
+          "V-FLOW-REHYDRATE-2: malformed JSON → rehydrate returns false");
+        assert(storeMod.getActiveEngagement() === null,
+          "V-FLOW-REHYDRATE-2: store stays null after malformed JSON (no half-state)");
+
+        // Case B: valid JSON but schema-invalid object.
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ random: "object", missing: "everything" }));
+        const okB = storeMod._rehydrateFromStorage();
+        assertEqual(okB, false,
+          "V-FLOW-REHYDRATE-2: schema-invalid → rehydrate returns false");
+        assert(storeMod.getActiveEngagement() === null,
+          "V-FLOW-REHYDRATE-2: store stays null after schema-invalid JSON");
+
+        // Subsequent normal use must still work after the corrupt path.
+        const demoMod = await import("../core/demoEngagement.js");
+        storeMod.setActiveEngagement(demoMod.loadDemo());
+        assert(storeMod.getActiveEngagement() !== null,
+          "V-FLOW-REHYDRATE-2: setActiveEngagement still works after a corrupt-cache rehydrate attempt");
+
+        // Cleanup.
+        storeMod._resetForTests();
+        localStorage.removeItem(STORAGE_KEY);
+      });
+
+      it("V-FLOW-REHYDRATE-3 · _resetForTests() (default behavior) clears the persisted entry (per SPEC §S31.1 R31.4)", async () => {
+        const storeMod = await import("../state/engagementStore.js");
+        const demoMod  = await import("../core/demoEngagement.js");
+
+        storeMod.setActiveEngagement(demoMod.loadDemo());
+        assert(localStorage.getItem(STORAGE_KEY) !== null,
+          "V-FLOW-REHYDRATE-3: setup — persisted entry exists after setActiveEngagement");
+
+        storeMod._resetForTests();
+        assert(localStorage.getItem(STORAGE_KEY) === null,
+          "V-FLOW-REHYDRATE-3: _resetForTests() removes the persisted entry (cross-describe-block isolation)");
+      });
+
+    });
+
     it("V-CHAT-26 · BUG-017 guard: chat overlay header has connection-status chip (no Mock toggle); chip text reflects active provider", async () => {
       // Source-grep — the overlay file must NOT carry a 'Mock' provider
       // toggle in its head-extras anymore. The new chip must be present.
@@ -14379,6 +14490,13 @@ export function runAllTests() {
     // localStorage restore, re-load the filter snapshot so the body
     // data attributes match the user's pre-test filter view.
     if (typeof filterState._reloadFromStorage === "function") filterState._reloadFromStorage();
+    // SPEC §S31 · same problem for the v3 engagement store. Tests blew
+    // _active to null via _resetForTests; localStorage was just restored
+    // to the user's pre-test snapshot. Re-rehydrate _active from the
+    // restored snapshot so the post-test app sees the user's saved
+    // engagement (matches how _resetForTests is intended to be a
+    // test-scoped reset, not a user-facing wipe).
+    try { _rehydrateEngagementFromStorage(); } catch (e) { /* best-effort */ }
     emitSessionChanged("session-replace", "Tests complete");
     // v2.4.13 S2A · the test pass leaves the saveStatus bus in whatever
     // state the last test landed (often "saving" because every emit goes

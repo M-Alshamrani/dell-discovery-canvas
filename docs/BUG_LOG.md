@@ -309,9 +309,9 @@ No specific regression test (cosmetic).
 
 ---
 
-## BUG-011 · Settings modal: cannot save Anthropic API key (UNCONFIRMED — needs user repro)
+## BUG-011 · Settings modal: cannot save Anthropic API key (CLOSED — user confirmed working 2026-05-03)
 
-**Status**: OPEN · Reported 2026-05-02 PM · v3.0.0-rc.2 · Scheduled rc.2-polish
+**Status**: **CLOSED 2026-05-03** · User confirmation during rc.3 #7 review: *"the API key for anthropic is fine."* No repro reproduced; no fix committed; no regression test added (no fix to guard). The investigation 2026-05-02 PM that probed the Save flow end-to-end (localStorage write + reopen-shows-key) was correct.
 **Reporter**: User
 **Severity**: High (blocks Real-Anthropic chat path) — IF reproducible; my probe shows save works
 **Regression**: Unknown
@@ -499,36 +499,39 @@ It exists to (a) test chat without burning provider credits, (b) demo offline. F
 
 ---
 
-## BUG-019 · Canvas sometimes initializes with data that the AI chat reports as empty (UNCONFIRMED — needs repro)
+## BUG-019 · After page reload, canvas data persists in localStorage but Canvas Chat reports "empty" until user clicks Load demo again (CONFIRMED 2026-05-03)
 
-**Status**: OPEN · Reported 2026-05-02 LATE EVENING · v3.0.0-rc.2 · Scheduled NEXT (after Phase C)
-**Reporter**: User (workshop validation)
-**Severity**: Medium (intermittent; chat reports "empty canvas" against an actively-populated UI)
-**Regression**: Possibly related to BUG-010 fix area — bridge / engagementStore timing
+**Status**: **CONFIRMED 2026-05-03** (deterministic repro from user) · v3.0.0-rc.3-dev · Scheduled rc.3 (folded into Group A AI-correctness arc per user direction 2026-05-03)
+**Reporter**: User
+**Severity**: High (very confusing user-perceived broken state — UI shows the canvas, AI says "empty")
+**Regression**: rehydration path — v3 engagement is NOT auto-rehydrated from localStorage on app boot (the Load-demo button is the only path that calls `setActiveEngagement(...)`)
 
-### Repro (user-reported)
-1. Open the app
-2. Some canvas data is present in the UI
-3. Open Canvas Chat
-4. Ask anything → assistant says the canvas is empty
+### Repro (user-confirmed 2026-05-03)
+1. Load demo (footer → Load demo). Canvas populates (8 gaps, 3 drivers, etc.).
+2. Reload the page (F5 / Cmd+R).
+3. Canvas data is still rendered in the UI from localStorage `dell_discovery_v1` (v2 sessionState).
+4. Open AI Assist (Canvas Chat).
+5. Ask anything → assistant says the canvas is empty.
+6. Click **Load demo** again → AI now sees the data correctly.
 
-### Suspected root cause
-- Race condition between v2 sessionStore boot, v2→v3 bridge fire, and the chat overlay reading `getActiveEngagement()` — the engagement store may be empty (or customer-only) at the moment the chat opens, even though the v2 view tabs render with data.
-- Or: a session-changed emit firing AFTER the chat is open but BEFORE the user's first send re-reads the engagement (chatService captures `state.engagement = getActiveEngagement()` on open and on each handleSend, so the latest read should win — but a race in the bridge could overwrite to empty between).
-- Or: a stale localStorage entry that loads as v2 but doesn't translate cleanly to v3 (the bridge's customer-only translator returns an empty engagement; gaps + drivers + envs not populated).
+User quote: *"the demo and data are stored in the browser when i reload the app (or in the cach), yet the app doesnt see the data in the AI chat until i load the demo again, very confusing behaviour for the user."*
 
-### Investigation needed
-1. Reproduce live with browser DevTools — capture the exact sequence:
-   - Open page → what does `getActiveEngagement()` return BEFORE chat opens?
-   - Open chat → what does the engagement snapshot look like in the system prompt?
-   - Send a message → re-read engagement and compare.
-2. Inspect `localStorage.dell_discovery_v1` content vs `engagementStore` reference at chat-open time.
-3. Check the bridge's `_lastError` (`_getLastBridgeError()`) for validation failures.
+### Confirmed root cause (post-investigation, rc.3 #4 smoke 2026-05-03)
+Two related observations:
+- After Load-demo: engagement.gaps.allIds.length = 8 ✅
+- After page reload (no Load-demo click): engagement.gaps.allIds.length = 0 ❌, customer.name = "Acme Healthcare Group" ✅ (only the customer survives)
 
-### Fix plan
-- After repro: most likely a defensive fix in the chat overlay — `state.engagement = getActiveEngagement()` re-read in `handleSend` already exists; ensure that's the read used for the system prompt build (not a stale one captured at open).
-- Or: trigger an explicit `bridgeOnce("chat-open")` when the chat overlay opens, so the v3 engagement is freshly synced.
-- Regression test V-FLOW-CHAT-DEMO-3: open chat with prior session → engagement reflects current state.
+**The v3 engagement store does not rehydrate the gaps / drivers / environments / instances collections from localStorage on app boot.** The v2 sessionState rehydrates fine (the canvas tabs render with all the data) but `state/engagementStore.js` starts at the empty default until something explicitly calls `setActiveEngagement(...)`. Only the Load-demo button does that.
+
+`state/sessionBridge.js` is supposed to translate v2→v3 on `session-changed` events, but boot-time rehydration of v2 sessionState does NOT emit `session-changed` (it loads silently into the existing in-memory v2 store). So the bridge never fires on reload.
+
+### Fix plan (rc.3 / Group A)
+1. **Wire boot-time bridge fire**: in `app.js` after v2 sessionState loads from localStorage (existing `loadFromLocalStorage()` call), emit a synthetic `session-changed` event OR call `bridgeOnce("boot-rehydrate")` so the v3 engagement rebuilds from the rehydrated v2 sessionState.
+2. **Or**: have `engagementStore.js` self-rehydrate on first read by checking v2 sessionState if engagement is empty (fallback path).
+3. **Regression test V-FLOW-REHYDRATE-1**: simulate the user repro — load demo, snapshot engagement, simulate reload (re-import modules / drop in-memory engagement), assert engagement gets rehydrated to the same shape WITHOUT calling Load-demo a second time.
+
+### Why this matters
+This is the kind of bug where the app appears completely broken to the user, even though state is correct on disk. Workshop trust depends on AI seeing what the user sees. Hard gate.
 
 ---
 

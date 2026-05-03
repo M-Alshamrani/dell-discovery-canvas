@@ -2924,6 +2924,40 @@ Tests in `docs/v3.0/TESTS.md §T30` (NEW):
 - Skipping the `-dev` suffix between tags. The version chip is the user's only fast confirmation of what build they're running.
 - Treating `core/version.js` as a doc-only file. It's runtime-visible truth.
 
+---
+
+## §S31 · v3 engagement persistence + rehydrate-on-boot
+
+**Authority**: `docs/RULES.md §16 CH27` · BUG-019 architectural fix.
+
+The v3 engagement store (`state/engagementStore.js`) is the runtime source-of-truth for v3 collections (gaps / drivers / environments / instances). Through rc.3-dev it was purely in-memory: the only path that populated it was `Load demo` (calls `setActiveEngagement(loadDemo())`) and the bridge's customer-only patch on `session-changed`. On page reload, the v2 sessionState rehydrated from `localStorage.dell_discovery_v1` (so the canvas tabs rendered with full content) but the v3 engagement started null → bridge fired → empty engagement + customer patch only → AI chat truthfully reported "canvas is empty" against a populated UI. Confirmed by user 2026-05-03 as a high-severity confusion bug.
+
+### S31.1 · Rules
+
+- **R31.1** (🔴 HARD) — `state/engagementStore.js` MUST persist the active engagement to `localStorage.v3_engagement_v1` on every `_emit()` (i.e. every state change).
+- **R31.2** (🔴 HARD) — `state/engagementStore.js` MUST rehydrate from `localStorage.v3_engagement_v1` at module load. The rehydrated object MUST be validated through `EngagementSchema.safeParse(...)`; failure path is wipe + log + start fresh (corrupt-cache safety).
+- **R31.3** (🔵 AUTO) — Persistence path runs inside try/catch around `localStorage.setItem` so quota-exceeded / disabled-storage failures degrade silently to in-memory-only (the chat keeps working; the rehydrate-after-reload promise is the only thing lost).
+- **R31.4** (🔴 HARD) — `_resetForTests()` MUST also clear `localStorage.v3_engagement_v1` so test isolation is preserved across `describe` blocks.
+- **R31.5** (🔵 AUTO) — The bridge's existing customer-shallow-merge MUST keep working unchanged. The bridge's invariant ("preserve v3 fields outside translation scope") matches exactly what we need: the rehydrated engagement comes back, the bridge applies the latest v2 customer patch on top, gaps/drivers/etc. survive.
+
+### S31.2 · Storage shape
+
+`localStorage.v3_engagement_v1` holds a single JSON-serialized engagement record (the same shape as `EngagementSchema.parse(...)` accepts). One engagement is persisted at a time (matches the in-memory `_active` singleton). Multi-engagement comes via the v3 file format (`.canvas`), not multiple localStorage keys.
+
+### S31.3 · V-FLOW-REHYDRATE test contract
+
+Tests in `docs/v3.0/TESTS.md §T31` (NEW):
+- **V-FLOW-REHYDRATE-1**: The user's repro. Set up a populated engagement (loadDemo + setActiveEngagement → 8 gaps); capture `localStorage.v3_engagement_v1`; simulate reload by `_resetForTests()` then explicitly call the rehydrate helper; assert `getActiveEngagement().gaps.allIds.length === 8`. Catches the BUG-019 regression at exactly the user-visible level.
+- **V-FLOW-REHYDRATE-2**: corrupt localStorage value (malformed JSON / schema-invalid object); assert the store starts fresh + subsequent operations work normally. Tests the corrupt-cache safety path.
+- **V-FLOW-REHYDRATE-3**: `_resetForTests()` clears the persisted entry. Required for cross-describe-block isolation.
+
+### S31.4 · Forbidden / out-of-scope
+
+- Persisting transient computed state (selector caches, view-model derivations). Only the canonical engagement record is persisted.
+- Multi-engagement persistence in localStorage. Single-engagement only; multi comes via the file format.
+- Skipping the schema validation on rehydrate. Untrusted user-storage; must validate.
+- Mutating the persisted entry from outside `engagementStore.js`. Only the store's own `_persist()` writes the key; no other module reads or writes it.
+
 ### Change log
 
 | Date | Section | Change |
@@ -2937,5 +2971,7 @@ Tests in `docs/v3.0/TESTS.md §T30` (NEW):
 | 2026-05-02 | §S24 | NEW SPEC-only annex · production code naming discipline. R24.1–R24.5 operationalize `feedback_no_version_prefix_in_names.md` into a structural lint with V-NAME-1 source-grep test. Defines purgeable-now scope (5 file renames + 2 symbol renames + 4 UI string changes) and items blocked by v2 collision (`state/v3SkillStore.js`, `core/v3SeedSkills.js`, test-import aliases — drop when v2 retires per R24.3). Authored as the architectural prerequisite for chat-perfection so new modules land on a clean tree. |
 | 2026-05-02 | §S25 + §S20 ext | NEW SPEC-only annex · data contract LLM grounding meta-model. R25.1-R25.7 + module shape `core/dataContract.js` (derived from schemas + manifest + catalogs at module load; deterministic FNV-1a checksum; module-load self-validation) + structured contract: entities + relationships + invariants + catalog metadata + bindablePaths + analyticalViews. Plus §S20 extensions: §S20.16 first-turn handshake (LLM echoes `[contract-ack v3.0 sha=<8>]`; chat overlay verifies + ✓/⚠ indicator); §S20.17 markdown rendering on assistant bubbles via vendored `marked`; §S20.18 real-Anthropic tool-use round-trip; §S20.19 Anthropic prompt-caching at wire. Top-priority chat-perfection sequence per user direction 2026-05-02. |
 | 2026-05-02 | RELEASE v3.0.0-rc.2 | **TAGGED 2026-05-02.** Closes the chat-perfection arc (Steps 0–11). Banner 1048/1048 GREEN ✅. Cleanup arc (BUG-003..009 architectural fix) + chat-perfection (data contract + handshake + markdown + ack chip + Real-Anthropic tool-use + cache_control on stable prefix + SSE per-token streaming). New tests this release: V-CONTRACT-1..7, V-MD-1, V-NAME-1, V-CHAT-13/14/15/16/17, V-DEMO-1..7, V-MOCK-1..3, V-ANTI-RUN-1. New rules: RULES §17 (PR1-PR7 production-import discipline) + §16 CH14-CH19. Five file renames purging v3-prefix (state/adapter, state/engagementStore, state/sessionBridge, core/demoEngagement, ui/views/SkillBuilder; `state/v3SkillStore.js` + `core/v3SeedSkills.js` exempted until v2 retires per §S24.4). Two providers lifted to production (`services/mockChatProvider.js` + `services/mockLLMProvider.js`). One vendor (`vendor/marked/marked.min.js` v13.0.3). Real-Anthropic streaming smoke against live key DEFERRED to first user-driven workshop run (mock smoke covers all paths). |
+| 2026-05-03 | §S29 + §S30 + APP_VERSION recovery | Skill architecture v3.1 (parameters[] + outputTarget; click-to-run scope retired) authored as §S29; APP_VERSION discipline + 8-item PREFLIGHT checklist authored as §S30 after rc.2-tag freeze drift surfaced (18 commits past tag without bumping `APP_VERSION`). New tests: V-SKILL-V3-1..7, V-VERSION-1..2, V-CONCEPT-1..5 (Phase B concept dictionary), V-WORKFLOW-1..5 (Phase C app manifest), V-CHAT-27..32 (Phase A1 generic OpenAI tool-use connector). New rules: §16 CH20–CH26 (generic connector + concept dict + workflow manifest + skill v3.1 + APP_VERSION + topbar single-AI-surface). |
+| 2026-05-03 | §S31 | NEW SPEC-only annex · v3 engagement persistence + rehydrate-on-boot. R31.1–R31.5 + `localStorage.v3_engagement_v1` storage shape + V-FLOW-REHYDRATE-1..3 test pointer. Architectural fix for BUG-019 (page-reload race: v2 sessionState rehydrated, v3 engagement stayed null, AI chat reported "empty" against a populated UI). Authored 2026-05-03 as part of the rc.3 expanded scope (Group A AI-correctness consolidation per user direction). |
 
 End of SPEC.
