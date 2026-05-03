@@ -26,6 +26,20 @@
 //
 // ---
 //
+// **3.0.0-rc.4-dev** (2026-05-03) — between v3.0.0-rc.3 (TAGGED
+// 2026-05-03 PM at 1103/1103 GREEN) and the eventual v3.0.0-rc.4 tag.
+// In flight: Group B UX consolidation arc per `feedback_group_b_spec_rewrite.md`
+// — SPEC rewrite first, then code. Arc 1 (window theme + text rhythm
+// per GPLC sample), Arc 2 (provider pills + footer + BUG-025 Cmd+K),
+// Arc 3 (thinking affordances + dynamic try-asking + BUG-024 workflow-
+// ID anti-leakage), Arc 4 (Skill Builder unification under Settings +
+// v3 seed-skill purge).
+//
+// Per RULES §16 CH24 + PREFLIGHT.md item 1a: this is the FIRST commit
+// past the rc.3 tag, so the `-dev` suffix is added now.
+//
+// ---
+//
 // **3.0.0-rc.3** (TAGGED 2026-05-03) — closes the rc.3 implementation
 // arc + AI-correctness consolidation. Banner 1103/1103 GREEN ✅
 // (was 1048 at rc.2 tag; +55 net tests this release).
@@ -79,4 +93,4 @@
 //   - At least one real-customer workshop run against a v3.0 engagement
 //   - Real-Anthropic streaming smoke against a live key
 
-export const APP_VERSION = "3.0.0-rc.3";
+export const APP_VERSION = "3.0.0-rc.4-dev";
