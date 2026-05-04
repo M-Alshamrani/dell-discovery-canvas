@@ -186,16 +186,25 @@ function wireTopbarAiBtn() {
 
 // Cmd+K / Ctrl+K shortcut. Registered unconditionally so it survives
 // the rc.3 #7 topbar-button retirement. Industry-standard "command
-// palette" pattern; opens the AI Assist overlay anywhere in the app.
+// palette" pattern. Per SPEC §S33 R33.9 (rc.4-dev / Arc 2) the shortcut
+// rebound from openAiOverlay (legacy v2.x AiAssistOverlay tile-grid)
+// to openCanvasChat (the Canvas AI Assistant). BUG-025 fix: previously
+// pressing Cmd+K opened a different surface than clicking the topbar
+// AI Assist button, both branded "AI Assist" - confusing.
 function wireAiAssistShortcut() {
-  document.addEventListener("keydown", function(e) {
+  document.addEventListener("keydown", async function(e) {
     var isMod = e.metaKey || e.ctrlKey;
     if (!isMod || (e.key !== "k" && e.key !== "K")) return;
     // Don't fire if the user is mid-typing in an input + the OS shortcut
     // would otherwise navigate (forms still get Cmd+K behaviour because
     // browsers don't bind it natively, but we're polite anyway).
     e.preventDefault();
-    openAiOverlay({ tabId: currentStep, context: {} });
+    try {
+      var mod = await import("./ui/views/CanvasChatOverlay.js");
+      mod.openCanvasChat();
+    } catch (err) {
+      console.error("[CanvasChat] failed to open from Cmd+K:", err);
+    }
   });
 }
 

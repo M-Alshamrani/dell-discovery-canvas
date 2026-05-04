@@ -5944,33 +5944,63 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
    Replaces the prior Mock|Real segmented toggle. Click opens Settings.
    .is-ready  -> green dot + "Connected to <provider>"
    .is-warn   -> amber dot + "Configure provider" (no key / no baseUrl) */
-.canvas-chat-status-chip {
-  display: inline-flex; align-items: center; gap: 7px;
+/* Per SPEC §S33 R33.1-R33.5 + RULES §16 CH29 (rc.4-dev / Arc 2) -
+   provider pill row in the Canvas AI Assistant header. Replaces the
+   pre-Arc-2 .canvas-chat-status-chip. One pill per provider; active
+   filled --dell-blue + white text, inactive ready outlined with green
+   dot, inactive needs-key outlined --canvas-soft with amber dot. */
+.canvas-chat-provider-pills {
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.canvas-chat-provider-pill {
+  display: inline-flex; align-items: center; gap: 6px;
   height: 28px; padding: 0 12px;
-  background: transparent;
-  border: 1px solid #30363D; border-radius: 6px;
+  background: var(--canvas);
+  color: var(--ink-soft);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font: 500 11.5px/1 var(--font-sans, system-ui, sans-serif);
-  color: #C9D1D9;
+  font: 500 11.5px/1 "Inter", var(--font-sans, system-ui, sans-serif);
+  letter-spacing: 0.005em;
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
-.canvas-chat-status-chip:hover { background: #161B22; border-color: #6E7681; color: #E6EDF3; }
-.canvas-chat-status-dot {
-  width: 7px; height: 7px;
+.canvas-chat-provider-pill:hover {
+  border-color: var(--dell-blue);
+  color: var(--dell-blue);
+}
+.canvas-chat-provider-pill-dot {
+  width: 6px; height: 6px;
   border-radius: 50%;
-  background: #6E7681;
-  flex: 0 0 7px;
+  background: var(--ink-faint);
+  flex: 0 0 6px;
 }
-.canvas-chat-status-chip.is-ready .canvas-chat-status-dot {
-  background: #3FB950;
-  box-shadow: 0 0 6px rgba(63, 185, 80, 0.55);
+.canvas-chat-provider-pill.is-ready .canvas-chat-provider-pill-dot {
+  background: var(--green);
+  box-shadow: 0 0 6px rgba(0, 132, 61, 0.4);
 }
-.canvas-chat-status-chip.is-warn {
-  border-color: rgba(210, 153, 34, 0.55);
-  color: #D29922;
+.canvas-chat-provider-pill.is-warn {
+  background: var(--canvas-soft);
+  color: var(--ink-mute);
+  border-color: var(--rule);
 }
-.canvas-chat-status-chip.is-warn .canvas-chat-status-dot {
-  background: #D29922;
+.canvas-chat-provider-pill.is-warn .canvas-chat-provider-pill-dot {
+  background: var(--amber);
+}
+.canvas-chat-provider-pill.is-active {
+  background: var(--dell-blue);
+  color: #FFFFFF;
+  border-color: var(--dell-blue-deep);
+  cursor: default;
+}
+.canvas-chat-provider-pill.is-active:hover {
+  background: var(--dell-blue-deep);
+  border-color: var(--dell-blue-deep);
+  color: #FFFFFF;
+  cursor: pointer;
+}
+.canvas-chat-provider-pill.is-active .canvas-chat-provider-pill-dot {
+  background: #FFFFFF;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
 }
 .canvas-chat-clear-btn {
   display: inline-flex; align-items: center; gap: 5px;

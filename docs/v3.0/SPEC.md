@@ -3040,7 +3040,7 @@ Tests in `docs/v3.0/TESTS.md §T32` (NEW):
 - Skill Builder consolidation (Arc 4 / SPEC §S35) — independent track.
 - Big-bang migration of every existing surface to the new tokens. Per R32.3, surfaces stay on old tokens until their own arc reconciles them.
 
-### S32.7 · User review checklist (before this DRAFT promotes)
+### S32.7 · User review checklist (LOCKED 2026-05-03 on user "continue" approval)
 
 The user review gate, per `feedback_group_b_spec_rewrite.md`:
 1. Confirm the **outer chrome = light, transcript = dark** split matches expectation
@@ -3051,6 +3051,80 @@ The user review gate, per `feedback_group_b_spec_rewrite.md`:
 6. Confirm the token reconciliation scope (only the 6 deltas in R32.1) matches expectation, OR widen/narrow
 
 Once all 6 confirmed → V-THEME-1..8 RED-first → impl → live smoke → commit.
+
+---
+
+## §S33 · Canvas AI Assistant header provider pills + footer breadcrumb + BUG-025 Cmd+K rebind — Arc 2 of Group B
+
+**Status**: LOCKED 2026-05-04 — user approved via "continue" 2026-05-04. Drafted 2026-05-03 post Arc 1 ship at `5893e71`. Authored under the `feedback_group_b_spec_rewrite.md` discipline (SPEC FIRST, then V-* tests RED, then code).
+
+**Authority**: `docs/RULES.md §16` (CH29 to be added) · BUG-025 (Cmd+K opens legacy overlay, not Canvas AI Assistant) · BUG-022 (chat UI polish — bottom banner + status messages).
+
+Pre-fix: the Canvas AI Assistant header carries a single `.canvas-chat-status-chip` that reads "Connected to Claude" / "Configure provider"; clicking opens Settings → close → re-open chat = friction. The footer carries a static lede "Read-only · proposes changes only · session memory persists per engagement" — informational but no per-turn signal. The Cmd+K shortcut still opens the legacy AiAssistOverlay (kind="ai-assist") not the new Canvas AI Assistant. All three issues fold into Arc 2.
+
+### S33.1 · Provider pill row (header)
+
+Replaces the connection-status chip with a horizontal pill row showing every CONFIGURED provider as a click-to-switch affordance. Showcases the multi-provider support the chat already has.
+
+- **R33.1** (🔴 HARD) — The chat header's `.overlay-head-extras` slot (today carrying the connection-status chip + Clear button + rail toggle) MUST render a `.canvas-chat-provider-pills` row containing one pill per provider declared in `core/aiConfig.js`'s `PROVIDERS` registry. Order follows the registry declaration order.
+- **R33.2** (🔴 HARD) — Each pill carries:
+  - the provider's user-facing label (e.g. "Claude", "Gemini", "OpenAI", "vLLM", "Dell Sales Chat")
+  - a 6px round status dot: **green** if the provider is "ready" (`isActiveProviderReady` semantics for that provider — has key OR doesn't need one), **amber** if "needs key" (configured provider type but no key)
+  - **active state**: filled `var(--dell-blue)` background + white text + white dot (or no dot — readers tell the active provider apart by the fill alone)
+  - **inactive ready state**: `var(--canvas)` bg + 1px `var(--rule-strong)` border + `var(--ink-soft)` label + green dot
+  - **inactive needs-key state**: `var(--canvas-soft)` bg + 1px `var(--rule)` border + `var(--ink-mute)` label + amber dot
+- **R33.3** (🔴 HARD) — Click handlers per state:
+  - Click on **inactive ready** pill → switch active provider (write `aiConfig.activeProvider = <key>` via `saveAiConfig`) + repaint pills + emit nothing (chat keeps current transcript; next user-send goes to the new provider)
+  - Click on **inactive needs-key** pill → open Settings modal pre-focused on that provider's key field (same modal as the gear icon)
+  - Click on **active** pill → open Settings modal pre-focused on the active provider's key field (so users can update / verify keys without leaving the chat)
+- **R33.4** (🔵 AUTO) — Mock provider is NOT surfaced in the pill row (it's a test-fixture provider; its presence in production UI would be confusing). The pill row enumerates only providers tagged `kind: "real"` or equivalent in the registry.
+- **R33.5** (🔵 AUTO) — Pill row layout: horizontal flex with `gap: 6px`; each pill ~28px tall, `padding: 0 12px`, `font: 500 11.5px/1 Inter`, `border-radius: var(--radius-sm)` (3px). Total width budget ~480px for 5 pills; if the viewport drops below 1100px wide the row collapses to a "Claude · 4 more ▾" segmented variant (deferred polish; first impl ships full row only).
+
+### S33.2 · Footer breadcrumb (provenance)
+
+Replaces the static lede with a dynamic per-turn provenance line.
+
+- **R33.6** (🔴 HARD) — `.canvas-chat-foot-lede` MUST update on every assistant `onComplete` to display the LATEST turn's provenance breadcrumb in the form `<provider-label> · <model> · <N> tokens · <ms>ms`. Format: JetBrains Mono 10.5px / uppercase / 0.05em letter-spacing / `var(--ink-mute)` (per §S32 R32.8).
+- **R33.7** (🔵 AUTO) — Empty state (no turn completed yet for this engagement): the breadcrumb reads `"Ready"` (single word, same typography). Avoids the dead "—" or "(no turn)" placeholder.
+- **R33.8** (🔵 AUTO) — Token + latency formatting: tokens as `4,118` (locale-grouped); latency as integer ms (no decimals). If the latest provenance lacks any field, that segment is silently dropped (e.g. `Claude · sonnet-3-7 · 4,118 tokens` if latency missing).
+
+### S33.3 · Cmd+K rebind (BUG-025 fix)
+
+Cmd+K / Ctrl+K rebinds from `openAiOverlay` (the legacy v2.x AiAssistOverlay tile-grid) to `openCanvasChat` (the Canvas AI Assistant). Two surfaces both branded "AI Assist" with different chrome confused users (BUG-025 user report).
+
+- **R33.9** (🔴 HARD) — `app.js` `wireAiAssistShortcut()` MUST call `openCanvasChat()` from `ui/views/CanvasChatOverlay.js` instead of `openAiOverlay()`. The legacy AiAssistOverlay becomes orphaned (no entry point); R33.10 schedules its retirement.
+- **R33.10** (🔵 AUTO) — `ui/views/AiAssistOverlay.js` is FLAGGED for retirement in Arc 4 (or sooner). Until then, the file stays in the tree because `core/seedSkills.js` + `interactions/skillCommands.js` hold a v2.x admin path that still uses it. Anti-pattern guard: V-CMD-K-CANVAS-1 (below) ensures the keyboard shortcut never re-binds back to `openAiOverlay`.
+
+### S33.4 · V-PILLS + V-FOOTER-CRUMB + V-CMD-K-CANVAS test contract
+
+Tests in `docs/v3.0/TESTS.md §T33` (NEW):
+
+- **V-PILLS-1**: Source-grep `ui/views/CanvasChatOverlay.js` — expects a `paintProviderPills` function and absence of the prior `canvas-chat-status-chip` markup. Asserts the pill row markup class `canvas-chat-provider-pills` is present in the rendered DOM after `openCanvasChat()`.
+- **V-PILLS-2**: Click an inactive pill → `loadAiConfig().activeProvider` reflects the click target. Click another → switches again.
+- **V-PILLS-3**: Active pill computed style: `background-color: rgb(0, 118, 206)` (`var(--dell-blue)`); inactive ready pill: `background-color: rgb(255, 255, 255)` + dot color `rgb(0, 132, 61)` (`var(--green)`); inactive needs-key pill: dot color `rgb(178, 116, 0)` (`var(--amber)`).
+- **V-PILLS-4**: Click on active pill → Settings modal opens (live DOM check on `.overlay[data-kind="settings"]`).
+- **V-FOOTER-CRUMB-1**: After a stub-LLM round-trip via `streamChat`, the footer's `.canvas-chat-foot-lede` MUST contain the provider label + model + tokens (regex match `/Claude · .+ · \d+ tokens/`).
+- **V-CMD-K-CANVAS-1**: Dispatch a synthetic `keydown` for Cmd+K / Ctrl+K → assert the opened overlay is `kind="canvas-chat"` (NOT `"ai-assist"`). VT25 + V-AI-ASSIST-CMD-K flipped to match the new contract.
+
+### S33.5 · Forbidden / out-of-scope
+
+- Designing the segmented-control fallback for narrow viewports (R33.5 explicitly defers).
+- Adding new providers to the registry (Arc 2 styles the rendering of the existing registry; provider-list changes are separate work).
+- Animating provider switches (subtle pill-fade during click is OK; complex transitions deferred).
+- Retiring `ui/views/AiAssistOverlay.js` in this arc (R33.10 only flags; deletion belongs to Arc 4 / Skill Builder consolidation work).
+- Header rail toggle button visual treatment — it sits in the same `head-extras` slot as the pills but is structurally separate; keep the rail toggle exactly as today (Arc 2 only adds the pills).
+
+### S33.6 · User review checklist
+
+The user review gate, per `feedback_group_b_spec_rewrite.md`:
+1. Confirm the **full-pill-row design** (not segmented control or single-pill-with-dropdown) matches expectation. Visual: 5 pills horizontal, active filled Dell-blue, inactive outlined with status dot.
+2. Confirm the **click semantics**: inactive ready → switch · inactive needs-key → open Settings → key entry · active → open Settings → key entry. OR redirect (e.g. "active should do nothing", "long-press for keys instead of click").
+3. Confirm the **footer breadcrumb format** `Claude · sonnet-3-7 · 4,118 tokens · 1,400ms`. OR redirect (different separator, no latency, etc.).
+4. Confirm the **Cmd+K rebind** to Canvas AI Assistant (BUG-025 fix). Legacy AiAssistOverlay flagged for retirement in Arc 4. OK or different retirement timing?
+5. Confirm the **mock provider exclusion** from the pill row (R33.4). OR redirect (e.g. "show mock pill in dev builds only").
+6. Confirm the **scope split** — Arc 2 ships pills + breadcrumb + Cmd+K only; segmented-fallback design + AiAssistOverlay retirement deferred.
+
+Once all 6 confirmed → V-PILLS-1..4 + V-FOOTER-CRUMB-1 + V-CMD-K-CANVAS-1 RED-first → impl → live smoke → commit.
 
 ---
 
@@ -3069,7 +3143,8 @@ Once all 6 confirmed → V-THEME-1..8 RED-first → impl → live smoke → comm
 | 2026-05-02 | RELEASE v3.0.0-rc.2 | **TAGGED 2026-05-02.** Closes the chat-perfection arc (Steps 0–11). Banner 1048/1048 GREEN ✅. Cleanup arc (BUG-003..009 architectural fix) + chat-perfection (data contract + handshake + markdown + ack chip + Real-Anthropic tool-use + cache_control on stable prefix + SSE per-token streaming). New tests this release: V-CONTRACT-1..7, V-MD-1, V-NAME-1, V-CHAT-13/14/15/16/17, V-DEMO-1..7, V-MOCK-1..3, V-ANTI-RUN-1. New rules: RULES §17 (PR1-PR7 production-import discipline) + §16 CH14-CH19. Five file renames purging v3-prefix (state/adapter, state/engagementStore, state/sessionBridge, core/demoEngagement, ui/views/SkillBuilder; `state/v3SkillStore.js` + `core/v3SeedSkills.js` exempted until v2 retires per §S24.4). Two providers lifted to production (`services/mockChatProvider.js` + `services/mockLLMProvider.js`). One vendor (`vendor/marked/marked.min.js` v13.0.3). Real-Anthropic streaming smoke against live key DEFERRED to first user-driven workshop run (mock smoke covers all paths). |
 | 2026-05-03 | §S29 + §S30 + APP_VERSION recovery | Skill architecture v3.1 (parameters[] + outputTarget; click-to-run scope retired) authored as §S29; APP_VERSION discipline + 8-item PREFLIGHT checklist authored as §S30 after rc.2-tag freeze drift surfaced (18 commits past tag without bumping `APP_VERSION`). New tests: V-SKILL-V3-1..7, V-VERSION-1..2, V-CONCEPT-1..5 (Phase B concept dictionary), V-WORKFLOW-1..5 (Phase C app manifest), V-CHAT-27..32 (Phase A1 generic OpenAI tool-use connector). New rules: §16 CH20–CH26 (generic connector + concept dict + workflow manifest + skill v3.1 + APP_VERSION + topbar single-AI-surface). |
 | 2026-05-03 | §S31 | NEW SPEC-only annex · v3 engagement persistence + rehydrate-on-boot. R31.1–R31.5 + `localStorage.v3_engagement_v1` storage shape + V-FLOW-REHYDRATE-1..3 test pointer. Architectural fix for BUG-019 (page-reload race: v2 sessionState rehydrated, v3 engagement stayed null, AI chat reported "empty" against a populated UI). Authored 2026-05-03 as part of the rc.3 expanded scope (Group A AI-correctness consolidation per user direction). |
-| 2026-05-03 | §S32 | NEW SPEC-only annex · Canvas AI Assistant window-theme contract — Arc 1 of the Group B UX consolidation arc per `feedback_group_b_spec_rewrite.md`. R32.1–R32.14 + token alignment with GPLC sample HTML reference + rename "Canvas Chat" → "Canvas AI Assistant" + V-THEME-1..8 test contract. Drafted 2026-05-03 post rc.3 tag; LOCKED 2026-05-03 on user approval. |
+| 2026-05-03 | §S32 | NEW SPEC-only annex · Canvas AI Assistant window-theme contract — Arc 1 of the Group B UX consolidation arc per `feedback_group_b_spec_rewrite.md`. R32.1–R32.14 + token alignment with GPLC sample HTML reference + rename "Canvas Chat" → "Canvas AI Assistant" + V-THEME-1..8 test contract. Drafted 2026-05-03 post rc.3 tag; LOCKED 2026-05-03 on user approval; impl GREEN 2026-05-03 (1111/1111). |
+| 2026-05-03 | §S33 | NEW SPEC-only annex · Canvas AI Assistant header provider pills + footer breadcrumb + BUG-025 Cmd+K rebind — Arc 2 of Group B. R33.1–R33.10 + provider-pill row design (filled-active + outlined-inactive + green/amber dot) replacing the connection-status chip + footer breadcrumb showing latest-turn provenance + Cmd+K rebound from legacy AiAssistOverlay to Canvas AI Assistant + V-PILLS-1..4 + V-FOOTER-CRUMB-1 + V-CMD-K-CANVAS-1 test contract. Drafted 2026-05-03 post Arc 1 ship; LOCKED 2026-05-04 on user approval. |
 | 2026-05-03 | RELEASE v3.0.0-rc.3 | **TAGGED 2026-05-03.** Closes the rc.3 implementation arc + AI-correctness consolidation. Banner 1103/1103 GREEN ✅ (was 1048 at rc.2; +55 tests). Rolled in: Phase A1 generic LLM connector (BUG-018 closed) + Phase B concept dictionary + Phase C workflow manifest + Skill v3.1 schema + Skill Builder UI rebuild + chat right-rail saved-skill cards + UseAiButton retirement + topbar consolidation to one "AI Assist" button (Dell-blue + diamond-glint 8s breathe) + APP_VERSION discipline + PREFLIGHT.md + Group A AI-correctness fixes (BUG-019 engagement rehydrate, BUG-020 streaming-time handshake strip, BUG-013 Path B UUID scrub, BUG-023 manifest layerId, BUG-011 + BUG-018 closed). New SPEC annexes: §S26 + §S27 + §S28 + §S29 + §S30 + §S31. New RULES: §16 CH20–CH27. New tests: V-CHAT-18..38, V-CONCEPT-1..5, V-WORKFLOW-1..5, V-SKILL-V3-1..7, V-VERSION-1..2, V-FLOW-REHYDRATE-1..3, V-PATH-31/32, V-TOPBAR-1, V-LAB-VIA-CHAT-RAIL, V-AI-ASSIST-CMD-K, V-ANTI-USE-AI, V-NAME-2, V-DEMO-V2-1 + V-DEMO-8/9 + V-FLOW-CHAT-DEMO-1/2. Real-Gemini live-key smoke deferred to first user-driven workshop run (V-CHAT-32 mock-fetch round-trip covers the protocol).  |
 
 End of SPEC.

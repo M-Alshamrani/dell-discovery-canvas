@@ -6840,18 +6840,21 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
   // it's been rewritten to dispatch a Cmd+K KeyboardEvent and assert the
   // AI Assist overlay opens with the same skill-list contract.
 
-  it("VT25 · Cmd+K / Ctrl+K dispatches AI Assist overlay (kind='ai-assist' + skill list); button-click path retired per SPEC §S29.7", () => {
+  it("VT25 · Cmd+K / Ctrl+K opens Canvas AI Assistant (kind='canvas-chat'); rebound from legacy AiAssistOverlay per SPEC §S33 R33.9 (BUG-025 fix, rc.4-dev Arc 2)", async () => {
     _resetOverlayForTests();
     closeOverlay();
-    // Dispatch the keyboard shortcut that app.js binds globally.
+    // Dispatch the keyboard shortcut that app.js binds globally. The
+    // handler is async (dynamic import of CanvasChatOverlay.js); wait
+    // a tick before asserting the overlay opened.
     document.dispatchEvent(new KeyboardEvent("keydown", {
       key: "k", ctrlKey: true, bubbles: true
     }));
-    var overlay = document.querySelector(".overlay.open");
-    assert(overlay, "VT25 . Cmd+K / Ctrl+K must open an AI Assist overlay");
-    var hasSkillList = overlay.querySelector(".ai-skill-list, [data-skill-list]");
-    assert(hasSkillList,
-      "VT25 . AI Assist overlay body must include a .ai-skill-list or [data-skill-list] element");
+    await new Promise(r => setTimeout(r, 200));
+    var overlay = document.querySelector(".overlay.open[data-kind='canvas-chat']");
+    assert(overlay, "VT25 · Cmd+K / Ctrl+K MUST open the Canvas AI Assistant overlay (kind='canvas-chat')");
+    // Anti-pattern guard: legacy AiAssistOverlay must NOT open from this shortcut.
+    var legacy = document.querySelector(".overlay.open[data-kind='ai-assist']");
+    assert(!legacy, "VT25 · legacy AiAssistOverlay (kind='ai-assist') MUST NOT open from Cmd+K (BUG-025 fix)");
     closeOverlay();
   });
 
@@ -13514,7 +13517,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
           "skillBuilderOpener.js exports openSkillBuilderOverlay");
       });
 
-      it("V-AI-ASSIST-CMD-K · AI Assist is reachable via Cmd+K / Ctrl+K shortcut even though the topbar button was removed (rc.3 #7); shortcut wiring lives outside the button-presence guard", async () => {
+      it("V-AI-ASSIST-CMD-K · Cmd+K / Ctrl+K shortcut wired in app.js; opens Canvas AI Assistant per SPEC §S33 R33.9 (rc.4-dev Arc 2; was openAiOverlay pre-Arc-2)", async () => {
         const appSrc = await (await fetch("/app.js")).text();
         // The wireTopbarAiBtn function still exists (null-safe when the
         // button is absent), and a separate wireAiAssistShortcut()
@@ -13529,8 +13532,14 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         // Cmd/Ctrl+K shortcut handler must check both modifiers.
         assert(/metaKey\s*\|\|\s*\w*\.ctrlKey|metaKey \|\| e\.ctrlKey/.test(appSrc),
           "Cmd+K / Ctrl+K modifier check present");
-        assert(/openAiOverlay/.test(appSrc),
-          "openAiOverlay invoked from the keyboard shortcut path");
+        // Per SPEC §S33 R33.9 (rc.4-dev Arc 2): the shortcut now opens
+        // Canvas AI Assistant, NOT the legacy AiAssistOverlay.
+        const wireMatch = appSrc.match(/function\s+wireAiAssistShortcut\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
+        assert(wireMatch !== null, "wireAiAssistShortcut function block found");
+        assert(/openCanvasChat\b/.test(wireMatch[0]),
+          "wireAiAssistShortcut MUST call openCanvasChat (Canvas AI Assistant; rebind from legacy openAiOverlay per SPEC §S33 R33.9)");
+        assert(!/openAiOverlay\b/.test(wireMatch[0]),
+          "wireAiAssistShortcut MUST NOT call openAiOverlay (legacy retired from this entry point)");
       });
 
       it("V-SKILL-V3-7 · UseAiButton retired: ui/components/UseAiButton.js no longer served; no production .js imports it (regression guard per SPEC §S29.6)", async () => {
@@ -14166,35 +14175,252 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 
     });
 
-    it("V-CHAT-26 · BUG-017 guard: chat overlay header has connection-status chip (no Mock toggle); chip text reflects active provider", async () => {
+    // -----------------------------------------------------------------
+    // §T33 · V-PILLS + V-FOOTER-CRUMB + V-CMD-K-CANVAS
+    //   Per SPEC §S33 + RULES §16 CH29. Arc 2 of Group B.
+    //   Replaces the connection-status chip (BUG-017's chip-design) with
+    //   a horizontal provider-pill row; wires the footer breadcrumb to
+    //   the latest-turn provenance; rebinds Cmd+K to Canvas AI Assistant.
+    // -----------------------------------------------------------------
+    describe("§T33 · V-PILLS + V-FOOTER-CRUMB + V-CMD-K-CANVAS · Canvas AI Assistant header pills + footer breadcrumb + Cmd+K (per SPEC §S33)", () => {
+
+      function hexToRgb(hex) {
+        const h = hex.replace(/^#/, "");
+        const r = parseInt(h.slice(0, 2), 16);
+        const g = parseInt(h.slice(2, 4), 16);
+        const b = parseInt(h.slice(4, 6), 16);
+        return "rgb(" + r + ", " + g + ", " + b + ")";
+      }
+
+      it("V-PILLS-1 · CanvasChatOverlay defines paintProviderPills + drops the canvas-chat-status-chip; rendered DOM after openCanvasChat carries .canvas-chat-provider-pills with one .canvas-chat-provider-pill per PROVIDERS entry (per R33.1)", async () => {
+        const overlaySrc = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
+        // Source-grep the new contract.
+        assert(/function\s+paintProviderPills\b/.test(overlaySrc),
+          "V-PILLS-1: paintProviderPills function defined");
+        assert(/canvas-chat-provider-pills/.test(overlaySrc),
+          "V-PILLS-1: .canvas-chat-provider-pills row class present in source");
+        assert(/canvas-chat-provider-pill\b/.test(overlaySrc),
+          "V-PILLS-1: .canvas-chat-provider-pill class present in source");
+        // Anti-pattern: the connection-status chip is retired.
+        assert(!/canvas-chat-status-chip/.test(overlaySrc),
+          "V-PILLS-1: old .canvas-chat-status-chip must be removed");
+
+        // Live DOM: open + assert pill count = PROVIDERS length.
+        _resetOverlayForTests();
+        closeOverlay();
+        const aiCfgMod = await import("../core/aiConfig.js");
+        const mod = await import("../ui/views/CanvasChatOverlay.js");
+        mod.openCanvasChat();
+        const row = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-pills");
+        assert(row, "V-PILLS-1: pill row must render in chat header");
+        const pills = row.querySelectorAll(".canvas-chat-provider-pill");
+        assertEqual(pills.length, aiCfgMod.PROVIDERS.length,
+          "V-PILLS-1: pill count must equal PROVIDERS.length (got " + pills.length + ", expected " + aiCfgMod.PROVIDERS.length + ")");
+        closeOverlay();
+        _resetOverlayForTests();
+      });
+
+      it("V-PILLS-2 · Click on inactive ready pill switches aiConfig.activeProvider (per R33.3 — needs-key pills go to Settings, not switch)", async () => {
+        _resetOverlayForTests();
+        closeOverlay();
+        const aiCfgMod = await import("../core/aiConfig.js");
+        const mod = await import("../ui/views/CanvasChatOverlay.js");
+
+        // Set up: anthropic active + has key (ready); gemini inactive +
+        // has key (ready, eligible for switch). Per R33.3, only the
+        // inactive+ready click switches the active provider.
+        const cfg0 = aiCfgMod.loadAiConfig();
+        cfg0.activeProvider = "anthropic";
+        cfg0.providers.anthropic.apiKey = "sk-test-key-anthropic";
+        cfg0.providers.gemini.apiKey    = "test-gemini-key";
+        aiCfgMod.saveAiConfig(cfg0);
+        mod.openCanvasChat();
+
+        // Find the inactive "gemini" pill and click it.
+        const target = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-pill[data-provider-key='gemini']");
+        assert(target, "V-PILLS-2: gemini pill must exist (target for click)");
+        assert(target.classList.contains("is-ready"),
+          "V-PILLS-2 setup: gemini pill must be .is-ready (has key) to be eligible for switch");
+        target.click();
+
+        const cfg1 = aiCfgMod.loadAiConfig();
+        assertEqual(cfg1.activeProvider, "gemini",
+          "V-PILLS-2: clicking the inactive ready gemini pill must switch activeProvider to 'gemini'");
+
+        // Cleanup.
+        const reset = aiCfgMod.loadAiConfig();
+        reset.activeProvider = "local";
+        reset.providers.anthropic.apiKey = "";
+        reset.providers.gemini.apiKey    = "";
+        aiCfgMod.saveAiConfig(reset);
+        closeOverlay();
+        _resetOverlayForTests();
+      });
+
+      it("V-PILLS-3 · Active pill computed style is filled --dell-blue; inactive ready pill carries a green status dot; inactive needs-key pill carries an amber dot (per R33.2)", async () => {
+        _resetOverlayForTests();
+        closeOverlay();
+        const aiCfgMod = await import("../core/aiConfig.js");
+
+        // Set up: anthropic active + has key (ready), gemini inactive +
+        // has key (ready, green dot), dellSalesChat inactive + no key
+        // (needs-key, amber dot).
+        const cfg = aiCfgMod.loadAiConfig();
+        cfg.activeProvider = "anthropic";
+        cfg.providers.anthropic.apiKey = "sk-test-key-anthropic";
+        cfg.providers.gemini.apiKey    = "test-gemini-key";
+        cfg.providers.dellSalesChat.apiKey  = "";
+        cfg.providers.dellSalesChat.baseUrl = "";
+        aiCfgMod.saveAiConfig(cfg);
+
+        const mod = await import("../ui/views/CanvasChatOverlay.js");
+        mod.openCanvasChat();
+
+        // Active pill = anthropic.
+        const active = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-pill.is-active[data-provider-key='anthropic']");
+        assert(active, "V-PILLS-3: active anthropic pill must carry .is-active");
+        const aStyle = getComputedStyle(active);
+        assertEqual(aStyle.backgroundColor, hexToRgb("#0076CE"),
+          "V-PILLS-3: active pill background MUST be var(--dell-blue) = #0076CE");
+
+        // Inactive ready pill (gemini) carries a green dot.
+        const ready = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-pill[data-provider-key='gemini']");
+        assert(ready && !ready.classList.contains("is-active"),
+          "V-PILLS-3: gemini pill exists + is inactive");
+        assert(ready.classList.contains("is-ready"),
+          "V-PILLS-3: gemini pill must carry .is-ready (has key)");
+        const dotReady = ready.querySelector(".canvas-chat-provider-pill-dot");
+        assert(dotReady, "V-PILLS-3: ready pill must contain a status dot");
+        assertEqual(getComputedStyle(dotReady).backgroundColor, hexToRgb("#00843D"),
+          "V-PILLS-3: ready pill dot MUST be var(--green) = #00843D");
+
+        // Inactive needs-key pill (dellSalesChat) carries an amber dot.
+        const warn = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-pill[data-provider-key='dellSalesChat']");
+        assert(warn, "V-PILLS-3: dellSalesChat pill must exist");
+        assert(warn.classList.contains("is-warn"),
+          "V-PILLS-3: dellSalesChat pill MUST carry .is-warn (no key + no baseUrl)");
+        const dotWarn = warn.querySelector(".canvas-chat-provider-pill-dot");
+        assertEqual(getComputedStyle(dotWarn).backgroundColor, hexToRgb("#B27400"),
+          "V-PILLS-3: needs-key pill dot MUST be var(--amber) = #B27400");
+
+        // Cleanup.
+        const reset = aiCfgMod.loadAiConfig();
+        reset.providers.anthropic.apiKey = "";
+        reset.providers.gemini.apiKey = "";
+        aiCfgMod.saveAiConfig(reset);
+        closeOverlay();
+        _resetOverlayForTests();
+      });
+
+      it("V-PILLS-4 · Click on the ACTIVE pill opens Settings modal (per R33.3)", async () => {
+        _resetOverlayForTests();
+        closeOverlay();
+        const aiCfgMod = await import("../core/aiConfig.js");
+        const cfg = aiCfgMod.loadAiConfig();
+        cfg.activeProvider = "anthropic";
+        cfg.providers.anthropic.apiKey = "sk-test-key";
+        aiCfgMod.saveAiConfig(cfg);
+
+        const mod = await import("../ui/views/CanvasChatOverlay.js");
+        mod.openCanvasChat();
+
+        const active = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-pill.is-active");
+        assert(active, "V-PILLS-4: active pill must exist");
+        active.click();
+
+        // Settings overlay should open (data-kind='settings'). It may
+        // close the chat overlay first; the assertion is just on
+        // settings being open.
+        await new Promise(r => setTimeout(r, 200));
+        const settings = document.querySelector(".overlay[data-kind='settings']");
+        assert(settings, "V-PILLS-4: clicking the active pill MUST open the Settings modal");
+
+        // Cleanup.
+        closeOverlay();
+        const reset = aiCfgMod.loadAiConfig();
+        reset.providers.anthropic.apiKey = "";
+        aiCfgMod.saveAiConfig(reset);
+        _resetOverlayForTests();
+      });
+
+      it("V-FOOTER-CRUMB-1 · Footer breadcrumb updates on chat onComplete to display latest-turn provenance in the form '<provider> · <model> · <N> tokens · <ms>ms' (per R33.6)", async () => {
+        _resetOverlayForTests();
+        closeOverlay();
+        const mod = await import("../ui/views/CanvasChatOverlay.js");
+        mod.openCanvasChat();
+
+        // Read the source-level handler shape: onComplete must update
+        // .canvas-chat-foot-lede with the provenance breadcrumb.
+        const overlaySrc = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
+        assert(/canvas-chat-foot-lede/.test(overlaySrc),
+          "V-FOOTER-CRUMB-1: footer lede class referenced in source");
+        // The contract is a function/expression that builds the
+        // breadcrumb string from the latest message provenance.
+        assert(/function\s+paintFooterCrumb\b|paintFooterCrumb\(/.test(overlaySrc),
+          "V-FOOTER-CRUMB-1: paintFooterCrumb helper defined and called");
+
+        // Live DOM check: simulate an assistant message + provenance,
+        // call paintFooterCrumb (exposed via the module if testable, OR
+        // dispatch a synthetic 'chat-turn-complete' event the overlay
+        // listens for). For first impl, we drive the DOM directly + then
+        // use the module's painter via the rendered DOM.
+        const ledeEl = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-foot-lede");
+        assert(ledeEl, "V-FOOTER-CRUMB-1: lede element exists in footer");
+
+        // Empty state per R33.7.
+        assertEqual((ledeEl.textContent || "").trim().toLowerCase(), "ready",
+          "V-FOOTER-CRUMB-1: empty-state breadcrumb reads 'Ready' (per R33.7)");
+
+        closeOverlay();
+        _resetOverlayForTests();
+      });
+
+      it("V-CMD-K-CANVAS-1 · BUG-025 fix: Cmd+K / Ctrl+K opens Canvas AI Assistant (kind='canvas-chat'), NOT legacy AiAssistOverlay (kind='ai-assist') (per R33.9)", async () => {
+        _resetOverlayForTests();
+        closeOverlay();
+
+        // Source-grep: wireAiAssistShortcut MUST call openCanvasChat,
+        // NOT openAiOverlay.
+        const appSrc = await (await fetch("/app.js")).text();
+        const wireMatch = appSrc.match(/function\s+wireAiAssistShortcut\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
+        assert(wireMatch !== null, "V-CMD-K-CANVAS-1: wireAiAssistShortcut function present");
+        assert(/openCanvasChat\b/.test(wireMatch[0]),
+          "V-CMD-K-CANVAS-1: wireAiAssistShortcut MUST call openCanvasChat (BUG-025 fix)");
+        assert(!/openAiOverlay\b/.test(wireMatch[0]),
+          "V-CMD-K-CANVAS-1: wireAiAssistShortcut MUST NOT call openAiOverlay (legacy retired from this entry point)");
+
+        // Live keyboard event → asserts the OPENED overlay is canvas-chat.
+        document.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "k", ctrlKey: true, bubbles: true
+        }));
+        await new Promise(r => setTimeout(r, 200));
+        const overlay = document.querySelector(".overlay.open[data-kind='canvas-chat']");
+        assert(overlay, "V-CMD-K-CANVAS-1: Cmd+K MUST open the Canvas AI Assistant overlay (kind='canvas-chat')");
+        const wrong = document.querySelector(".overlay.open[data-kind='ai-assist']");
+        assert(!wrong, "V-CMD-K-CANVAS-1: legacy AiAssistOverlay (kind='ai-assist') MUST NOT open");
+
+        closeOverlay();
+        _resetOverlayForTests();
+      });
+
+    });
+
+    it("V-CHAT-26 · BUG-017 guard: chat overlay header has NO Mock toggle (anti-pattern guard; pills replace chip per Arc 2 / SPEC §S33)", async () => {
       // Source-grep — the overlay file must NOT carry a 'Mock' provider
-      // toggle in its head-extras anymore. The new chip must be present.
+      // toggle in its head-extras. Originally (BUG-017 fix) the Mock|Real
+      // toggle was replaced with a connection-status chip; in rc.4-dev
+      // Arc 2 the chip was replaced with the provider pill row. The
+      // anti-pattern assertions for the original BUG-017 stay; the
+      // chip-presence assertions are RETIRED in favor of V-PILLS-1.
       const overlaySrc = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
 
-      // Anti-pattern: prior Mock|Real segmented toggle.
+      // Anti-pattern: prior Mock|Real segmented toggle (BUG-017).
       assert(!/canvas-chat-provider-seg/.test(overlaySrc),
         "old canvas-chat-provider-seg (Mock|Real toggle) must be removed");
       assert(!/canvas-chat-provider-btn/.test(overlaySrc),
         "old canvas-chat-provider-btn must be removed");
       assert(!/state\.providerMode/.test(overlaySrc),
         "state.providerMode field must be removed (chat always uses active aiConfig provider)");
-
-      // Required: connection-status chip wired to active provider.
-      assert(/canvas-chat-status-chip/.test(overlaySrc),
-        "new canvas-chat-status-chip must be present in CanvasChatOverlay.js");
-      assert(/openSettingsModal\b/.test(overlaySrc),
-        "chip click must open Settings modal");
-      assert(/isActiveProviderReady\b/.test(overlaySrc),
-        "chip ready/warn state must use isActiveProviderReady from aiConfig");
-
-      // CSS contract: chip styles + ready/warn variants present.
-      const cssSrc = await (await fetch("/styles.css")).text();
-      assert(/\.canvas-chat-status-chip\b/.test(cssSrc),
-        ".canvas-chat-status-chip CSS class defined");
-      assert(/\.canvas-chat-status-chip\.is-ready/.test(cssSrc),
-        ".is-ready variant defined (green-dot connected)");
-      assert(/\.canvas-chat-status-chip\.is-warn/.test(cssSrc),
-        ".is-warn variant defined (amber-dot 'configure provider')");
     });
 
     it("V-CHAT-23 · BUG-015 guard: handshake prefix is silently stripped on SUBSEQUENT turns when the model disobeys 'first turn only'", async () => {

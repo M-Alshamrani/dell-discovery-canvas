@@ -27,7 +27,7 @@ import {
 }                                              from "../../state/chatMemory.js";
 import { streamChat }                          from "../../services/chatService.js";
 import { createRealChatProvider }             from "../../services/realChatProvider.js";
-import { loadAiConfig, isActiveProviderReady } from "../../core/aiConfig.js";
+import { loadAiConfig, saveAiConfig, isActiveProviderReady, PROVIDERS } from "../../core/aiConfig.js";
 import { openSettingsModal }                   from "./SettingsModal.js";
 import { confirmAction }                       from "../components/Notify.js";
 // SPEC §S20.17 + RULES §16 CH18 — markdown rendering on assistant bubbles
@@ -471,7 +471,12 @@ function buildFooter() {
   foot.className = "canvas-chat-footer";
   const lede = document.createElement("div");
   lede.className = "canvas-chat-foot-lede";
-  lede.textContent = "Read-only · proposes changes only · session memory persists per engagement";
+  // Per SPEC §S33 R33.6 + R33.7 (rc.4-dev / Arc 2) - footer breadcrumb
+  // shows the latest-turn provenance ('<provider> · <model> · <N>
+  // tokens · <ms>ms') in JetBrains Mono uppercase. Empty state reads
+  // 'Ready'. paintFooterCrumb is called from buildFooter for the empty
+  // state and from chat onComplete for the populated state.
+  paintFooterCrumb(lede, null);
   const done = document.createElement("button");
   done.type = "button";
   done.className = "btn-primary";
@@ -482,41 +487,44 @@ function buildFooter() {
   return foot;
 }
 
+// Per SPEC §S33 R33.6-R33.8 (rc.4-dev / Arc 2) - paint the latest-turn
+// provenance breadcrumb into the footer lede element. Called with the
+// chat result on onComplete. R33.7 empty state reads 'Ready'. R33.8
+// silently drops missing fields (e.g. no latency -> just provider
+// label + model + tokens).
+function paintFooterCrumb(lede, result) {
+  if (!lede) return;
+  if (!result || !result.provenance) {
+    lede.textContent = "Ready";
+    return;
+  }
+  const p = result.provenance;
+  const segments = [];
+  if (p.providerKey) segments.push(labelForProvider(p.providerKey));
+  if (p.model)       segments.push(p.model);
+  if (typeof p.tokensIn === "number" || typeof p.tokensOut === "number") {
+    const total = (p.tokensIn || 0) + (p.tokensOut || 0);
+    segments.push(total.toLocaleString() + " tokens");
+  } else if (typeof p.tokens === "number") {
+    segments.push(p.tokens.toLocaleString() + " tokens");
+  }
+  if (typeof p.latencyMs === "number") segments.push(Math.round(p.latencyMs) + "ms");
+  lede.textContent = segments.length ? segments.join(" · ") : "Ready";
+}
+
 function injectHeaderExtras() {
   const slot = document.querySelector(".overlay[data-kind='canvas-chat'] .overlay-head-extras");
   if (!slot) return;
   slot.innerHTML = "";
 
-  // BUG-017 fix · connection-status chip (replaces the prior Mock|Real
-  // segmented toggle). Shows the active provider's status at a glance.
-  // Click → opens Settings modal so the user can configure or switch.
-  // Mock provider stays available for the test suite; not surfaced here.
-  const aiCfg          = loadAiConfig();
-  const activeKey      = (aiCfg && aiCfg.activeProvider) || "local";
-  const ready          = isActiveProviderReady(aiCfg);
-  const providerLabel  = labelForProvider(activeKey);
-  const status = document.createElement("button");
-  status.type = "button";
-  status.className = "canvas-chat-status-chip" + (ready ? " is-ready" : " is-warn");
-  status.title = ready
-    ? "Connected to " + providerLabel + ". Click to manage provider settings."
-    : "No provider configured for " + providerLabel + ". Click to open Settings.";
-  status.setAttribute("aria-label", status.title);
-  const dot = document.createElement("span");
-  dot.className = "canvas-chat-status-dot";
-  dot.setAttribute("aria-hidden", "true");
-  status.appendChild(dot);
-  const labelSpan = document.createElement("span");
-  labelSpan.className = "canvas-chat-status-label";
-  labelSpan.textContent = ready
-    ? "Connected to " + providerLabel
-    : "Configure provider";
-  status.appendChild(labelSpan);
-  status.addEventListener("click", function() {
-    closeOverlay();
-    openSettingsModal({ section: "providers" });
-  });
-  slot.appendChild(status);
+  // Per SPEC §S33 R33.1-R33.3 (rc.4-dev / Arc 2) - provider pill row
+  // replaces the connection-status chip. One pill per PROVIDERS entry;
+  // active filled --dell-blue, inactive ready outlined with green dot,
+  // inactive needs-key outlined with amber dot. Click semantics:
+  //   inactive ready    -> switch active provider (saveAiConfig)
+  //   inactive needs-key OR active -> open Settings modal
+  // Mock provider is excluded (PROVIDERS registry doesn't list it).
+  paintProviderPills(slot);
 
   // Clear-chat button.
   const clearBtn = document.createElement("button");
@@ -572,6 +580,86 @@ function injectHeaderExtras() {
   ack.setAttribute("data-canvas-chat-ack", "");
   ack.style.display = "none";
   slot.appendChild(ack);
+}
+
+// Per SPEC §S33 R33.1-R33.5 + R33.4 (rc.4-dev / Arc 2) - paint the
+// provider pill row into the chat overlay header. Replaces the
+// pre-Arc-2 connection-status chip. One pill per PROVIDERS entry
+// (mock excluded by registry omission). Each pill carries a status
+// dot (green = ready / amber = needs key) and click semantics per
+// R33.3.
+function paintProviderPills(slot) {
+  const aiCfg     = loadAiConfig();
+  const activeKey = (aiCfg && aiCfg.activeProvider) || "local";
+
+  const row = document.createElement("div");
+  row.className = "canvas-chat-provider-pills";
+  row.setAttribute("role", "group");
+  row.setAttribute("aria-label", "AI provider");
+
+  for (const providerKey of PROVIDERS) {
+    const pill   = document.createElement("button");
+    const isActive = providerKey === activeKey;
+    const ready    = isProviderReady(aiCfg, providerKey);
+    pill.type  = "button";
+    pill.className = "canvas-chat-provider-pill" +
+      (isActive ? " is-active" : (ready ? " is-ready" : " is-warn"));
+    pill.setAttribute("data-provider-key", providerKey);
+    const lbl = labelForProvider(providerKey);
+    pill.title = isActive
+      ? "Active provider: " + lbl + ". Click to manage settings + key."
+      : (ready
+          ? "Switch to " + lbl + "."
+          : lbl + " needs an API key. Click to configure.");
+    pill.setAttribute("aria-label", pill.title);
+    pill.setAttribute("aria-pressed", isActive ? "true" : "false");
+
+    const dot = document.createElement("span");
+    dot.className = "canvas-chat-provider-pill-dot";
+    dot.setAttribute("aria-hidden", "true");
+    pill.appendChild(dot);
+
+    const label = document.createElement("span");
+    label.className = "canvas-chat-provider-pill-label";
+    label.textContent = lbl;
+    pill.appendChild(label);
+
+    pill.addEventListener("click", function() {
+      // Per R33.3:
+      //   inactive + ready -> switch active provider, repaint pills
+      //   inactive + warn  -> open Settings (key entry)
+      //   active           -> open Settings (key management)
+      if (!isActive && ready) {
+        const nextCfg = loadAiConfig();
+        nextCfg.activeProvider = providerKey;
+        saveAiConfig(nextCfg);
+        // Repaint the row so the active highlight tracks the click.
+        const headSlot = document.querySelector(".overlay[data-kind='canvas-chat'] .overlay-head-extras");
+        if (headSlot) injectHeaderExtras();
+        return;
+      }
+      // Open Settings, focused on the providers section. closeOverlay
+      // first so the chat doesn't sit behind the settings modal.
+      closeOverlay();
+      openSettingsModal({ section: "providers", focusProvider: providerKey });
+    });
+
+    row.appendChild(pill);
+  }
+  slot.appendChild(row);
+}
+
+// Per-provider readiness check. Mirrors isActiveProviderReady's shape
+// but evaluated against ANY provider key (not just the active one).
+function isProviderReady(config, providerKey) {
+  const c = config || loadAiConfig();
+  const p = c && c.providers && c.providers[providerKey];
+  if (!p) return false;
+  if (!p.baseUrl) return false;
+  // Local provider doesn't require a key (vLLM unauth'd); public
+  // providers do. Matches isActiveProviderReady.
+  if (providerKey !== "local" && !p.apiKey) return false;
+  return true;
 }
 
 // SPEC §S20.16 — render the contract-ack outcome.
@@ -809,6 +897,10 @@ async function handleSend(body) {
         if (result && result.contractAck) {
           renderAckIndicator(result.contractAck);
         }
+        // SPEC §S33 R33.6 (rc.4-dev / Arc 2) - update the footer
+        // breadcrumb with the latest-turn provenance.
+        const ledeEl = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-foot-lede");
+        if (ledeEl) paintFooterCrumb(ledeEl, result);
       }
     });
   } catch (e) {
