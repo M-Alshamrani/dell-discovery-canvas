@@ -1,33 +1,51 @@
 // services/uuidScrubber.js — SPEC §S20.16 + BUG-013 Path B (2026-05-03)
+//                          + SPEC §S34.3 + BUG-024 (rc.4-dev / Arc 3c)
 //
-// Defensive runtime scrub that replaces bare v3-format UUIDs in the
-// LLM's prose with human-readable labels resolved from the active
-// engagement. Defense-in-depth on top of the BUG-013 Path A landings
-// (commit `d324971`): the role section already instructs the LLM to
-// cite labels not ids, AND the selectors carry humanized labels
-// alongside their UUID keys (V-CHAT-21/22). Despite that, real-world
-// model outputs sometimes still slip a UUID into prose. This scrub
-// is the belt-and-suspenders pair to the prompt-time discipline.
+// Defensive runtime scrub for two classes of internal-id leakage in
+// the LLM's prose:
+//   1. UUIDs (BUG-013) — bare 36-char v3-format UUIDs that should be
+//      replaced with the entity's user-facing label.
+//   2. workflow / concept IDs (BUG-024) — `workflow.<id>` and
+//      `concept.<id>` tokens from the manifest dictionaries that
+//      should be replaced with the manifest's user-facing label.
+//
+// Defense-in-depth pattern: the role section already instructs the
+// LLM to cite labels not ids (BUG-013 Path A + BUG-024 R34.15). This
+// scrub is the runtime safety net for when the model slips up.
 //
 // **Behavior**:
-//   - Matches the 36-char UUID shape (8-4-4-4-12 hex). Case-insensitive.
-//   - For each match, looks up the UUID in the engagement's entity
-//     collections (gaps / drivers / environments / instances). If found,
-//     replaces with the entity's user-facing label (description /
-//     alias / name). If not found, replaces with `[unknown reference]`.
-//   - **Skips fenced code blocks** (``` ``` ```) and inline code
-//     (`...`). The LLM may legitimately quote JSON with UUIDs in code;
-//     scrubbing inside code would corrupt the example.
+//   - UUIDs: match the 36-char shape (8-4-4-4-12 hex), case-insensitive.
+//     Look up in the engagement-derived labelMap (buildLabelMap).
+//     Found → replace with entity label. Orphan → `[unknown reference]`.
+//   - workflow.<id> / concept.<id>: match the dotted-token shape.
+//     Look up in the manifest-derived labelMap (buildManifestLabelMap).
+//     Found → replace with the workflow's `name` (markdown-bold) or
+//     concept's `label` (markdown-bold). Orphan → `[unknown workflow]`
+//     or `[unknown concept]` respectively.
+//   - **Skips fenced code blocks** (```...```) and inline code
+//     (`...`). The LLM may legitimately quote JSON / code with these
+//     identifiers; scrubbing inside code would corrupt the example.
 //
-// **Idempotent**: a label substituted on pass 1 has no UUID shape on
-// pass 2, so re-running is a no-op. Safe to apply at every onToken.
+// **Idempotent**: substituted labels have no UUID-shape / dotted-id
+// shape on re-pass. Safe to apply at every onToken.
 //
-// **Cheap**: O(n) over text length; the regex match is fast and the
-// labelMap lookup is a hash hit.
+// **Cheap**: O(n) over text length; one regex match + hash lookup.
 //
-// Authority: docs/v3.0/SPEC.md §S20.16 · docs/RULES.md §16 CH18.
+// Authority: docs/v3.0/SPEC.md §S20.16 + §S34.3 · docs/RULES.md §16 CH18 + CH30.
+
+import { WORKFLOWS } from "../core/appManifest.js";
+import { CONCEPTS }  from "../core/conceptManifest.js";
 
 const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+// SPEC §S34.3 R34.12 — workflow.<id> / concept.<id> dotted-token shape.
+// Matches "workflow." or "concept." followed by [a-z0-9_.] (dots are
+// allowed because concept IDs are themselves dotted, e.g.
+// "concept.gap_type.replace"). Word-boundary anchored so "iworkflow.x"
+// doesn't match. Trailing punctuation (period at end of sentence) is
+// excluded by requiring the last char in the captured run to be
+// alphanumeric or underscore.
+const WORKFLOW_CONCEPT_RE = /\b(workflow|concept)\.[a-z0-9_]+(?:\.[a-z0-9_]+)*\b/gi;
 
 // buildLabelMap(engagement) — returns { [uuid]: label } map covering
 // every UUID-keyed entity reachable from the engagement. Labels are
@@ -114,7 +132,8 @@ export function scrubUuidsInProse(text, labelMap) {
 
 function scrubPlainSegment(seg, labelMap) {
   if (seg.length === 0) return seg;
-  return seg.replace(UUID_RE, function(match) {
+  // First pass: UUIDs.
+  let out = seg.replace(UUID_RE, function(match) {
     const lower = match.toLowerCase();
     if (Object.prototype.hasOwnProperty.call(labelMap, lower)) {
       return labelMap[lower];
@@ -125,6 +144,54 @@ function scrubPlainSegment(seg, labelMap) {
     }
     return "[unknown reference]";
   });
+  // Second pass (SPEC §S34.3 / BUG-024): workflow.<id> / concept.<id>.
+  out = out.replace(WORKFLOW_CONCEPT_RE, function(match, kind) {
+    const lower = match.toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(labelMap, lower)) {
+      // R34.13 — wrap the user-facing label in markdown bold.
+      return "**" + labelMap[lower] + "**";
+    }
+    // Orphan sentinel per kind.
+    return kind === "workflow" ? "[unknown workflow]" : "[unknown concept]";
+  });
+  return out;
+}
+
+// SPEC §S34.3 R34.16 (rc.4-dev / Arc 3c) — buildManifestLabelMap()
+// returns a { "workflow.<id>": <name>, "concept.<id>": <label> } map
+// covering every workflow + concept declared in the manifests. The
+// scrubber merges this with the engagement-derived buildLabelMap
+// output via simple object spread; callers should pass the merged
+// map as `labelMap` to scrubUuidsInProse. Cached per chat-open by
+// the overlay.
+//
+// Workflow keys are already prefixed ("workflow.identify_gaps") in
+// core/appManifest.js. Concept keys come without a "concept." prefix
+// in core/conceptManifest.js (e.g. "gap_type.replace"); the scrub
+// expects "concept.<id>" so we synthesize the prefix here.
+export function buildManifestLabelMap() {
+  const map = {};
+  // Workflows: id is "workflow.<name>"; expose .name as the label.
+  if (Array.isArray(WORKFLOWS)) {
+    for (const wf of WORKFLOWS) {
+      if (wf && typeof wf.id === "string" && typeof wf.name === "string") {
+        map[wf.id.toLowerCase()] = wf.name;
+      }
+    }
+  }
+  // Concepts: id is "<category>.<name>" (no "concept." prefix). Expose
+  // both "concept.<full_id>" → label AND the bare "<full_id>" → label
+  // so the scrubber catches either emission form. The scrub regex
+  // requires the "workflow." or "concept." prefix, so only the
+  // prefixed form actually fires; the bare-form key is harmless.
+  if (Array.isArray(CONCEPTS)) {
+    for (const c of CONCEPTS) {
+      if (c && typeof c.id === "string" && typeof c.label === "string") {
+        map["concept." + c.id.toLowerCase()] = c.label;
+      }
+    }
+  }
+  return map;
 }
 
 function truncateLabel(text) {

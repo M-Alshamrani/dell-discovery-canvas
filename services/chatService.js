@@ -37,7 +37,7 @@ import { HANDSHAKE_RE, HANDSHAKE_STRIP_RE } from "./chatHandshake.js";
 // eliminate UUID leakage in prose. This runtime scrub replaces bare
 // v3-format UUIDs with resolved labels (or `[unknown reference]`) and
 // is applied to the visible response as a final pass.
-import { buildLabelMap, scrubUuidsInProse } from "./uuidScrubber.js";
+import { buildLabelMap, buildManifestLabelMap, scrubUuidsInProse } from "./uuidScrubber.js";
 
 // SPEC §S20.5.2 + RULES §16 CH10 — multi-round tool chaining safety cap.
 // Prevents runaway tool loops if the model never emits a text-only
@@ -236,7 +236,10 @@ export async function streamChat(opts) {
   // driver label / environment alias / instance label) or
   // `[unknown reference]` for orphans. Skips fenced + inline code so
   // legitimate JSON examples remain intact.
-  visibleResponse = scrubUuidsInProse(visibleResponse, buildLabelMap(engagement));
+  // SPEC §S34.3 (rc.4-dev / Arc 3c) - merged label map covers both
+  // engagement UUIDs (BUG-013) and manifest workflow/concept ids
+  // (BUG-024) in a single scrub pass.
+  visibleResponse = scrubUuidsInProse(visibleResponse, Object.assign({}, buildManifestLabelMap(), buildLabelMap(engagement)));
   if (transcript.length === 0) {
     const expected = getContractChecksum();
     if (handshakeMatch) {

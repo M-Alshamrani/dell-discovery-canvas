@@ -54,7 +54,7 @@ import { stripHandshake }                      from "../../services/chatHandshak
 // defense-in-depth pattern as the handshake: scrub bare v3-format
 // UUIDs in prose with resolved labels at every onToken so the bubble
 // never flashes raw UUIDs even if a model slips one in mid-stream.
-import { buildLabelMap, scrubUuidsInProse }    from "../../services/uuidScrubber.js";
+import { buildLabelMap, buildManifestLabelMap, scrubUuidsInProse } from "../../services/uuidScrubber.js";
 // SPEC §S34 R34.8-R34.11 (rc.4-dev / Arc 3b) - dynamic try-asking.
 import { generateTryAskingPrompts }            from "../../services/tryAskingPrompts.js";
 
@@ -1066,12 +1066,16 @@ async function handleSend(body) {
         // markdown re-parse so the bubble never displays the artifact.
         // stripHandshake is idempotent + cheap; safe to run on every token.
         assistantMsg.content = stripHandshake(assistantMsg.content);
-        // BUG-013 fix · streaming-time UUID scrub. Same defense-in-depth
-        // pattern: replace bare v3-format UUIDs in prose with resolved
-        // labels (or `[unknown reference]` for orphans). Idempotent
-        // (substituted labels have no UUID shape on re-pass). Skips
-        // fenced + inline code so legitimate JSON examples are intact.
-        assistantMsg.content = scrubUuidsInProse(assistantMsg.content, buildLabelMap(state.engagement));
+        // BUG-013 + BUG-024 fix · streaming-time scrub of UUIDs +
+        // workflow.<id> + concept.<id> identifiers in prose. Same
+        // defense-in-depth pattern; both replaced with resolved labels
+        // (or [unknown reference] / [unknown workflow] / [unknown concept]
+        // sentinels for orphans). Idempotent. Skips fenced + inline code.
+        // Merge the engagement-derived UUID map with the manifest-
+        // derived workflow/concept map so a single scrub pass covers
+        // both classes.
+        const fullLabelMap = Object.assign({}, buildManifestLabelMap(), buildLabelMap(state.engagement));
+        assistantMsg.content = scrubUuidsInProse(assistantMsg.content, fullLabelMap);
         // Re-parse via marked progressively on the last assistant bubble.
         const bubbles = body.querySelectorAll(".canvas-chat-msg-assistant .canvas-chat-msg-content");
         const last = bubbles[bubbles.length - 1];
