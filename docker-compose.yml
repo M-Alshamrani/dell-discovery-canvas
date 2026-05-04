@@ -37,8 +37,11 @@ services:
       # Default 'host.docker.internal' works on Docker Desktop AND on Linux
       # Docker 20.10+ via the extra_hosts mapping below. Override with
       # LLM_HOST=10.x.x.x for a remote vLLM. LLM_LOCAL_PORT defaults to 8000.
-      LLM_HOST:        "${LLM_HOST:-host.docker.internal}"
-      LLM_LOCAL_PORT:  "${LLM_LOCAL_PORT:-8000}"
+      LLM_HOST:         "${LLM_HOST:-host.docker.internal}"
+      LLM_LOCAL_PORT:   "${LLM_LOCAL_PORT:-8000}"
+      # rc.4-dev hotfix2a (2026-05-04): Local B port for the second
+      # vLLM endpoint (per LLMs on GB10.docx — VLM on 8001 by default).
+      LLM_LOCAL_B_PORT: "${LLM_LOCAL_B_PORT:-8001}"
     extra_hosts:
       # Make host.docker.internal resolvable on Linux Docker (no-op on Mac/Windows).
       - "host.docker.internal:host-gateway"

@@ -15,11 +15,32 @@ import { openOverlay, closeOverlay } from "../components/Overlay.js";
 // Provider hint copy. Drives the placeholder + helper text per provider
 // so the user knows what shape goes in each field.
 var PROVIDER_HINTS = {
+  // rc.4-dev hotfix2a (2026-05-04): Local A + Local B URL guidance
+  // updated to make absolute URLs the recommended form per user
+  // direction ("if we need to be explicit, we should put the http
+  // address with port and /v1 address"). Per LLMs on GB10.docx the
+  // canonical setup is:
+  //   - Local A = Code LLM (Qwen3-Coder-Next-FP8) on http://<GB10_IP>:8000/v1
+  //   - Local B = VLM (Qwen2.5-VL-7B-Instruct)    on http://<GB10_IP>:8001/v1
+  // The container's nginx proxy paths (/api/llm/local/v1, /api/llm/
+  // local-b/v1) work as relative defaults when LLM_HOST env var
+  // points at the GB10; absolute URLs bypass the proxy entirely.
   local: {
     urlReadOnly:  false,
-    urlHelp:      "Default '/api/llm/local/v1' uses the container proxy (LLM_HOST env var). Paste an absolute URL like 'http://<host-ip>:8000/v1' to call the inference host directly (upstream CORS must permit it).",
-    keyPlaceholder: "(blank for local vLLM)",
-    keyLabel:     "API key (optional , vLLM is unauth'd)",
+    urlHelp:      "Local A = Code LLM (port 8000 per LLMs on GB10.docx). Recommended: paste the absolute URL 'http://<GB10_IP>:8000/v1'. Default '/api/llm/local/v1' uses the container's nginx proxy (set LLM_HOST env var to your GB10 IP).",
+    urlPlaceholder: "http://<GB10_IP>:8000/v1",
+    modelPlaceholder: "code-llm",
+    keyPlaceholder: "(blank — vLLM is unauth'd)",
+    keyLabel:     "API key (optional, vLLM is unauth'd)",
+    fbPlaceholder: "(optional)"
+  },
+  localB: {
+    urlReadOnly:  false,
+    urlHelp:      "Local B = VLM (port 8001 per LLMs on GB10.docx). Recommended: paste the absolute URL 'http://<GB10_IP>:8001/v1'. Default '/api/llm/local-b/v1' uses the container's nginx proxy (set LLM_HOST + LLM_LOCAL_B_PORT env vars).",
+    urlPlaceholder: "http://<GB10_IP>:8001/v1",
+    modelPlaceholder: "vision-vlm",
+    keyPlaceholder: "(blank — vLLM is unauth'd)",
+    keyLabel:     "API key (optional, vLLM is unauth'd)",
     fbPlaceholder: "(optional)"
   },
   anthropic: {
@@ -180,6 +201,7 @@ function buildSettingsBody(section) {
   var urlInput = mk("input", "settings-input");
   urlInput.type = "text";
   urlInput.value = active.baseUrl;
+  if (hint.urlPlaceholder) urlInput.placeholder = hint.urlPlaceholder;
   if (hint.urlReadOnly) {
     urlInput.readOnly = true;
     urlInput.title = "Locked , routed through nginx proxy.";
@@ -193,6 +215,7 @@ function buildSettingsBody(section) {
   var modelInput = mk("input", "settings-input");
   modelInput.type = "text";
   modelInput.value = active.model;
+  if (hint.modelPlaceholder) modelInput.placeholder = hint.modelPlaceholder;
   modelGroup.appendChild(modelInput);
   form.appendChild(modelGroup);
 

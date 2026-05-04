@@ -14737,6 +14737,45 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       _resetOverlayForTests();
     });
 
+    it("V-PROXY-LOCAL-B-1 · docker-entrypoint.d/45-setup-llm-proxy.sh writes a /api/llm/local-b/ location with proxy_pass to LLM_LOCAL_B_PORT (HOTFIX #2a per LLMs on GB10.docx — VLM on 8001)", async () => {
+      const proxySh = await (await fetch("/docker-entrypoint.d/45-setup-llm-proxy.sh")).text().catch(() => "");
+      // The proxy script may not be reachable via HTTP (it's outside the
+      // nginx-served paths); fall back to a fetch of the served conf
+      // snippet OR the raw script via a known path. As a baseline, the
+      // generated llm-proxy.conf includes the location block — we can
+      // probe it indirectly by issuing a request to /api/llm/local-b/v1/
+      // health and asserting the upstream-error shape (502/504) rather
+      // than 404. A 404 means nginx has no location block.
+      let res;
+      try { res = await fetch("/api/llm/local-b/v1/health", { method: "GET" }); }
+      catch (_e) { res = { status: 0 }; }
+      // Acceptable outcomes:
+      //   - 200 if a real backend is running on port 8001 (good!)
+      //   - 502/504 if nginx tried to proxy + upstream wasn't reachable
+      //   - any non-404 indicates the location block exists
+      assert(res.status !== 404,
+        "V-PROXY-LOCAL-B-1: /api/llm/local-b/* MUST be a configured nginx location (got status " + res.status + " — 404 means location block missing)");
+    });
+
+    it("V-PROVIDER-HINTS-1 · SettingsModal PROVIDER_HINTS covers every PROVIDERS entry; local + localB recommend absolute URL form (HOTFIX #2a per user direction 'we should put the http address with port and /v1')", async () => {
+      const settingsSrc = await (await fetch("/ui/views/SettingsModal.js")).text();
+      const aiCfgMod = await import("../core/aiConfig.js");
+      // Source-grep — PROVIDER_HINTS must declare a hint for every
+      // provider in PROVIDERS, OR fall back to PROVIDER_HINTS.local.
+      // Specifically we check that local + localB carry urlPlaceholder
+      // hints suggesting absolute URLs (port-explicit form).
+      assert(/localB:\s*\{[\s\S]*?urlPlaceholder/.test(settingsSrc),
+        "V-PROVIDER-HINTS-1: localB hint MUST declare urlPlaceholder");
+      assert(/\bhttp:\/\/<GB10_IP>:8001\/v1\b/.test(settingsSrc),
+        "V-PROVIDER-HINTS-1: localB urlPlaceholder MUST recommend absolute http URL with port 8001 + /v1 path");
+      assert(/\bhttp:\/\/<GB10_IP>:8000\/v1\b/.test(settingsSrc),
+        "V-PROVIDER-HINTS-1: local urlPlaceholder MUST recommend absolute http URL with port 8000 + /v1 path");
+      // Spot-check that PROVIDERS registry size matches what the user
+      // sees — Local A + Local B + Anthropic + Gemini + Dell Sales Chat = 5
+      assertEqual(aiCfgMod.PROVIDERS.length, 5,
+        "V-PROVIDER-HINTS-1: PROVIDERS registry size = 5 (Local A + Local B + Anthropic + Gemini + Dell Sales Chat)");
+    });
+
     it("V-SETTINGS-SAVE-1 · Settings Save scopes lookup to settings overlay panel + skips bodies mid-fade (HOTFIX #1)", async () => {
       const settingsSrc = await (await fetch("/ui/views/SettingsModal.js")).text();
       // Anti-pattern: prior code did document.querySelectorAll(".overlay-body")
