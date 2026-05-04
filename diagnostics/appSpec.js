@@ -14698,6 +14698,53 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-NO-STRAY-OVERLAY-1: afterRestore must remove the standalone #skillBuilderOverlay div");
     });
 
+    // BUG-026 (HOTFIX #3 · 2026-05-04): even with the afterRestore sweep,
+    // overlays opened DURING the test pass were flashing visibly on slow
+    // hardware before per-test cleanup caught up. Fix: body[data-running-tests]
+    // attribute toggled around the pass + CSS rule applying visibility:hidden
+    // to overlays while it's set. visibility:hidden preserves layout,
+    // computed-style queries, click dispatch, and querySelector — so tests
+    // keep working — but no paint pixels reach the screen.
+    it("V-NO-VISIBLE-TEST-OVERLAY-1 · body[data-running-tests] is set during the test pass and the CSS cloak hides .overlay paint (BUG-026 HOTFIX #3)", async () => {
+      // 1. Attribute IS set during the pass (we ARE running right now).
+      assert(document.body.dataset.runningTests === "1",
+        "V-NO-VISIBLE-TEST-OVERLAY-1: body[data-running-tests] must be set while runAllTests is in flight");
+
+      // 2. Source-grep CSS rule.
+      const cssSrc = await (await fetch("/styles.css")).text();
+      assert(/body\[data-running-tests\][\s\S]*?\.overlay[\s\S]*?visibility:\s*hidden/.test(cssSrc),
+        "V-NO-VISIBLE-TEST-OVERLAY-1: styles.css must define body[data-running-tests] cloak with visibility:hidden");
+      assert(/body\[data-running-tests\][\s\S]*?#skillBuilderOverlay/.test(cssSrc),
+        "V-NO-VISIBLE-TEST-OVERLAY-1: cloak must cover #skillBuilderOverlay too");
+
+      // 3. Source-grep appSpec.js — runAllTests sets + afterRestore clears.
+      const appSpecSrc = await (await fetch("/diagnostics/appSpec.js")).text();
+      assert(/document\.body\.dataset\.runningTests\s*=\s*"1"/.test(appSpecSrc),
+        "V-NO-VISIBLE-TEST-OVERLAY-1: runAllTests must set body[data-running-tests]");
+      assert(/delete\s+document\.body\.dataset\.runningTests/.test(appSpecSrc),
+        "V-NO-VISIBLE-TEST-OVERLAY-1: afterRestore must delete body[data-running-tests]");
+
+      // 4. Live cloak proof — open a real overlay, getComputedStyle reports
+      //    visibility:hidden, click() still dispatches (layout preserved).
+      const probe = document.createElement("div");
+      probe.className = "overlay open";
+      probe.style.zIndex = "9000";
+      document.body.appendChild(probe);
+      try {
+        const cs = getComputedStyle(probe);
+        assert(cs.visibility === "hidden",
+          "V-NO-VISIBLE-TEST-OVERLAY-1: .overlay must compute visibility:hidden under the cloak (got: " + cs.visibility + ")");
+        assert(cs.pointerEvents === "none",
+          "V-NO-VISIBLE-TEST-OVERLAY-1: .overlay must compute pointer-events:none under the cloak (got: " + cs.pointerEvents + ")");
+        // Layout still resolves (visibility:hidden, not display:none).
+        const rect = probe.getBoundingClientRect();
+        assert(typeof rect.width === "number",
+          "V-NO-VISIBLE-TEST-OVERLAY-1: getBoundingClientRect() must still resolve under the cloak");
+      } finally {
+        probe.remove();
+      }
+    });
+
     it("V-CLEAR-CHAT-PERSISTS · Clear-chat shows inline confirm; chat overlay stays open through confirm flow (HOTFIX #1)", async () => {
       const overlaySrc = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
       // Anti-pattern: the old code called confirmAction() which opens
@@ -15832,7 +15879,19 @@ registerDemoSuite({ describe: describe, it: it, assert: assert, assertEqual: ass
 // USER's data, not whatever the last test left in memory. Fixes the
 // v2.4.5–v2.4.10 "Bus Co" pollution that made Clear-all appear broken.
 export function runAllTests() {
+  // BUG-026 (rc.4-dev hotfix #3 · 2026-05-04): the test pass runs in
+  // the live DOM and routinely opens real overlays. On slow hardware
+  // they flash visibly to the user for 1-2s before per-test cleanup
+  // catches up. Toggle body[data-running-tests] for the duration of
+  // the pass — the CSS rule in styles.css applies visibility:hidden
+  // to overlays while the attribute is present (preserves layout +
+  // computed styles + click dispatch + querySelector, only the paint
+  // pixels disappear). The attribute is cleared inside afterRestore,
+  // AFTER Hotfix #1's overlay sweep removes leftover nodes — order
+  // matters so we never flash a now-visible leftover modal.
+  try { document.body.dataset.runningTests = "1"; } catch (_e) { /* best-effort */ }
   return runIsolated(run, function afterRestore() {
+
     // HOTFIX #1 (rc.4-dev-arc3-hotfix per user report 2026-05-04 LATE):
     // Force-close every overlay the test pass may have left in DOM.
     // Tests are supposed to closeOverlay() between cases, but on slow
@@ -15850,6 +15909,10 @@ export function runAllTests() {
       });
       const sb = document.getElementById("skillBuilderOverlay");
       if (sb) sb.remove();
+      // BUG-026 · clear the test-time visibility cloak only AFTER the
+      // sweep above removes any lingering overlay nodes. If we cleared
+      // first, a leftover .overlay would flash visible for a frame.
+      delete document.body.dataset.runningTests;
     } catch (_e) { /* best-effort */ }
 
     if (!loadFromLocalStorage()) {

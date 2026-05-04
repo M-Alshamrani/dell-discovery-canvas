@@ -3901,6 +3901,25 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
    Three-section layout: sticky head + scrollable body + sticky footer.
    .is-transparent variant drops opacity so the user can pick page
    elements behind the overlay. */
+
+/* BUG-026 (rc.4-dev hotfix #3 . 2026-05-04): the test pass runs in the
+   live DOM at every page load and routinely opens real overlays
+   (Settings, Skills..., AI Assist, etc.). Per-test cleanup races on
+   slow hardware so the user sees stacked modals flash for ~1-2s while
+   the suite is running. We toggle a body[data-running-tests] attribute
+   in runAllTests (diagnostics/appSpec.js) around the runIsolated call.
+   visibility:hidden preserves layout, computed styles, getBoundingClientRect,
+   .click() dispatch, and querySelector . all the things tests rely on.
+   Only painted pixels disappear. afterRestore Hotfix #1 sweep still runs
+   so the body attribute is removed at the same moment the leftover
+   overlay nodes are. */
+body[data-running-tests] .overlay-backdrop,
+body[data-running-tests] .overlay,
+body[data-running-tests] #skillBuilderOverlay {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 .overlay-backdrop {
   position: fixed;
   inset: 0;

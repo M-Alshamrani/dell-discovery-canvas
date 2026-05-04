@@ -728,6 +728,47 @@ The save-time path resolver returns ✓ valid because `gap.layerId` is a real sc
 
 ---
 
+## BUG-026 · Diagnostic test pass flashes overlays in user's view during page load (incomplete fix in Hotfix #1)
+
+**Status**: CLOSED in HOTFIX #3 (2026-05-04) — `body[data-running-tests]` cloak applied. Was: OPEN · Reported 2026-05-04 LATE (user re-tested Hotfix #1 on work laptop; bug reproduced) · v3.0.0-rc.4-dev-hotfix2 · Scheduled NEXT (immediate hotfix)
+**Closed in commit**: pending v3.0.0-rc.4-dev-hotfix3 commit (regression test V-NO-VISIBLE-TEST-OVERLAY-1 in Suite §T35-HOTFIX1)
+**Reporter**: User (workshop demo machine)
+**Severity**: High (visible on every load; embarrassing in front of management; same class as BUG-026's parent report 2026-05-04 EARLY)
+**Regression**: Partial fix in Hotfix #1 (commit `016bbfe` — `runAllTests` afterRestore force-removes overlays AFTER the test pass completes). Hotfix #1 closed the END-of-pass leak but did NOT address transient overlays VISIBLE DURING the pass.
+
+### Repro (user-confirmed)
+1. Hard-reload the app
+2. Watch the screen as the diagnostic test pass runs
+3. → On slow hardware, multiple overlays (chat, settings, skill builder, ai-assist, confirm-action) flash on screen in quick succession as tests open and close them
+4. The flashes look like "the app is opening multiple windows by itself" to a non-developer
+
+### Root cause
+The diagnostic test pass runs in the LIVE DOM at every page load (not in an iframe / shadow DOM / separate page). Every test that exercises overlay behavior actually OPENS one in the user's view. Tests do call `closeOverlay()` between cases, but for the duration each is briefly visible. On fast hardware (~1-3s pass) this is barely noticeable; on slow hardware (~5-10s pass), the flashing is glaring.
+
+Specific tests that open overlays include: VT24/VT25 (overlay open/close + Cmd+K), V-CHAT-* (canvas chat), V-PILLS-1..4 (provider switcher), V-FOOTER-CRUMB-1, V-THINK-3..5, V-CLEAR-CHAT-PERSISTS, V-SETTINGS-SAVE-1.
+
+### Fix plan (immediate hotfix)
+Hide overlays from the user's view DURING the test run, without breaking tests:
+1. Test runner sets `document.body.dataset.runningTests = "1"` at the start of `run()` and clears it at end (via `afterRestore`).
+2. CSS rule: `body[data-running-tests] .overlay-backdrop, body[data-running-tests] .overlay { visibility: hidden !important; pointer-events: none !important; }`
+3. `visibility: hidden` preserves LAYOUT and COMPUTED STYLES — tests using `getComputedStyle()`, `.click()`, `.getBoundingClientRect()`, `querySelector` all keep working. Only the rendered pixels disappear.
+4. `pointer-events: none` prevents accidental user interaction with mid-flight test overlays.
+5. Regression test V-NO-VISIBLE-TEST-OVERLAY-1 asserts the body attribute toggles correctly + the CSS rule exists.
+
+### Why visibility:hidden won't break tests
+- DOM queries (`querySelector`, `querySelectorAll`) work on hidden elements
+- `getComputedStyle()` returns the actual style values (visibility:hidden affects only paint, not the cascade)
+- `.click()` synthesises events that fire correctly
+- `.getBoundingClientRect()` returns layout coordinates (visibility:hidden preserves layout)
+- Class checks (`.classList.contains("open")`) are unaffected
+- The only test category that COULD break is screenshot/visual-regression — we don't have any
+
+### Out of scope (deferred)
+- Splitting tests into "pure-function" vs "DOM-touching" categories so only the former run at app load. Would be the architecturally correct fix but requires categorizing 1139 tests + updating test runner; multi-arc effort. The visibility-hidden approach gives the same user-visible result for ~10 lines of code.
+- Moving the test pass to a separate `/diagnostics` route. Would lose the at-load reassurance the user values.
+
+---
+
 ## BUG-NNN · One-line headline
 
 **Status**: OPEN · Reported YYYY-MM-DD · vX.Y.Z · Scheduled <bucket>
