@@ -55,6 +55,8 @@ import { stripHandshake }                      from "../../services/chatHandshak
 // UUIDs in prose with resolved labels at every onToken so the bubble
 // never flashes raw UUIDs even if a model slips one in mid-stream.
 import { buildLabelMap, scrubUuidsInProse }    from "../../services/uuidScrubber.js";
+// SPEC §S34 R34.8-R34.11 (rc.4-dev / Arc 3b) - dynamic try-asking.
+import { generateTryAskingPrompts }            from "../../services/tryAskingPrompts.js";
 
 // Module-scope state for the open overlay. Only one chat overlay is
 // open at a time; Overlay.js enforces the singleton pattern.
@@ -107,6 +109,10 @@ export function openCanvasChat() {
   state.engagement = getActiveEngagement();
   state.engagementId = (state.engagement && state.engagement.meta && state.engagement.meta.engagementId) || null;
   state.transcript = state.engagementId ? loadTranscript(state.engagementId) : { messages: [], summary: null };
+  // Per SPEC §S34 R34.9 (rc.4-dev / Arc 3b) - reset the per-overlay-open
+  // try-asking seed so the empty-state shows fresh prompts on each open
+  // (but stays stable while a single open session is on screen).
+  state._tryAskingSeed = (Date.now() & 0x7FFFFFFF) || 1;
 
   const body   = buildBody();
   const footer = buildFooter();
@@ -892,7 +898,13 @@ function paintTranscript(body) {
       const grid = empty.querySelector(".canvas-chat-empty-grid");
       if (grid) {
         grid.innerHTML = "";
-        EXAMPLE_PROMPTS.forEach(function(prompt) {
+        // Per SPEC §S34 R34.11 (rc.4-dev / Arc 3b) - empty-state prompts
+        // come from the dynamic try-asking generator, NOT the static
+        // EXAMPLE_PROMPTS const. Pinned to a per-session seed so the
+        // 4 prompts don't reshuffle while the user is reading them.
+        if (!state._tryAskingSeed) state._tryAskingSeed = (Date.now() & 0x7FFFFFFF) || 1;
+        const dynamicPrompts = generateTryAskingPrompts(state.engagement, { seed: state._tryAskingSeed });
+        dynamicPrompts.forEach(function(prompt) {
           const tile = document.createElement("button");
           tile.type = "button";
           tile.className = "canvas-chat-example";
