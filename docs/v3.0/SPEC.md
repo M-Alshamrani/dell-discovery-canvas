@@ -3056,37 +3056,50 @@ Once all 6 confirmed → V-THEME-1..8 RED-first → impl → live smoke → comm
 
 ## §S33 · Canvas AI Assistant header provider pills + footer breadcrumb + BUG-025 Cmd+K rebind — Arc 2 of Group B
 
-**Status**: LOCKED 2026-05-04 — user approved via "continue" 2026-05-04. Drafted 2026-05-03 post Arc 1 ship at `5893e71`. Authored under the `feedback_group_b_spec_rewrite.md` discipline (SPEC FIRST, then V-* tests RED, then code).
+**Status**: LOCKED 2026-05-04 — user approved via "continue" 2026-05-04. **REVISED 2026-05-04** post initial impl ship at `90c6ecb` per user feedback: the per-provider pill row didn't scale (5+ pills stacked side-by-side felt cluttered); switched to single-pill-with-popover. Footer Done button retired (X close in header is canonical). Empty-state breadcrumb renders nothing (was "Ready" placeholder, flagged as filler). Local B provider added so the user can run two local LLMs side-by-side. Drafted 2026-05-03 post Arc 1 ship at `5893e71`. Authored under the `feedback_group_b_spec_rewrite.md` discipline.
 
 **Authority**: `docs/RULES.md §16` (CH29 to be added) · BUG-025 (Cmd+K opens legacy overlay, not Canvas AI Assistant) · BUG-022 (chat UI polish — bottom banner + status messages).
 
 Pre-fix: the Canvas AI Assistant header carries a single `.canvas-chat-status-chip` that reads "Connected to Claude" / "Configure provider"; clicking opens Settings → close → re-open chat = friction. The footer carries a static lede "Read-only · proposes changes only · session memory persists per engagement" — informational but no per-turn signal. The Cmd+K shortcut still opens the legacy AiAssistOverlay (kind="ai-assist") not the new Canvas AI Assistant. All three issues fold into Arc 2.
 
-### S33.1 · Provider pill row (header)
+### S33.1 · Provider switcher (header) — single-pill-with-popover (REVISED 2026-05-04)
 
-Replaces the connection-status chip with a horizontal pill row showing every CONFIGURED provider as a click-to-switch affordance. Showcases the multi-provider support the chat already has.
+Replaces the connection-status chip with a SINGLE compact pill showing the ACTIVE provider + a chevron; clicking opens a popover anchored below the pill listing every provider as a click-to-switch row. Industry-standard pattern (Claude.ai model picker, ChatGPT model picker, Cursor model picker); scales to N providers without header strain. Pre-revision (2026-05-03 / commit `90c6ecb`) used a per-provider pill row — looked stacked / cluttered with 5+ providers; user feedback flagged it.
 
-- **R33.1** (🔴 HARD) — The chat header's `.overlay-head-extras` slot (today carrying the connection-status chip + Clear button + rail toggle) MUST render a `.canvas-chat-provider-pills` row containing one pill per provider declared in `core/aiConfig.js`'s `PROVIDERS` registry. Order follows the registry declaration order.
-- **R33.2** (🔴 HARD) — Each pill carries:
-  - the provider's user-facing label (e.g. "Claude", "Gemini", "OpenAI", "vLLM", "Dell Sales Chat")
-  - a 6px round status dot: **green** if the provider is "ready" (`isActiveProviderReady` semantics for that provider — has key OR doesn't need one), **amber** if "needs key" (configured provider type but no key)
-  - **active state**: filled `var(--dell-blue)` background + white text + white dot (or no dot — readers tell the active provider apart by the fill alone)
-  - **inactive ready state**: `var(--canvas)` bg + 1px `var(--rule-strong)` border + `var(--ink-soft)` label + green dot
-  - **inactive needs-key state**: `var(--canvas-soft)` bg + 1px `var(--rule)` border + `var(--ink-mute)` label + amber dot
-- **R33.3** (🔴 HARD) — Click handlers per state:
-  - Click on **inactive ready** pill → switch active provider (write `aiConfig.activeProvider = <key>` via `saveAiConfig`) + repaint pills + emit nothing (chat keeps current transcript; next user-send goes to the new provider)
-  - Click on **inactive needs-key** pill → open Settings modal pre-focused on that provider's key field (same modal as the gear icon)
-  - Click on **active** pill → open Settings modal pre-focused on the active provider's key field (so users can update / verify keys without leaving the chat)
-- **R33.4** (🔵 AUTO) — Mock provider is NOT surfaced in the pill row (it's a test-fixture provider; its presence in production UI would be confusing). The pill row enumerates only providers tagged `kind: "real"` or equivalent in the registry.
-- **R33.5** (🔵 AUTO) — Pill row layout: horizontal flex with `gap: 6px`; each pill ~28px tall, `padding: 0 12px`, `font: 500 11.5px/1 Inter`, `border-radius: var(--radius-sm)` (3px). Total width budget ~480px for 5 pills; if the viewport drops below 1100px wide the row collapses to a "Claude · 4 more ▾" segmented variant (deferred polish; first impl ships full row only).
+- **R33.1** (🔴 HARD) — The chat header's `.overlay-head-extras` slot (today carrying the chip + Clear button + rail toggle) MUST render a `.canvas-chat-provider-pills` wrap containing exactly ONE `.canvas-chat-provider-pill` button (the active-provider pill) + a sibling `.canvas-chat-provider-popover` element (initially `display: none`). Clicking the pill toggles the popover. The popover lists one `.canvas-chat-provider-row` per provider declared in `core/aiConfig.js`'s `PROVIDERS` registry; row order follows registry declaration order.
+- **R33.2** (🔴 HARD) — Pill contents:
+  - status dot: 7px round, **green** if active provider is ready, **amber** if active provider needs key
+  - provider label (e.g. "Claude", "Local A", "Dell Sales Chat") in Inter 500 11.5px
+  - down-chevron SVG (10px) signaling the popover affordance; rotates 180° via CSS `[aria-expanded="true"]` when popover is open
+  - chrome: `var(--canvas)` bg, `1px solid var(--rule-strong)` border, `var(--radius-sm)` (3px) corners; hover lifts to `var(--dell-blue)` border + text; open state additionally fills `var(--dell-blue-soft)`
+- **R33.2.B** (🔴 HARD) — Each popover row carries: status dot (green = ready / amber = needs-key) + provider label (Inter 500 12px) + meta tag in JetBrains Mono 9.5px uppercase (`Active` / `Ready` / `Needs key`). Active row: `var(--dell-blue-soft)` bg + `var(--dell-blue-deep)` text. Hover: `var(--canvas-soft)` bg.
+- **R33.3** (🔴 HARD) — Click handlers:
+  - Click on the **pill** → toggle popover open/closed; on open, an `outsideClickHandler` is registered so clicking outside the wrap closes the popover.
+  - Click on a **popover row**:
+    - inactive + ready → switch active provider (write `aiConfig.activeProvider = <key>` via `saveAiConfig`) + close popover + re-`injectHeaderExtras` so the pill repaints to the new active provider
+    - inactive + needs-key → close popover + close chat overlay + open Settings modal pre-focused on that provider
+    - active → close popover + close chat overlay + open Settings modal pre-focused on the active provider (so users can update / verify keys without leaving the chat)
+- **R33.4** (🔵 AUTO) — Mock provider is NOT surfaced in the popover (the `PROVIDERS` registry doesn't list it).
+- **R33.5** (🔵 AUTO) — Popover layout: `position: absolute` anchored 6px below the pill, `min-width: 240px / max-width: 320px`, `var(--canvas)` bg + `1px solid var(--rule)` border + `var(--radius-md)` (5px) corners + `var(--shadow-md)`, 4px inner padding, 1px row gap. Fade-in animation `chat-pop-fade 120ms ease-out`. z-index `4700`. Closes on outside click OR row click.
 
-### S33.2 · Footer breadcrumb (provenance)
+### S33.1.B · Head-extras button family chrome consistency
 
-Replaces the static lede with a dynamic per-turn provenance line.
+Pre-revision (rc.3-era) the Clear + Skills-rail-toggle buttons used dark-theme colors (`#8B949E` text, `#30363D` border) leftover from the rc.2 dark overlay. Post-Arc-1 the chrome is light, so the dark grays read washed-out (user feedback 2026-05-04).
+
+- **R33.5.B** (🔵 AUTO) — Every button in the chat header `.overlay-head-extras` slot (provider pill, Clear, Skills toggle) MUST share one ghost-button treatment:
+  - 28px tall, `padding: 0 12px`, `gap: 6px`
+  - `background: var(--canvas)`, `color: var(--ink-soft)`, `1px solid var(--rule-strong)` border, `var(--radius-sm)` (3px) corners
+  - `font: 500 11.5px/1 Inter` with `letter-spacing: 0.005em`
+  - hover lifts to `var(--dell-blue)` border + text; active variants per-button (Skills toggle .is-active fills `var(--dell-blue-soft)`; Clear hover lifts to `var(--red)`).
+
+### S33.2 · Footer breadcrumb (provenance) (REVISED 2026-05-04)
+
+Replaces the static lede AND the redundant Done button with a dynamic per-turn provenance line that takes the full footer width. User feedback 2026-05-04: pre-revision footer ("Done" button + "Ready" placeholder text) felt "primitive utilitarian" + the empty-state word was unnecessary filler.
 
 - **R33.6** (🔴 HARD) — `.canvas-chat-foot-lede` MUST update on every assistant `onComplete` to display the LATEST turn's provenance breadcrumb in the form `<provider-label> · <model> · <N> tokens · <ms>ms`. Format: JetBrains Mono 10.5px / uppercase / 0.05em letter-spacing / `var(--ink-mute)` (per §S32 R32.8).
-- **R33.7** (🔵 AUTO) — Empty state (no turn completed yet for this engagement): the breadcrumb reads `"Ready"` (single word, same typography). Avoids the dead "—" or "(no turn)" placeholder.
+- **R33.7** (🔴 HARD, REVISED) — Empty state (no turn completed yet for this engagement): the breadcrumb element renders **empty content** (no placeholder text). The footer breathes; the breadcrumb only appears AFTER the first assistant turn completes. Pre-revision read "Ready" — flagged as filler.
 - **R33.8** (🔵 AUTO) — Token + latency formatting: tokens as `4,118` (locale-grouped); latency as integer ms (no decimals). If the latest provenance lacks any field, that segment is silently dropped (e.g. `Claude · sonnet-3-7 · 4,118 tokens` if latency missing).
+- **R33.8.B** (🔴 HARD, NEW) — The pre-revision Done button is RETIRED from the chat overlay footer. The X close affordance in the overlay header is the canonical close path; a footer Done button was redundant and made the footer feel cramped. Future footer additions (e.g. a "+ New conversation" affordance) belong to a later arc; Arc 2 retires the Done button cleanly.
 
 ### S33.3 · Cmd+K rebind (BUG-025 fix)
 
@@ -3094,6 +3107,14 @@ Cmd+K / Ctrl+K rebinds from `openAiOverlay` (the legacy v2.x AiAssistOverlay til
 
 - **R33.9** (🔴 HARD) — `app.js` `wireAiAssistShortcut()` MUST call `openCanvasChat()` from `ui/views/CanvasChatOverlay.js` instead of `openAiOverlay()`. The legacy AiAssistOverlay becomes orphaned (no entry point); R33.10 schedules its retirement.
 - **R33.10** (🔵 AUTO) — `ui/views/AiAssistOverlay.js` is FLAGGED for retirement in Arc 4 (or sooner). Until then, the file stays in the tree because `core/seedSkills.js` + `interactions/skillCommands.js` hold a v2.x admin path that still uses it. Anti-pattern guard: V-CMD-K-CANVAS-1 (below) ensures the keyboard shortcut never re-binds back to `openAiOverlay`.
+
+### S33.3.B · Local B provider (NEW 2026-05-04)
+
+User direction 2026-05-04: add a second local LLM slot so the user can run two local vLLM endpoints side-by-side (e.g. one model for code, another for prose).
+
+- **R33.11** (🔵 AUTO) — `core/aiConfig.js` `PROVIDERS` registry adds `"localB"` after `"local"`. Default config: `label: "Local B"`, `baseUrl: "/api/llm/local-b/v1"` (sibling proxy path so a single host can run two independent vLLM endpoints without colliding), `model: ""` (user-supplied), `apiKey: ""` (no key needed; same auth model as Local A — typical self-hosted vLLM behind nginx proxy is unauth'd).
+- **R33.12** (🔴 HARD) — `isActiveProviderReady(config)` MUST treat `localB` the same as `local` for the no-key-needed rule (`if (activeProvider !== "local" && activeProvider !== "localB" && !apiKey) return false`). The companion per-provider `isProviderReady(config, providerKey)` in `ui/views/CanvasChatOverlay.js` MUST mirror this.
+- **R33.13** (🔵 AUTO) — User-facing label rename: existing "Local" → "Local A". Updated in `core/aiConfig.js` `DEFAULT_AI_CONFIG.providers.local.label` AND `ui/views/CanvasChatOverlay.js` `labelForProvider`. Internal provider key `"local"` stays (avoiding a sweeping rename diff).
 
 ### S33.4 · V-PILLS + V-FOOTER-CRUMB + V-CMD-K-CANVAS test contract
 
@@ -3145,6 +3166,7 @@ Once all 6 confirmed → V-PILLS-1..4 + V-FOOTER-CRUMB-1 + V-CMD-K-CANVAS-1 RED-
 | 2026-05-03 | §S31 | NEW SPEC-only annex · v3 engagement persistence + rehydrate-on-boot. R31.1–R31.5 + `localStorage.v3_engagement_v1` storage shape + V-FLOW-REHYDRATE-1..3 test pointer. Architectural fix for BUG-019 (page-reload race: v2 sessionState rehydrated, v3 engagement stayed null, AI chat reported "empty" against a populated UI). Authored 2026-05-03 as part of the rc.3 expanded scope (Group A AI-correctness consolidation per user direction). |
 | 2026-05-03 | §S32 | NEW SPEC-only annex · Canvas AI Assistant window-theme contract — Arc 1 of the Group B UX consolidation arc per `feedback_group_b_spec_rewrite.md`. R32.1–R32.14 + token alignment with GPLC sample HTML reference + rename "Canvas Chat" → "Canvas AI Assistant" + V-THEME-1..8 test contract. Drafted 2026-05-03 post rc.3 tag; LOCKED 2026-05-03 on user approval; impl GREEN 2026-05-03 (1111/1111). |
 | 2026-05-03 | §S33 | NEW SPEC-only annex · Canvas AI Assistant header provider pills + footer breadcrumb + BUG-025 Cmd+K rebind — Arc 2 of Group B. R33.1–R33.10 + provider-pill row design (filled-active + outlined-inactive + green/amber dot) replacing the connection-status chip + footer breadcrumb showing latest-turn provenance + Cmd+K rebound from legacy AiAssistOverlay to Canvas AI Assistant + V-PILLS-1..4 + V-FOOTER-CRUMB-1 + V-CMD-K-CANVAS-1 test contract. Drafted 2026-05-03 post Arc 1 ship; LOCKED 2026-05-04 on user approval. |
+| 2026-05-04 | §S33 REVISION | Per user feedback post initial Arc 2 ship at `90c6ecb`: per-provider pill row didn't scale (5+ pills stacked side-by-side felt cluttered). Switched to single-pill-with-popover (industry-standard model-picker pattern). Footer Done button retired (X close in header is canonical). Empty-state breadcrumb renders nothing (was "Ready" placeholder). R33.5.B added (head-extras button family chrome consistency: Clear + Skills toggle aligned to GPLC ghost-button styling, was dark-theme leftover). R33.11–R33.13 added (Local B provider; existing "Local" relabeled "Local A"). V-PILLS-1..4 + V-FOOTER-CRUMB-1 flipped to match revised contract. |
 | 2026-05-03 | RELEASE v3.0.0-rc.3 | **TAGGED 2026-05-03.** Closes the rc.3 implementation arc + AI-correctness consolidation. Banner 1103/1103 GREEN ✅ (was 1048 at rc.2; +55 tests). Rolled in: Phase A1 generic LLM connector (BUG-018 closed) + Phase B concept dictionary + Phase C workflow manifest + Skill v3.1 schema + Skill Builder UI rebuild + chat right-rail saved-skill cards + UseAiButton retirement + topbar consolidation to one "AI Assist" button (Dell-blue + diamond-glint 8s breathe) + APP_VERSION discipline + PREFLIGHT.md + Group A AI-correctness fixes (BUG-019 engagement rehydrate, BUG-020 streaming-time handshake strip, BUG-013 Path B UUID scrub, BUG-023 manifest layerId, BUG-011 + BUG-018 closed). New SPEC annexes: §S26 + §S27 + §S28 + §S29 + §S30 + §S31. New RULES: §16 CH20–CH27. New tests: V-CHAT-18..38, V-CONCEPT-1..5, V-WORKFLOW-1..5, V-SKILL-V3-1..7, V-VERSION-1..2, V-FLOW-REHYDRATE-1..3, V-PATH-31/32, V-TOPBAR-1, V-LAB-VIA-CHAT-RAIL, V-AI-ASSIST-CMD-K, V-ANTI-USE-AI, V-NAME-2, V-DEMO-V2-1 + V-DEMO-8/9 + V-FLOW-CHAT-DEMO-1/2. Real-Gemini live-key smoke deferred to first user-driven workshop run (V-CHAT-32 mock-fetch round-trip covers the protocol).  |
 
 End of SPEC.

@@ -471,19 +471,15 @@ function buildFooter() {
   foot.className = "canvas-chat-footer";
   const lede = document.createElement("div");
   lede.className = "canvas-chat-foot-lede";
-  // Per SPEC §S33 R33.6 + R33.7 (rc.4-dev / Arc 2) - footer breadcrumb
-  // shows the latest-turn provenance ('<provider> · <model> · <N>
-  // tokens · <ms>ms') in JetBrains Mono uppercase. Empty state reads
-  // 'Ready'. paintFooterCrumb is called from buildFooter for the empty
-  // state and from chat onComplete for the populated state.
+  // Per SPEC §S33 R33.6-R33.8 (rc.4-dev / Arc 2 REVISION 2026-05-04) -
+  // footer breadcrumb shows the latest-turn provenance in JetBrains
+  // Mono uppercase. Empty state renders nothing (footer breathes;
+  // breadcrumb only appears when there's something to show). Done
+  // button retired — the X close in the overlay header is the
+  // canonical close affordance; a redundant Done button cluttered the
+  // footer and made it feel "primitive utilitarian" (user feedback).
   paintFooterCrumb(lede, null);
-  const done = document.createElement("button");
-  done.type = "button";
-  done.className = "btn-primary";
-  done.textContent = "Done";
-  done.addEventListener("click", function() { closeOverlay(); });
   foot.appendChild(lede);
-  foot.appendChild(done);
   return foot;
 }
 
@@ -494,8 +490,13 @@ function buildFooter() {
 // label + model + tokens).
 function paintFooterCrumb(lede, result) {
   if (!lede) return;
+  // Empty state per SPEC §S33 R33.7 (rc.4-dev / Arc 2 REVISION) -
+  // render nothing. Pre-revision the empty state read "Ready" which
+  // shoved a placeholder word into the corner; user feedback flagged
+  // it as unnecessary. Now the breadcrumb is information-only - it
+  // only appears AFTER an assistant turn completes.
   if (!result || !result.provenance) {
-    lede.textContent = "Ready";
+    lede.textContent = "";
     return;
   }
   const p = result.provenance;
@@ -509,7 +510,7 @@ function paintFooterCrumb(lede, result) {
     segments.push(p.tokens.toLocaleString() + " tokens");
   }
   if (typeof p.latencyMs === "number") segments.push(Math.round(p.latencyMs) + "ms");
-  lede.textContent = segments.length ? segments.join(" · ") : "Ready";
+  lede.textContent = segments.join(" · ");
 }
 
 function injectHeaderExtras() {
@@ -582,71 +583,138 @@ function injectHeaderExtras() {
   slot.appendChild(ack);
 }
 
-// Per SPEC §S33 R33.1-R33.5 + R33.4 (rc.4-dev / Arc 2) - paint the
-// provider pill row into the chat overlay header. Replaces the
-// pre-Arc-2 connection-status chip. One pill per PROVIDERS entry
-// (mock excluded by registry omission). Each pill carries a status
-// dot (green = ready / amber = needs key) and click semantics per
-// R33.3.
+// Per SPEC §S33 (rc.4-dev / Arc 2 REVISION 2026-05-04) - single-pill-
+// with-popover pattern. The pre-revision row of one-pill-per-provider
+// didn't scale (Local A + Local B + Claude + Gemini + Dell Sales Chat
+// = 5 buttons stacked side-by-side, not elegant). Industry-standard
+// pattern: one compact pill in the header showing the ACTIVE provider
+// + a chevron, click reveals a popover anchored below the pill listing
+// every provider with status dots and click-to-switch / click-to-
+// configure semantics. Same affordance, much cleaner header, scales
+// to N providers without UI strain.
 function paintProviderPills(slot) {
-  const aiCfg     = loadAiConfig();
-  const activeKey = (aiCfg && aiCfg.activeProvider) || "local";
+  const aiCfg      = loadAiConfig();
+  const activeKey  = (aiCfg && aiCfg.activeProvider) || "local";
+  const activeReady = isProviderReady(aiCfg, activeKey);
 
-  const row = document.createElement("div");
-  row.className = "canvas-chat-provider-pills";
-  row.setAttribute("role", "group");
-  row.setAttribute("aria-label", "AI provider");
+  const wrap = document.createElement("div");
+  wrap.className = "canvas-chat-provider-pills";
+  wrap.setAttribute("data-canvas-chat-provider", "");
+
+  // The visible pill = active provider + chevron. Click opens popover.
+  const pill = document.createElement("button");
+  pill.type = "button";
+  pill.className = "canvas-chat-provider-pill is-active" +
+    (activeReady ? " is-ready" : " is-warn");
+  pill.setAttribute("data-provider-key", activeKey);
+  pill.setAttribute("data-canvas-chat-provider-pill", "");
+  pill.setAttribute("aria-haspopup", "menu");
+  pill.setAttribute("aria-expanded", "false");
+  pill.title = "AI provider: " + labelForProvider(activeKey) +
+    (activeReady ? "" : " (needs key)") + ". Click to switch.";
+  pill.setAttribute("aria-label", pill.title);
+
+  const dot = document.createElement("span");
+  dot.className = "canvas-chat-provider-pill-dot";
+  dot.setAttribute("aria-hidden", "true");
+  pill.appendChild(dot);
+
+  const label = document.createElement("span");
+  label.className = "canvas-chat-provider-pill-label";
+  label.textContent = labelForProvider(activeKey);
+  pill.appendChild(label);
+
+  // Chevron (down-arrow) signals the dropdown affordance.
+  const chev = document.createElement("span");
+  chev.className = "canvas-chat-provider-pill-chev";
+  chev.setAttribute("aria-hidden", "true");
+  chev.innerHTML =
+    '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" ' +
+    'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M4 6l4 4 4-4"/></svg>';
+  pill.appendChild(chev);
+
+  wrap.appendChild(pill);
+
+  // Popover anchored below the pill. Hidden by default; toggled on
+  // pill click. Each row = one provider (one PROVIDERS entry, mock
+  // excluded by registry omission per R33.4).
+  const popover = document.createElement("div");
+  popover.className = "canvas-chat-provider-popover";
+  popover.setAttribute("data-canvas-chat-provider-popover", "");
+  popover.setAttribute("role", "menu");
+  popover.style.display = "none";
 
   for (const providerKey of PROVIDERS) {
-    const pill   = document.createElement("button");
     const isActive = providerKey === activeKey;
     const ready    = isProviderReady(aiCfg, providerKey);
-    pill.type  = "button";
-    pill.className = "canvas-chat-provider-pill" +
-      (isActive ? " is-active" : (ready ? " is-ready" : " is-warn"));
-    pill.setAttribute("data-provider-key", providerKey);
-    const lbl = labelForProvider(providerKey);
-    pill.title = isActive
-      ? "Active provider: " + lbl + ". Click to manage settings + key."
-      : (ready
-          ? "Switch to " + lbl + "."
-          : lbl + " needs an API key. Click to configure.");
-    pill.setAttribute("aria-label", pill.title);
-    pill.setAttribute("aria-pressed", isActive ? "true" : "false");
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "canvas-chat-provider-row" +
+      (isActive ? " is-active" : "") +
+      (ready ? " is-ready" : " is-warn");
+    row.setAttribute("data-provider-key", providerKey);
+    row.setAttribute("role", "menuitem");
 
-    const dot = document.createElement("span");
-    dot.className = "canvas-chat-provider-pill-dot";
-    dot.setAttribute("aria-hidden", "true");
-    pill.appendChild(dot);
+    const rowDot = document.createElement("span");
+    rowDot.className = "canvas-chat-provider-row-dot";
+    row.appendChild(rowDot);
 
-    const label = document.createElement("span");
-    label.className = "canvas-chat-provider-pill-label";
-    label.textContent = lbl;
-    pill.appendChild(label);
+    const rowLabel = document.createElement("span");
+    rowLabel.className = "canvas-chat-provider-row-label";
+    rowLabel.textContent = labelForProvider(providerKey);
+    row.appendChild(rowLabel);
 
-    pill.addEventListener("click", function() {
+    const rowMeta = document.createElement("span");
+    rowMeta.className = "canvas-chat-provider-row-meta";
+    rowMeta.textContent = isActive
+      ? "Active"
+      : (ready ? "Ready" : "Needs key");
+    row.appendChild(rowMeta);
+
+    row.addEventListener("click", function() {
       // Per R33.3:
-      //   inactive + ready -> switch active provider, repaint pills
+      //   inactive + ready -> switch active provider, repaint
       //   inactive + warn  -> open Settings (key entry)
       //   active           -> open Settings (key management)
+      hidePopover();
       if (!isActive && ready) {
         const nextCfg = loadAiConfig();
         nextCfg.activeProvider = providerKey;
         saveAiConfig(nextCfg);
-        // Repaint the row so the active highlight tracks the click.
         const headSlot = document.querySelector(".overlay[data-kind='canvas-chat'] .overlay-head-extras");
         if (headSlot) injectHeaderExtras();
         return;
       }
-      // Open Settings, focused on the providers section. closeOverlay
-      // first so the chat doesn't sit behind the settings modal.
       closeOverlay();
       openSettingsModal({ section: "providers", focusProvider: providerKey });
     });
 
-    row.appendChild(pill);
+    popover.appendChild(row);
   }
-  slot.appendChild(row);
+  wrap.appendChild(popover);
+
+  function showPopover() {
+    popover.style.display = "";
+    pill.setAttribute("aria-expanded", "true");
+    document.addEventListener("click", outsideClickHandler, true);
+  }
+  function hidePopover() {
+    popover.style.display = "none";
+    pill.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", outsideClickHandler, true);
+  }
+  function outsideClickHandler(e) {
+    if (!wrap.contains(e.target)) hidePopover();
+  }
+
+  pill.addEventListener("click", function(e) {
+    e.stopPropagation();
+    if (popover.style.display === "none") showPopover();
+    else hidePopover();
+  });
+
+  slot.appendChild(wrap);
 }
 
 // Per-provider readiness check. Mirrors isActiveProviderReady's shape
@@ -656,9 +724,11 @@ function isProviderReady(config, providerKey) {
   const p = c && c.providers && c.providers[providerKey];
   if (!p) return false;
   if (!p.baseUrl) return false;
-  // Local provider doesn't require a key (vLLM unauth'd); public
-  // providers do. Matches isActiveProviderReady.
-  if (providerKey !== "local" && !p.apiKey) return false;
+  // Local providers (A + B) don't require a key (typical self-hosted
+  // vLLM behind nginx proxy is unauth'd); public providers do. Matches
+  // isActiveProviderReady. rc.4-dev / Arc 2 added Local B alongside
+  // Local A.
+  if (providerKey !== "local" && providerKey !== "localB" && !p.apiKey) return false;
   return true;
 }
 
@@ -695,7 +765,8 @@ function labelForProvider(providerKey) {
   switch (providerKey) {
     case "anthropic":     return "Claude";
     case "openai-compatible":
-    case "local":         return "Local";
+    case "local":         return "Local A";
+    case "localB":        return "Local B";
     case "gemini":        return "Gemini";
     case "dellSalesChat": return "Dell Sales Chat";
     default:              return providerKey || "Provider";

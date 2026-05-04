@@ -5796,21 +5796,34 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
   color: #58A6FF;
   background: rgba(88, 166, 255, 0.06);
 }
+/* Per SPEC §S33 (rc.4-dev / Arc 2 revision) - head-extras button family
+   uses one consistent ghost-button treatment matching GPLC sample
+   .btn-ghost. Pre-revision the rail toggle + clear button used dark-
+   theme colors leftover from the rc.2 era; post-Arc-1 the chrome is
+   light so they read washed-out. Now: --canvas bg, --rule-strong
+   border, --ink-soft label; hover lifts to --dell-blue. Active state
+   on the rail toggle uses --dell-blue-soft fill + --dell-blue border. */
 .canvas-chat-rail-toggle {
-  display: inline-flex; align-items: center; gap: 5px;
-  height: 28px; padding: 0 10px;
-  background: transparent; color: #8B949E;
-  border: 1px solid #30363D; border-radius: 6px;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 12px;
+  background: var(--canvas);
+  color: var(--ink-soft);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font: 500 11px/1 var(--font-sans, system-ui, sans-serif);
-  margin-left: 8px;
+  font: 500 11.5px/1 "Inter", var(--font-sans, system-ui, sans-serif);
+  letter-spacing: 0.005em;
+  margin-left: 6px;
   transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
 }
-.canvas-chat-rail-toggle:hover { color: #E6EDF3; border-color: #6E7681; }
+.canvas-chat-rail-toggle:hover {
+  color: var(--dell-blue);
+  border-color: var(--dell-blue);
+}
 .canvas-chat-rail-toggle.is-active {
-  background: rgba(0, 120, 212, 0.18);
-  color: #58A6FF;
-  border-color: rgba(0, 120, 212, 0.5);
+  background: var(--dell-blue-soft);
+  color: var(--dell-blue-deep);
+  border-color: var(--dell-blue);
 }
 /* Per SPEC §S32 R32.9 (rc.4-dev / Arc 1) - transcript scroll area MUST
    stay dark (#0D1117). The "AI working area" affordance: outer chrome
@@ -5944,17 +5957,21 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
    Replaces the prior Mock|Real segmented toggle. Click opens Settings.
    .is-ready  -> green dot + "Connected to <provider>"
    .is-warn   -> amber dot + "Configure provider" (no key / no baseUrl) */
-/* Per SPEC §S33 R33.1-R33.5 + RULES §16 CH29 (rc.4-dev / Arc 2) -
-   provider pill row in the Canvas AI Assistant header. Replaces the
-   pre-Arc-2 .canvas-chat-status-chip. One pill per provider; active
-   filled --dell-blue + white text, inactive ready outlined with green
-   dot, inactive needs-key outlined --canvas-soft with amber dot. */
+/* Per SPEC §S33 (rc.4-dev / Arc 2 REVISION 2026-05-04) - single-pill-
+   with-popover provider switcher. Replaces the per-provider pill row
+   that didn't scale (5+ pills stacked side-by-side felt cluttered).
+   Industry-standard pattern: one compact pill in the header showing
+   the ACTIVE provider + status dot + chevron; click reveals a popover
+   anchored below listing every provider (one row each) with click-to-
+   switch / click-to-configure semantics. Scales to N providers without
+   header strain. */
 .canvas-chat-provider-pills {
-  display: inline-flex; align-items: center; gap: 6px;
+  position: relative;
+  display: inline-flex; align-items: center;
 }
 .canvas-chat-provider-pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  height: 28px; padding: 0 12px;
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 28px; padding: 0 12px 0 10px;
   background: var(--canvas);
   color: var(--ink-soft);
   border: 1px solid var(--rule-strong);
@@ -5968,51 +5985,125 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
   border-color: var(--dell-blue);
   color: var(--dell-blue);
 }
+.canvas-chat-provider-pill[aria-expanded="true"] {
+  border-color: var(--dell-blue);
+  color: var(--dell-blue);
+  background: var(--dell-blue-soft);
+}
 .canvas-chat-provider-pill-dot {
-  width: 6px; height: 6px;
+  width: 7px; height: 7px;
   border-radius: 50%;
   background: var(--ink-faint);
-  flex: 0 0 6px;
+  flex: 0 0 7px;
 }
 .canvas-chat-provider-pill.is-ready .canvas-chat-provider-pill-dot {
   background: var(--green);
   box-shadow: 0 0 6px rgba(0, 132, 61, 0.4);
 }
-.canvas-chat-provider-pill.is-warn {
-  background: var(--canvas-soft);
-  color: var(--ink-mute);
-  border-color: var(--rule);
-}
 .canvas-chat-provider-pill.is-warn .canvas-chat-provider-pill-dot {
   background: var(--amber);
+  box-shadow: 0 0 6px rgba(178, 116, 0, 0.4);
 }
-.canvas-chat-provider-pill.is-active {
-  background: var(--dell-blue);
-  color: #FFFFFF;
-  border-color: var(--dell-blue-deep);
-  cursor: default;
+.canvas-chat-provider-pill-label {
+  white-space: nowrap;
 }
-.canvas-chat-provider-pill.is-active:hover {
-  background: var(--dell-blue-deep);
-  border-color: var(--dell-blue-deep);
-  color: #FFFFFF;
+.canvas-chat-provider-pill-chev {
+  display: inline-flex; align-items: center;
+  margin-left: 1px;
+  color: var(--ink-mute);
+  transition: transform 120ms ease;
+}
+.canvas-chat-provider-pill[aria-expanded="true"] .canvas-chat-provider-pill-chev {
+  color: var(--dell-blue);
+  transform: rotate(180deg);
+}
+
+/* Popover - vertical list of provider rows, anchored under the pill. */
+.canvas-chat-provider-popover {
+  position: absolute;
+  top: calc(100% + 6px); left: 0;
+  z-index: 4700;
+  min-width: 240px; max-width: 320px;
+  background: var(--canvas);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 4px;
+  display: flex; flex-direction: column; gap: 1px;
+  animation: chat-pop-fade 120ms ease-out;
+}
+@keyframes chat-pop-fade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.canvas-chat-provider-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
   cursor: pointer;
+  text-align: left;
+  font: 500 12px/1.2 "Inter", var(--font-sans, system-ui, sans-serif);
+  color: var(--ink);
+  transition: background 80ms ease, color 80ms ease;
 }
-.canvas-chat-provider-pill.is-active .canvas-chat-provider-pill-dot {
-  background: #FFFFFF;
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+.canvas-chat-provider-row:hover {
+  background: var(--canvas-soft);
+}
+.canvas-chat-provider-row.is-active {
+  background: var(--dell-blue-soft);
+  color: var(--dell-blue-deep);
+}
+.canvas-chat-provider-row.is-active:hover {
+  background: var(--dell-blue-soft);
+}
+.canvas-chat-provider-row-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+.canvas-chat-provider-row.is-ready .canvas-chat-provider-row-dot {
+  background: var(--green);
+}
+.canvas-chat-provider-row.is-warn .canvas-chat-provider-row-dot {
+  background: var(--amber);
+}
+.canvas-chat-provider-row-label {
+  white-space: nowrap;
+}
+.canvas-chat-provider-row-meta {
+  font: 500 9.5px/1 "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+.canvas-chat-provider-row.is-active .canvas-chat-provider-row-meta {
+  color: var(--dell-blue);
+}
+.canvas-chat-provider-row.is-warn .canvas-chat-provider-row-meta {
+  color: var(--amber);
 }
 .canvas-chat-clear-btn {
-  display: inline-flex; align-items: center; gap: 5px;
-  height: 28px; padding: 0 10px;
-  background: transparent; color: #8B949E;
-  border: 1px solid #30363D; border-radius: 6px;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 12px;
+  background: var(--canvas);
+  color: var(--ink-soft);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font: 500 11px/1 var(--font-sans, system-ui, sans-serif);
-  margin-left: 8px;
-  transition: border-color 120ms ease, color 120ms ease;
+  font: 500 11.5px/1 "Inter", var(--font-sans, system-ui, sans-serif);
+  letter-spacing: 0.005em;
+  margin-left: 6px;
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
 }
-.canvas-chat-clear-btn:hover { color: #E6EDF3; border-color: #6E7681; }
+.canvas-chat-clear-btn:hover {
+  color: var(--red);
+  border-color: var(--red);
+}
 
 /* Contract-ack chip (SPEC §S20.16) - sits in the head-extras slot, painted on
    first-turn handshake completion. Green = sha matched, amber = mismatch. */

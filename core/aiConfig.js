@@ -12,7 +12,13 @@ const STORAGE_KEY = "ai_config_v1";
 // chain). Defaults model the local-LLM pattern (user-editable URL) since
 // the actual proxy backend isn't wired yet; the user will paste their
 // Dell Sales Chat endpoint directly.
-export const PROVIDERS = ["local", "anthropic", "gemini", "dellSalesChat"];
+//
+// rc.4-dev / Group B Arc 2 revision (2026-05-04) - "localB" added per
+// user direction so the user can run TWO local LLMs side-by-side
+// (e.g. one model for code, another for prose). Both Local A + Local B
+// are unauth'd by default (typical self-hosted vLLM behind nginx
+// proxy); user supplies the URL + model id at runtime via Settings.
+export const PROVIDERS = ["local", "localB", "anthropic", "gemini", "dellSalesChat"];
 
 // Defaults — every field is overridable via the Settings modal at runtime.
 // Local URL is relative (uses our container's nginx proxy by default; the
@@ -26,10 +32,23 @@ export const DEFAULT_AI_CONFIG = {
   activeProvider: "local",
   providers: {
     local: {
-      label:          "Local LLM",
+      label:          "Local A",
       baseUrl:        "/api/llm/local/v1",
       model:          "code-llm",
       apiKey:         "",                     // typical self-hosted vLLM is unauth'd behind the proxy
+      fallbackModels: []
+    },
+    // rc.4-dev / Arc 2 - second local LLM slot. Defaults to a sibling
+    // proxy path (/api/llm/local-b/v1); user pastes the actual URL +
+    // model id in Settings. Same auth shape as Local A: no key needed
+    // by default (the nginx proxy gates access; downstream vLLM is
+    // unauth'd). Different proxy path so a single host can run two
+    // independent vLLM endpoints without colliding.
+    localB: {
+      label:          "Local B",
+      baseUrl:        "/api/llm/local-b/v1",
+      model:          "",
+      apiKey:         "",
       fallbackModels: []
     },
     anthropic: {
@@ -125,7 +144,8 @@ export function isActiveProviderReady(config) {
   var p = c.providers[c.activeProvider];
   if (!p) return false;
   if (!p.baseUrl) return false;
-  // Local provider doesn't require a key (vLLM unauth'd); public providers do.
-  if (c.activeProvider !== "local" && !p.apiKey) return false;
+  // Local providers (A + B) don't require a key (typical self-hosted
+  // vLLM behind nginx proxy is unauth'd); public providers do.
+  if (c.activeProvider !== "local" && c.activeProvider !== "localB" && !p.apiKey) return false;
   return true;
 }

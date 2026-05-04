@@ -14192,43 +14192,47 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         return "rgb(" + r + ", " + g + ", " + b + ")";
       }
 
-      it("V-PILLS-1 · CanvasChatOverlay defines paintProviderPills + drops the canvas-chat-status-chip; rendered DOM after openCanvasChat carries .canvas-chat-provider-pills with one .canvas-chat-provider-pill per PROVIDERS entry (per R33.1)", async () => {
+      it("V-PILLS-1 · CanvasChatOverlay defines paintProviderPills; rendered DOM carries ONE active pill + a popover with one row per PROVIDERS entry (single-pill-with-popover per SPEC §S33 REVISION 2026-05-04 R33.1)", async () => {
         const overlaySrc = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
         // Source-grep the new contract.
         assert(/function\s+paintProviderPills\b/.test(overlaySrc),
           "V-PILLS-1: paintProviderPills function defined");
-        assert(/canvas-chat-provider-pills/.test(overlaySrc),
-          "V-PILLS-1: .canvas-chat-provider-pills row class present in source");
-        assert(/canvas-chat-provider-pill\b/.test(overlaySrc),
-          "V-PILLS-1: .canvas-chat-provider-pill class present in source");
+        assert(/canvas-chat-provider-popover/.test(overlaySrc),
+          "V-PILLS-1: .canvas-chat-provider-popover class present in source (popover pattern)");
+        assert(/canvas-chat-provider-row/.test(overlaySrc),
+          "V-PILLS-1: .canvas-chat-provider-row class present (one row per PROVIDERS entry inside the popover)");
         // Anti-pattern: the connection-status chip is retired.
         assert(!/canvas-chat-status-chip/.test(overlaySrc),
           "V-PILLS-1: old .canvas-chat-status-chip must be removed");
 
-        // Live DOM: open + assert pill count = PROVIDERS length.
+        // Live DOM: open + assert ONE active pill + popover row count.
         _resetOverlayForTests();
         closeOverlay();
         const aiCfgMod = await import("../core/aiConfig.js");
         const mod = await import("../ui/views/CanvasChatOverlay.js");
         mod.openCanvasChat();
-        const row = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-pills");
-        assert(row, "V-PILLS-1: pill row must render in chat header");
-        const pills = row.querySelectorAll(".canvas-chat-provider-pill");
-        assertEqual(pills.length, aiCfgMod.PROVIDERS.length,
-          "V-PILLS-1: pill count must equal PROVIDERS.length (got " + pills.length + ", expected " + aiCfgMod.PROVIDERS.length + ")");
+        // Exactly ONE visible pill (the active one).
+        const pills = document.querySelectorAll(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-pill");
+        assertEqual(pills.length, 1,
+          "V-PILLS-1: exactly ONE pill renders in the header (popover pattern; got " + pills.length + ")");
+        // Popover with one row per provider.
+        const popover = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-popover");
+        assert(popover, "V-PILLS-1: popover element must render in DOM (initially hidden)");
+        const rows = popover.querySelectorAll(".canvas-chat-provider-row");
+        assertEqual(rows.length, aiCfgMod.PROVIDERS.length,
+          "V-PILLS-1: popover row count must equal PROVIDERS.length (got " + rows.length + ", expected " + aiCfgMod.PROVIDERS.length + ")");
         closeOverlay();
         _resetOverlayForTests();
       });
 
-      it("V-PILLS-2 · Click on inactive ready pill switches aiConfig.activeProvider (per R33.3 — needs-key pills go to Settings, not switch)", async () => {
+      it("V-PILLS-2 · Clicking a popover row for an inactive ready provider switches aiConfig.activeProvider (per R33.3)", async () => {
         _resetOverlayForTests();
         closeOverlay();
         const aiCfgMod = await import("../core/aiConfig.js");
         const mod = await import("../ui/views/CanvasChatOverlay.js");
 
         // Set up: anthropic active + has key (ready); gemini inactive +
-        // has key (ready, eligible for switch). Per R33.3, only the
-        // inactive+ready click switches the active provider.
+        // has key (ready, eligible for switch).
         const cfg0 = aiCfgMod.loadAiConfig();
         cfg0.activeProvider = "anthropic";
         cfg0.providers.anthropic.apiKey = "sk-test-key-anthropic";
@@ -14236,16 +14240,21 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         aiCfgMod.saveAiConfig(cfg0);
         mod.openCanvasChat();
 
-        // Find the inactive "gemini" pill and click it.
-        const target = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-pill[data-provider-key='gemini']");
-        assert(target, "V-PILLS-2: gemini pill must exist (target for click)");
+        // Open the popover by clicking the active pill.
+        const pill = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-pill");
+        assert(pill, "V-PILLS-2: active pill must exist");
+        pill.click();
+
+        // Click the gemini row in the popover.
+        const target = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-row[data-provider-key='gemini']");
+        assert(target, "V-PILLS-2: gemini row must exist in popover");
         assert(target.classList.contains("is-ready"),
-          "V-PILLS-2 setup: gemini pill must be .is-ready (has key) to be eligible for switch");
+          "V-PILLS-2 setup: gemini row must be .is-ready (has key) to be eligible for switch");
         target.click();
 
         const cfg1 = aiCfgMod.loadAiConfig();
         assertEqual(cfg1.activeProvider, "gemini",
-          "V-PILLS-2: clicking the inactive ready gemini pill must switch activeProvider to 'gemini'");
+          "V-PILLS-2: clicking the inactive ready gemini row must switch activeProvider to 'gemini'");
 
         // Cleanup.
         const reset = aiCfgMod.loadAiConfig();
@@ -14257,13 +14266,13 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         _resetOverlayForTests();
       });
 
-      it("V-PILLS-3 · Active pill computed style is filled --dell-blue; inactive ready pill carries a green status dot; inactive needs-key pill carries an amber dot (per R33.2)", async () => {
+      it("V-PILLS-3 · Popover rows: active row .is-active + Dell-blue-soft bg; ready inactive row carries a green dot; needs-key inactive row carries an amber dot (per R33.2)", async () => {
         _resetOverlayForTests();
         closeOverlay();
         const aiCfgMod = await import("../core/aiConfig.js");
 
-        // Set up: anthropic active + has key (ready), gemini inactive +
-        // has key (ready, green dot), dellSalesChat inactive + no key
+        // Set up: anthropic active + has key, gemini inactive + has key
+        // (ready, green dot), dellSalesChat inactive + no key
         // (needs-key, amber dot).
         const cfg = aiCfgMod.loadAiConfig();
         cfg.activeProvider = "anthropic";
@@ -14276,32 +14285,36 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         const mod = await import("../ui/views/CanvasChatOverlay.js");
         mod.openCanvasChat();
 
-        // Active pill = anthropic.
-        const active = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-pill.is-active[data-provider-key='anthropic']");
-        assert(active, "V-PILLS-3: active anthropic pill must carry .is-active");
+        // Force popover visible to read computed styles.
+        const popover = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-popover");
+        if (popover) popover.style.display = "";
+
+        // Active row = anthropic.
+        const active = popover.querySelector(".canvas-chat-provider-row.is-active[data-provider-key='anthropic']");
+        assert(active, "V-PILLS-3: active anthropic row must carry .is-active");
         const aStyle = getComputedStyle(active);
-        assertEqual(aStyle.backgroundColor, hexToRgb("#0076CE"),
-          "V-PILLS-3: active pill background MUST be var(--dell-blue) = #0076CE");
+        assertEqual(aStyle.backgroundColor, hexToRgb("#E8F2FB"),
+          "V-PILLS-3: active row background MUST be var(--dell-blue-soft) = #E8F2FB");
 
-        // Inactive ready pill (gemini) carries a green dot.
-        const ready = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-pill[data-provider-key='gemini']");
+        // Inactive ready row (gemini) carries a green dot.
+        const ready = popover.querySelector(".canvas-chat-provider-row[data-provider-key='gemini']");
         assert(ready && !ready.classList.contains("is-active"),
-          "V-PILLS-3: gemini pill exists + is inactive");
+          "V-PILLS-3: gemini row exists + is inactive");
         assert(ready.classList.contains("is-ready"),
-          "V-PILLS-3: gemini pill must carry .is-ready (has key)");
-        const dotReady = ready.querySelector(".canvas-chat-provider-pill-dot");
-        assert(dotReady, "V-PILLS-3: ready pill must contain a status dot");
+          "V-PILLS-3: gemini row must carry .is-ready (has key)");
+        const dotReady = ready.querySelector(".canvas-chat-provider-row-dot");
+        assert(dotReady, "V-PILLS-3: ready row must contain a status dot");
         assertEqual(getComputedStyle(dotReady).backgroundColor, hexToRgb("#00843D"),
-          "V-PILLS-3: ready pill dot MUST be var(--green) = #00843D");
+          "V-PILLS-3: ready row dot MUST be var(--green) = #00843D");
 
-        // Inactive needs-key pill (dellSalesChat) carries an amber dot.
-        const warn = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-pill[data-provider-key='dellSalesChat']");
-        assert(warn, "V-PILLS-3: dellSalesChat pill must exist");
+        // Inactive needs-key row (dellSalesChat) carries an amber dot.
+        const warn = popover.querySelector(".canvas-chat-provider-row[data-provider-key='dellSalesChat']");
+        assert(warn, "V-PILLS-3: dellSalesChat row must exist");
         assert(warn.classList.contains("is-warn"),
-          "V-PILLS-3: dellSalesChat pill MUST carry .is-warn (no key + no baseUrl)");
-        const dotWarn = warn.querySelector(".canvas-chat-provider-pill-dot");
+          "V-PILLS-3: dellSalesChat row MUST carry .is-warn (no key + no baseUrl)");
+        const dotWarn = warn.querySelector(".canvas-chat-provider-row-dot");
         assertEqual(getComputedStyle(dotWarn).backgroundColor, hexToRgb("#B27400"),
-          "V-PILLS-3: needs-key pill dot MUST be var(--amber) = #B27400");
+          "V-PILLS-3: needs-key row dot MUST be var(--amber) = #B27400");
 
         // Cleanup.
         const reset = aiCfgMod.loadAiConfig();
@@ -14312,7 +14325,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         _resetOverlayForTests();
       });
 
-      it("V-PILLS-4 · Click on the ACTIVE pill opens Settings modal (per R33.3)", async () => {
+      it("V-PILLS-4 · Click on the active pill toggles the popover open + closed (per R33.3 REVISION); active row click goes to Settings", async () => {
         _resetOverlayForTests();
         closeOverlay();
         const aiCfgMod = await import("../core/aiConfig.js");
@@ -14324,16 +14337,28 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         const mod = await import("../ui/views/CanvasChatOverlay.js");
         mod.openCanvasChat();
 
-        const active = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-pill.is-active");
-        assert(active, "V-PILLS-4: active pill must exist");
-        active.click();
+        const pill = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-pill");
+        const popover = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-provider-popover");
+        assert(pill && popover, "V-PILLS-4: pill + popover must exist");
 
-        // Settings overlay should open (data-kind='settings'). It may
-        // close the chat overlay first; the assertion is just on
-        // settings being open.
+        // Initial: popover hidden.
+        assertEqual(popover.style.display, "none",
+          "V-PILLS-4: popover starts hidden (display:none)");
+
+        // Click pill → popover visible.
+        pill.click();
+        assert(popover.style.display !== "none",
+          "V-PILLS-4: clicking pill MUST show the popover");
+        assertEqual(pill.getAttribute("aria-expanded"), "true",
+          "V-PILLS-4: pill aria-expanded MUST flip to 'true' when popover opens");
+
+        // Click the active row → opens Settings.
+        const activeRow = popover.querySelector(".canvas-chat-provider-row.is-active");
+        assert(activeRow, "V-PILLS-4: active row must exist in popover");
+        activeRow.click();
         await new Promise(r => setTimeout(r, 200));
         const settings = document.querySelector(".overlay[data-kind='settings']");
-        assert(settings, "V-PILLS-4: clicking the active pill MUST open the Settings modal");
+        assert(settings, "V-PILLS-4: clicking the active row MUST open the Settings modal");
 
         // Cleanup.
         closeOverlay();
@@ -14367,9 +14392,10 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         const ledeEl = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-foot-lede");
         assert(ledeEl, "V-FOOTER-CRUMB-1: lede element exists in footer");
 
-        // Empty state per R33.7.
-        assertEqual((ledeEl.textContent || "").trim().toLowerCase(), "ready",
-          "V-FOOTER-CRUMB-1: empty-state breadcrumb reads 'Ready' (per R33.7)");
+        // Empty state per R33.7 (REVISED 2026-05-04): renders nothing
+        // (the "Ready" placeholder was flagged by user as filler).
+        assertEqual((ledeEl.textContent || "").trim(), "",
+          "V-FOOTER-CRUMB-1: empty-state breadcrumb is EMPTY (per R33.7 REVISION)");
 
         closeOverlay();
         _resetOverlayForTests();
