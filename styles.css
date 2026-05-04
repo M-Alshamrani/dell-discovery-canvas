@@ -5825,6 +5825,85 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
   color: var(--dell-blue-deep);
   border-color: var(--dell-blue);
 }
+/* Per SPEC §S34 R34.1 + R34.4 + R34.5 (rc.4-dev / Arc 3) - thinking-
+   state UX: typing-dot indicator + per-tool status pill + multi-round
+   badge. Make the assistant feel alive during the 3-8s window between
+   user-send and first token. */
+
+/* Typing-dot indicator - 3 bouncing dots, 1.4s loop, 0.16s stagger.
+   Lives inside the dark transcript area, so dot color is light. */
+.canvas-chat-typing-indicator {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 8px 14px;
+  align-self: flex-start;
+  border-radius: 14px;
+  background: rgba(110, 118, 129, 0.18);
+}
+.canvas-chat-typing-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #C9D1D9;
+  animation: chat-typing-bounce 1.4s ease-in-out infinite;
+}
+.canvas-chat-typing-dot:nth-child(2) { animation-delay: 0.16s; }
+.canvas-chat-typing-dot:nth-child(3) { animation-delay: 0.32s; }
+@keyframes chat-typing-bounce {
+  0%, 80%, 100% { transform: scale(0.7); opacity: 0.45; }
+  40%           { transform: scale(1.0); opacity: 1;    }
+}
+
+/* Per-tool status pill - Dell-blue-soft fill on the dark transcript
+   so it reads as a fresh, deliberate "system is doing something"
+   marker; JetBrains Mono uppercase per R34.4. Auto-removed when the
+   next pill arrives or onComplete fires (handled in JS). */
+.canvas-chat-tool-status {
+  align-self: flex-start;
+  padding: 6px 12px;
+  background: var(--dell-blue-soft);
+  color: var(--dell-blue-deep);
+  border: 1px solid rgba(0, 118, 206, 0.3);
+  border-radius: var(--radius-sm);
+  font: 500 10.5px/1 "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  animation: chat-tool-status-fade-in 200ms ease-out;
+  transition: opacity 200ms ease;
+}
+@keyframes chat-tool-status-fade-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Multi-round badge - quiet canvas-soft pill in the meter row;
+   auto-fade 2s. Only painted for round >= 2. */
+.canvas-chat-round-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: var(--canvas-soft);
+  color: var(--ink-mute);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  font: 500 9.5px/1.2 "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: opacity 400ms ease;
+}
+.canvas-chat-round-badge.is-fading {
+  opacity: 0;
+}
+
+/* Per SPEC §S34 R34.6 - footer breadcrumb slide-in animation when a
+   fresh provenance lands. .is-fresh class added in onComplete; cleared
+   on the next render cycle (or just stays - the animation runs once). */
+.canvas-chat-foot-lede.is-fresh {
+  animation: chat-foot-crumb-slide-in 240ms ease-out;
+}
+@keyframes chat-foot-crumb-slide-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* Per SPEC §S32 R32.9 (rc.4-dev / Arc 1) - transcript scroll area MUST
    stay dark (#0D1117). The "AI working area" affordance: outer chrome
    went light to match the rest of the app, but where the AI replies

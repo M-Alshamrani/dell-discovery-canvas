@@ -70,13 +70,37 @@ let state = {
   isStreaming:  false
 };
 
-// Example prompts shown when transcript is empty. Click to fill input.
+// Example prompts shown when transcript is empty. Per SPEC §S34 R34.10
+// + R34.11 (rc.4-dev / Arc 3) these are the FALLBACK set used when the
+// engagement is empty; live empty-state painter calls
+// generateTryAskingPrompts(state.engagement) and renders ITS output.
+// Kept exported via the test handle so V-TRY-ASK-3 can compare against
+// the canonical fallback content.
 const EXAMPLE_PROMPTS = [
   "How many High-urgency gaps are open?",
   "Which environments have the most non-Dell instances?",
   "What initiatives serve our cyber resilience driver?",
   "Summarize the customer's strategic drivers in two sentences."
 ];
+
+// Per SPEC §S34 R34.3 (rc.4-dev / Arc 3) - human-readable status message
+// per CHAT_TOOLS entry. The chat overlay paints these in a status pill
+// during tool-use rounds so the user sees what the AI is doing rather
+// than a flat "thinking..." for 3-8 seconds. Unknown tool names fall
+// back to TOOL_STATUS_MESSAGES.__default__.
+const TOOL_STATUS_MESSAGES = {
+  "selectGapsKanban":           "Reading the gaps board...",
+  "selectMatrixView":           "Cross-referencing the architecture...",
+  "selectVendorMix":            "Computing vendor mix...",
+  "selectLinkedComposition":    "Walking entity links...",
+  "selectConcept":              "Looking up the concept dictionary...",
+  "selectWorkflow":             "Reading the workflow steps...",
+  "selectExecutiveSummaryInputs": "Gathering executive summary...",
+  "selectAnalyticalCanvas":     "Computing canvas analytics...",
+  "selectProjects":             "Reading projects + roadmap...",
+  "selectHealthSummary":        "Analyzing engagement health...",
+  "__default__":                "Looking up data..."
+};
 
 // openCanvasChat() — entry point from app.js topbar handler.
 export function openCanvasChat() {
@@ -466,6 +490,74 @@ function escapeText(s) {
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// SPEC §S34 R34.1 + R34.4 + R34.5 (rc.4-dev / Arc 3) - thinking-state
+// paint helpers. Each owns a small DOM region so the chat overlay's
+// onToken / onToolUse / onRoundStart callbacks can paint cleanly.
+
+function paintTypingIndicator() {
+  // Clear any prior indicator before re-painting.
+  clearTypingIndicator();
+  const scroll = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-transcript");
+  if (!scroll) return;
+  const ind = document.createElement("div");
+  ind.className = "canvas-chat-typing-indicator";
+  ind.setAttribute("aria-label", "AI is thinking");
+  for (let i = 0; i < 3; i++) {
+    const dot = document.createElement("span");
+    dot.className = "canvas-chat-typing-dot";
+    ind.appendChild(dot);
+  }
+  scroll.appendChild(ind);
+  scroll.scrollTop = scroll.scrollHeight;
+}
+function clearTypingIndicator() {
+  document.querySelectorAll(".overlay[data-kind='canvas-chat'] .canvas-chat-typing-indicator")
+    .forEach(el => el.remove());
+}
+
+function paintToolStatus(toolName) {
+  clearToolStatus();
+  const scroll = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-transcript");
+  if (!scroll) return;
+  const pill = document.createElement("div");
+  pill.className = "canvas-chat-tool-status";
+  pill.setAttribute("data-tool-name", toolName || "");
+  pill.textContent = TOOL_STATUS_MESSAGES[toolName] || TOOL_STATUS_MESSAGES.__default__;
+  scroll.appendChild(pill);
+  scroll.scrollTop = scroll.scrollHeight;
+}
+function clearToolStatus() {
+  document.querySelectorAll(".overlay[data-kind='canvas-chat'] .canvas-chat-tool-status")
+    .forEach(el => el.remove());
+}
+
+function paintRoundBadge(evt) {
+  // R34.5 - only paint for round >= 2 (the 1st round is implicit).
+  const round = evt && evt.round;
+  if (typeof round !== "number" || round < 2) return;
+  const host = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-meter") ||
+               document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-transcript");
+  if (!host) return;
+  document.querySelectorAll(".overlay[data-kind='canvas-chat'] .canvas-chat-round-badge")
+    .forEach(el => el.remove());
+  const badge = document.createElement("span");
+  badge.className = "canvas-chat-round-badge";
+  badge.textContent = "Round " + round + (evt.totalRounds ? " of " + evt.totalRounds : "");
+  host.appendChild(badge);
+  setTimeout(() => {
+    badge.classList.add("is-fading");
+    setTimeout(() => { badge.remove(); }, 400);
+  }, 2000);
+}
+
+// Test handles - synthetic invocation paths so the diagnostic suite
+// can drive each painter without orchestrating a full streamChat round-
+// trip. Used by V-THINK-3 / V-THINK-4 / V-THINK-5.
+export function _paintTypingIndicatorForTests() { paintTypingIndicator(); }
+export function _clearTypingIndicatorForTests() { clearTypingIndicator(); }
+export function _paintToolStatusForTests(toolName) { paintToolStatus(toolName); }
+export function _paintRoundBadgeForTests(evt) { paintRoundBadge(evt); }
+
 function buildFooter() {
   const foot = document.createElement("div");
   foot.className = "canvas-chat-footer";
@@ -776,10 +868,17 @@ function labelForProvider(providerKey) {
 function paintTranscript(body) {
   const scroll = body.querySelector(".canvas-chat-transcript");
   if (!scroll) return;
-  // Preserve the empty-state node; replace everything else.
-  const empty = scroll.querySelector(".canvas-chat-empty");
+  // Preserve the empty-state node + any thinking-state surfaces
+  // (per SPEC §S34 R34.1 + R34.4 - typing indicator + tool-status pill
+  // are transient elements that must survive a paintTranscript that
+  // fires mid-turn or just after openCanvasChat's setTimeout).
+  const empty       = scroll.querySelector(".canvas-chat-empty");
+  const typing      = scroll.querySelector(".canvas-chat-typing-indicator");
+  const toolStatus  = scroll.querySelector(".canvas-chat-tool-status");
   scroll.innerHTML = "";
-  if (empty) scroll.appendChild(empty);
+  if (empty)      scroll.appendChild(empty);
+  if (typing)     scroll.appendChild(typing);
+  if (toolStatus) scroll.appendChild(toolStatus);
 
   const visibleMessages = state.transcript.messages.filter(function(m) {
     // System-role messages are internal (prior context summaries); only
@@ -900,6 +999,10 @@ async function handleSend(body) {
   input.disabled = true;
   input.value = "";
   input.style.height = "auto";
+  // SPEC §S34 R34.1 (rc.4-dev / Arc 3) - paint the typing-dot indicator
+  // BEFORE streamChat fires. First onToken call clears it (the assistant
+  // is now actively producing text).
+  paintTypingIndicator();
 
   // Resolve provider — always the user's active aiConfig provider
   // (BUG-017 fix: Mock is no longer surfaced in the chat header).
@@ -940,6 +1043,10 @@ async function handleSend(body) {
       providerConfig: { providerKey: providerKey },
       provider:       provider,
       onToken: function(token) {
+        // SPEC §S34 R34.1 (rc.4-dev / Arc 3) - on first token, clear
+        // the typing-dot indicator (the AI is now actively producing
+        // text; the placeholder dots are no longer needed).
+        if (!assistantMsg.content) clearTypingIndicator();
         assistantMsg.content += token;
         // BUG-020 fix · streaming-time handshake strip. If the model
         // emits `[contract-ack v3.0 sha=<8>]` mid-stream (subsequent
@@ -972,6 +1079,22 @@ async function handleSend(body) {
         // breadcrumb with the latest-turn provenance.
         const ledeEl = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-foot-lede");
         if (ledeEl) paintFooterCrumb(ledeEl, result);
+        // SPEC §S34 R34.6 - footer breadcrumb slide-in animation. Toggle
+        // the .is-fresh class for one cycle so the CSS keyframe fires.
+        if (ledeEl) {
+          ledeEl.classList.remove("is-fresh");
+          // force reflow so the animation re-triggers next frame
+          // eslint-disable-next-line no-unused-expressions
+          void ledeEl.offsetWidth;
+          ledeEl.classList.add("is-fresh");
+        }
+      },
+      // SPEC §S34 R34.2 (rc.4-dev / Arc 3) - thinking-state callbacks.
+      onToolUse: function(evt) {
+        paintToolStatus(evt && evt.name);
+      },
+      onRoundStart: function(evt) {
+        paintRoundBadge(evt);
       }
     });
   } catch (e) {
@@ -983,5 +1106,9 @@ async function handleSend(body) {
     if (meter) meter.textContent = "ready";
     if (state.engagementId) saveTranscript(state.engagementId, state.transcript);
     paintTranscript(body);
+    // SPEC §S34 R34.1 + R34.4 - clean up any thinking-state surfaces
+    // that may still be on screen if the chain ended mid-state.
+    clearTypingIndicator();
+    clearToolStatus();
   }
 }

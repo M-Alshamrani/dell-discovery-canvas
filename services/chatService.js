@@ -98,6 +98,12 @@ export async function streamChat(opts) {
   const provider       = opts && opts.provider;
   const onToken        = (opts && opts.onToken)    || function() {};
   const onComplete     = (opts && opts.onComplete) || function() {};
+  // Per SPEC §S34 R34.2 (rc.4-dev / Arc 3) - thinking-state callbacks.
+  // onToolUse fires once per tool dispatch BEFORE the tool runs; chat
+  // overlay paints a per-tool status pill. onRoundStart fires at each
+  // multi-round iteration; overlay paints the round badge for round >= 2.
+  const onToolUse      = (opts && opts.onToolUse)    || function() {};
+  const onRoundStart   = (opts && opts.onRoundStart) || function() {};
 
   if (!provider || typeof provider.stream !== "function") {
     throw new Error("streamChat: opts.provider with .stream() is required");
@@ -131,6 +137,11 @@ export async function streamChat(opts) {
   let allRoundsText  = "";     // accumulated text across all rounds (used if cap is hit with no text-only round)
   let chainCap       = false;  // true if MAX_TOOL_ROUNDS reached without text-only response
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    // Per §S34 R34.2 - signal round start to the overlay so it can
+    // paint the multi-round badge for round >= 2 (1-indexed user view).
+    try { onRoundStart({ round: round + 1, totalRounds: MAX_TOOL_ROUNDS }); }
+    catch (e) { console.warn("[chatService] onRoundStart threw:", e && e.message); }
+
     const result = await streamOneRound(provider, messages, onToken, systemPrompt.cacheControl);
     if (result.text) allRoundsText += (allRoundsText ? "\n\n" : "") + result.text;
 
@@ -144,6 +155,10 @@ export async function streamChat(opts) {
     if (!tool) {
       throw new Error("streamChat: provider requested unknown tool '" + result.toolUse.name + "'");
     }
+    // Per §S34 R34.2 - signal tool dispatch BEFORE invoke so the overlay
+    // can paint the per-tool status pill while the tool runs.
+    try { onToolUse({ name: result.toolUse.name, args: result.toolUse.input || {} }); }
+    catch (e) { console.warn("[chatService] onToolUse threw:", e && e.message); }
     const toolResult = tool.invoke(engagement, result.toolUse.input || {});
 
     // Anthropic-shape content blocks (per SPEC §S20.18 + RULES §16 CH19).
