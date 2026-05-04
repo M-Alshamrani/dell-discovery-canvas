@@ -932,6 +932,171 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
+## v3.0.0 · Data architecture rebuild · RC.4-DEV — IN PROGRESS (2026-05-04, mid-arc)
+
+**Status**: **rc.4-dev is mid-arc.** APP_VERSION = `"3.0.0-rc.4-dev"`. Branch `v3.0-data-architecture` HEAD = `3938458`. **NOT pushed.** Origin still on rc.3 tag commit (`d60efbf`); 19 commits ahead locally.
+
+**Banner**: 1140/1140 GREEN ✅ (was 1103 at rc.3; +37 net tests).
+
+**Backfill notice 2026-05-04**: rc.2, rc.3, and rc.4-dev sections were all missing from CHANGELOG_PLAN.md until 2026-05-04. Per `feedback_docs_inline.md`, these should have been added inline. The backfill below preserves the per-arc detail; future arcs land inline per the locked discipline.
+
+---
+
+### Group B Arc 1 — Canvas AI Assistant window theme (SPEC §S32)
+
+Commits: `b0c7b6e` (DRAFT) · `5893e71` (impl + LOCK).
+
+- Renamed surface "Canvas Chat" → "Canvas AI Assistant" everywhere user-facing.
+- Visual-token alignment with `C:/Users/Mahmo/Downloads/GPLC Digital Unified Platform v1.0.html` reference (whitespace, --canvas-soft, --rule, --ink, 3px/5px/8px radii, Inter + JetBrains Mono).
+- New tests: V-THEME-1..8.
+- New rule: RULES §16 CH28.
+- Banner: 1103 → 1111 GREEN.
+
+### Group B Arc 2 — header pills + footer breadcrumb + Cmd+K rebind (SPEC §S33 + REVISION)
+
+Commits: `90c6ecb` (initial impl) · `68b98c4` (REVISION per user feedback).
+
+- **Initial**: per-provider pill row in header (filled-active + outlined-inactive + green/amber dot), replaces connection-status chip · footer breadcrumb shows latest-turn provenance · Cmd+K / Ctrl+K rebound from legacy `AiAssistOverlay` to Canvas AI Assistant (closes BUG-025).
+- **REVISION** (post-ship): per-provider row didn't scale (5+ pills cluttered). Switched to **single-pill-with-popover** model-picker pattern (industry standard). Footer Done button retired (X close in header is canonical). Empty-state breadcrumb renders nothing. Head-extras buttons (Clear + Skills toggle) aligned to GPLC ghost-button styling. **Local B** provider added per `LLMs on GB10.docx` (Code LLM port 8000, VLM port 8001); existing "Local" relabeled "Local A".
+- New tests: V-PILLS-1..4 + V-FOOTER-CRUMB-1 + V-CMD-K-CANVAS-1.
+- New rule: RULES §16 CH29.
+- Banner: 1111 → 1117 GREEN (no test count delta on REVISION; behavior swapped under same V-* IDs).
+
+### Group B Arc 3 — conversational affordances (SPEC §S34)
+
+Commits: `1ae60a0` (DRAFT) · `4263720` (LOCK + RED-first 12 tests) · `74c7a79` (3a thinking) · `dda354d` (3b try-asking) · `89f8b55` (3c BUG-024) · `c295e5a` (BUG-024 status flip).
+
+- **3a · thinking-state UX**: typing-dot indicator before first token; per-tool status pill during tool-use rounds (`TOOL_STATUS_MESSAGES` map keyed by tool name); multi-round badge when tool chains exceed 1 round; provenance slide-in after onComplete. V-THINK-1..5 GREEN.
+- **3b · dynamic try-asking prompts**: NEW `services/tryAskingPrompts.js` 3-bucket mixer (1 how-to + 2 insight + 1 showoff = 4 prompts). Mulberry32 PRNG seeded per session (stable-during-session, fresh-on-reload). FALLBACK_PROMPTS for empty-engagement state. V-TRY-ASK-1..4 GREEN.
+- **3c · BUG-024 fix**: extend `services/uuidScrubber.js` to scrub `workflow.<id>` + `concept.<id>` identifiers from chat prose (was already scrubbing v3-format UUIDs only). New `buildManifestLabelMap()` resolves to workflow `name` / concept `label`. Defense-in-depth: also a "NEVER emit" directive added in role section of system prompt assembler. V-SCRUB-WORKFLOW-1..3 GREEN.
+- New rule: RULES §16 CH30.
+- Banner: 1117 → 1129 GREEN.
+
+### Group B Arc 4 — Skill Builder consolidation (SPEC §S35 DRAFT REJECTED)
+
+Commits: `165dc03` (DRAFT) · `fa85ca8` (REJECTED).
+
+**Status**: BLOCKED. Awaiting user pick on three architectural approaches:
+- **Option A** — Retire v2.x admin entirely. One Skill Builder, neutrally labeled. (Gated by `project_v2x_admin_deferred.md` parity check.)
+- **Option B** — Replace existing v2 Skills... pill content with new v3 builder UI. Same pill, different inside. Neutral label (no "v3" in name). (User direction post-rejection mapped closest to this.)
+- **Option C** — Backend-agnostic builder. Reads + writes whichever store the open engagement uses. v2→v3 migrate-on-read.
+
+R35.1 in the original DRAFT proposed a "Skills (v3)" UI label, violating `feedback_no_version_prefix_in_names.md`. SPEC §S35 must be rewritten from scratch under whichever option the user picks.
+
+### Hotfix #1 — 3 office-demo bugs
+
+Commit: `016bbfe`.
+
+- **multiple-overlay leak**: tests left stacked overlays in DOM after closing; `runAllTests` afterRestore now sweeps all `.overlay` + `.overlay-backdrop` + `#skillBuilderOverlay`. Defense-in-depth on top of per-test cleanup.
+- **Settings save flaky during 90ms cross-fade**: `SettingsModal.js` save-button listener was iterating `.overlay-body` candidates and picking a stale one mid-fade. Fixed: scope to settings-kind overlay panel + skip leaving body.
+- **Clear-chat closes the chat overlay**: old `confirmAction(...)` opened its own overlay (Overlay.js singleton replaced the chat). Replaced with inline `confirmClearInline` helper that stays inside the chat panel.
+- New tests: V-NO-STRAY-OVERLAY-1 + V-CLEAR-CHAT-PERSISTS + V-SETTINGS-SAVE-1 (in §T35-HOTFIX1).
+- Banner: 1129 → 1132 GREEN.
+
+### Hotfix #2a — Local B provider + nginx + absolute-URL Settings flow
+
+Commit: `58a41b5`.
+
+- nginx LLM proxy block extended: 4 upstreams (anthropic, gemini, local A port 8000, local B port 8001). All set `proxy_buffering off; proxy_read_timeout 600s` for SSE streaming.
+- `core/aiConfig.js` `PROVIDERS` adds `localB`; `isActiveProviderReady` treats both `local` + `localB` as no-key-required.
+- `SettingsModal.js` `PROVIDER_HINTS` extended for `localB` with placeholder `http://<GB10_IP>:8001/v1`. Per user direction *"explicit URL with port and /v1 address"*, Settings accepts absolute-URL form.
+- New tests: V-PROXY-LOCAL-B-1 + V-PROVIDER-HINTS-1.
+- Banner: 1132 → 1134 GREEN.
+
+### Hotfix #2b — Local LLM multi-turn correctness
+
+Commit: `a8c4b4c`.
+
+User report: "first response accurate, second turn returned rubbish" against local vLLM. Root cause: 4 thin spots in OpenAI canonical translation in `services/aiService.js`. Defensive fixes:
+1. **Consolidate adjacent system messages** — some local vLLMs reject multiple consecutive `role:"system"` entries.
+2. **Empty assistant content as `""` not `null`** — Mistral-style strict validators 400 on null content.
+3. **Tool result content always stringified** — non-string values caused JSON parse fails downstream.
+4. **`max_tokens` 1024 → 4096** — was truncating long-form responses, masking the real protocol-level errors above.
+- New tests: V-PROVIDER-OPENAI-1..5.
+- Banner: 1134 → 1139 GREEN.
+
+### Hotfix #3 — BUG-026 test-overlay cloak
+
+Commit: `3938458` (HEAD).
+
+User report: even after Hotfix #1's afterRestore sweep, overlays opened DURING the test pass were flashing visibly on slow hardware (work laptop) for 1-2s before per-test cleanup caught up. Hotfix #1 closed end-of-pass leak; Hotfix #3 closes during-pass flash.
+
+- `body[data-running-tests]` attribute toggled by `runAllTests` around the `runIsolated` call.
+- CSS rule in `styles.css`: applies `visibility: hidden !important; pointer-events: none !important` to `.overlay`, `.overlay-backdrop`, and `#skillBuilderOverlay` while attribute is set.
+- `visibility: hidden` (vs. `display: none`) preserves layout + computed styles + `getBoundingClientRect` + `.click()` dispatch + `querySelector` — tests keep working, only paint pixels disappear.
+- Attribute cleared in `afterRestore` AFTER the overlay sweep (order matters: clearing first would flash an orphan visible).
+- New test: V-NO-VISIBLE-TEST-OVERLAY-1 (source-grep + live cloak proof using a real `.overlay` probe).
+- 100-frame smoke confirmed 0 visible overlays during the pass; cloaked overlays observed (proves overlay code paths exercised but cloak active throughout).
+- Banner: 1139 → 1140 GREEN.
+
+---
+
+### What's queued for rc.4 tag
+
+1. Resolve Arc 4 (user picks A/B/C → SPEC §S35 rewrite → impl + V-* RED-first → GREEN).
+2. PREFLIGHT 1-8 cycle: `APP_VERSION` → `"3.0.0-rc.4"` (drop -dev) · SPEC §9 phase block + §S32-§S35 confirmed LOCKED · RULES CH28-CH30 confirmed · banner GREEN at tag · browser smoke against Acme Healthcare demo · `docs/RELEASE_NOTES_rc.4.md` authored · HANDOFF.md rewritten to "rc.4 closed" state.
+
+---
+
+## v3.0.0 · Data architecture rebuild · RC.3 — TAGGED 2026-05-03 (catch-up backfill 2026-05-04)
+
+**Status**: **RC.3 SHIPPED** at commit `d60efbf` · APP_VERSION = `3.0.0-rc.3` · banner 1103/1103 GREEN.
+
+**Backfill notice**: this entry was added to CHANGELOG_PLAN.md on 2026-05-04, after the tag. The authoritative tag-time release notes are in `docs/RELEASE_NOTES_rc.3.md`; this entry is the CHANGELOG_PLAN summary that should have been added inline per `feedback_docs_inline.md`.
+
+**Theme**: 3-PHASE AI ARCHITECTURE PLAN COMPLETE (data-aware + concept-aware + app-aware chat with vendor-neutral OpenAI canonical) + Skill architecture v3.1 + Group A AI-correctness consolidation + topbar consolidation.
+
+**Per-arc summary** (28 commits over 2026-05-02 ~ 2026-05-03):
+
+| Arc | Commits | Theme |
+|---|---|---|
+| Phase A1 — generic LLM connector | `e8d17e4` | OpenAI + Gemini tool-use wired into the same canonical (V-CHAT-27..32; closes BUG-018) |
+| Phase B — concept dictionary | `0344df7` `9778f25` | `core/conceptManifest.js` 62 concepts × 13 categories; TOC inlined + full bodies via `selectConcept` tool (V-CONCEPT-1..5) |
+| Phase C — workflow manifest | `5a05d84` `5fb48f3` | `core/appManifest.js` 16 workflows + 19 recommendations + 5 tabs + 6 actions; TOC + recs inlined + full bodies via `selectWorkflow` tool (V-WORKFLOW-1..5) |
+| Skill schema v3.1 | `f0dc37f` `da051ce` `a5bfdd0` | Drop `skillType` + `entityKind`; add `parameters[]` + `outputTarget`. `migrateSkillToV31` idempotent at load + save (V-SKILL-V3-1/2/3/4) |
+| BUG-010..017 fixes | `7172737` `ddc54fc` `d324971` `4ee35ca` `eb2ffc8` `7a84b72` `5052d8a` | Demo-shape repair · multi-round chains · UUID anti-leakage · UI-string anti-leakage · handshake silent-strip · backfill heal · Mock-toggle removed (V-CHAT-18..26 + V-NAME-2) |
+| Recovery R1+R2+R3+R4 | `7414b36` | APP_VERSION discipline + PREFLIGHT.md authored + rc3-dev RELEASE_NOTES + HANDOFF rewrite (closed rc.2-tag freeze drift) |
+| rc.3 commits #1-#7 | `f0dc37f` (#1+#2 schema)·`da051ce` (#3 runner)·`5ec646d` (#4 SkillBuilder UI rebuild)·`6897321` (#5 chat right-rail saved skills)·`83fb93c` (#6 UseAiButton retirement)·`d429b46` (#7 topbar consolidation) | Skill v3.1 UI rebuild · saved-skill cards as right-rail surface · UseAiButton retired · topbar to ONE button (V-TOPBAR-1 + V-LAB-VIA-CHAT-RAIL + V-AI-ASSIST-CMD-K + V-ANTI-USE-AI + V-SKILL-V3-5/6/7) |
+| Group A AI-correctness #8-#12 | `203ef12` (BUG-019) · `987c7e7` (BUG-020) · `66810c6` (BUG-013 Path B) · `7cf20ec` (BUG-023) · `94d203b` (BUG-018 closed) | engagement persistence + rehydrate · streaming-time handshake strip · runtime UUID-to-label scrub · gapPathManifest layerId/gapType · regression coverage audit (V-FLOW-REHYDRATE-1..3 + V-CHAT-33..38 + V-PATH-31/32) |
+| AI Assist rebrand #13 | `c975d1f` | Sparkle icon + Dell-blue + 8s diamond-glint pulse (V-TOPBAR-1 + VT23) |
+| Tag | `d60efbf` | PREFLIGHT 1-8 verified · 1103/1103 GREEN |
+| Tag close-out | `e5e9e94` | BUG-013/020/023 statuses flipped CLOSED |
+
+**SPEC annexes added in rc.3**: §S26 + §S27 + §S28 + §S29 + §S30 + §S31.
+**RULES added**: §16 CH20–CH27.
+**Test deltas**: 1048 (rc.2) → 1103 (rc.3), **+55 net tests**.
+
+---
+
+## v3.0.0 · Data architecture rebuild · RC.2 — TAGGED 2026-05-02 (catch-up backfill 2026-05-04)
+
+**Status**: **RC.2 SHIPPED** at commit `2fde117` · APP_VERSION = `3.0.0-rc.2` · banner 1048/1048 GREEN.
+
+**Backfill notice**: this entry was added to CHANGELOG_PLAN.md on 2026-05-04, after the tag. Authoritative tag-time notes lived in commit messages + SPEC change log; this is the CHANGELOG_PLAN summary that should have been added inline.
+
+**Theme**: chat-perfection arc (Steps 0–11) + cleanup arc (BUG-003..009 architectural fix re-greening per `feedback_no_patches_flag_first.md`) + chat-perfection (data contract + handshake + markdown + ack chip + Real-Anthropic tool-use + cache_control on stable prefix + SSE per-token streaming).
+
+**Per-arc summary** (29 commits over 2026-05-02):
+
+| Arc | Commits | Theme |
+|---|---|---|
+| Canvas Chat foundation (chunks A-D) | `6a40c4b` (SPEC + RED) · `ab6efc4` (chunk A: chatMemory + chatTools + mockChatProvider) · `a28e29a` (chunk B: 5-layer system prompt) · `50f72ca` (chunk C: streaming + tool-call round-trip) · `33ad266` (chunk D: CanvasChatOverlay UI + realChatProvider + topbar entry) | End-to-end Anthropic-grounded smoke working. SPEC §S20 + V-CHAT-1..12 |
+| BUG-003 patch + revert | `7dbb7ad` (apply) · `bacc7a0` (revert) | v3SessionBridge widened to translate full v2 session — REVERTED per `feedback_no_patches_flag_first.md` (was a v2-shape-in-v3-module compromise) |
+| Cleanup arc (post-revert) | `1530973` (audit) · `6388699` (SPEC §S21+S22+S23 RED) · `1c792e3` (mock providers as production) · `49de7a2` (v3-native demo engagement) · `3ce2575` (canonical paths · BUG-005/006/007 closed) · `0eba848` (stale-comment cleanup · BUG-008/009 closed) · `c1544d0` (BUG-003+005-009 closure docs) | Architectural fix for BUG-003..009 re-greening. SPEC §S21+S22+S23 + V-DEMO-1..7 + V-MOCK-1..3 + V-ANTI-RUN-1 |
+| v3-prefix cleanup arc | `9ca2766` (SPEC §S24 + V-NAME-1 RED) · `be92966` (mechanical rename — 5 files purged of v3-prefix; V-NAME-1 GREEN) | Naming discipline — 5 file renames + 2 symbol renames + 4 UI string changes. SPEC §S24 |
+| Chat-perfection (Steps 1-8b) | `404e9d8` (SPEC §S25 dataContract + §S20 ext + RED) · `26b5fb4` (Step 2: dataContract.js V-CONTRACT-1..3) · `a237283` (Step 3: systemPromptAssembler embeds dataContract V-CONTRACT-5+6) · `2ba5531` (Step 4: handshake parser V-CONTRACT-7) · `ee30883` (Step 5+6: markdown + ack chip V-MD-1) · `f6ccf6b` (Step 7: Real-Anthropic tool-use V-CHAT-13/14/15) · `b3a5d47` (Step 8a: cache_control V-CHAT-16) · `f29711e` (Step 8b: SSE per-token streaming V-CHAT-17) | Data contract LLM grounding meta-model (FNV-1a checksum + module-load self-validation) + first-turn handshake (LLM echoes `[contract-ack v3.0 sha=<8>]`) + markdown rendering on assistant bubbles via vendored `marked` v13.0.3 + Anthropic prompt caching wire |
+| Tag | `2fde117` | APP_VERSION bump + HANDOFF + SPEC release block — 1048/1048 GREEN |
+
+**SPEC annexes added in rc.2**: §S20 + §S21 + §S22 + §S23 + §S24 + §S25 (and §S20 extensions §S20.16-§S20.19).
+**RULES added**: §16 CH14–CH19 + §17 (PR1-PR7 production-import discipline).
+**New vendored asset**: `vendor/marked/marked.min.js` v13.0.3.
+**Two providers lifted to production**: `services/mockChatProvider.js` + `services/mockLLMProvider.js`.
+**Five file renames** (v3-prefix purge): `state/adapter.js` · `state/engagementStore.js` · `state/sessionBridge.js` · `core/demoEngagement.js` · `ui/views/SkillBuilder.js` (`state/v3SkillStore.js` + `core/v3SeedSkills.js` exempted until v2 retires per §S24.4).
+**Test deltas**: 1011 (rc.1) → 1048 (rc.2), **+37 net tests**.
+**Real-Anthropic streaming smoke against live key**: DEFERRED to first user-driven workshop run (mock smoke covers all paths).
+
+---
+
 ## v3.0.0 · Data architecture rebuild · RC.1 — TAGGED 2026-05-01
 
 **Status**: **RC.1 SHIPPED** on top of `v3.0.0-beta`. Tag `v3.0.0-rc.1` on `origin/v3.0-data-architecture`. APP_VERSION = `3.0.0-rc.1`.
