@@ -3149,6 +3149,116 @@ Once all 6 confirmed → V-PILLS-1..4 + V-FOOTER-CRUMB-1 + V-CMD-K-CANVAS-1 RED-
 
 ---
 
+## §S34 · Canvas AI Assistant conversational affordances — Arc 3 of Group B (DRAFT pending user approval)
+
+**Status**: DRAFT 2026-05-04 (post Arc 2 revision ship at `68b98c4`). Authored under the `feedback_group_b_spec_rewrite.md` discipline — SPEC FIRST, then V-* tests RED, then code.
+
+**Authority**: `docs/RULES.md §16` (CH30 to be added) · BUG-024 (workflow / concept ID leakage in chat prose) · BUG-022 (chat UI polish — status messages UX). User direction 2026-05-03: "I need your insight about the ultimate UI/UX for this window... dynamic messages and status shapes while it is thinking or doing research... bring the assist to live and feel comforting not frustrating."
+
+This arc is the biggest "feels alive" lever in Group B. Three pieces, one SPEC:
+
+1. **Thinking-state UX**: typing-dot indicator before the first streaming token; per-tool status pill during tool-use rounds; subtle multi-round badge for long chains; gentle provenance slide-in after onComplete.
+2. **Dynamic try-asking**: replace the 4 hardcoded `EXAMPLE_PROMPTS` in the empty state with a 3-bucket mixer (how-to / insight / showoff) that generates session-fresh prompts grounded in the active engagement.
+3. **BUG-024 scrub**: extend `services/uuidScrubber.js` to detect `workflow.<id>` / `concept.<id>` patterns and replace with the manifest's user-facing label (or `[unknown reference]` for orphans). Tighten the role section with an explicit NEVER-emit directive on those identifiers.
+
+### S34.1 · Thinking-state UX
+
+Pre-Arc-3: when the user sends a message, the meter row shows "thinking…" as flat text. Tool-use rounds are silent. Multi-round chains give no visible signal. After complete, the bubble appears + provenance is invisible until the user inspects the next turn. Feels lifeless.
+
+- **R34.1** (🔴 HARD) — On user-send, the chat overlay renders a `.canvas-chat-typing-indicator` element inside the assistant bubble area BEFORE the first streaming token arrives. The indicator carries 3 animated dots (CSS `@keyframes` typing-dot bounce, 1.4s loop, 0.16s stagger). Removed when the first token arrives (`onToken` first-call) OR when `onComplete` fires (whichever comes first).
+- **R34.2** (🔴 HARD) — `services/chatService.js` `streamChat` API extends to emit two new optional callbacks during the multi-round tool-use loop:
+  - `onToolUse({ name, args })` — fires once per tool dispatch, BEFORE the tool runs. The chat overlay listens and renders a `.canvas-chat-tool-status` pill above the assistant bubble with a human-readable message (per the TOOL_STATUS_MESSAGES map below).
+  - `onRoundStart({ round, totalRounds })` — fires at the start of each tool-use round (round=1, 2, …). When `round > 1`, the overlay paints a `.canvas-chat-round-badge` element ("Round 2 of 5") in the meter row; auto-fades after 2s.
+- **R34.3** (🔵 AUTO) — `TOOL_STATUS_MESSAGES` map (in `ui/views/CanvasChatOverlay.js`): one human-readable string per CHAT_TOOLS entry. Examples:
+  - `selectGapsKanban` → "Reading the gaps board..."
+  - `selectMatrixView` → "Cross-referencing the architecture..."
+  - `selectVendorMix` → "Computing vendor mix..."
+  - `selectLinkedComposition` → "Walking entity links..."
+  - `selectConcept` → "Looking up the concept dictionary..."
+  - `selectWorkflow` → "Reading the workflow steps..."
+  - `selectExecutiveSummaryInputs` → "Gathering executive summary..."
+  - `selectAnalyticalCanvas` → "Computing canvas analytics..."
+  - Unknown tool name → fallback "Looking up data..."
+- **R34.4** (🔴 HARD) — Status pill chrome: `.canvas-chat-tool-status` background `var(--dell-blue-soft)`, text `var(--dell-blue-deep)`, `1px solid rgba(0, 118, 206, 0.3)` border, `var(--radius-sm)` (3px) corners, JetBrains Mono 10.5px / uppercase / 0.06em letter-spacing. Auto-fades when the next status pill arrives OR onComplete fires (whichever first); `transition: opacity 200ms ease`.
+- **R34.5** (🔴 HARD) — Multi-round badge: `.canvas-chat-round-badge` background `var(--canvas-soft)`, text `var(--ink-mute)`, JetBrains Mono 10px / uppercase. Auto-fades 2 seconds after appearing. Only painted for rounds 2+.
+- **R34.6** (🔴 HARD) — Provenance slide-in after onComplete: when the latest assistant message renders provenance (provider · model · tokens · ms), the breadcrumb in the footer animates in via `slide-in 240ms ease-out` (translateY from 4px → 0 + opacity 0 → 1). Subtle; no jank.
+- **R34.7** (🔵 AUTO) — `state.isStreaming` flag preserved as today; the typing indicator + status pill key off this state (the indicator only appears WHILE isStreaming AND no token has arrived yet).
+
+### S34.2 · Dynamic try-asking prompts
+
+Pre-Arc-3: empty-state shows 4 hardcoded `EXAMPLE_PROMPTS`:
+```
+"How many High-urgency gaps are open?"
+"Which environments have the most non-Dell instances?"
+"What initiatives serve our cyber resilience driver?"
+"Summarize the customer's strategic drivers in two sentences."
+```
+
+These are good but static. They don't change between sessions, don't reflect the loaded engagement, and don't show the AI's range. User direction: "the try asking should be dynamic and generated per session... wide spectrum about what the assist is capable of doing".
+
+- **R34.8** (🔴 HARD) — NEW `services/tryAskingPrompts.js` module exports `generateTryAskingPrompts(engagement)` returning an array of EXACTLY 4 prompt strings. The 4 are picked from THREE buckets:
+  - **Bucket A (how-to)**: 1 prompt. Pulls from `core/appManifest.js` workflows. Template: `"How do I {workflow.userQuestion}?"` — uses the workflow's `userQuestion` field if present, falls back to `"How do I {workflow.title.toLowerCase()}?"`.
+  - **Bucket B (insight)**: 2 prompts. Cross-reference questions templated against the engagement. Template list (8+ candidates) covers: gap urgency comparison, vendor mix queries, driver-to-gap alignment, layer coverage analysis, environment overlap. Templates fill in from engagement state (e.g. "Compare urgency for {topDriver.label}'s gaps" if a driver exists).
+  - **Bucket C (showoff)**: 1 prompt. Multi-tool questions that demonstrate selector chaining — explicitly cross 2+ selectors (gaps + vendor mix; matrix + workflow; etc.). Templates list (4+ candidates).
+- **R34.9** (🔴 HARD) — The mixer is **deterministic per session-load** but FRESH on each empty-state render. Implementation: store a per-overlay-open random seed; pick the same prompts on subsequent paints during the same overlay-open cycle (so a user's empty-state doesn't reshuffle while they're staring at it). On the next overlay-open, generate fresh.
+- **R34.10** (🔵 AUTO) — Empty-state graceful degradation: if the engagement has no drivers / no gaps / no environments, `generateTryAskingPrompts` falls back to the static `EXAMPLE_PROMPTS` set so the empty-state always shows 4 viable suggestions. No empty array, no crashes.
+- **R34.11** (🔵 AUTO) — The `EXAMPLE_PROMPTS` constant in `ui/views/CanvasChatOverlay.js` becomes the FALLBACK list (kept for the no-engagement path); the live empty-state painter calls `generateTryAskingPrompts(state.engagement)` and renders ITS output.
+
+### S34.3 · BUG-024 fix · workflow / concept ID anti-leakage
+
+Pre-Arc-3: chat output sometimes ends with phrases like *"refer to the workflow.identify_gaps"* — the LLM (especially Gemini) cites the internal manifest IDs in user-facing prose. User reported 2026-05-03 + 2026-05-04. BUG_LOG entry BUG-024.
+
+Same defense-in-depth pattern as BUG-013 UUID scrub:
+
+- **R34.12** (🔴 HARD) — `services/uuidScrubber.js` extends to detect TWO new identifier shapes in non-code prose:
+  - `workflow.<id>` where `<id>` matches `/[a-z][a-z0-9_]+/i` (the workflow IDs in `core/appManifest.js`)
+  - `concept.<id>` where `<id>` matches the same pattern (concept IDs in `core/conceptManifest.js`)
+- **R34.13** (🔴 HARD) — On match, replace with the manifest's user-facing label:
+  - `workflow.<id>` → `"the **<workflow.title>** workflow"` (markdown bold) if the manifest lookup succeeds; else `"[unknown workflow]"`
+  - `concept.<id>` → `"**<concept.label>**"` if the manifest lookup succeeds; else `"[unknown concept]"`
+- **R34.14** (🔵 AUTO) — Skip fenced + inline code (mirror the existing UUID scrub behavior). Idempotent: re-running yields identical output (substituted labels have no `workflow.<id>` shape).
+- **R34.15** (🔴 HARD) — `services/systemPromptAssembler.js` role section adds an EXPLICIT NEVER-emit directive: "NEVER quote workflow IDs (`workflow.<id>`) or concept IDs (`concept.<id>`) back to the user. The IDs are internal — narrate the workflow steps inline, OR call `selectWorkflow(id)` / `selectConcept(id)` to fetch the body and paraphrase it." Specifically tested against Gemini (the model that surfaces the leak today).
+- **R34.16** (🔵 AUTO) — `services/uuidScrubber.js` exports a new `buildManifestLabelMap()` helper that builds the lookup once per chat-open (cached) by reading from `core/appManifest.js` (`APP_WORKFLOWS`) + `core/conceptManifest.js` (`CONCEPTS`). Workflow lookup: `"workflow.identify_gaps"` → `"Identify gaps from current vs desired state"` (the workflow's `title`). Concept lookup: `"concept.cyber_resilience"` → `"Cyber resilience"` (the concept's `label`).
+
+### S34.4 · V-THINK + V-TRY-ASK + V-SCRUB-WORKFLOW test contract
+
+Tests in `docs/v3.0/TESTS.md §T34` (NEW):
+
+- **V-THINK-1**: `services/chatService.js` `streamChat` API exposes `onToolUse` + `onRoundStart` callbacks. Source-grep + property test on a stub provider.
+- **V-THINK-2**: `ui/views/CanvasChatOverlay.js` defines `TOOL_STATUS_MESSAGES` map covering all CHAT_TOOLS entries (one human message per tool name).
+- **V-THINK-3**: Source-grep — overlay imports `TOOL_STATUS_MESSAGES` lookup + paints `.canvas-chat-tool-status` pill on `onToolUse` callback. Live DOM check: dispatch a synthetic `onToolUse` callback → assert `.canvas-chat-tool-status` element appears with the prescribed text.
+- **V-THINK-4**: Source-grep + live DOM — typing-dot indicator (`.canvas-chat-typing-indicator`) renders before first token; removed when first token arrives.
+- **V-THINK-5**: Multi-round badge (`.canvas-chat-round-badge`) painted on `onRoundStart` for round ≥ 2. Auto-fades 2s.
+- **V-TRY-ASK-1**: `services/tryAskingPrompts.js` exports `generateTryAskingPrompts(engagement)` returning EXACTLY 4 strings. Source-grep + property test.
+- **V-TRY-ASK-2**: With a populated demo engagement: 4 prompts returned, ≥ 1 includes a workflow-shaped how-to, ≥ 2 include cross-reference templates, ≥ 1 includes a multi-tool showoff. (Hash-based shape assertions, not content.)
+- **V-TRY-ASK-3**: With an empty engagement (no drivers / gaps / envs): falls back to the static `EXAMPLE_PROMPTS` (4 strings; same content as the pre-Arc-3 hardcoded list).
+- **V-TRY-ASK-4**: Determinism per session: calling `generateTryAskingPrompts(engagement, { seed })` twice with the same seed returns the same 4 prompts.
+- **V-SCRUB-WORKFLOW-1**: `services/uuidScrubber.js` exports `scrubUuidsInProse` that now ALSO scrubs `workflow.<id>` + `concept.<id>` patterns; replaces with manifest label or `[unknown workflow]` / `[unknown concept]` sentinel. Idempotent. Skips code blocks.
+- **V-SCRUB-WORKFLOW-2**: Source-grep — `services/systemPromptAssembler.js` role section contains the explicit NEVER-emit directive on `workflow.*` / `concept.*` identifiers.
+- **V-SCRUB-WORKFLOW-3**: Integration — drive a chat turn through `streamChat` with a stub provider whose response contains "refer to the workflow.identify_gaps" — assert the rendered bubble text replaces the ID with the workflow's title (e.g. "the **Identify gaps from current vs desired state** workflow").
+
+### S34.5 · Forbidden / out-of-scope
+
+- Animating bubble entrance / exit (deferred polish).
+- Tool-call progress percentages or detailed sub-step tracking (deferred; one status pill per tool dispatch is sufficient for v3.1).
+- Voice / audio cues (out of scope for v3.0).
+- AI-generated try-asking prompts that the LLM itself crafts (would create chicken-and-egg: empty state shouldn't depend on a network call). The prompts are deterministically templated against the engagement.
+- Localization of `TOOL_STATUS_MESSAGES` / try-asking templates. English-only for v3.0.
+
+### S34.6 · User review checklist
+
+The user review gate, per `feedback_group_b_spec_rewrite.md`:
+1. Confirm the **typing-dot indicator before first token** + the auto-removal semantics match expectation.
+2. Confirm the **per-tool status pill** approach (one pill per tool dispatch, fading on next pill or onComplete) — OR redirect (e.g. "show all rounds in a stack", "use a different visual treatment").
+3. Confirm the **subtle multi-round badge** (only for rounds ≥ 2, auto-fade 2s) approach.
+4. Confirm the **3-bucket dynamic try-asking** (1 how-to + 2 insight + 1 showoff = 4 prompts) — OR redirect (e.g. different bucket weights, more prompts, fewer prompts).
+5. Confirm the **fallback to static EXAMPLE_PROMPTS** when the engagement is empty.
+6. Confirm the **BUG-024 scrub layered with prompt-time directive** matches expectation.
+
+Once all 6 confirmed → V-THINK + V-TRY-ASK + V-SCRUB-WORKFLOW RED-first → impl in 3 sub-commits (3a thinking, 3b try-asking, 3c scrub) → live smoke → tag-prep.
+
+---
+
 ### Change log
 
 | Date | Section | Change |
@@ -3167,6 +3277,7 @@ Once all 6 confirmed → V-PILLS-1..4 + V-FOOTER-CRUMB-1 + V-CMD-K-CANVAS-1 RED-
 | 2026-05-03 | §S32 | NEW SPEC-only annex · Canvas AI Assistant window-theme contract — Arc 1 of the Group B UX consolidation arc per `feedback_group_b_spec_rewrite.md`. R32.1–R32.14 + token alignment with GPLC sample HTML reference + rename "Canvas Chat" → "Canvas AI Assistant" + V-THEME-1..8 test contract. Drafted 2026-05-03 post rc.3 tag; LOCKED 2026-05-03 on user approval; impl GREEN 2026-05-03 (1111/1111). |
 | 2026-05-03 | §S33 | NEW SPEC-only annex · Canvas AI Assistant header provider pills + footer breadcrumb + BUG-025 Cmd+K rebind — Arc 2 of Group B. R33.1–R33.10 + provider-pill row design (filled-active + outlined-inactive + green/amber dot) replacing the connection-status chip + footer breadcrumb showing latest-turn provenance + Cmd+K rebound from legacy AiAssistOverlay to Canvas AI Assistant + V-PILLS-1..4 + V-FOOTER-CRUMB-1 + V-CMD-K-CANVAS-1 test contract. Drafted 2026-05-03 post Arc 1 ship; LOCKED 2026-05-04 on user approval. |
 | 2026-05-04 | §S33 REVISION | Per user feedback post initial Arc 2 ship at `90c6ecb`: per-provider pill row didn't scale (5+ pills stacked side-by-side felt cluttered). Switched to single-pill-with-popover (industry-standard model-picker pattern). Footer Done button retired (X close in header is canonical). Empty-state breadcrumb renders nothing (was "Ready" placeholder). R33.5.B added (head-extras button family chrome consistency: Clear + Skills toggle aligned to GPLC ghost-button styling, was dark-theme leftover). R33.11–R33.13 added (Local B provider; existing "Local" relabeled "Local A"). V-PILLS-1..4 + V-FOOTER-CRUMB-1 flipped to match revised contract. |
+| 2026-05-04 | §S34 (DRAFT) | NEW SPEC-only annex · Canvas AI Assistant conversational affordances — Arc 3 of Group B. R34.1–R34.18 + thinking-state UX (typing-dot indicator before first token + per-tool status pill during tool-use rounds + multi-round badge + provenance slide-in after onComplete) + dynamic try-asking prompt generator (3-bucket mixer: how-to / insight / showoff; engagement-aware templates; refresh per-session) + BUG-024 fix (extend `services/uuidScrubber.js` to scrub `workflow.<id>` / `concept.<id>` identifiers + tighten role-section directive against emitting them) + V-THINK-1..N + V-TRY-ASK-1..N + V-SCRUB-WORKFLOW-1..N test contract. Authored 2026-05-04 post Arc 2 revision ship at `68b98c4` for user review BEFORE any code lands. |
 | 2026-05-03 | RELEASE v3.0.0-rc.3 | **TAGGED 2026-05-03.** Closes the rc.3 implementation arc + AI-correctness consolidation. Banner 1103/1103 GREEN ✅ (was 1048 at rc.2; +55 tests). Rolled in: Phase A1 generic LLM connector (BUG-018 closed) + Phase B concept dictionary + Phase C workflow manifest + Skill v3.1 schema + Skill Builder UI rebuild + chat right-rail saved-skill cards + UseAiButton retirement + topbar consolidation to one "AI Assist" button (Dell-blue + diamond-glint 8s breathe) + APP_VERSION discipline + PREFLIGHT.md + Group A AI-correctness fixes (BUG-019 engagement rehydrate, BUG-020 streaming-time handshake strip, BUG-013 Path B UUID scrub, BUG-023 manifest layerId, BUG-011 + BUG-018 closed). New SPEC annexes: §S26 + §S27 + §S28 + §S29 + §S30 + §S31. New RULES: §16 CH20–CH27. New tests: V-CHAT-18..38, V-CONCEPT-1..5, V-WORKFLOW-1..5, V-SKILL-V3-1..7, V-VERSION-1..2, V-FLOW-REHYDRATE-1..3, V-PATH-31/32, V-TOPBAR-1, V-LAB-VIA-CHAT-RAIL, V-AI-ASSIST-CMD-K, V-ANTI-USE-AI, V-NAME-2, V-DEMO-V2-1 + V-DEMO-8/9 + V-FLOW-CHAT-DEMO-1/2. Real-Gemini live-key smoke deferred to first user-driven workshop run (V-CHAT-32 mock-fetch round-trip covers the protocol).  |
 
 End of SPEC.
