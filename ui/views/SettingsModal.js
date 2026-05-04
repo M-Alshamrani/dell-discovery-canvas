@@ -292,10 +292,36 @@ function buildSettingsFooter(section) {
     if (saveBtn.disabled) return;
     saveBtn.classList.add("is-loading");
     saveBtn.disabled = true;
-    var bodies = document.querySelectorAll(".overlay-body");
+    // HOTFIX #1 (rc.4-dev-arc3-hotfix per user report 2026-05-04 LATE):
+    // Save was flaky because document.querySelectorAll(".overlay-body")
+    // returned BOTH the leaving body (mid-cross-fade, 90ms window in
+    // swapSection) AND the entering body. The old loop picked the
+    // FIRST `_settings`-tagged element in DOM order — sometimes the
+    // stale leaving body, leading to "save did nothing" or saved-to-
+    // wrong-provider behavior. Fix: scope the lookup to the Settings
+    // overlay panel directly + prefer the body that's NOT mid-leaving.
+    // Belt-and-suspenders: also re-read input values from the live DOM
+    // at click time (refs.*Input.value already does this; preserved).
+    var settingsPanel = document.querySelector(".overlay.open[data-kind='settings']");
     var refs = null;
-    for (var i = 0; i < bodies.length; i++) {
-      if (bodies[i]._settings) { refs = bodies[i]._settings; break; }
+    if (settingsPanel) {
+      var candidateBodies = settingsPanel.querySelectorAll(".overlay-body");
+      // Prefer the body that is NOT mid-leaving.
+      for (var i = 0; i < candidateBodies.length; i++) {
+        var b = candidateBodies[i];
+        if (b._settings && !b.classList.contains("settings-body-leaving")) {
+          refs = b._settings;
+          break;
+        }
+      }
+      // Fallback: any settings body with _settings (rare race where
+      // the entering body hasn't gotten _settings stashed yet — should
+      // not happen since stashing is synchronous in buildSettingsBody).
+      if (!refs) {
+        for (var j = 0; j < candidateBodies.length; j++) {
+          if (candidateBodies[j]._settings) { refs = candidateBodies[j]._settings; break; }
+        }
+      }
     }
     if (!refs || !refs.config || !refs.activeKey ||
         !refs.config.providers || !refs.config.providers[refs.activeKey]) {
@@ -310,6 +336,8 @@ function buildSettingsFooter(section) {
       return;
     }
     try {
+      // Read CURRENT input values from the live DOM (not from a stale
+      // closure-captured object) for robustness across swap timing.
       refs.config.providers[refs.activeKey].baseUrl        = refs.urlInput.value.trim();
       refs.config.providers[refs.activeKey].model          = refs.modelInput.value.trim();
       refs.config.providers[refs.activeKey].apiKey         = refs.keyInput.value;

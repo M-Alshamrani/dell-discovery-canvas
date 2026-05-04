@@ -635,18 +635,16 @@ function injectHeaderExtras() {
     'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
     '<path d="M2 4h12"/><path d="M5 4V2.5h6V4"/><path d="M3 4l1 10h8l1-10"/></svg>' +
     ' <span>Clear</span>';
-  clearBtn.addEventListener("click", async function() {
-    const ok = await confirmAction({
-      title: "Clear chat?",
-      lede:  "Permanently removes the saved transcript for this engagement. The canvas data is unaffected.",
-      confirmText: "Clear chat",
-      cancelText:  "Keep"
-    });
-    if (!ok) return;
-    if (state.engagementId) clearTranscript(state.engagementId);
-    state.transcript = { messages: [], summary: null };
-    const body = document.querySelector(".overlay[data-kind='canvas-chat'] .overlay-body");
-    if (body) paintTranscript(body);
+  // HOTFIX #1 (rc.4-dev-arc3-hotfix per user report 2026-05-04 LATE):
+  // Pre-fix the Clear button called confirmAction() which opens its own
+  // overlay — Overlay.js is a singleton, so the chat overlay closed
+  // when the confirm modal opened, and never came back. Inline the
+  // confirm UI directly in the head-extras slot so the chat overlay
+  // stays open throughout. Clear button morphs into "Clear chat? [Yes]
+  // [No]" pill cluster on click; resolves either way back to the Clear
+  // button. No overlay swap, no lost state.
+  clearBtn.addEventListener("click", function() {
+    confirmClearInline(slot, clearBtn);
   });
   slot.appendChild(clearBtn);
 
@@ -828,6 +826,39 @@ function isProviderReady(config, providerKey) {
   // Local A.
   if (providerKey !== "local" && providerKey !== "localB" && !p.apiKey) return false;
   return true;
+}
+
+// HOTFIX #1 (rc.4-dev-arc3-hotfix) - inline confirm for Clear-chat that
+// keeps the chat overlay open. Replaces the head-extras' Clear button
+// with a "Clear? [Yes] [No]" pill cluster while waiting for user
+// decision. Resolves either path back to the Clear button.
+function confirmClearInline(slot, clearBtn) {
+  if (!slot || !clearBtn) return;
+  // Hide the Clear button + paint a confirm strip in its place.
+  const placeholder = document.createElement("span");
+  placeholder.className = "canvas-chat-clear-confirm";
+  placeholder.innerHTML =
+    '<span class="canvas-chat-clear-confirm-q">Clear chat?</span>' +
+    '<button type="button" class="canvas-chat-clear-confirm-yes">Clear</button>' +
+    '<button type="button" class="canvas-chat-clear-confirm-no">Keep</button>';
+  slot.replaceChild(placeholder, clearBtn);
+  const yesBtn = placeholder.querySelector(".canvas-chat-clear-confirm-yes");
+  const noBtn  = placeholder.querySelector(".canvas-chat-clear-confirm-no");
+
+  function restore() {
+    if (placeholder.parentNode === slot) slot.replaceChild(clearBtn, placeholder);
+  }
+  yesBtn.addEventListener("click", function() {
+    if (state.engagementId) clearTranscript(state.engagementId);
+    state.transcript = { messages: [], summary: null };
+    const body = document.querySelector(".overlay[data-kind='canvas-chat'] .overlay-body");
+    if (body) paintTranscript(body);
+    // Reset the per-session try-asking seed so the empty-state re-rolls
+    // a fresh set of prompts (the chat is now empty again).
+    state._tryAskingSeed = (Date.now() & 0x7FFFFFFF) || 1;
+    restore();
+  });
+  noBtn.addEventListener("click", restore);
 }
 
 // SPEC §S20.16 — render the contract-ack outcome.

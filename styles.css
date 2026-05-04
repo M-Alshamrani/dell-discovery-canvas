@@ -6184,6 +6184,49 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
   border-color: var(--red);
 }
 
+/* HOTFIX #1 (rc.4-dev-arc3-hotfix) - inline confirm pill cluster that
+   replaces the Clear button when clicked, so the chat overlay never
+   closes during the confirm step (Overlay.js singleton bug). */
+.canvas-chat-clear-confirm {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 10px;
+  background: var(--red-soft);
+  border: 1px solid var(--red);
+  border-radius: var(--radius-sm);
+  margin-left: 6px;
+  font: 500 11.5px/1 "Inter", var(--font-sans, system-ui, sans-serif);
+}
+.canvas-chat-clear-confirm-q {
+  color: var(--red);
+  letter-spacing: 0.005em;
+}
+.canvas-chat-clear-confirm-yes,
+.canvas-chat-clear-confirm-no {
+  height: 22px; padding: 0 8px;
+  border-radius: var(--radius-sm);
+  font: 500 11px/1 "Inter", var(--font-sans, system-ui, sans-serif);
+  cursor: pointer;
+  transition: background 100ms ease, color 100ms ease, border-color 100ms ease;
+}
+.canvas-chat-clear-confirm-yes {
+  background: var(--red);
+  color: #FFFFFF;
+  border: 1px solid var(--red);
+}
+.canvas-chat-clear-confirm-yes:hover {
+  background: #A30B25;
+  border-color: #A30B25;
+}
+.canvas-chat-clear-confirm-no {
+  background: var(--canvas);
+  color: var(--ink-soft);
+  border: 1px solid var(--rule-strong);
+}
+.canvas-chat-clear-confirm-no:hover {
+  border-color: var(--ink-soft);
+  color: var(--ink);
+}
+
 /* Contract-ack chip (SPEC §S20.16) - sits in the head-extras slot, painted on
    first-turn handshake completion. Green = sha matched, amber = mismatch. */
 .canvas-chat-ack {
