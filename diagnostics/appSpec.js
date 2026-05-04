@@ -14776,6 +14776,169 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-PROVIDER-HINTS-1: PROVIDERS registry size = 5 (Local A + Local B + Anthropic + Gemini + Dell Sales Chat)");
     });
 
+    // -----------------------------------------------------------------
+    // §T35-HOTFIX2B · V-PROVIDER · multi-turn local-LLM OpenAI canonical
+    // hardening per user report ("first response accurate, consecutive
+    // prompts return rubbish" with Qwen3+hermes via the local provider).
+    // 4 defensive improvements in services/aiService.js buildRequest
+    // for openai-compatible providers; tested here at the wire-shape level.
+    // -----------------------------------------------------------------
+
+    it("V-PROVIDER-OPENAI-1 · multiple role:'system' messages consolidate into a SINGLE system message in the OpenAI canonical body (HOTFIX #2b defensive #1)", async () => {
+      const { buildRequest } = await import("../services/aiService.js");
+      const req = buildRequest("openai-compatible", {
+        baseUrl:  "http://localhost:8000/v1",
+        model:    "code-llm",
+        apiKey:   "none",
+        messages: [
+          { role: "system", content: "Role: presales analyst." },
+          { role: "system", content: "Data contract: schemaVersion 3.0..." },
+          { role: "system", content: "Concept dictionary: 62 entries..." },
+          { role: "system", content: "Workflow manifest: 16 procedures..." },
+          { role: "system", content: "Engagement snapshot: Acme Healthcare." },
+          { role: "user",   content: "How many gaps are open?" }
+        ]
+      });
+      const sys = req.body.messages.filter(m => m.role === "system");
+      assertEqual(sys.length, 1,
+        "V-PROVIDER-OPENAI-1: must consolidate 5 system messages into 1 (got " + sys.length + ")");
+      // The consolidated content must contain markers from every input.
+      const merged = sys[0].content;
+      ["Role:", "Data contract", "Concept dictionary", "Workflow manifest", "Engagement"].forEach(token => {
+        assert(merged.indexOf(token) >= 0,
+          "V-PROVIDER-OPENAI-1: merged system content must contain '" + token + "'");
+      });
+      // Separator between merged blocks.
+      assert(merged.indexOf("---") >= 0,
+        "V-PROVIDER-OPENAI-1: merged system content uses '---' separator between original blocks");
+    });
+
+    it("V-PROVIDER-OPENAI-2 · assistant message with only tool_calls + no text emits content=\"\" (NOT null) (HOTFIX #2b defensive #2)", async () => {
+      const { buildRequest } = await import("../services/aiService.js");
+      const req = buildRequest("openai-compatible", {
+        baseUrl: "http://localhost:8000/v1", model: "code-llm", apiKey: "none",
+        messages: [
+          { role: "user", content: "How many gaps?" },
+          { role: "assistant", content: [
+            { type: "tool_use", id: "call_X", name: "selectGapsKanban", input: {} }
+          ]},
+          { role: "user", content: [
+            { type: "tool_result", tool_use_id: "call_X", content: "{\"counts\":{\"open\":3}}" }
+          ]}
+        ]
+      });
+      const asst = req.body.messages.find(m => m.role === "assistant");
+      assert(asst, "V-PROVIDER-OPENAI-2: assistant message present");
+      assertEqual(typeof asst.content, "string",
+        "V-PROVIDER-OPENAI-2: assistant content MUST be a string (not null) when only tool_calls present");
+      assertEqual(asst.content, "",
+        "V-PROVIDER-OPENAI-2: assistant content MUST be empty string when only tool_calls present");
+      assert(Array.isArray(asst.tool_calls) && asst.tool_calls.length === 1,
+        "V-PROVIDER-OPENAI-2: tool_calls preserved");
+    });
+
+    it("V-PROVIDER-OPENAI-3 · role:'tool' content is ALWAYS a string (handles object/null/string content uniformly) (HOTFIX #2b defensive #3)", async () => {
+      const { buildRequest } = await import("../services/aiService.js");
+      // Three tool_result blocks with different content types — all must
+      // emerge as role:'tool' messages with STRING content.
+      const req = buildRequest("openai-compatible", {
+        baseUrl: "http://localhost:8000/v1", model: "code-llm", apiKey: "none",
+        messages: [
+          { role: "user", content: "Multi-tool query" },
+          { role: "assistant", content: [
+            { type: "tool_use", id: "call_A", name: "selectGapsKanban", input: {} },
+            { type: "tool_use", id: "call_B", name: "selectMatrixView", input: {} },
+            { type: "tool_use", id: "call_C", name: "selectVendorMix",  input: {} }
+          ]},
+          { role: "user", content: [
+            { type: "tool_result", tool_use_id: "call_A", content: { counts: { open: 3 } } }, // object
+            { type: "tool_result", tool_use_id: "call_B", content: null },                     // null
+            { type: "tool_result", tool_use_id: "call_C", content: "{\"raw\":\"string\"}" }    // string
+          ]}
+        ]
+      });
+      const toolMsgs = req.body.messages.filter(m => m.role === "tool");
+      assertEqual(toolMsgs.length, 3, "V-PROVIDER-OPENAI-3: 3 role:'tool' messages emitted");
+      toolMsgs.forEach((m, i) => {
+        assertEqual(typeof m.content, "string",
+          "V-PROVIDER-OPENAI-3: role:'tool' message #" + i + " content MUST be string (got " + typeof m.content + ")");
+      });
+      // Object content stringified to JSON.
+      const aMsg = toolMsgs.find(m => m.tool_call_id === "call_A");
+      assert(aMsg && /counts/.test(aMsg.content),
+        "V-PROVIDER-OPENAI-3: object content stringified to JSON (must contain 'counts')");
+      // Null content → empty string.
+      const bMsg = toolMsgs.find(m => m.tool_call_id === "call_B");
+      assertEqual(bMsg.content, "",
+        "V-PROVIDER-OPENAI-3: null tool_result content → empty string");
+      // String content passes through.
+      const cMsg = toolMsgs.find(m => m.tool_call_id === "call_C");
+      assertEqual(cMsg.content, "{\"raw\":\"string\"}",
+        "V-PROVIDER-OPENAI-3: string tool_result content passes through unchanged");
+    });
+
+    it("V-PROVIDER-OPENAI-4 · max_tokens raised from 1024 to 4096 for prose-completion headroom (HOTFIX #2b defensive #4)", async () => {
+      const { buildRequest } = await import("../services/aiService.js");
+      const req = buildRequest("openai-compatible", {
+        baseUrl: "http://localhost:8000/v1", model: "code-llm", apiKey: "none",
+        messages: [{ role: "user", content: "hi" }]
+      });
+      assertEqual(req.body.max_tokens, 4096,
+        "V-PROVIDER-OPENAI-4: max_tokens MUST be 4096 (was 1024 pre-hotfix2b)");
+    });
+
+    it("V-PROVIDER-OPENAI-5 · multi-round full integration: round-1 (text + tool_use) + round-2 (tool_result + final answer) translates to canonical OpenAI shape Qwen3+hermes accepts", async () => {
+      const { buildRequest } = await import("../services/aiService.js");
+      // Simulate the EXACT message accumulation chatService produces for
+      // round 2: prior system + user, then assistant with text+tool_use,
+      // then user with tool_result.
+      const req = buildRequest("openai-compatible", {
+        baseUrl: "http://localhost:8000/v1", model: "code-llm", apiKey: "none",
+        messages: [
+          { role: "system", content: "Role: ..." },
+          { role: "system", content: "Data contract: ..." },
+          { role: "user",   content: "How many High-urgency gaps are open?" },
+          { role: "assistant", content: [
+            { type: "text", text: "Let me check the gaps board." },
+            { type: "tool_use", id: "call_gaps", name: "selectGapsKanban", input: {} }
+          ]},
+          { role: "user", content: [
+            { type: "tool_result", tool_use_id: "call_gaps", content: "{\"counts\":{\"high\":3}}" }
+          ]}
+        ],
+        tools: [
+          { name: "selectGapsKanban", description: "Reads the gaps board.", input_schema: { type: "object", properties: {} } }
+        ]
+      });
+      const m = req.body.messages;
+      // Expected shape:
+      //   1 consolidated system message
+      //   1 user message (string)
+      //   1 assistant message (string content + tool_calls)
+      //   1 tool message (role:'tool', tool_call_id correlated)
+      assertEqual(m.length, 4,
+        "V-PROVIDER-OPENAI-5: round-2 produces exactly 4 OpenAI messages (got " + m.length + ")");
+      assertEqual(m[0].role, "system", "msg[0] is system");
+      assertEqual(m[1].role, "user",   "msg[1] is user");
+      assertEqual(m[2].role, "assistant", "msg[2] is assistant");
+      assertEqual(m[3].role, "tool",   "msg[3] is tool");
+      // assistant carries text content + tool_calls correlation.
+      assertEqual(m[2].content, "Let me check the gaps board.",
+        "msg[2].content carries the round-1 text");
+      assert(Array.isArray(m[2].tool_calls) && m[2].tool_calls.length === 1,
+        "msg[2].tool_calls populated");
+      assertEqual(m[2].tool_calls[0].id, "call_gaps",
+        "msg[2].tool_calls[0].id correlates with msg[3].tool_call_id");
+      assertEqual(m[3].tool_call_id, "call_gaps",
+        "msg[3].tool_call_id correlates with msg[2].tool_calls[0].id");
+      // tools shape: OpenAI canonical { type:"function", function:{...} }
+      assert(Array.isArray(req.body.tools), "tools array present");
+      assertEqual(req.body.tools[0].type, "function",
+        "tools[0].type = 'function' (OpenAI canonical)");
+      assertEqual(req.body.tools[0].function.name, "selectGapsKanban",
+        "tools[0].function.name preserved");
+    });
+
     it("V-SETTINGS-SAVE-1 · Settings Save scopes lookup to settings overlay panel + skips bodies mid-fade (HOTFIX #1)", async () => {
       const settingsSrc = await (await fetch("/ui/views/SettingsModal.js")).text();
       // Anti-pattern: prior code did document.querySelectorAll(".overlay-body")

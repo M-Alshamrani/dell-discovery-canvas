@@ -178,7 +178,19 @@ export function buildRequest(providerKind, opts) {
     //   - tool_use block     → message.tool_calls[]
     //   - tool_result block  → SEPARATE role:"tool" message correlated by
     //                          tool_use_id (which maps to OpenAI tool_call_id)
-    var oaiMessages = [];
+    //
+    // rc.4-dev hotfix2b (2026-05-04) - 4 defensive improvements per user
+    // report ("local LLM first response accurate, consecutive prompts
+    // return rubbish") + LLMs on GB10.docx (Qwen3-Coder + hermes parser):
+    //   1. Consolidate adjacent role:"system" messages into ONE so Qwen3
+    //      sees a single system prefix (some OpenAI-compat parsers
+    //      have undefined behavior with multiple system messages).
+    //   2. Empty assistant content emits as "" not null — some parsers
+    //      reject `content: null` in conversation history.
+    //   3. role:"tool" content is ALWAYS a string (never object/null).
+    //   4. max_tokens raised to 4096 for prose-completion headroom on
+    //      multi-round answers (was 1024).
+    var oaiMessagesRaw = [];
     messages.forEach(function(m) {
       if (Array.isArray(m.content)) {
         if (m.role === "assistant") {
@@ -198,21 +210,30 @@ export function buildRequest(providerKind, opts) {
               });
             }
           });
-          var asst = { role: "assistant", content: textPieces.length > 0 ? textPieces.join("\n") : null };
+          // Defensive #2: empty content as "" not null (some OpenAI-compat
+          // parsers reject null in conversation history).
+          var asst = { role: "assistant", content: textPieces.length > 0 ? textPieces.join("\n") : "" };
           if (toolCalls.length > 0) asst.tool_calls = toolCalls;
-          oaiMessages.push(asst);
+          oaiMessagesRaw.push(asst);
         } else if (m.role === "user") {
           // user message with array content carries tool_result blocks.
           // Each tool_result becomes a SEPARATE role:"tool" message.
           m.content.forEach(function(b) {
             if (b.type === "tool_result") {
-              oaiMessages.push({
+              // Defensive #3: content MUST be string. Stringify if object;
+              // empty-string fallback if null/undefined (Qwen3+hermes
+              // observed to misbehave with non-string content fields).
+              var resultContent;
+              if (typeof b.content === "string") resultContent = b.content;
+              else if (b.content == null)        resultContent = "";
+              else                                resultContent = JSON.stringify(b.content);
+              oaiMessagesRaw.push({
                 role:         "tool",
                 tool_call_id: b.tool_use_id || "",
-                content:      typeof b.content === "string" ? b.content : JSON.stringify(b.content)
+                content:      resultContent
               });
             } else if (b.type === "text" && typeof b.text === "string") {
-              oaiMessages.push({ role: "user", content: b.text });
+              oaiMessagesRaw.push({ role: "user", content: b.text });
             }
           });
         } else {
@@ -221,16 +242,42 @@ export function buildRequest(providerKind, opts) {
           m.content.forEach(function(b) {
             if (b.type === "text" && typeof b.text === "string") texts.push(b.text);
           });
-          oaiMessages.push({ role: m.role, content: texts.join("\n") });
+          oaiMessagesRaw.push({ role: m.role, content: texts.join("\n") });
         }
       } else {
-        oaiMessages.push({ role: m.role, content: m.content });
+        oaiMessagesRaw.push({ role: m.role, content: m.content });
       }
     });
+    // Defensive #1: consolidate adjacent role:"system" messages into ONE.
+    // The system-prompt assembler emits 5 separate system messages (role,
+    // contract, concept-dict, workflow-manifest, engagement). Anthropic
+    // + Gemini handle multiple system messages cleanly (each provider's
+    // own translator joins or preserves them); OpenAI canonical is more
+    // ambiguous - some parsers (Qwen3+hermes observed) only honor the
+    // FIRST system message, dropping the data contract + manifests on
+    // subsequent rounds. Consolidating to ONE merged system message
+    // ensures every round has the full grounding context.
+    var oaiMessages = [];
+    var i = 0;
+    while (i < oaiMessagesRaw.length) {
+      if (oaiMessagesRaw[i].role === "system") {
+        var combined = [];
+        while (i < oaiMessagesRaw.length && oaiMessagesRaw[i].role === "system") {
+          combined.push(oaiMessagesRaw[i].content || "");
+          i++;
+        }
+        oaiMessages.push({ role: "system", content: combined.join("\n\n---\n\n") });
+      } else {
+        oaiMessages.push(oaiMessagesRaw[i]);
+        i++;
+      }
+    }
     var oaiBody = {
       model: model,
       messages: oaiMessages,
-      max_tokens: 1024,
+      // Defensive #4: 4096-token headroom for multi-round prose answers.
+      // 1024 was OpenAI's old default; modern models routinely emit longer.
+      max_tokens: 4096,
       temperature: 0.3
     };
     // SPEC §S26.2 — OpenAI canonical tools shape:
