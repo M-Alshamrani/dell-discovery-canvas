@@ -3259,6 +3259,78 @@ Once all 6 confirmed → V-THINK + V-TRY-ASK + V-SCRUB-WORKFLOW RED-first → im
 
 ---
 
+## §S35 · Skill Builder consolidation under Settings + chip palette + v3 seed purge — Arc 4 of Group B (DRAFT pending user approval)
+
+**Status**: DRAFT 2026-05-04 (post Arc 3 ship at `89f8b55`). Authored under the `feedback_group_b_spec_rewrite.md` discipline — SPEC FIRST, then V-* tests RED, then code. **Final arc of Group B**; once GREEN the user can tag `v3.0.0-rc.4`.
+
+**Authority**: `docs/RULES.md §16` (CH31 to be added) · `project_skillbuilder_ux_concern.md` memory · `project_v2x_admin_deferred.md` memory (preserved — v2.x admin retirement is OUT of scope for this arc) · user direction 2026-05-03: "lets get the best of both of them and rebuild the skills builder in the gear window" + "burge them all" (re v3 seed skills).
+
+Pre-Arc-4 state:
+- The v3.1 Skill Builder lives behind the Canvas AI Assistant right-rail's "+ Author new skill" button. Click → opens a standalone fullscreen overlay (`#skillBuilderOverlay`) via `ui/skillBuilderOpener.js` → renders `ui/views/SkillBuilder.js` into it. Two homes for AI configuration ("AI Providers" under gear vs Skill Builder behind chat) confused users.
+- `ui/views/SkillBuilder.js` exposes a "Start from a curated seed skill" picker driven by `core/v3SeedSkills.js` (3 seeds: dell-mapping / executive-summary / care-builder). User flagged the seeds as starter content they don't want.
+- The v3.1 Skill Builder has parameters[] + outputTarget but NO chip palette — authoring requires typing `{{customer.name}}` from memory.
+
+### S35.1 · Skill Builder home moves to Settings → Skills (v3) tab
+
+- **R35.1** (🔴 HARD) — `ui/views/SettingsModal.js` `injectSectionPills` adds a THIRD pill "Skills (v3)" alongside the existing "AI Providers" and "Skills builder" pills. Internal section value `"skills-v3"`.
+- **R35.2** (🔴 HARD) — `buildSettingsBody("skills-v3")` calls `renderSkillBuilder(body)` from `ui/views/SkillBuilder.js`. Same renderer the standalone overlay used; just hosted in the gear modal instead.
+- **R35.3** (🔴 HARD) — The legacy v2 "Skills builder" pill stays untouched per `project_v2x_admin_deferred.md`. The two pills coexist; v2 retirement decision belongs to a later arc when v3 demonstrably covers every v2 admin flow.
+- **R35.4** (🔴 HARD) — `openSkillBuilderOverlay()` in `ui/skillBuilderOpener.js` MUST stop creating its own `#skillBuilderOverlay` div. Replace with `openSettingsModal({ section: "skills-v3" })`. The standalone overlay code path retires; `ui/skillBuilderOpener.js` becomes a thin shim that opens the right Settings tab.
+- **R35.5** (🔵 AUTO) — The chat right-rail's "+ Author new skill" button continues to call `openSkillBuilderOverlay` from the existing import; no overlay-side changes needed (the shim takes the user to the right place).
+
+### S35.2 · Chip palette in the v3.1 Skill Builder
+
+Pre-Arc-4 the v3.1 SkillBuilder shows a free-text prompt template + parameters editor. Users have to type bindable paths like `{{customer.name}}` from memory. The v2.4 admin had a chip palette (visual list of bindable fields, click to insert) that helped discoverability. Bring that pattern over.
+
+- **R35.6** (🔴 HARD) — `ui/views/SkillBuilder.js` adds a `.skill-builder-chips` section between the prompt-template editor and the parameters editor. Section heading: "Bindable paths". Sub-headings: "Engagement-wide" + one per entity kind (`driver`, `currentInstance`, `desiredInstance`, `gap`, `environment`, `project`).
+- **R35.7** (🔴 HARD) — Chips populate from `services/manifestGenerator.generateManifest()`. For each path entry, render a clickable chip showing the path text (e.g. `customer.name`, `context.gap.urgency`). Click → inserts `{{<path>}}` into the prompt textarea at the current cursor position; if the textarea isn't focused, append to end + scroll to it.
+- **R35.8** (🔵 AUTO) — Chip styling: GPLC chip rhythm (matches the app's existing `.use-ai-chip` pattern). Compact: ~24px tall, `var(--canvas-soft)` bg, `var(--rule)` border, `var(--ink-soft)` text, mono 11px. Hover lifts to `var(--dell-blue)` border + text. Sections collapse into a horizontal flex-wrap that grows vertically — no fixed height; ~50 chips total.
+
+### S35.3 · v3 seed-skill purge
+
+User direction 2026-05-03: "lets burge all of them as i dont like them anyway, unless it will break the app... if safe lets always prioritze strognly on fix and hygeine".
+
+- **R35.9** (🔴 HARD) — `core/v3SeedSkills.js` is DELETED. The 3 v3 seed exports (`SEED_SKILL_DELL_MAPPING`, `SEED_SKILL_EXECUTIVE_SUMMARY`, `SEED_SKILL_CARE_BUILDER`) are dropped.
+- **R35.10** (🔴 HARD) — `ui/views/SkillBuilder.js` drops the "Start from a curated seed skill" picker section entirely (the `<select id="seed-picker">` + its change handler + the `SEED_SKILLS` const). Skill Builder users author from scratch; saved skills (loaded via `loadV3Skills`) remain selectable from the existing "Your saved skills" picker.
+- **R35.10.B** (🔴 HARD) — Tests that referenced the v3 seed exports get inline fixtures. Specifically:
+  - V-PROD-10 (care-builder round-trip) — replace seed import with an inline care-builder-shaped fixture
+  - Any V-DEMO-* / V-FLOW-* test using a v3 seed identifier — convert to inline
+- **R35.11** (🔵 AUTO) — v2 seed skills (`core/seedSkills.js`) are NOT touched. They live in the v2 admin scope and retire alongside the v2 admin in a future arc per `project_v2x_admin_deferred.md`.
+
+### S35.4 · V-* test contract
+
+Tests in `docs/v3.0/TESTS.md §T35` (NEW):
+
+- **V-SKILL-V3-8**: `ui/views/SettingsModal.js` `injectSectionPills` declares 3 pills including `{ val: "skills-v3", label: "Skills (v3)" }`. Source-grep + live DOM check (open Settings → all 3 pills visible).
+- **V-SKILL-V3-9**: `buildSettingsBody("skills-v3")` calls `renderSkillBuilder(body)`. Source-grep + live DOM check (clicking the Skills (v3) pill renders the v3.1 Skill Builder content — `.skill-builder-title` "Skill Builder" present in the section).
+- **V-SKILL-V3-10**: `openSkillBuilderOverlay()` in `ui/skillBuilderOpener.js` MUST call `openSettingsModal({ section: "skills-v3" })`. Source-grep — the function must NOT contain `document.createElement("div")` for `#skillBuilderOverlay`. Live DOM: calling the opener opens Settings, not a separate overlay.
+- **V-SKILL-V3-11**: v3.1 Skill Builder shows a `.skill-builder-chips` section with sub-sections per entity kind. Live DOM after `renderSkillBuilder(container)`.
+- **V-SKILL-V3-12**: Click on a chip inserts `{{<path>}}` into the prompt textarea. Programmatic event simulation.
+- **V-ANTI-V3-SEED-1**: `core/v3SeedSkills.js` MUST 404 from the served container (file deleted). `await fetch("/core/v3SeedSkills.js")` returns status 404.
+- **V-ANTI-V3-SEED-2**: No production .js file imports `core/v3SeedSkills.js`. Source-grep across the production paths (similar to V-ANTI-USE-AI from rc.3 #6).
+- **V-ANTI-V3-SEED-3**: `ui/views/SkillBuilder.js` source MUST NOT contain `seed-picker` / `SEED_SKILLS` references. Anti-pattern guard.
+
+### S35.5 · Forbidden / out-of-scope
+
+- Touching `core/seedSkills.js` (v2 seeds). Per R35.11.
+- Touching `ui/views/SkillAdmin.js` (v2 admin renderer). The v2 "Skills builder" pill stays as-is.
+- Renaming the v2 pill ("Skills builder") to free up the canonical "Skills" name. Both pills coexist by intent.
+- Restyling the v3.1 SkillBuilder beyond R35.6-R35.8 (the chip palette). Other UX concerns the user raised about the v3.1 Skill Builder (per `project_skillbuilder_ux_concern.md`) belong to a later arc; Arc 4 is the consolidation + purge + chip palette only.
+- Live-preview pane (resolved-prompt rendering against active engagement). Already exists via the "Run skill (mock LLM)" button; no new preview affordance in this arc.
+
+### S35.6 · User review checklist
+
+The user review gate, per `feedback_group_b_spec_rewrite.md`:
+1. Confirm the **third pill "Skills (v3)" alongside v2's "Skills builder"** matches expectation. OR redirect (e.g. "rename v2 to 'Skills (legacy)' and v3 to 'Skills'", "merge into one pill with a sub-tab", etc.).
+2. Confirm the **standalone overlay retirement** + chat-rail button routes to gear → Skills (v3).
+3. Confirm the **chip palette grouped by entity kind** (engagement-wide + driver + gap + environment + instance + project) — OR redirect (e.g. flat list, search box).
+4. Confirm the **v3 seed-skill purge** scope (delete file + drop picker; v2 seeds stay) — explicitly approved 2026-05-03 ("burge them all... unless it will break the app").
+5. Confirm the **out-of-scope items** are right (skip live-preview, skip v2 admin touches, skip v3.1 SkillBuilder restyle).
+
+Once all 5 confirmed → V-SKILL-V3-8..12 + V-ANTI-V3-SEED-1..3 RED-first → impl in 2 sub-commits (4a Settings tab + chip palette · 4b v3 seed purge) → live smoke → tag-prep.
+
+---
+
 ### Change log
 
 | Date | Section | Change |
@@ -3277,7 +3349,8 @@ Once all 6 confirmed → V-THINK + V-TRY-ASK + V-SCRUB-WORKFLOW RED-first → im
 | 2026-05-03 | §S32 | NEW SPEC-only annex · Canvas AI Assistant window-theme contract — Arc 1 of the Group B UX consolidation arc per `feedback_group_b_spec_rewrite.md`. R32.1–R32.14 + token alignment with GPLC sample HTML reference + rename "Canvas Chat" → "Canvas AI Assistant" + V-THEME-1..8 test contract. Drafted 2026-05-03 post rc.3 tag; LOCKED 2026-05-03 on user approval; impl GREEN 2026-05-03 (1111/1111). |
 | 2026-05-03 | §S33 | NEW SPEC-only annex · Canvas AI Assistant header provider pills + footer breadcrumb + BUG-025 Cmd+K rebind — Arc 2 of Group B. R33.1–R33.10 + provider-pill row design (filled-active + outlined-inactive + green/amber dot) replacing the connection-status chip + footer breadcrumb showing latest-turn provenance + Cmd+K rebound from legacy AiAssistOverlay to Canvas AI Assistant + V-PILLS-1..4 + V-FOOTER-CRUMB-1 + V-CMD-K-CANVAS-1 test contract. Drafted 2026-05-03 post Arc 1 ship; LOCKED 2026-05-04 on user approval. |
 | 2026-05-04 | §S33 REVISION | Per user feedback post initial Arc 2 ship at `90c6ecb`: per-provider pill row didn't scale (5+ pills stacked side-by-side felt cluttered). Switched to single-pill-with-popover (industry-standard model-picker pattern). Footer Done button retired (X close in header is canonical). Empty-state breadcrumb renders nothing (was "Ready" placeholder). R33.5.B added (head-extras button family chrome consistency: Clear + Skills toggle aligned to GPLC ghost-button styling, was dark-theme leftover). R33.11–R33.13 added (Local B provider; existing "Local" relabeled "Local A"). V-PILLS-1..4 + V-FOOTER-CRUMB-1 flipped to match revised contract. |
-| 2026-05-04 | §S34 | NEW SPEC-only annex · Canvas AI Assistant conversational affordances — Arc 3 of Group B. R34.1–R34.16 + thinking-state UX (typing-dot indicator before first token + per-tool status pill during tool-use rounds + multi-round badge + provenance slide-in after onComplete) + dynamic try-asking prompt generator (3-bucket mixer: how-to / insight / showoff; engagement-aware templates; refresh per-session) + BUG-024 fix (extend `services/uuidScrubber.js` to scrub `workflow.<id>` / `concept.<id>` identifiers + tighten role-section directive against emitting them) + V-THINK-1..5 + V-TRY-ASK-1..4 + V-SCRUB-WORKFLOW-1..3 test contract. Drafted 2026-05-04 post Arc 2 revision ship at `68b98c4`; LOCKED 2026-05-04 on user approval. |
+| 2026-05-04 | §S34 | NEW SPEC-only annex · Canvas AI Assistant conversational affordances — Arc 3 of Group B. R34.1–R34.16 + thinking-state UX (typing-dot indicator before first token + per-tool status pill during tool-use rounds + multi-round badge + provenance slide-in after onComplete) + dynamic try-asking prompt generator (3-bucket mixer: how-to / insight / showoff; engagement-aware templates; refresh per-session) + BUG-024 fix (extend `services/uuidScrubber.js` to scrub `workflow.<id>` / `concept.<id>` identifiers + tighten role-section directive against emitting them) + V-THINK-1..5 + V-TRY-ASK-1..4 + V-SCRUB-WORKFLOW-1..3 test contract. Drafted 2026-05-04 post Arc 2 revision ship at `68b98c4`; LOCKED 2026-05-04 on user approval. Implementation shipped in 3 sub-commits (3a `74c7a79` thinking · 3b `dda354d` try-asking · 3c `89f8b55` BUG-024 scrub). Banner 1117/1117 → 1129/1129. |
+| 2026-05-04 | §S35 (DRAFT) | NEW SPEC-only annex · Skill Builder consolidation under Settings + chip palette + v3 seed-skill purge — Arc 4 of Group B (final arc). R35.1–R35.10 + Skills (v3) section pill added to Settings modal + standalone Skill Builder overlay retired (chat right-rail "+ Author new skill" routes to Settings → Skills v3) + chip palette inside the v3.1 Skill Builder (groups bindable paths from `services/manifestGenerator.js` by entity kind; click inserts `{{path}}` at cursor) + `core/v3SeedSkills.js` deleted (no v3 seed file imports remain in production .js) + V-SKILL-V3-8..N + V-ANTI-V3-SEED test contract. Authored 2026-05-04 post Arc 3 ship at `89f8b55` for user review BEFORE any code lands. |
 | 2026-05-03 | RELEASE v3.0.0-rc.3 | **TAGGED 2026-05-03.** Closes the rc.3 implementation arc + AI-correctness consolidation. Banner 1103/1103 GREEN ✅ (was 1048 at rc.2; +55 tests). Rolled in: Phase A1 generic LLM connector (BUG-018 closed) + Phase B concept dictionary + Phase C workflow manifest + Skill v3.1 schema + Skill Builder UI rebuild + chat right-rail saved-skill cards + UseAiButton retirement + topbar consolidation to one "AI Assist" button (Dell-blue + diamond-glint 8s breathe) + APP_VERSION discipline + PREFLIGHT.md + Group A AI-correctness fixes (BUG-019 engagement rehydrate, BUG-020 streaming-time handshake strip, BUG-013 Path B UUID scrub, BUG-023 manifest layerId, BUG-011 + BUG-018 closed). New SPEC annexes: §S26 + §S27 + §S28 + §S29 + §S30 + §S31. New RULES: §16 CH20–CH27. New tests: V-CHAT-18..38, V-CONCEPT-1..5, V-WORKFLOW-1..5, V-SKILL-V3-1..7, V-VERSION-1..2, V-FLOW-REHYDRATE-1..3, V-PATH-31/32, V-TOPBAR-1, V-LAB-VIA-CHAT-RAIL, V-AI-ASSIST-CMD-K, V-ANTI-USE-AI, V-NAME-2, V-DEMO-V2-1 + V-DEMO-8/9 + V-FLOW-CHAT-DEMO-1/2. Real-Gemini live-key smoke deferred to first user-driven workshop run (V-CHAT-32 mock-fetch round-trip covers the protocol).  |
 
 End of SPEC.
