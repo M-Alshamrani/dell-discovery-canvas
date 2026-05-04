@@ -675,9 +675,9 @@ The save-time path resolver returns ✓ valid because `gap.layerId` is a real sc
 ## Format reference for new entries
 
 ```
-## BUG-024 · Chat assistant leaks raw workflow / concept IDs into user-facing prose (e.g. "you can refer to the workflow.identify_gaps")
+## BUG-024 · Chat assistant leaks raw workflow / concept IDs into user-facing prose (CLOSED — Arc 3c shipped 2026-05-04)
 
-**Status**: OPEN · Reported 2026-05-03 (post rc.3 tag) · v3.0.0-rc.3 · Scheduled rc.5 (UX consolidation arc · Group B SPEC rewrite first)
+**Status**: **CLOSED 2026-05-04** · Architectural fix shipped at commit `89f8b55` (rc.4-dev / Group B Arc 3c per SPEC §S34.3 + RULES §16 CH30). Same defense-in-depth pattern as BUG-013 UUID scrub: prompt-time directive (role section explicit NEVER-emit on `workflow.<id>` / `concept.<id>` identifiers) + runtime scrub via `services/uuidScrubber.js` extension (`buildManifestLabelMap()` helper + dotted-token regex; replaces with the manifest's user-facing label wrapped in markdown bold, OR `[unknown workflow]` / `[unknown concept]` sentinels for orphans). Streaming-time scrub in CanvasChatOverlay onToken + final scrub in chatService onComplete. Skips fenced + inline code. **Regression guards**: V-SCRUB-WORKFLOW-1..3 (lookup map shape, role-section directive, integration on the actual user-reported leak text "For a full step-by-step procedure, you can refer to the workflow.identify_gaps"). Banner 1129/1129 GREEN at commit time.
 **Reporter**: User (workshop validation)
 **Severity**: Low (cosmetic; not data-correctness — same class as the BUG-013 UUID leakage)
 **Regression**: No (pre-existing surface from Phase B + Phase C concept/workflow grounding)
