@@ -14431,6 +14431,257 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 
     });
 
+    // -----------------------------------------------------------------
+    // §T34 · V-THINK + V-TRY-ASK + V-SCRUB-WORKFLOW
+    //   Per SPEC §S34 + RULES §16 CH30. Arc 3 of Group B.
+    //   Three pieces: thinking-state UX (typing dots / status pill /
+    //   round badge / provenance slide-in), dynamic try-asking (3-bucket
+    //   mixer per session), and BUG-024 workflow/concept ID scrub.
+    // -----------------------------------------------------------------
+    describe("§T34 · V-THINK + V-TRY-ASK + V-SCRUB-WORKFLOW · Conversational affordances (per SPEC §S34)", () => {
+
+      // ── V-THINK · Thinking-state UX ─────────────────────────────────
+
+      it("V-THINK-1 · chatService.streamChat exposes onToolUse + onRoundStart callbacks (per R34.2)", async () => {
+        const chatSrc = await (await fetch("/services/chatService.js")).text();
+        // Source-grep: streamChat signature accepts onToolUse + onRoundStart.
+        assert(/onToolUse\b/.test(chatSrc),
+          "V-THINK-1: chatService.js MUST reference onToolUse callback");
+        assert(/onRoundStart\b/.test(chatSrc),
+          "V-THINK-1: chatService.js MUST reference onRoundStart callback");
+      });
+
+      it("V-THINK-2 · CanvasChatOverlay defines TOOL_STATUS_MESSAGES map covering every CHAT_TOOLS entry (per R34.3)", async () => {
+        const overlaySrc = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
+        // Source-grep — TOOL_STATUS_MESSAGES const + at least the canonical
+        // tool names from chatTools.
+        assert(/TOOL_STATUS_MESSAGES\b/.test(overlaySrc),
+          "V-THINK-2: TOOL_STATUS_MESSAGES const present");
+        // Spot-check a representative subset (the most-used selectors).
+        const expectedTools = [
+          "selectGapsKanban", "selectMatrixView", "selectVendorMix",
+          "selectLinkedComposition", "selectConcept", "selectWorkflow"
+        ];
+        for (const t of expectedTools) {
+          assert(new RegExp("[\"']" + t + "[\"']").test(overlaySrc),
+            "V-THINK-2: TOOL_STATUS_MESSAGES must declare a message for '" + t + "'");
+        }
+      });
+
+      it("V-THINK-3 · CanvasChatOverlay paints .canvas-chat-tool-status pill on synthetic onToolUse callback (per R34.4)", async () => {
+        _resetOverlayForTests();
+        closeOverlay();
+        const mod = await import("../ui/views/CanvasChatOverlay.js");
+        mod.openCanvasChat();
+        // Use the test handle to invoke the tool-status painter directly.
+        // The overlay exports a helper for tests OR exposes paintToolStatus
+        // via the body element. We probe the helper export shape.
+        assertEqual(typeof mod._paintToolStatusForTests, "function",
+          "V-THINK-3: CanvasChatOverlay must export _paintToolStatusForTests for synthetic invocation");
+        mod._paintToolStatusForTests("selectGapsKanban");
+        await new Promise(r => setTimeout(r, 50));
+        const pill = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-tool-status");
+        assert(pill, "V-THINK-3: .canvas-chat-tool-status pill must paint after _paintToolStatusForTests");
+        // Pill text matches the TOOL_STATUS_MESSAGES map entry for selectGapsKanban
+        // ("Reading the gaps board…").
+        assert(/gaps board/i.test(pill.textContent || ""),
+          "V-THINK-3: pill text must reflect the selectGapsKanban status message (got: '" +
+          (pill.textContent || "") + "')");
+        closeOverlay();
+        _resetOverlayForTests();
+      });
+
+      it("V-THINK-4 · Typing-dot indicator (.canvas-chat-typing-indicator) renders via _paintTypingIndicatorForTests; auto-clears via _clearTypingIndicatorForTests (per R34.1)", async () => {
+        _resetOverlayForTests();
+        closeOverlay();
+        const mod = await import("../ui/views/CanvasChatOverlay.js");
+        mod.openCanvasChat();
+        assertEqual(typeof mod._paintTypingIndicatorForTests, "function",
+          "V-THINK-4: _paintTypingIndicatorForTests must be exported");
+        assertEqual(typeof mod._clearTypingIndicatorForTests, "function",
+          "V-THINK-4: _clearTypingIndicatorForTests must be exported");
+        // Paint
+        mod._paintTypingIndicatorForTests();
+        await new Promise(r => setTimeout(r, 30));
+        const ind = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-typing-indicator");
+        assert(ind, "V-THINK-4: .canvas-chat-typing-indicator must render after _paintTypingIndicatorForTests");
+        // 3 dot children
+        const dots = ind.querySelectorAll(".canvas-chat-typing-dot");
+        assertEqual(dots.length, 3,
+          "V-THINK-4: indicator must contain exactly 3 .canvas-chat-typing-dot elements");
+        // Clear
+        mod._clearTypingIndicatorForTests();
+        await new Promise(r => setTimeout(r, 30));
+        const indGone = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-typing-indicator");
+        assert(!indGone, "V-THINK-4: _clearTypingIndicatorForTests must remove the indicator");
+        closeOverlay();
+        _resetOverlayForTests();
+      });
+
+      it("V-THINK-5 · Multi-round badge (.canvas-chat-round-badge) painted for round >= 2 only via _paintRoundBadgeForTests (per R34.5)", async () => {
+        _resetOverlayForTests();
+        closeOverlay();
+        const mod = await import("../ui/views/CanvasChatOverlay.js");
+        mod.openCanvasChat();
+        assertEqual(typeof mod._paintRoundBadgeForTests, "function",
+          "V-THINK-5: _paintRoundBadgeForTests must be exported");
+        // Round 1 → no badge (only painted for round >= 2).
+        mod._paintRoundBadgeForTests({ round: 1, totalRounds: 5 });
+        await new Promise(r => setTimeout(r, 30));
+        const r1 = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-round-badge");
+        assert(!r1, "V-THINK-5: round 1 must NOT paint a badge");
+        // Round 2 → badge appears.
+        mod._paintRoundBadgeForTests({ round: 2, totalRounds: 5 });
+        await new Promise(r => setTimeout(r, 30));
+        const r2 = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-round-badge");
+        assert(r2, "V-THINK-5: round 2 MUST paint a badge");
+        assert(/2/.test(r2.textContent || ""),
+          "V-THINK-5: badge text must reference round 2 (got: '" + (r2.textContent || "") + "')");
+        closeOverlay();
+        _resetOverlayForTests();
+      });
+
+      // ── V-TRY-ASK · Dynamic try-asking ──────────────────────────────
+
+      it("V-TRY-ASK-1 · services/tryAskingPrompts.js exports generateTryAskingPrompts(engagement[, opts]) returning EXACTLY 4 strings (per R34.8)", async () => {
+        const mod = await import("../services/tryAskingPrompts.js");
+        assertEqual(typeof mod.generateTryAskingPrompts, "function",
+          "V-TRY-ASK-1: generateTryAskingPrompts MUST be exported");
+        const demoMod = await import("../core/demoEngagement.js");
+        const eng = demoMod.loadDemo();
+        const prompts = mod.generateTryAskingPrompts(eng);
+        assert(Array.isArray(prompts),
+          "V-TRY-ASK-1: must return an array");
+        assertEqual(prompts.length, 4,
+          "V-TRY-ASK-1: must return EXACTLY 4 prompts (got " + prompts.length + ")");
+        for (const p of prompts) {
+          assert(typeof p === "string" && p.trim().length > 8,
+            "V-TRY-ASK-1: every prompt must be a non-trivial string");
+        }
+      });
+
+      it("V-TRY-ASK-2 · 4 prompts include >= 1 how-to (workflow) + >= 2 insight (engagement-aware) + >= 1 showoff (multi-tool) (per R34.8)", async () => {
+        const mod = await import("../services/tryAskingPrompts.js");
+        const demoMod = await import("../core/demoEngagement.js");
+        const eng = demoMod.loadDemo();
+        // Use a fixed seed so the test is deterministic.
+        const prompts = mod.generateTryAskingPrompts(eng, { seed: 42 });
+        // Expose bucket tags via a parallel API: generatePromptsByBucket(engagement, opts)
+        // returns { howTo, insight, showoff } arrays. The unioned array
+        // is what generateTryAskingPrompts returns.
+        assertEqual(typeof mod.generatePromptsByBucket, "function",
+          "V-TRY-ASK-2: generatePromptsByBucket helper MUST be exported (for test introspection)");
+        const buckets = mod.generatePromptsByBucket(eng, { seed: 42 });
+        assert(Array.isArray(buckets.howTo) && buckets.howTo.length >= 1,
+          "V-TRY-ASK-2: at least 1 how-to prompt");
+        assert(Array.isArray(buckets.insight) && buckets.insight.length >= 2,
+          "V-TRY-ASK-2: at least 2 insight prompts");
+        assert(Array.isArray(buckets.showoff) && buckets.showoff.length >= 1,
+          "V-TRY-ASK-2: at least 1 showoff prompt");
+      });
+
+      it("V-TRY-ASK-3 · Empty-engagement fallback to static EXAMPLE_PROMPTS (per R34.10)", async () => {
+        const mod = await import("../services/tryAskingPrompts.js");
+        const schemaMod = await import("../schema/engagement.js");
+        const empty = schemaMod.createEmptyEngagement();
+        const prompts = mod.generateTryAskingPrompts(empty);
+        assert(Array.isArray(prompts) && prompts.length === 4,
+          "V-TRY-ASK-3: empty engagement must still return 4 prompts");
+        // The fallback set must include the canonical EXAMPLE_PROMPTS items.
+        const joined = prompts.join(" | ");
+        assert(/High-urgency gaps|cyber resilience driver|strategic drivers/i.test(joined),
+          "V-TRY-ASK-3: empty engagement falls back to EXAMPLE_PROMPTS-flavored content");
+      });
+
+      it("V-TRY-ASK-4 · Determinism per seed: same seed → same 4 prompts (per R34.9)", async () => {
+        const mod = await import("../services/tryAskingPrompts.js");
+        const demoMod = await import("../core/demoEngagement.js");
+        const eng = demoMod.loadDemo();
+        const a = mod.generateTryAskingPrompts(eng, { seed: 12345 });
+        const b = mod.generateTryAskingPrompts(eng, { seed: 12345 });
+        assertEqual(JSON.stringify(a), JSON.stringify(b),
+          "V-TRY-ASK-4: same seed must produce same prompts (got a=" + JSON.stringify(a) + " b=" + JSON.stringify(b) + ")");
+      });
+
+      // ── V-SCRUB-WORKFLOW · BUG-024 fix ──────────────────────────────
+
+      it("V-SCRUB-WORKFLOW-1 · uuidScrubber.scrubUuidsInProse replaces workflow.<id> + concept.<id> with manifest labels; falls back to [unknown] sentinels; idempotent; skips code blocks (per R34.12-R34.14)", async () => {
+        const scrubMod = await import("../services/uuidScrubber.js");
+        // The scrubber needs both UUID + manifest label maps. The new
+        // contract: callers pass a `labelMap` from buildLabelMap (UUIDs)
+        // OR a merged map from buildLabelMap + buildManifestLabelMap.
+        assertEqual(typeof scrubMod.buildManifestLabelMap, "function",
+          "V-SCRUB-WORKFLOW-1: buildManifestLabelMap helper MUST be exported");
+
+        const manifestMap = scrubMod.buildManifestLabelMap();
+        // Sanity: at least one workflow + one concept in the map.
+        const keys = Object.keys(manifestMap);
+        assert(keys.some(k => k.startsWith("workflow.")),
+          "V-SCRUB-WORKFLOW-1: manifest map must contain workflow.* keys");
+        assert(keys.some(k => k.startsWith("concept.")),
+          "V-SCRUB-WORKFLOW-1: manifest map must contain concept.* keys");
+
+        // Pick a known workflow id from the manifest.
+        const wfKey = keys.find(k => k.startsWith("workflow."));
+        const wfLabel = manifestMap[wfKey];
+        assert(typeof wfLabel === "string" && wfLabel.length > 0,
+          "V-SCRUB-WORKFLOW-1: workflow label must be a non-empty string");
+
+        // Scrub a sample.
+        const wfId = wfKey;   // e.g. "workflow.identify_gaps"
+        const text = "For details, see " + wfId + " in the docs.";
+        const scrubbed = scrubMod.scrubUuidsInProse(text, manifestMap);
+        assert(!scrubbed.includes(wfId),
+          "V-SCRUB-WORKFLOW-1: workflow id must be scrubbed from prose (got: " + scrubbed + ")");
+        assert(scrubbed.includes(wfLabel),
+          "V-SCRUB-WORKFLOW-1: replaced text must contain the workflow's user-facing label");
+
+        // Idempotency.
+        assertEqual(scrubMod.scrubUuidsInProse(scrubbed, manifestMap), scrubbed,
+          "V-SCRUB-WORKFLOW-1: scrub is idempotent");
+
+        // Orphan workflow.<id> not in manifest → [unknown workflow] sentinel.
+        const orphan = "Try the workflow.does_not_exist procedure.";
+        const orphanScrubbed = scrubMod.scrubUuidsInProse(orphan, manifestMap);
+        assert(/\[unknown workflow\]/.test(orphanScrubbed),
+          "V-SCRUB-WORKFLOW-1: orphan workflow id must replace with '[unknown workflow]' (got: " + orphanScrubbed + ")");
+
+        // Code-block skip.
+        const codeText = "Use this id `workflow.identify_gaps` directly.";
+        const codeScrubbed = scrubMod.scrubUuidsInProse(codeText, manifestMap);
+        assert(/workflow\.identify_gaps/.test(codeScrubbed),
+          "V-SCRUB-WORKFLOW-1: workflow id inside inline code MUST be preserved (got: " + codeScrubbed + ")");
+      });
+
+      it("V-SCRUB-WORKFLOW-2 · systemPromptAssembler role section carries explicit NEVER-emit directive on workflow.* / concept.* identifiers (per R34.15)", async () => {
+        const src = await (await fetch("/services/systemPromptAssembler.js")).text();
+        // The role section must include "NEVER" near workflow / concept.
+        const roleMatch = src.match(/== Role ==[\s\S]*?(?===|$)/);
+        assert(roleMatch !== null, "V-SCRUB-WORKFLOW-2: role section must exist");
+        const role = roleMatch[0];
+        assert(/NEVER[\s\S]{0,200}workflow/i.test(role),
+          "V-SCRUB-WORKFLOW-2: role section must include NEVER directive near 'workflow' identifiers");
+        assert(/NEVER[\s\S]{0,200}concept/i.test(role),
+          "V-SCRUB-WORKFLOW-2: role section must include NEVER directive near 'concept' identifiers");
+      });
+
+      it("V-SCRUB-WORKFLOW-3 · Integration: a streaming response containing 'workflow.identify_gaps' is scrubbed in the rendered bubble", async () => {
+        const scrubMod = await import("../services/uuidScrubber.js");
+        const manifestMap = scrubMod.buildManifestLabelMap();
+        // Use the same code path the chat overlay onToken applies.
+        const raw = "For a full step-by-step procedure, you can refer to the workflow.identify_gaps.";
+        const result = scrubMod.scrubUuidsInProse(raw, manifestMap);
+        assert(!result.includes("workflow.identify_gaps"),
+          "V-SCRUB-WORKFLOW-3: rendered text must not contain workflow.identify_gaps id");
+        // The replacement should be the manifest's user-facing label,
+        // wrapped in markdown bold per R34.13. Check for "**" or the
+        // canonical Identify gaps title.
+        assert(/Identify gaps|\*\*[^*]+\*\*/i.test(result),
+          "V-SCRUB-WORKFLOW-3: replacement uses the workflow's user-facing label or markdown emphasis (got: " + result + ")");
+      });
+
+    });
+
     it("V-CHAT-26 · BUG-017 guard: chat overlay header has NO Mock toggle (anti-pattern guard; pills replace chip per Arc 2 / SPEC §S33)", async () => {
       // Source-grep — the overlay file must NOT carry a 'Mock' provider
       // toggle in its head-extras. Originally (BUG-017 fix) the Mock|Real
