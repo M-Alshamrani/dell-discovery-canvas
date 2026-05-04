@@ -3259,11 +3259,18 @@ Once all 6 confirmed → V-THINK + V-TRY-ASK + V-SCRUB-WORKFLOW RED-first → im
 
 ---
 
-## §S35 · Skill Builder consolidation under Settings — Arc 4 of Group B (DRAFT v2 — 2026-05-04, pending user review)
+## §S35 · Skill Builder consolidation under Settings — Arc 4 of Group B (LOCKED 2026-05-04)
 
-**Status**: **DRAFT v2 · 2026-05-04** post user direction "go B" + clarification "keep v2.4 SkillAdmin base + parameters[] additions, no 'v3' in UI labels" + closure of the original DRAFT (REJECTED 2026-05-04 for proposing a "Skills (v3)" pill label). Pending user review on the open decisions in §S35.6 before LOCK.
+**Status**: **LOCKED 2026-05-04** on user approval of DRAFT v2 (`ace293a`) + acceptance of all 7 §S35.6 recommendations ("go" 2026-05-04 LATE). Original v1 DRAFT REJECTED 2026-05-04 for proposing a "Skills (v3)" pill label preserved below for audit (anchor `§S35-V1`).
 
-Original v1 DRAFT preserved below v2 for audit (anchor `§S35-V1`).
+**Locked decisions** (from §S35.6 open-decision table, now closed):
+1. **(a)** Rename `ui/views/SkillAdmin.js` → `ui/views/SkillBuilder.js` (delete the lean v3.1 SkillBuilder.js currently at that path).
+2. **(ii)** Opt-in "Legacy (v2)" section with per-row "Migrate" button.
+3. **(A)** Show all 4 outputTargets; 3 disabled with "deferred to GA" hint.
+4. **(1)** Chat-rail "+ Author new skill" closes chat overlay + opens Settings → Skills builder.
+5. **(P)** Keep CARE rewrite button as-is for rc.4 (parameters-aware variant is rc.5 polish if needed).
+6. **Confirmed** — `core/v3SeedSkills.js` purged.
+7. **Accepted** — filename rename acceptable since v3 is pre-GA.
 
 **Authority**: `docs/RULES.md §16` (CH31 to be added at LOCK) · `feedback_no_version_prefix_in_names.md` (locked memory; rejected v1 R35.1) · `feedback_group_b_spec_rewrite.md` (intensive SPEC review pattern) · `project_v2x_admin_deferred.md` (locked memory — v2 admin module is preserved on disk; only its mounted contents evolve) · user direction 2026-05-04 ("redesign the skills builder not to have hardcoded v3 one into the UI" + "keep v2.4 SkillAdmin base + parameters[] additions, save to v3 store").
 
@@ -3329,19 +3336,19 @@ Tests in `docs/v3.0/TESTS.md §T36` (NEW):
 - **V-ANTI-V3-SEED-1..3**: As original DRAFT (file 404, no production import, no `seed-picker` references in evolved admin).
 - **V-ANTI-OVERLAY-RETIRED-1**: `ui/skillBuilderOpener.js` source MUST NOT call `document.createElement("div")` for `#skillBuilderOverlay`. Function body must contain a redirect to `openSettingsModal({section:"skills"})`.
 
-### S35.6 · Open decisions for user review (BLOCKING — pick before LOCK)
+### S35.6 · Locked decisions (CLOSED 2026-05-04)
 
-Per `feedback_group_b_spec_rewrite.md`:
+Per `feedback_group_b_spec_rewrite.md` 7-decision review checklist:
 
-| # | Decision | Options | My recommendation |
+| # | Decision | Picked | Rationale |
 |---|---|---|---|
-| 1 | **Module-file naming** for the evolved admin | (a) Rename `ui/views/SkillAdmin.js` → `ui/views/SkillBuilder.js` (file currently at SkillBuilder.js gets DELETED; preserves the user-trusted v2.4 file's commit history under the canonical name) · (b) Keep `ui/views/SkillAdmin.js` filename (preserves git-history of the v2.4 module verbatim; new SkillBuilder.js name lives only in v3 retirement) · (c) Use a fresh name like `ui/views/SkillsAdmin.js` or `ui/views/SkillEditor.js` (clean break) | **(a)** — `SkillBuilder.js` is the canonical name in user-facing language; preserves the trusted module's history. |
-| 2 | **Legacy v2 records pathway** | (i) Auto-migrate on first load (zero-friction, but irreversible) · (ii) Show "Legacy (v2)" section with per-row "Migrate" button (R35.7 — opt-in; safer; one-release transition) · (iii) Don't show v2 records at all (cleanest break; trusts user has already exported anything precious) | **(ii)** — opt-in migration is the v3 schema-first path of least surprise. |
-| 3 | **outputTarget enum surface** | (A) Show all 4 with 3 disabled + hint (per R35.6) · (B) Show only `chat-bubble` for now; surface remainder when implemented (less clutter) · (C) Hide entirely; lock all skills to `chat-bubble` until other targets ship (simplest UI, but author can't preview where the output will eventually land) | **(A)** — author sees the roadmap; aligns with the v3.1 SkillBuilder's existing affordance. |
-| 4 | **Chat-rail entry preservation** | (1) "+ Author new skill" closes chat + opens Settings → Skills builder (per R35.3) · (2) Open Settings as a side-panel-over-chat (chat stays mounted underneath; user can return without losing transcript) · (3) Drop the chat-rail entry entirely (Settings is the only path) | **(1)** — simplest; chat persistence handled by the existing close-and-resume flow. |
-| 5 | **CARE rewrite scope** | (P) Keep CARE rewrite button as-is (works on the prompt template field) · (Q) Update CARE rewrite to be aware of `parameters[]` (rewrite operates on `{{paramName}}`-resolved scope-snapshot rather than just `{{customer.name}}`) · (R) Drop CARE rewrite (it was tied to v2 fixed-tab semantics; could be ill-fitting in v3 parameterized model) | **(P)** for rc.4 simplicity; (Q) is rc.5 polish if user finds the rewrite output less useful. |
-| 6 | **`core/v3SeedSkills.js` purge** | Already approved 2026-05-03 ("burge them all"). | Confirm still good. |
-| 7 | **APP_VERSION rename impact** | Renaming `SkillAdmin.js` → `SkillBuilder.js` breaks any external doc links / muscle-memory. | Acceptable since v3 is pre-GA. |
+| 1 | Module-file naming | **(a)** rename `SkillAdmin.js` → `SkillBuilder.js`; delete current lean v3.1 `SkillBuilder.js` | Canonical user-facing name; preserves v2.4 file's git history under the right name |
+| 2 | Legacy v2 records pathway | **(ii)** opt-in "Legacy (v2)" section + per-row "Migrate" button | Safer than auto-migrate; v3 schema-first principle; one-release transition |
+| 3 | outputTarget enum surface | **(A)** show all 4, 3 disabled with "deferred to GA" hint | Author sees the roadmap |
+| 4 | Chat-rail entry | **(1)** "+ Author new skill" closes chat + opens Settings → Skills builder | Simplest; no new side-panel infra |
+| 5 | CARE rewrite scope | **(P)** keep as-is for rc.4 | Preserves user-trusted UX; rc.5 polish if needed |
+| 6 | `core/v3SeedSkills.js` purge | Confirmed | User direction 2026-05-03 |
+| 7 | Filename rename impact | Accepted | v3 is pre-GA |
 
 ### S35.7 · Forbidden / out of scope
 
@@ -3448,6 +3455,7 @@ Once all 5 confirmed → V-SKILL-V3-8..12 + V-ANTI-V3-SEED-1..3 RED-first → im
 | 2026-05-04 | rc.4-dev Hotfix #2b (`a8c4b4c`) | Local-LLM multi-turn correctness · 4 defensive OpenAI canonical translations in `services/aiService.js`: (1) consolidate adjacent `role:"system"` messages (some local vLLMs reject multiple) · (2) empty assistant content as `""` not `null` (Mistral-style strict validators 400 on null) · (3) tool-result content always stringified (non-string caused JSON-parse fails) · (4) `max_tokens` 1024 → 4096 (was truncating long-form, masking the protocol-level errors above). Closes user-reported "first response accurate, second turn rubbish" against local vLLM. New tests: V-PROVIDER-OPENAI-1..5. Banner 1134 → 1139 GREEN. |
 | 2026-05-04 | rc.4-dev Hotfix #3 (`3938458`) — BUG-026 closed | Diagnostic test pass flashed overlays in user's view during page load on slow hardware (Hotfix #1 only swept end-of-pass; this closes during-pass). `body[data-running-tests]` attribute toggled by `runAllTests` around `runIsolated`; CSS rule in `styles.css` applies `visibility: hidden !important; pointer-events: none !important` to `.overlay` + `.overlay-backdrop` + `#skillBuilderOverlay` while attribute is set. `visibility: hidden` (vs. `display: none`) preserves layout + computed styles + `getBoundingClientRect` + `.click()` + `querySelector` — tests keep working, only paint pixels disappear. Attribute cleared in `afterRestore` AFTER overlay sweep (order matters: clearing first would flash an orphan visible). New test: V-NO-VISIBLE-TEST-OVERLAY-1 in §T35-HOTFIX1 (source-grep + live cloak proof using a real `.overlay` probe). 100-frame smoke confirmed 0 visible overlays during the pass. Banner 1139 → 1140 GREEN. |
 | 2026-05-04 | CHANGELOG_PLAN backfill | Per `feedback_docs_inline.md` audit: rc.2, rc.3, and rc.4-dev sections were missing from `docs/CHANGELOG_PLAN.md` until 2026-05-04. Backfilled in same commit as this row. Future arcs land inline per the locked discipline. |
+| 2026-05-04 | §S35 (DRAFT v2 → LOCKED) | DRAFT v2 authored at `ace293a` 2026-05-04 LATE replacing the rejected v1; user approved all 7 §S35.6 decisions ("go"). LOCKED 2026-05-04. Locked decisions: rename `SkillAdmin.js` → `SkillBuilder.js` (delete current v3.1 SkillBuilder.js) · opt-in legacy v2 migration · show all 4 outputTargets (3 disabled) · chat-rail closes-and-opens Settings · keep CARE rewrite as-is · purge `core/v3SeedSkills.js` · filename rename accepted. RULES §16 CH31 added in same arc. V-* test contract: V-SKILL-V3-8..15 + V-ANTI-V3-IN-LABEL-1 + V-ANTI-V3-SEED-1..3 + V-ANTI-OVERLAY-RETIRED-1 + V-MIGRATE-V2-V3-1..4 (Suite 50 §T36 NEW). |
 | 2026-05-03 | RELEASE v3.0.0-rc.3 | **TAGGED 2026-05-03.** Closes the rc.3 implementation arc + AI-correctness consolidation. Banner 1103/1103 GREEN ✅ (was 1048 at rc.2; +55 tests). Rolled in: Phase A1 generic LLM connector (BUG-018 closed) + Phase B concept dictionary + Phase C workflow manifest + Skill v3.1 schema + Skill Builder UI rebuild + chat right-rail saved-skill cards + UseAiButton retirement + topbar consolidation to one "AI Assist" button (Dell-blue + diamond-glint 8s breathe) + APP_VERSION discipline + PREFLIGHT.md + Group A AI-correctness fixes (BUG-019 engagement rehydrate, BUG-020 streaming-time handshake strip, BUG-013 Path B UUID scrub, BUG-023 manifest layerId, BUG-011 + BUG-018 closed). New SPEC annexes: §S26 + §S27 + §S28 + §S29 + §S30 + §S31. New RULES: §16 CH20–CH27. New tests: V-CHAT-18..38, V-CONCEPT-1..5, V-WORKFLOW-1..5, V-SKILL-V3-1..7, V-VERSION-1..2, V-FLOW-REHYDRATE-1..3, V-PATH-31/32, V-TOPBAR-1, V-LAB-VIA-CHAT-RAIL, V-AI-ASSIST-CMD-K, V-ANTI-USE-AI, V-NAME-2, V-DEMO-V2-1 + V-DEMO-8/9 + V-FLOW-CHAT-DEMO-1/2. Real-Gemini live-key smoke deferred to first user-driven workshop run (V-CHAT-32 mock-fetch round-trip covers the protocol).  |
 
 End of SPEC.

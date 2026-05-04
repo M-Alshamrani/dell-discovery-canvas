@@ -15149,6 +15149,287 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assert(typeof result.response === "string" && result.response.indexOf("Hello world") >= 0,
         "final response carries full streamed text (got: '" + result.response + "')");
     });
+
+    // -----------------------------------------------------------------
+    // §T36 · V-SKILL-V3-8..15 + V-MIGRATE-V2-V3-* + V-ANTI-V3-IN-LABEL-1
+    //   + V-ANTI-OVERLAY-RETIRED-1
+    //
+    // Per SPEC §S35 + RULES §16 CH31. Arc 4 of Group B. Skill Builder
+    // consolidation under Settings — ONE pill (no version in label),
+    // evolved v2.4 SkillAdmin UX, parameters[] + outputTarget added,
+    // saves to v3 store, opt-in legacy v2 migration, standalone v3.1
+    // overlay retired, chat-rail routes to Settings, v3 seeds purged.
+    //
+    // RED-first scaffold: V-MIGRATE-V2-V3-1..4 land GREEN immediately
+    // (migrateV2SkillToV31 helper exists in schema/skill.js). Other
+    // V-* fail RED until impl 4a + 4b land. The full set turns GREEN
+    // by the end of Arc 4.
+    // -----------------------------------------------------------------
+
+    it("V-MIGRATE-V2-V3-1 · migrateV2SkillToV31 is exported from schema/skill.js as a pure function", async () => {
+      const mod = await import("../schema/skill.js");
+      assert(typeof mod.migrateV2SkillToV31 === "function",
+        "V-MIGRATE-V2-V3-1: migrateV2SkillToV31 must be exported from schema/skill.js");
+      // Pure: same input → same output (no side effects, no shared state).
+      const v2 = { name: "X", promptTemplate: "Hi {{customer.name}}!", responseFormat: "text-brief" };
+      const a = mod.migrateV2SkillToV31(v2);
+      const b = mod.migrateV2SkillToV31(v2);
+      assertEqual(JSON.stringify(a), JSON.stringify(b),
+        "V-MIGRATE-V2-V3-1: migrator must be referentially pure on identical inputs");
+    });
+
+    it("V-MIGRATE-V2-V3-2 · v2 → v3.1 field map: name→label, responseFormat→outputContract, drops tab/applyPolicy/deployed/outputSchema", async () => {
+      const { migrateV2SkillToV31 } = await import("../schema/skill.js");
+      const v2 = {
+        id:             "skill-abc12345",
+        name:           "Map gap to Dell",
+        description:    "Finds Dell products for a given gap",
+        tabId:           "gaps",
+        applyPolicy:    "confirm-per-field",
+        deployed:       true,
+        responseFormat: "text-brief",
+        promptTemplate: "Map {{context.gap.description}} to Dell products.",
+        bindings:       [{ path: "context.gap.description", source: "entity" }],
+        outputSchema:   [{ path: "products", label: "Dell products", kind: "scalar" }],
+        providerKey:    "anthropic",
+        systemPrompt:   "You are a Dell architect."
+      };
+      const v3 = migrateV2SkillToV31(v2);
+      assertEqual(v3.label, "Map gap to Dell",
+        "V-MIGRATE-V2-V3-2: v2.name → v3.label");
+      assertEqual(v3.outputContract, "free-text",
+        "V-MIGRATE-V2-V3-2: text-brief responseFormat → free-text outputContract");
+      assertEqual(v3.outputTarget, "chat-bubble",
+        "V-MIGRATE-V2-V3-2: outputTarget defaults to chat-bubble");
+      assert(Array.isArray(v3.parameters) && v3.parameters.length === 0,
+        "V-MIGRATE-V2-V3-2: parameters[] initialized empty");
+      assertEqual(v3.validatedAgainst, "3.1",
+        "V-MIGRATE-V2-V3-2: validatedAgainst bumped to 3.1");
+      assertEqual(v3.promptTemplate, v2.promptTemplate,
+        "V-MIGRATE-V2-V3-2: promptTemplate preserved verbatim");
+      assertEqual(v3.bindings.length, 1,
+        "V-MIGRATE-V2-V3-2: bindings preserved (shape-compatible)");
+      // Dropped fields recorded in audit field.
+      assert(Array.isArray(v3._droppedFromV2),
+        "V-MIGRATE-V2-V3-2: _droppedFromV2 audit array exists");
+      const droppedFields = v3._droppedFromV2.map(d => d.field).sort();
+      assert(droppedFields.indexOf("tab") >= 0 || droppedFields.indexOf("applyPolicy") >= 0,
+        "V-MIGRATE-V2-V3-2: tab/applyPolicy recorded in _droppedFromV2");
+      assert(droppedFields.indexOf("deployed") >= 0,
+        "V-MIGRATE-V2-V3-2: deployed recorded in _droppedFromV2");
+      assert(droppedFields.indexOf("outputSchema") >= 0,
+        "V-MIGRATE-V2-V3-2: outputSchema recorded in _droppedFromV2");
+    });
+
+    it("V-MIGRATE-V2-V3-3 · json-scalars+Dell-shaped outputSchema → outputContract { schemaRef: 'DellSolutionListSchema' }", async () => {
+      const { migrateV2SkillToV31 } = await import("../schema/skill.js");
+      const v2 = {
+        name: "Dell mapping",
+        promptTemplate: "Map gap to Dell.",
+        responseFormat: "json-scalars",
+        outputSchema:   [{ path: "products", label: "Dell products" }, { path: "rationale", label: "Rationale" }]
+      };
+      const v3 = migrateV2SkillToV31(v2);
+      assert(typeof v3.outputContract === "object" && v3.outputContract.schemaRef === "DellSolutionListSchema",
+        "V-MIGRATE-V2-V3-3: Dell-shaped json-scalars → DellSolutionListSchema schemaRef (got: " + JSON.stringify(v3.outputContract) + ")");
+    });
+
+    it("V-MIGRATE-V2-V3-4 · idempotent on inputs lacking v2-only fields (no name → label fallback to 'Untitled')", async () => {
+      const { migrateV2SkillToV31 } = await import("../schema/skill.js");
+      const v3 = migrateV2SkillToV31({ promptTemplate: "Hi" });
+      assertEqual(v3.label, "Untitled",
+        "V-MIGRATE-V2-V3-4: label falls back to 'Untitled' when no name/label given");
+      assertEqual(v3.bindings.length, 0,
+        "V-MIGRATE-V2-V3-4: bindings empty when v2 record has none");
+      assertEqual(v3.parameters.length, 0,
+        "V-MIGRATE-V2-V3-4: parameters[] always empty for fresh migrations");
+    });
+
+    it("V-SKILL-V3-8 · Settings → Skills builder pill renders the evolved admin via renderSkillBuilder; label is 'Skills builder' (no version suffix)", async () => {
+      const settingsSrc = await (await fetch("/ui/views/SettingsModal.js")).text();
+      // Source-grep — SettingsModal must import + call renderSkillBuilder
+      // (not renderSkillAdmin) once the rename ships.
+      assert(/import\s*\{\s*renderSkillBuilder\s*\}\s*from\s*["']\.\/SkillBuilder\.js["']/.test(settingsSrc),
+        "V-SKILL-V3-8: SettingsModal MUST import renderSkillBuilder from ./SkillBuilder.js");
+      assert(/renderSkillBuilder\s*\(\s*body\s*\)/.test(settingsSrc),
+        "V-SKILL-V3-8: SettingsModal MUST call renderSkillBuilder(body) for the skills section");
+      // Pill label is 'Skills builder' — neutral, no version.
+      assert(/label:\s*["']Skills builder["']/.test(settingsSrc),
+        "V-SKILL-V3-8: Settings section pill label must be 'Skills builder' (neutral, no version)");
+      // Anti-pattern: must NOT carry the legacy 'renderSkillAdmin' import.
+      assert(!/renderSkillAdmin/.test(settingsSrc),
+        "V-SKILL-V3-8: SettingsModal MUST NOT import renderSkillAdmin (post-rename)");
+    });
+
+    it("V-SKILL-V3-9 · Save flow routes through state/v3SkillStore.js (not core/skillStore.js)", async () => {
+      const builderSrc = await (await fetch("/ui/views/SkillBuilder.js")).text();
+      // The evolved admin saves to v3 store.
+      assert(/import\s*\{[^}]*\bsaveV3Skill\b[^}]*\}\s*from\s*["'][^"']*v3SkillStore\.js["']/.test(builderSrc),
+        "V-SKILL-V3-9: ui/views/SkillBuilder.js must import saveV3Skill from state/v3SkillStore.js");
+      // Anti-pattern: must NOT import addSkill/updateSkill from v2 skillStore (write path).
+      assert(!/import\s*\{[^}]*\b(addSkill|updateSkill)\b[^}]*\}\s*from\s*["'][^"']*core\/skillStore\.js["']/.test(builderSrc),
+        "V-SKILL-V3-9: evolved admin must NOT write through core/skillStore.js (v2 store is read-only legacy)");
+    });
+
+    it("V-SKILL-V3-10 · Edit form renders a parameters[] editor with rows: name + type + description + required", async () => {
+      const builderSrc = await (await fetch("/ui/views/SkillBuilder.js")).text();
+      assert(/skill-form-parameters/.test(builderSrc),
+        "V-SKILL-V3-10: edit form must render a .skill-form-parameters section");
+      // Each row carries the 4 inputs.
+      assert(/skill-param-row/.test(builderSrc),
+        "V-SKILL-V3-10: each parameter is rendered as a .skill-param-row");
+      // Type select includes the 4 ParameterSchema types.
+      assert(/string[\s\S]*?number[\s\S]*?boolean[\s\S]*?entityId/.test(builderSrc),
+        "V-SKILL-V3-10: parameter type select offers string/number/boolean/entityId");
+    });
+
+    it("V-SKILL-V3-11 · Edit form renders an outputTarget radio group (4 options; only chat-bubble enabled)", async () => {
+      const builderSrc = await (await fetch("/ui/views/SkillBuilder.js")).text();
+      // 4 outputTarget options surface — chat-bubble enabled, others disabled
+      // with the deferred-to-GA hint.
+      assert(/outputTarget/.test(builderSrc),
+        "V-SKILL-V3-11: outputTarget radio must be in source");
+      assert(/chat-bubble/.test(builderSrc),
+        "V-SKILL-V3-11: chat-bubble option present");
+      assert(/structured-card/.test(builderSrc) && /reporting-panel/.test(builderSrc) && /proposed-changes/.test(builderSrc),
+        "V-SKILL-V3-11: all 3 deferred outputTarget options surface (disabled with hint)");
+      assert(/deferred to GA|deferred|disabled/i.test(builderSrc),
+        "V-SKILL-V3-11: disabled options carry a 'deferred' hint text");
+    });
+
+    it("V-SKILL-V3-12 · Chat-rail '+ Author new skill' routes via skillBuilderOpener shim to Settings (no #skillBuilderOverlay div)", async () => {
+      const openerSrc = await (await fetch("/ui/skillBuilderOpener.js")).text();
+      // Must NOT contain createElement('div') for #skillBuilderOverlay anymore.
+      assert(!/document\.createElement\(["']div["']\)[\s\S]*?#?skillBuilderOverlay/.test(openerSrc),
+        "V-SKILL-V3-12: skillBuilderOpener.js MUST NOT create a #skillBuilderOverlay div (overlay is RETIRED in Arc 4)");
+      assert(!/overlay\.id\s*=\s*["']skillBuilderOverlay["']/.test(openerSrc),
+        "V-SKILL-V3-12: opener MUST NOT set overlay.id = 'skillBuilderOverlay'");
+      // Must redirect to Settings (call openSettingsModal or similar).
+      assert(/openSettingsModal\s*\(\s*\{\s*section:\s*["']skills["']/.test(openerSrc),
+        "V-SKILL-V3-12: opener must call openSettingsModal({ section: 'skills' }) to redirect");
+    });
+
+    it("V-SKILL-V3-13 · Evolved admin preserves v2.4 patterns: chip palette + Refine-to-CARE button + Test button + dual-textbox preview", async () => {
+      const builderSrc = await (await fetch("/ui/views/SkillBuilder.js")).text();
+      // Chip palette — bindable fields.
+      assert(/field-chip|skill-chip-palette|chipsWrap/.test(builderSrc),
+        "V-SKILL-V3-13: chip palette section present");
+      // Refine-to-CARE button.
+      assert(/Refine to CARE|refineBtn|REFINE_META/i.test(builderSrc),
+        "V-SKILL-V3-13: Refine-to-CARE rewrite button preserved");
+      // Test skill button.
+      assert(/Test skill|testBtn/.test(builderSrc),
+        "V-SKILL-V3-13: Test-skill button preserved");
+      // Preview pre.
+      assert(/template-preview|previewBox/.test(builderSrc),
+        "V-SKILL-V3-13: live-preview pre preserved");
+    });
+
+    it("V-SKILL-V3-14 · Pure helper migrateV2SkillToV31 (round-trip + idempotency)", async () => {
+      const { migrateV2SkillToV31 } = await import("../schema/skill.js");
+      // Idempotent on already-migrated record (running twice doesn't drift).
+      const v2 = { name: "X", promptTemplate: "Hi", responseFormat: "text-brief", deployed: true };
+      const m1 = migrateV2SkillToV31(v2);
+      // Re-migrating the migrated record (which lacks v2 fields) should be safe.
+      const stripped = { ...m1 };
+      delete stripped._droppedFromV2;
+      const m2 = migrateV2SkillToV31(stripped);
+      assertEqual(m2.label, m1.label,
+        "V-SKILL-V3-14: re-migration preserves label");
+      assertEqual(m2.outputContract, m1.outputContract,
+        "V-SKILL-V3-14: re-migration preserves outputContract");
+      assertEqual(m2.validatedAgainst, "3.1",
+        "V-SKILL-V3-14: re-migration keeps validatedAgainst at 3.1");
+    });
+
+    it("V-SKILL-V3-15 · Legacy (v2) section is conditional: renders only when v3 store is empty AND v2 store has records", async () => {
+      const builderSrc = await (await fetch("/ui/views/SkillBuilder.js")).text();
+      // Source-grep — admin must conditionally render a Legacy (v2) section.
+      assert(/Legacy.*v2|skill-legacy-section|legacySection/i.test(builderSrc),
+        "V-SKILL-V3-15: evolved admin must reference a legacy v2 section");
+      // Migrate button must be wired per-row.
+      assert(/Migrate|migrateBtn|migrateV2SkillToV31/.test(builderSrc),
+        "V-SKILL-V3-15: per-row Migrate button + migrateV2SkillToV31 invocation present");
+    });
+
+    it("V-ANTI-V3-IN-LABEL-1 · No 'v3' / 'v3.1' / '3.0' / '3.1' in user-facing UI labels of SettingsModal + SkillBuilder", async () => {
+      const settingsSrc = await (await fetch("/ui/views/SettingsModal.js")).text();
+      const builderSrc  = await (await fetch("/ui/views/SkillBuilder.js")).text();
+      // Match any label / textContent / pill option string that contains
+      // a version-prefix marker. The check is conservative (case-sensitive
+      // common forms) — if a future maintainer wants to reference 'v3' in
+      // a code COMMENT that's allowed; only string LITERALS matching
+      // common UI-label patterns are scanned.
+      const labelLike = /(?:label|textContent|placeholder|title)\s*[:=]\s*["'`][^"'`\n]*\b(v3(?:\.1)?|3\.[01])\b[^"'`\n]*["'`]/g;
+      const settingsHits = settingsSrc.match(labelLike) || [];
+      const builderHits  = builderSrc.match(labelLike)  || [];
+      assertEqual(settingsHits.length, 0,
+        "V-ANTI-V3-IN-LABEL-1: SettingsModal must not carry version-tagged labels (got: " + settingsHits.join(" | ") + ")");
+      assertEqual(builderHits.length, 0,
+        "V-ANTI-V3-IN-LABEL-1: SkillBuilder must not carry version-tagged labels (got: " + builderHits.join(" | ") + ")");
+    });
+
+    it("V-ANTI-OVERLAY-RETIRED-1 · #skillBuilderOverlay div is never created at runtime", async () => {
+      // Source-grep across ALL production files.
+      const filesToCheck = [
+        "/ui/skillBuilderOpener.js",
+        "/ui/views/CanvasChatOverlay.js",
+        "/ui/views/SkillBuilder.js",
+        "/app.js"
+      ];
+      const offenders = [];
+      for (const path of filesToCheck) {
+        let src = null;
+        try {
+          const r = await fetch(path);
+          if (!r.ok) continue; // 404 → arc-4 deletion path is OK; skip cleanly
+          src = await r.text();
+        } catch (_e) { continue; /* network glitch — skip; don't swallow assertion */ }
+        // Forbidden: assigning overlay.id = "skillBuilderOverlay" (creates the div).
+        // Allowed: querySelector / getElementById ("skillBuilderOverlay") for sweep purposes
+        // (the test runner afterRestore also greps for this id).
+        if (/overlay\.id\s*=\s*["']skillBuilderOverlay["']/.test(src)) {
+          offenders.push(path);
+        }
+      }
+      assertEqual(offenders.length, 0,
+        "V-ANTI-OVERLAY-RETIRED-1: production code MUST NOT assign overlay.id = 'skillBuilderOverlay' (offenders: " + offenders.join(", ") + ")");
+    });
+
+    it("V-ANTI-V3-SEED-1 · core/v3SeedSkills.js is DELETED (404 from served container)", async () => {
+      const r = await fetch("/core/v3SeedSkills.js");
+      assertEqual(r.status, 404,
+        "V-ANTI-V3-SEED-1: core/v3SeedSkills.js MUST 404 (file deleted in Arc 4 4b)");
+    });
+
+    it("V-ANTI-V3-SEED-2 · No production file imports core/v3SeedSkills.js", async () => {
+      const productionFiles = [
+        "/ui/views/SkillBuilder.js",
+        "/ui/views/SettingsModal.js",
+        "/ui/skillBuilderOpener.js",
+        "/services/skillRunner.js",
+        "/state/v3SkillStore.js",
+        "/app.js"
+      ];
+      const offenders = [];
+      for (const path of productionFiles) {
+        try {
+          const src = await (await fetch(path)).text();
+          if (/v3SeedSkills/.test(src)) offenders.push(path);
+        } catch (_e) { /* file missing → no problem */ }
+      }
+      assertEqual(offenders.length, 0,
+        "V-ANTI-V3-SEED-2: no production file imports core/v3SeedSkills.js (offenders: " + offenders.join(", ") + ")");
+    });
+
+    it("V-ANTI-V3-SEED-3 · ui/views/SkillBuilder.js source contains no SEED_SKILLS / seed-picker references", async () => {
+      const builderSrc = await (await fetch("/ui/views/SkillBuilder.js")).text();
+      assert(!/SEED_SKILLS\b|SEED_SKILL_DELL_MAPPING|SEED_SKILL_EXECUTIVE_SUMMARY|SEED_SKILL_CARE_BUILDER/.test(builderSrc),
+        "V-ANTI-V3-SEED-3: SkillBuilder.js MUST NOT reference v3 seed exports");
+      assert(!/seed-picker|seedPicker/.test(builderSrc),
+        "V-ANTI-V3-SEED-3: SkillBuilder.js MUST NOT carry the seed-picker UI section");
+    });
+
   });
 
   // -------------------------------------------------------------------

@@ -123,6 +123,106 @@ export function migrateSkillToV31(raw) {
   return out;
 }
 
+// SPEC §S35.4 / RULES §16 CH31 — translate a v2.x skill record (from
+// `core/skillStore.js`) to v3.1 shape. Pure function; no side effects.
+// Idempotent on v3.1 input (round-trips). Used by the evolved Skill
+// Builder (rc.4-dev Arc 4) to give v2 records an opt-in migration path
+// surfaced as a per-row "Migrate" button under the "Legacy (v2)"
+// section of the Settings → Skills builder pill.
+//
+// v2.x → v3.1 field map:
+//   name           → label
+//   description    → description (cross-cutting passthrough; skill schema
+//                    doesn't have its own `description`, so it lands on
+//                    cross-cutting `description` field if helpers expose it)
+//   promptTemplate → promptTemplate (verbatim)
+//   bindings       → bindings (shape-compatible; both use {path, source})
+//   responseFormat → outputContract:
+//                      "text-brief" / undefined → "free-text"
+//                      "json-scalars" / "json-commands" → { schemaRef: <hint or fallback> }
+//   tab            → DROPPED (no v3 equivalent; chat-rail is engagement-wide)
+//   applyPolicy    → DROPPED (structured outputs are per outputTarget in v3)
+//   deployed       → DROPPED (no v3 deploy gate; all saved skills surface)
+//   outputSchema   → DROPPED (replaced by outputContract.schemaRef)
+//   providerKey    → DROPPED (per-skill provider override is rc.5+ scope)
+//   systemPrompt   → DROPPED (folded into role-section directives in v3)
+//
+// New v3.1 fields default to:
+//   parameters       []
+//   outputTarget     "chat-bubble"
+//   validatedAgainst "3.1"
+//
+// `_droppedFromV2` non-strict-schema field carries the audit list so the
+// migrated row's UI can surface what was lost. Saved-but-non-validated;
+// strip before SkillSchema.parse if needed.
+export function migrateV2SkillToV31(v2Record) {
+  if (!v2Record || typeof v2Record !== "object") return v2Record;
+
+  const dropped = [];
+  const out = {};
+
+  // 1. label (v2.x `name`).
+  out.label = (typeof v2Record.label === "string" && v2Record.label.length > 0)
+    ? v2Record.label
+    : (typeof v2Record.name === "string" ? v2Record.name : "Untitled");
+
+  // 2. skillId — v2 uses a uid string ("skill-xxxx"); v3 uses a
+  //    user-visible id. Reuse if present; else derive from label.
+  out.skillId = (typeof v2Record.skillId === "string" && v2Record.skillId.length > 0)
+    ? v2Record.skillId
+    : (typeof v2Record.id === "string" && v2Record.id.length > 0
+        ? v2Record.id
+        : "skl-migrated-" + (out.label || "x").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24));
+
+  // 3. version: preserve or default.
+  out.version = (typeof v2Record.version === "string") ? v2Record.version : "1.0.0";
+
+  // 4. promptTemplate: verbatim.
+  out.promptTemplate = (typeof v2Record.promptTemplate === "string")
+    ? v2Record.promptTemplate
+    : "";
+
+  // 5. bindings: passthrough (the existing v2 SkillAdmin already extracts
+  //    {path, source} via skillEngine.extractBindings); empty if absent.
+  out.bindings = Array.isArray(v2Record.bindings) ? v2Record.bindings.slice() : [];
+
+  // 6. outputContract: derive from responseFormat + outputSchema hint.
+  if (v2Record.responseFormat === "json-scalars" || v2Record.responseFormat === "json-commands") {
+    // v2 schema-bearing skills carry an outputSchema array. We don't
+    // have a stable schemaRef for arbitrary v2 skills; default to
+    // "DellSolutionListSchema" if outputSchema looks Dell-shaped, else
+    // fall back to free-text rather than emit a broken schemaRef.
+    const looksDellShaped = Array.isArray(v2Record.outputSchema)
+      && v2Record.outputSchema.some(e => e && typeof e.path === "string" && /products|dell|solution/i.test(e.path));
+    out.outputContract = looksDellShaped
+      ? { schemaRef: "DellSolutionListSchema" }
+      : "free-text";
+  } else {
+    out.outputContract = "free-text";
+  }
+
+  // 7. New v3.1 fields with sensible defaults.
+  out.outputTarget = "chat-bubble";
+  out.parameters = [];
+
+  // 8. validatedAgainst marker.
+  out.validatedAgainst = "3.1";
+  out.outdatedSinceVersion = null;
+
+  // 9. Audit: record dropped-on-migration v2 fields so the UI can show
+  //    "this v2 field didn't survive migration" hints. Non-schema field;
+  //    strip before SkillSchema.parse if a strict path needs it.
+  if (v2Record.tab != null && v2Record.tab !== "")           dropped.push({ field: "tab",          value: v2Record.tab });
+  if (v2Record.applyPolicy != null && v2Record.applyPolicy !== "") dropped.push({ field: "applyPolicy",  value: v2Record.applyPolicy });
+  if (v2Record.deployed != null)                              dropped.push({ field: "deployed",     value: v2Record.deployed });
+  if (Array.isArray(v2Record.outputSchema) && v2Record.outputSchema.length > 0) dropped.push({ field: "outputSchema", value: v2Record.outputSchema });
+  if (v2Record.providerKey != null && v2Record.providerKey !== "")   dropped.push({ field: "providerKey",  value: v2Record.providerKey });
+  if (typeof v2Record.systemPrompt === "string" && v2Record.systemPrompt.length > 0) dropped.push({ field: "systemPrompt", value: v2Record.systemPrompt });
+  out._droppedFromV2 = dropped;
+
+  return out;
+}
+
 // createEmptySkill emits a v3.1-shaped skill. Callers that supply
 // legacy v3.0 fields (skillType / entityKind) are auto-migrated via
 // migrateSkillToV31 BEFORE schema validation, so existing call sites
