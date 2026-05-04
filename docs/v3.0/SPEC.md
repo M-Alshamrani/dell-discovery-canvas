@@ -3259,11 +3259,101 @@ Once all 6 confirmed → V-THINK + V-TRY-ASK + V-SCRUB-WORKFLOW RED-first → im
 
 ---
 
-## §S35 · Skill Builder consolidation under Settings + chip palette + v3 seed purge — Arc 4 of Group B (DRAFT REJECTED 2026-05-04)
+## §S35 · Skill Builder consolidation under Settings — Arc 4 of Group B (DRAFT v2 — 2026-05-04, pending user review)
 
-**Status**: **DRAFT REJECTED 2026-05-04** by user — R35.1 proposed a "Skills (v3)" user-facing pill label, which violates the locked rule `feedback_no_version_prefix_in_names.md` ("version numbers live in git tags + APP_VERSION + changelogs only; never in filenames, exports, or UI labels"). Spec needs a rewrite that doesn't bake `v3` into the UI. Three candidate approaches under user review (see §S35.6 below); rewrite blocked until user picks the architectural direction.
+**Status**: **DRAFT v2 · 2026-05-04** post user direction "go B" + clarification "keep v2.4 SkillAdmin base + parameters[] additions, no 'v3' in UI labels" + closure of the original DRAFT (REJECTED 2026-05-04 for proposing a "Skills (v3)" pill label). Pending user review on the open decisions in §S35.6 before LOCK.
 
-Original DRAFT preserved below for reference; do NOT implement until rewrite lands.
+Original v1 DRAFT preserved below v2 for audit (anchor `§S35-V1`).
+
+**Authority**: `docs/RULES.md §16` (CH31 to be added at LOCK) · `feedback_no_version_prefix_in_names.md` (locked memory; rejected v1 R35.1) · `feedback_group_b_spec_rewrite.md` (intensive SPEC review pattern) · `project_v2x_admin_deferred.md` (locked memory — v2 admin module is preserved on disk; only its mounted contents evolve) · user direction 2026-05-04 ("redesign the skills builder not to have hardcoded v3 one into the UI" + "keep v2.4 SkillAdmin base + parameters[] additions, save to v3 store").
+
+### Pre-Arc-4 state
+
+- **Two homes** for skill authoring:
+  - `Settings → Skills builder` pill renders `renderSkillAdmin(body)` from `ui/views/SkillAdmin.js` (608 lines, v2.4 schema, writes to `core/skillStore.js`). Has the UX patterns the user trusts: list+toggle, edit form, chip palette, CARE rewrite (Refine-to-CARE meta-prompt), dual-textbox preview, Test button.
+  - Canvas AI Assistant chat right-rail "+ Author new skill" → opens a standalone `#skillBuilderOverlay` div via `ui/skillBuilderOpener.js` → renders `ui/views/SkillBuilder.js` (614 lines, v3.1 schema with `parameters[]` + `outputTarget`, writes to `state/v3SkillStore.js`). Lacks the chip palette + CARE rewrite + dual-textbox.
+- **Two schemas**: v2 (`core/skillStore.js`: `tab` + `responseFormat` + `applyPolicy` + `deployed`) vs v3.1 (`state/v3SkillStore.js`: `parameters[]` + `outputTarget` + `bindings` + `outputContract`). Different data lives in different localStorage keys; saved skills don't cross over.
+- **User pain** (`project_skillbuilder_ux_concern.md`): the standalone v3.1 builder is unintuitive; the user trusts v2.4 admin's patterns more.
+
+### S35.1 · One canonical Skill Builder home
+
+- **R35.1** (🔴 HARD) — `Settings → Skills builder` pill (label unchanged, neutral, **no `v3` / `v3.1` / version suffix anywhere in UI strings**) is the ONE entry point for skill authoring. The chat right-rail "+ Author new skill" button routes there. No second pill.
+- **R35.2** (🔴 HARD) — Pill content is rendered by an EVOLVED admin module. Module name TBD per S35.6 decision-1 (rename `ui/views/SkillAdmin.js` → `ui/views/SkillBuilder.js` after retiring the current v3.1 SkillBuilder.js · OR · keep `ui/views/SkillAdmin.js` filename for git-history continuity and rename the standalone v3.1 builder file out of the way). Either way, only ONE module is mounted in Settings.
+- **R35.3** (🔴 HARD) — Standalone overlay (`#skillBuilderOverlay` div + `ui/skillBuilderOpener.js`) RETIRES. The opener becomes a thin shim that closes the chat overlay and opens Settings → Skills builder.
+
+### S35.2 · Evolve admin UX to v3.1 schema + writes to v3 store
+
+The evolved admin keeps v2.4 SkillAdmin's UX **base** (list + deploy toggle + edit form + chip palette + CARE rewrite + dual-textbox + Test button) and writes records in v3.1 shape to `state/v3SkillStore.js`.
+
+- **R35.4** (🔴 HARD) — All save/load/delete ops route through `state/v3SkillStore.js` (`saveV3Skill` / `loadV3Skills` / `loadV3SkillById` / `deleteV3Skill`). v2 store (`core/skillStore.js`) becomes READ-ONLY legacy: existing v2 records remain readable for one release transition window (R35.7) but no new writes go there.
+- **R35.5** (🔴 HARD) — Edit form gains a **parameters[] editor** (rows: name + type + description + required) borrowed visually from the current v3.1 SkillBuilder.js's `parameters` section. Saved as `parameters` field per `schema/skill.js` `ParameterSchema`.
+- **R35.6** (🔴 HARD) — Edit form gains an **outputTarget radio** with 4 options. Only `chat-bubble` enabled; `structured-card` / `reporting-panel` / `proposed-changes` rendered as disabled with "deferred to GA" hint. Saved as `outputTarget` per `OutputTargetEnum`.
+- **R35.7** (🔵 AUTO) — Read-only legacy v2 path: when the admin loads, if `state/v3SkillStore.js` is empty AND `core/skillStore.js` has v2 records, the list shows them in a "Legacy (v2)" section with a "Migrate to v3" button per row (one-shot translator — see R35.10). v2 records are NOT auto-migrated; user opts in. Once migrated, the v2 record stays in v2 storage as backup for one release.
+- **R35.8** (🔴 HARD) — v2-only fields that don't map to v3.1 schema get dropped on migration with a clearly-shown notice. Drop list: `tab` (no per-tab dispatch in v3 — chat-rail is engagement-wide), `applyPolicy` (no v3 equivalent; structured outputs are per `outputTarget`), `deployed` (no v3 deploy gate; all saved skills appear in chat-rail). Preserve list: `name`/`label`, `description`, `promptTemplate`, `bindings`, `responseFormat` → `outputContract`.
+
+### S35.3 · v3 seed-skill purge
+
+User direction 2026-05-03: "lets burge all of them as i dont like them anyway, unless it will break the app".
+
+- **R35.9** (🔴 HARD) — `core/v3SeedSkills.js` DELETED. The 3 v3 seed exports (`SEED_SKILL_DELL_MAPPING`, `SEED_SKILL_EXECUTIVE_SUMMARY`, `SEED_SKILL_CARE_BUILDER`) are dropped.
+- **R35.10** (🔴 HARD) — Tests + non-test imports of v3 seeds replaced with inline fixtures in the test files that reference them (V-PROD-10, V-DEMO-*, V-FLOW-*).
+- **R35.11** (🔵 AUTO) — v2 seeds (`core/seedSkills.js`) NOT touched (out of scope per `project_v2x_admin_deferred.md` — v2 retirement is a future arc).
+
+### S35.4 · One-shot v2 → v3.1 record translator (R35.7 dependency)
+
+- **R35.12** (🔴 HARD) — NEW pure helper `migrateV2SkillToV31(v2Record)` in `schema/skill.js` (alongside existing `migrateSkillToV31` for v3.0 → v3.1). Translation:
+  - `name` → `label`
+  - `description` → `description` (cross-cutting field passthrough)
+  - `promptTemplate` → `promptTemplate`
+  - `bindings` → `bindings` (already shape-compatible — both use `{path, source}` records)
+  - `responseFormat: "free-text" | "json"` → `outputContract: "free-text" | { schemaRef: "..." }` (for "json", pick a sensible default schemaRef per the v2 record's existing schemaRef hint; if no hint, fallback to `"free-text"`)
+  - `tab`, `applyPolicy`, `deployed` → DROPPED (logged in a `_droppedFromV2` field on the migrated record for one-release audit; UI surfaces this on the migrated row)
+  - `parameters` → empty `[]` (user can add post-migration)
+  - `outputTarget` → `"chat-bubble"` (only enabled target)
+  - `validatedAgainst` → `"3.1"`
+  - cross-cutting fields (id, ownerId, engagementId, createdAt, updatedAt, schemaVersion) re-validated through `defaultCrossCuttingFields` if missing
+
+### S35.5 · V-* test contract (Suite 50 NEW · §T36)
+
+Tests in `docs/v3.0/TESTS.md §T36` (NEW):
+
+- **V-SKILL-V3-8**: Settings → Skills builder pill renders the evolved admin. Source-grep + live DOM check (one pill, label "Skills builder", no "v3" / version string in label).
+- **V-SKILL-V3-9**: Save flow routes through `state/v3SkillStore.js` (V-* DOM test: open admin → fill form → click Save → assert `localStorage.v3_skills_v1` updated, NOT `localStorage.skills`).
+- **V-SKILL-V3-10**: Edit form contains a parameters[] editor (`.skill-admin-parameters` section, rows match `ParameterSchema` shape).
+- **V-SKILL-V3-11**: Edit form contains an outputTarget radio (`<input type="radio" name="outputTarget">` × 4; only `chat-bubble` enabled; others disabled with hint text matching SPEC).
+- **V-SKILL-V3-12**: Chat-rail "+ Author new skill" routes to Settings (closes chat overlay, opens settings overlay with section="skills"). Source-grep `ui/skillBuilderOpener.js` for the redirect; live DOM after click.
+- **V-SKILL-V3-13**: v2.4 admin patterns preserved — chip palette + Refine-to-CARE button + dual-textbox layout + Test button all present in the evolved admin's edit form. Source-grep + DOM probe.
+- **V-SKILL-V3-14**: `migrateV2SkillToV31` round-trip: pure function, idempotent on v3.1 input, drops `tab`/`applyPolicy`/`deployed`, preserves `promptTemplate`/`bindings`, sets `outputTarget="chat-bubble"`, `parameters=[]`, `validatedAgainst="3.1"`.
+- **V-SKILL-V3-15**: Legacy section renders ONLY when `loadV3Skills()` returns empty AND `loadSkills()` (v2) returns ≥1. Otherwise no legacy section shown.
+- **V-ANTI-V3-IN-LABEL-1**: Source-grep across `ui/views/*.js` + `ui/views/SettingsModal.js` — no UI string contains the literal `"v3"` / `"V3"` / `"3.0"` / `"3.1"` in user-facing labels (`textContent` / button labels / pill labels). Tests already in this category — extend the existing pattern from V-NAME-1.
+- **V-ANTI-V3-SEED-1..3**: As original DRAFT (file 404, no production import, no `seed-picker` references in evolved admin).
+- **V-ANTI-OVERLAY-RETIRED-1**: `ui/skillBuilderOpener.js` source MUST NOT call `document.createElement("div")` for `#skillBuilderOverlay`. Function body must contain a redirect to `openSettingsModal({section:"skills"})`.
+
+### S35.6 · Open decisions for user review (BLOCKING — pick before LOCK)
+
+Per `feedback_group_b_spec_rewrite.md`:
+
+| # | Decision | Options | My recommendation |
+|---|---|---|---|
+| 1 | **Module-file naming** for the evolved admin | (a) Rename `ui/views/SkillAdmin.js` → `ui/views/SkillBuilder.js` (file currently at SkillBuilder.js gets DELETED; preserves the user-trusted v2.4 file's commit history under the canonical name) · (b) Keep `ui/views/SkillAdmin.js` filename (preserves git-history of the v2.4 module verbatim; new SkillBuilder.js name lives only in v3 retirement) · (c) Use a fresh name like `ui/views/SkillsAdmin.js` or `ui/views/SkillEditor.js` (clean break) | **(a)** — `SkillBuilder.js` is the canonical name in user-facing language; preserves the trusted module's history. |
+| 2 | **Legacy v2 records pathway** | (i) Auto-migrate on first load (zero-friction, but irreversible) · (ii) Show "Legacy (v2)" section with per-row "Migrate" button (R35.7 — opt-in; safer; one-release transition) · (iii) Don't show v2 records at all (cleanest break; trusts user has already exported anything precious) | **(ii)** — opt-in migration is the v3 schema-first path of least surprise. |
+| 3 | **outputTarget enum surface** | (A) Show all 4 with 3 disabled + hint (per R35.6) · (B) Show only `chat-bubble` for now; surface remainder when implemented (less clutter) · (C) Hide entirely; lock all skills to `chat-bubble` until other targets ship (simplest UI, but author can't preview where the output will eventually land) | **(A)** — author sees the roadmap; aligns with the v3.1 SkillBuilder's existing affordance. |
+| 4 | **Chat-rail entry preservation** | (1) "+ Author new skill" closes chat + opens Settings → Skills builder (per R35.3) · (2) Open Settings as a side-panel-over-chat (chat stays mounted underneath; user can return without losing transcript) · (3) Drop the chat-rail entry entirely (Settings is the only path) | **(1)** — simplest; chat persistence handled by the existing close-and-resume flow. |
+| 5 | **CARE rewrite scope** | (P) Keep CARE rewrite button as-is (works on the prompt template field) · (Q) Update CARE rewrite to be aware of `parameters[]` (rewrite operates on `{{paramName}}`-resolved scope-snapshot rather than just `{{customer.name}}`) · (R) Drop CARE rewrite (it was tied to v2 fixed-tab semantics; could be ill-fitting in v3 parameterized model) | **(P)** for rc.4 simplicity; (Q) is rc.5 polish if user finds the rewrite output less useful. |
+| 6 | **`core/v3SeedSkills.js` purge** | Already approved 2026-05-03 ("burge them all"). | Confirm still good. |
+| 7 | **APP_VERSION rename impact** | Renaming `SkillAdmin.js` → `SkillBuilder.js` breaks any external doc links / muscle-memory. | Acceptable since v3 is pre-GA. |
+
+### S35.7 · Forbidden / out of scope
+
+- Touching `core/seedSkills.js` (v2 seeds; per memory).
+- DELETING `ui/views/SkillAdmin.js` (file may be RENAMED to SkillBuilder.js per decision 1, but NOT deleted while v2 admin pattern is preserved).
+- v2 admin parity gate evaluation (`project_v2x_admin_deferred.md` — that's a future arc; this Arc 4 evolves the SAME pill, doesn't retire v2 admin behavior).
+- Overlay/window theming changes (rc.5 work per `project_ui_ux_consolidation_concern.md`).
+- Real-LLM live-key smoke (rc.4 tag-time concern, not in-arc).
+
+---
+
+### §S35-V1 · Original DRAFT REJECTED 2026-05-04 (preserved for audit)
 
 **Authority**: `docs/RULES.md §16` (CH31 to be added) · `project_skillbuilder_ux_concern.md` memory · `project_v2x_admin_deferred.md` memory (preserved — v2.x admin retirement is OUT of scope for this arc) · user direction 2026-05-03: "lets get the best of both of them and rebuild the skills builder in the gear window" + "burge them all" (re v3 seed skills).
 
