@@ -841,6 +841,225 @@ Regression test V-FLOW-CHAT-PERSIST-1: open chat → type prompt (don't send) �
 
 ---
 
+## BUG-029 · Canvas AI Assistant chat transcript persists across session boundaries (clear-all-data + new-session do not reset chat memory)
+
+**Status**: OPEN · Reported 2026-05-05 by user (office workshop test) · v3.0.0-rc.5 · Scheduled rc.6 (HIGH PRIORITY — ROOT CAUSE FIX REQUIRED)
+**Reporter**: User (workshop demo machine)
+**Severity**: High (cross-session leak of customer data; impacts workshop reset workflow)
+**Regression**: Yes — predates rc.5 chat persistence work; the side-panel BUG-028 fix was scoped to within-session UI persistence and didn't touch transcript storage scope.
+
+### User direction (locked discipline)
+*"i think there is a more rooted implemenation error that is also making the results of the chat with the local chat crappy. ... no patching here but fixing of the source cause to actually improve results, not just put guard rails."*
+
+Per `feedback_no_patches_flag_first.md` — investigate transcript storage architecture before any code change. If a patch is the only path, surface alternatives + wait for direction.
+
+### Repro
+1. Load demo session
+2. Open Canvas AI Assistant; ask 2-3 questions; build up a transcript
+3. Click footer "Clear all data" OR "+ New session"
+4. Re-open Canvas AI Assistant
+5. → OLD chat transcript is still there (questions + answers from the previous session)
+
+### Expected
+"Clear all data" + "+ New session" should reset the chat memory along with everything else. Each engagement is a clean slate.
+
+### Suspected root cause (ROOT CAUSE — confirm before fix)
+`state/chatMemory.js` persists transcript to localStorage keyed by `engagementId` per SPEC §S20.6. The cleanup paths (`clearAllData`, `replaceSession({ ...empty })`, demo-load) likely don't enumerate + drop the chat-memory keys. So a session change creates a NEW engagement record but the OLD transcript stays in localStorage indexed by the OLD engagement's id — and the chat re-binds it on next open via the `engagementId` lookup.
+
+Also possible: the engagement-id resolution logic may be falling back to a default/cached id that doesn't change with "+ New session", so the transcript binds to a stable-but-stale key.
+
+### Investigation plan (root-cause discipline; no patches)
+1. Map the full lifecycle: where is `engagementId` generated, persisted, swapped on new-session, and how chatMemory binds to it.
+2. Identify where the cleanup gap is (most likely: `state/sessionStore.js clearAll()` or `state/engagementStore.js _resetForTests()`-equivalent for production).
+3. Confirm whether the broken path is: (a) chat memory not keyed by current engagementId, OR (b) clear-all leaves chat memory orphaned in localStorage, OR (c) engagementId not actually changing on new-session.
+4. Surface the architectural fix to user BEFORE writing code (per `feedback_no_patches_flag_first.md`).
+
+### Out of scope
+- Adding a "Clear chat" button as a workaround. The user explicitly rejected this approach.
+- Tying chat-memory cleanup to UI buttons via add-hoc hooks.
+
+---
+
+## BUG-030 · AI assistant hallucinates engagement data (Anthropic + Gemini; gaps + dispositions invented out of thin air)
+
+**Status**: OPEN · Reported 2026-05-05 by user (office workshop test) · v3.0.0-rc.5 · Scheduled rc.6 (HIGHEST PRIORITY — affects core value prop; ROOT CAUSE FIX REQUIRED)
+**Reporter**: User (workshop demo machine)
+**Severity**: Critical (the AI grounding architecture promises "no hallucinations"; user observed otherwise on real-LLM providers)
+**Regression**: Possibly an architectural gap that's been latent since the rc.2 chat-perfection arc shipped Real-LLM integrations — never surfaced because earlier tests used mock fetches.
+
+### User direction (locked discipline)
+*"the results when i use claude or gemini are made up and not nessasurly interegation with actual data in the session, but someting out of thin air, like made up gaps that are not in the session, or dispositions that are not there ... again no patching here but fixing of the source cause to actually improve results, not just put guard rails."*
+
+Per `feedback_no_patches_flag_first.md` + the 3-PHASE AI ARCHITECTURE PLAN (per HANDOFF rc.3 §3): the LLM is grounded via (a) data contract + handshake (R25/R20.16), (b) selectors-as-tools (R20.4–R20.7), (c) concept manifest + workflow manifest (R27/R28). If the LLM is hallucinating, ONE of these layers is broken in production for real-LLM providers.
+
+### Repro
+1. Load Acme Healthcare demo (8 gaps, 3 drivers, 4 envs, 23 instances per `core/demoEngagement.js`)
+2. Switch active provider to real-Anthropic OR real-Gemini (with valid API keys)
+3. Ask Canvas AI Assistant: "summarize the gaps" OR "what dispositions does the customer have?"
+4. → Response includes gaps / dispositions / drivers that are NOT in the engagement
+
+### Investigation plan (root-cause discipline; no patches)
+1. Verify the data-contract handshake works on real-Anthropic + real-Gemini (not just mock). The `[contract-ack v3.0 sha=<8>]` chip should appear; if absent on a turn, grounding broke.
+2. Verify the system prompt sent to real-Anthropic actually includes the engagement snapshot per `services/systemPromptAssembler.js` (5-layer assembly — log the wire body for ONE turn against real-Anthropic, diff against the mock-fetch wire body).
+3. Verify the tool-use round-trip works on real-Anthropic + real-Gemini. If the LLM never calls `selectGapsKanban` / `selectMatrixView` etc., it's relying on its training-data prior instead of live data.
+4. Verify the role section's NEVER-emit directives (BUG-013 / BUG-024 anti-leakage) are present on real-LLM provider wire — could be conditionally stripped on translation in `services/aiService.js` Anthropic / Gemini paths.
+5. Check whether any of Hotfix #2b's defensive translations (collapse-system-messages, content-as-empty-string) accidentally drop critical context on the Anthropic/Gemini path. The fix targeted local OpenAI-compat; could have over-applied.
+
+### Suspected hot spots (in priority order)
+1. **`services/aiService.js` Anthropic + Gemini wire builders** — verify the system block actually carries the engagement snapshot. Anthropic uses `system:` field separately from `messages`; if the snapshot is in messages but Anthropic strips it, no grounding.
+2. **`services/realChatProvider.js`** — tool-call extraction on real providers; if tools never fire, no live-data fetch.
+3. **`services/chatService.js` streamChat orchestration** — multi-round chains may bail early on real providers.
+4. **System-prompt token budget** — if the snapshot exceeds Anthropic / Gemini context limits, it may be silently truncated upstream.
+
+### Real-LLM smoke missing from rc.4 + rc.5 PREFLIGHT
+Per HANDOFF rc.5 §6: "Real-LLM live-key smoke (Anthropic + Gemini + Local) deferred to first user-driven workshop run". This is that workshop run. The smoke produced HARD evidence of the failure. Real-LLM smoke needs to be a tag-time PREFLIGHT item starting rc.6.
+
+### Out of scope
+- Adding "I'm not sure" guardrails to the system prompt as a band-aid. User explicitly rejected this — the root cause needs to be found.
+
+---
+
+## BUG-031 · Propagate-criticality toast text always says "Low" regardless of actual propagated level (visible regression on rc.5; tightens BUG-001 scope)
+
+**Status**: OPEN · Reported 2026-05-05 by user (office workshop test) · v3.0.0-rc.5 · Scheduled rc.6 (MEDIUM)
+**Reporter**: User
+**Severity**: Medium (functional behavior is correct; toast string is misleading)
+**Regression**: Already-OPEN BUG-001 + BUG-002 are propagate-criticality tracking; user observation now confirms the toast-text path is the specific gap.
+
+### Repro
+1. In Current state OR Desired state tab, set a workload-tier instance to "High" criticality
+2. Trigger propagate (button or auto-flow)
+3. → Linked-disposition / linked-instance criticality DOES upgrade upward (correct functional behavior)
+4. → Toast / popup message says "Criticality level low" (always — regardless of the actual level propagated)
+
+### Suspected root cause
+`interactions/matrixCommands.js` (or wherever `propagateCriticalityUpgrades` runs) likely surfaces the toast via a function that takes the SOURCE level — or a hard-coded "low" string — instead of the EFFECTIVE upgrade level applied to dependents.
+
+### Fix plan
+Identify the toast call site; bind the message to the actual level applied. Add V-FLOW-PROPAGATE-CRITICALITY-TOAST-1 regression: synthesise a propagate from a "High" instance, capture the toast text, assert it reflects "high" (not "low").
+
+---
+
+## BUG-032 · Gaps tab desired-state asset linking button grayed out / not clickable (regression of an older fix)
+
+**Status**: OPEN · Reported 2026-05-05 by user · v3.0.0-rc.5 · Scheduled rc.6 (MEDIUM)
+**Reporter**: User
+**Severity**: Medium
+**Regression**: Yes — user notes "an old bug that was supposed to be fixed but never fixed".
+
+### Repro
+1. Open Gaps tab
+2. Try to link a desired-state asset
+3. → Button is grayed out / not clickable
+
+### Investigation plan
+- Check enable/disable predicate for the desired-state link button in Gaps view (likely `ui/views/GapsEditView.js` or whichever surface owns the link affordance).
+- Verify dependency on engagement having ≥1 desired-state instance + ≥1 gap with a layerId match.
+- The CURRENT-state link button should be working — diff the two paths to find the missing wire.
+
+### Fix plan
+After investigation: surface to user, then wire correctly + add V-FLOW-LINK-DESIRED-1 regression.
+
+---
+
+## BUG-033 · Local A multi-turn context loss (partial regression of rc.4 Hotfix #2b — only first response is accurate)
+
+**Status**: OPEN · Reported 2026-05-05 by user (office workshop test) · v3.0.0-rc.5 · Scheduled rc.6 (HIGH)
+**Reporter**: User
+**Severity**: High
+**Regression**: Yes — rc.4 Hotfix #2b shipped 4 defensive OpenAI-canonical translations to fix this exact class of issue. The user reports the symptom is BACK on rc.5, suggesting either: (a) the fix was incomplete; (b) something in the rc.5 changes regressed it; or (c) the fix only covered a narrow case.
+
+### Screenshot evidence (collected by user 2026-05-05)
+- Screenshot #4 (Canvas AI Assistant chat — Local A): asks "can you find the assets from the current state that are dell?" → response is the single word "current" (5:55:25 PM). Asks "list the gaps currently defined in the session" → 5:57:26 PM response is empty (Canvas response text appears to be blank). Same Local A provider. First turn returned a useful long answer about `mappedAssetIds` arrays + Document current state workflow; later turns degrade to terse / empty / single-word echoes.
+
+### Repro
+1. Switch active provider to Local A (vLLM Code-LLM at port 8000 with `--tool-call-parser hermes`)
+2. Open Canvas AI Assistant
+3. Send 3+ messages in a row
+4. → First response is accurate. Subsequent responses are: (a) single-word echoes, (b) empty / blank, (c) tool-call only without text completion, (d) generic "current" / "ready" non-answers
+
+### Investigation plan (root-cause discipline; no patches)
+1. **Wire-body diff between turn 1 and turn 2** — capture both via Network panel (Chrome DevTools), diff what's different. The system prompt should be IDENTICAL on both. Messages array grows.
+2. **Check tool-result round-trip on Local A** — the message shape after a `tool_use` → `tool_result` may be malformed for vLLM hermes parser. Hotfix #2b stringified tool result content; verify the format vLLM hermes expects (might want OpenAI's `{role:"tool", tool_call_id, content}` structure exactly).
+3. **Check Anthropic-canonical → OpenAI-canonical translation for `tool_use`/`tool_result` on multi-round** — `services/aiService.js` Hotfix #2b only collapses adjacent system messages; tool-call rounds may produce two-three "assistant: tool_use" → "tool: result" messages that vLLM hermes parser may not handle correctly.
+4. **Check max_tokens limit interaction with tool-call round-trip** — Hotfix #2b raised it to 4096. But if a tool_call response counts toward max_tokens AND the model also needs to emit a final text answer, the budget may exhaust before the final answer.
+
+### Suspected hot spots (in priority order)
+1. `services/aiService.js` `_buildOpenAIRequest` (or equivalent) — translation for round 2+ when tool calls occurred in round 1.
+2. `services/realChatProvider.js` Local A path — tool-call extraction may emit a malformed shape that vLLM hermes can't echo back.
+3. vLLM container args — `--enable-auto-tool-choice` flag mentioned in Local B 400 error (BUG-035) suggests the vLLM may need explicit tool-choice flag for Local A too.
+
+### Real-LLM smoke
+Same gap as BUG-030 — real-LLM live-key smoke missing from PREFLIGHT. rc.6 must add it.
+
+### Out of scope
+- Adding turn-count guardrails or "summarize earlier turns" patches. User rejected.
+
+---
+
+## BUG-034 · AI Providers settings save inconsistent (rc.4 Hotfix #1 didn't fully land — saves silently fail OR persist wrong values)
+
+**Status**: OPEN · Reported 2026-05-05 by user (office workshop test) · v3.0.0-rc.5 · Scheduled rc.6 (HIGH)
+**Reporter**: User
+**Severity**: High (user can't reliably configure providers; demos break)
+**Regression**: Yes — rc.4 Hotfix #1 (`016bbfe`) shipped a fix for "Settings save flaky during 90ms cross-fade (stale .overlay-body)". User reports the symptom is BACK on rc.5.
+
+### User words (literal)
+*"the save button in the AI admin is not working still, it sometimes refuse to save, or it save but it doesnt actually save the inputs i put in the configurations of the AI llm providers settings ... etc."*
+
+### Repro
+1. Open Settings → AI Providers
+2. Type a new model name OR API key for any provider
+3. Click Save
+4. → Sometimes the save doesn't fire (button click ignored)
+5. → Other times the save fires but the persisted value doesn't match what was typed (old value comes back on reopen)
+
+### Suspected root cause (post-Hotfix-#1 still flaky)
+Hotfix #1 fixed the case where `.overlay-body` was scoped against ALL overlays + picked the leaving body during 90ms cross-fade. That covered the SECTION-SWAP within Settings. But there may be a second flaky path:
+1. **Settings cross-section swap (rc.4 Hotfix #1 path)** — might have been incomplete.
+2. **Initial-open load** — provider config loaded into the form may not be the same record the save targets (race between `loadAiConfig()` async + form mount).
+3. **Save-button handler scope** — the click handler may capture a `_settings` reference that goes stale when form re-renders due to async config load.
+
+### Investigation plan (root-cause discipline)
+1. Capture the save-button click handler in `ui/views/SettingsModal.js` — verify which `_settings` ref it picks at click time.
+2. Add a console.log inside the save path — confirm whether (a) handler doesn't fire OR (b) handler fires but writes wrong values.
+3. Check `core/aiConfig.js` `saveAiConfig()` — atomic write? Race-prone?
+4. Test under rapid input + rapid save (the workshop scenario where user types + clicks fast).
+
+### Fix plan
+After root-cause confirmed: surface architectural fix to user. Add V-FLOW-SETTINGS-SAVE-1 + V-FLOW-SETTINGS-SAVE-RACE-1 regression tests.
+
+---
+
+## BUG-035 · V-PROXY-LOCAL-B-1 RED in workshop environment (404 from `/api/llm/local-b/`) + Local B vLLM `--enable-auto-tool-choice` flag missing
+
+**Status**: OPEN · Reported 2026-05-05 by user with screenshot evidence · v3.0.0-rc.5 · Scheduled rc.6 (MEDIUM-HIGH; partly user-side vLLM config)
+**Reporter**: User (office workshop machine)
+**Severity**: Medium-High (test fails; Local B unusable for chat)
+**Regression**: Yes for V-PROXY-LOCAL-B-1 — passed at rc.4 tag; user sees RED at rc.5 deploy. The vLLM flag is user-side server config, NOT app code.
+
+### Screenshot evidence
+- Screenshot #1+#2 (Browser DevTools console): `❌ V-PROXY-LOCAL-B-1 · docker-entrypoint.d/45-setup-llm-proxy.sh writes a /api/llm/local-b/ location with proxy_pass to LLM_LOCAL_B_PORT (HOTFIX #2a per LLMs on GB10.docx — VLM on 8001) V-PROXY-LOCAL-B-1: /api/llm/local-b/* MUST be a configured nginx location (got status 404 — 404 means location block missing)`
+- Screenshot #3 (Canvas AI Assistant after a Local B chat attempt): `Provider error: aiService localB HTTP 400 (400): {"error":{"message":"\"auto\" tool choice requires --enable-auto-tool-choice and --tool-call-parser to be set","type":"BadRequestError","param":null,"code":400}}`
+
+### Two distinct issues here
+**Part A (app code; OUR scope)**: `/api/llm/local-b/` returns 404 in the deployed container. That means the nginx config block didn't write at container start. Possible causes:
+1. `docker-entrypoint.d/45-setup-llm-proxy.sh` shipped at rc.4 Hotfix #2a is no longer being executed at container start.
+2. Script writes the block but uses a stale env var path.
+3. Build-cache served an OLD version of the script after the rc.4 ship.
+
+**Part B (vLLM server config; USER scope, but app should surface meaningful error)**: vLLM Local B (port 8001 VLM) needs `--enable-auto-tool-choice` + `--tool-call-parser <name>` flags. Per `LLMs on GB10.docx` Local B is the VLM container. The user's vLLM container args don't include those flags. The 400 error is correct behavior from vLLM — but the app shouldn't even GET TO the vLLM if the nginx route is 404'd.
+
+### Investigation plan
+1. Pull HEAD on the workshop machine; verify `/api/llm/local-b/` returns NOT 404 after a clean `docker compose up -d --build`. If still 404, the entrypoint script is the bug.
+2. If entrypoint script ran but route is still missing, diff `docker-entrypoint.d/45-setup-llm-proxy.sh` against rc.4 expectation.
+3. For Part B (vLLM flags): document the required flags in `LLMs on GB10.docx` reference + add a friendlier error message in `services/aiService.js` for "auto tool choice requires" → "Local B vLLM container missing --enable-auto-tool-choice flag; add to your docker run args".
+
+### Out of scope (user-side)
+- Adding `--enable-auto-tool-choice` to user's vLLM Local B container — that's user's machine config.
+
+---
+
 ## BUG-NNN · One-line headline
 
 **Status**: OPEN · Reported YYYY-MM-DD · vX.Y.Z · Scheduled <bucket>
