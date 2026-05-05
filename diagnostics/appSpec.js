@@ -8809,7 +8809,7 @@ import { createMockChatProvider }                from "../tests/mocks/mockChatPr
 // V-DEMO + V-MOCK + V-ANTI-RUN-1 fail RED against stubs until impl
 // commits land per the spec-and-test-first cadence.
 import { loadDemo as loadV3Demo, describeDemo as describeV3Demo } from "../core/demoEngagement.js";
-import { createMockChatProvider as createMockChatProviderProd, createGroundedMockProvider } from "../services/mockChatProvider.js";
+import { createMockChatProvider as createMockChatProviderProd } from "../services/mockChatProvider.js";
 import { createMockLLMProvider  as createMockLLMProviderProd  } from "../services/mockLLMProvider.js";
 
 // rc.6 / 6a · SPEC §S37 · Grounding contract recast — RAG-by-construction.
@@ -16623,50 +16623,18 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-FLOW-GROUND-4 · Layer 4 for empty engagement must include 'canvas' + 'empty' markers");
     });
 
-    it("V-FLOW-GROUND-5 · grounded mock against demo + 'summarize the gaps' paraphrases real gap descriptions (no fabrication)", async () => {
-      _resetEngagementStoreForTests();
-      _resetChatMemoryForTests();
-      const mod = await import("../core/demoEngagement.js");
-      const eng = (mod.getDemoEngagement && mod.getDemoEngagement()) ||
-                  (mod.loadDemo && mod.loadDemo());
-      setActiveEngagement(eng);
-      const provider = createGroundedMockProvider({});
-      const result = await streamChat({
-        engagement:     eng,
-        transcript:     [],
-        userMessage:    "summarize the gaps",
-        providerConfig: { providerKey: "mock" },
-        provider:       provider
-      });
-      // The mock must paraphrase at least one real gap description, NOT
-      // fall back to the "doesn't include" sentinel.
-      const fallbackPhrase = "doesn't include the data needed to answer that";
-      assert(!result.response.toLowerCase().includes(fallbackPhrase.toLowerCase()),
-        "V-FLOW-GROUND-5 · grounded mock must NOT fall back when the answer is in Layer 4; got: " +
-        result.response.slice(0, 200));
-      // At least one real gap description should appear (paraphrase or verbatim).
-      const realDescs = eng.gaps.allIds.map(id => eng.gaps.byId[id].description).filter(Boolean);
-      const hit = realDescs.some(d => result.response.toLowerCase().includes(d.toLowerCase().slice(0, 24)));
-      assert(hit,
-        "V-FLOW-GROUND-5 · grounded mock response must include at least one real gap-description fragment");
+    it("V-FLOW-GROUND-5 · RETIRED 2026-05-05 per feedback_no_mocks.md — was grounded-mock paraphrase; replaced by real-LLM smoke at PREFLIGHT 5b", () => {
+      // Per the no-mocks principle (LOCKED 2026-05-05), end-to-end
+      // paraphrase correctness is verified by real-LLM live-key smoke,
+      // not by a faked LLM substrate. This slot stays as a deprecation
+      // marker per TESTS §T1.2 (vector ids are permanent).
+      assert(true, "V-FLOW-GROUND-5 retired; see PREFLIGHT 5b real-LLM smoke");
     });
 
-    it("V-FLOW-GROUND-6 · grounded mock falls back to 'doesn't include' phrase when the answer requires out-of-engagement data", async () => {
-      _resetEngagementStoreForTests();
-      _resetChatMemoryForTests();
-      const eng = createEmptyEngagement();   // no gaps, no instances → almost any specific question is unanswerable
-      setActiveEngagement(eng);
-      const provider = createGroundedMockProvider({});
-      const result = await streamChat({
-        engagement:     eng,
-        transcript:     [],
-        userMessage:    "what is the customer's CISO's email address?",
-        providerConfig: { providerKey: "mock" },
-        provider:       provider
-      });
-      assert(result.response.toLowerCase().includes("doesn't include the data needed to answer that"),
-        "V-FLOW-GROUND-6 · grounded mock must emit the literal fallback phrase when answer needs out-of-engagement data; got: " +
-        result.response.slice(0, 200));
+    it("V-FLOW-GROUND-6 · RETIRED 2026-05-05 per feedback_no_mocks.md — was grounded-mock fallback phrase; replaced by real-LLM smoke at PREFLIGHT 5b", () => {
+      // Per the no-mocks principle (LOCKED 2026-05-05). Same disposition
+      // as V-FLOW-GROUND-5 above.
+      assert(true, "V-FLOW-GROUND-6 retired; see PREFLIGHT 5b real-LLM smoke");
     });
 
     it("V-FLOW-GROUND-FAIL-1 · verifier rejects a response referencing a fabricated gap description", async () => {
@@ -16714,34 +16682,26 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-FLOW-GROUND-FAIL-3 · violations should include 'date-deliverable' or 'project-phase'; got: " + JSON.stringify(kinds));
     });
 
-    it("V-FLOW-GROUND-FAIL-4 · streamChat replaces a hallucinated visible response with the render-error message + records groundingViolations", async () => {
-      _resetEngagementStoreForTests();
-      _resetChatMemoryForTests();
-      const mod = await import("../core/demoEngagement.js");
-      const eng = (mod.getDemoEngagement && mod.getDemoEngagement()) ||
-                  (mod.loadDemo && mod.loadDemo());
-      setActiveEngagement(eng);
-      // Use the SCRIPTED mock to inject a known-hallucinated response so
-      // streamChat's plane-2 hookup is exercised (this is the one V-FLOW-
-      // GROUND-FAIL test that uses createMockChatProvider, per F38T.4).
-      const provider = createMockChatProviderProd({
-        responses: [{ kind: "text", text:
-          "The engagement has a gap titled 'Telekom mainframe modernization' that is not really there." }]
-      });
-      const result = await streamChat({
-        engagement:     eng,
-        transcript:     [],
-        userMessage:    "what gaps exist?",
-        providerConfig: { providerKey: "mock" },
-        provider:       provider
-      });
-      const text = (result && result.response) || "";
-      assert(text.toLowerCase().includes("don't trace to the engagement") ||
-             text.toLowerCase().includes("doesn't trace to the engagement") ||
-             text.toLowerCase().includes("grounding"),
-        "V-FLOW-GROUND-FAIL-4 · visible response MUST be replaced with the grounding render-error; got: " + text.slice(0, 200));
-      assert(Array.isArray(result.groundingViolations) && result.groundingViolations.length > 0,
-        "V-FLOW-GROUND-FAIL-4 · result envelope MUST carry groundingViolations array");
+    it("V-FLOW-GROUND-FAIL-4 · source-grep: services/chatService.js streamChat MUST contain a verifyGrounding(...) call (per feedback_no_mocks.md, replaces prior scripted-mock integration test)", async () => {
+      // Per the no-mocks principle (LOCKED 2026-05-05), the integration
+      // of streamChat → verifyGrounding is verified by source-grep
+      // rather than by injecting a scripted hallucinated response via
+      // a mock provider. Honest, deterministic, no fakery.
+      let src = "";
+      try {
+        const res = await fetch("/services/chatService.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-GROUND-FAIL-4 · services/chatService.js source MUST be readable for source-grep");
+      // Match a verifyGrounding call (with arguments). Allow await/return prefixes.
+      const VERIFY_RE = /\bverifyGrounding\s*\(/;
+      assert(VERIFY_RE.test(src),
+        "V-FLOW-GROUND-FAIL-4 · services/chatService.js streamChat MUST call verifyGrounding(...) on the visible response path (per SPEC §S37 plane 2 + RULES §16 CH33)");
+      // Also assert the import is present, so the call isn't a typo.
+      const IMPORT_RE = /import\s*\{[^}]*verifyGrounding[^}]*\}\s*from\s*["']\.\/groundingVerifier(?:\.js)?["']/;
+      assert(IMPORT_RE.test(src),
+        "V-FLOW-GROUND-FAIL-4 · services/chatService.js MUST import verifyGrounding from ./groundingVerifier.js");
     });
 
     it("V-FLOW-GROUND-FAIL-5 · catalog whitelist: Dell products / catalog labels NOT in engagement do NOT trigger violations", async () => {
