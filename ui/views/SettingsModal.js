@@ -186,6 +186,22 @@ function buildSettingsBody(section) {
     pill.className = "settings-provider-pill" + (config.activeProvider === pkey ? " active" : "");
     pill.textContent = p.label;
     pill.addEventListener("click", function() {
+      // BUG-034 fix (rc.6 / 6g): before switching providers, commit any
+      // in-progress edits on the CURRENT provider form to the config
+      // object. Without this, typed-but-not-saved input values discard
+      // silently when swapSection rebuilds the form for the new provider
+      // — the workshop screenshot showed user typed Anthropic API key,
+      // clicked another pill, and lost the typed value entirely.
+      // urlInput / modelInput / fbInput / keyInput are var-hoisted in
+      // buildSettingsBody; at click time they exist + reflect live DOM.
+      try {
+        if (urlInput && config.providers[activeKey]) {
+          config.providers[activeKey].baseUrl        = urlInput.value.trim();
+          config.providers[activeKey].model          = modelInput.value.trim();
+          config.providers[activeKey].apiKey         = keyInput.value;
+          config.providers[activeKey].fallbackModels = parseFallbackModels(fbInput.value);
+        }
+      } catch (_e) { /* defensive — first pill click before form mounts */ }
       config.activeProvider = pkey;
       saveAiConfig(config);
       // Swap in place rather than close+reopen, so the overlay

@@ -1078,6 +1078,63 @@ Same gap as BUG-030 — real-LLM live-key smoke missing from PREFLIGHT. rc.6 mus
 
 ## BUG-034 · AI Providers settings save inconsistent (rc.4 Hotfix #1 didn't fully land — saves silently fail OR persist wrong values)
 
+**Status**: CLOSED rc.6 / 6g · root cause confirmed (provider-pill click discards unsaved input values) + fix shipped at the pill-click commit point + V-FLOW-SETTINGS-PILL-COMMIT-1 regression test · v3.0.0-rc.5 → rc.6
+
+### Investigation note (2026-05-05 · 6g · root cause)
+
+**Root cause** (not the rc.4 Hotfix #1 path; that one was a real bug + correctly fixed):
+
+`ui/views/SettingsModal.js` provider-pill click handler did:
+
+```js
+pill.addEventListener("click", function() {
+  config.activeProvider = pkey;
+  saveAiConfig(config);
+  swapSection("providers");
+});
+```
+
+When the user typed a new API key / URL / model into the CURRENT provider's form, then clicked ANOTHER provider pill BEFORE the explicit "Save" button:
+
+1. The DOM input had the typed value, but the `config` object (loaded at body-build time via `loadAiConfig()`) had the OLD value.
+2. The handler set `config.activeProvider = pkey` and immediately persisted via `saveAiConfig(config)`. This wrote the OLD `providers[anthropic].apiKey` (the user's typing was NEVER copied into config).
+3. `swapSection("providers")` rebuilt the form for the new provider. The OLD provider form was discarded — the typed-but-unsaved value with it.
+
+Result: user types Anthropic API key, clicks Local A pill, then clicks back to Anthropic — field is empty. The "save sometimes refuses to save / sometimes saves the wrong value" pattern in the workshop report.
+
+The rc.4 Hotfix #1 (cross-section swap scope) was a separate bug correctly fixed; it did NOT cover this provider-pill path because nobody had spotted the discard-on-pill-click race.
+
+### Fix (rc.6 / 6g, this commit)
+
+`ui/views/SettingsModal.js` provider-pill click handler now COMMITS the current form's live input values into `config[activeKey]` BEFORE the provider swap:
+
+```js
+try {
+  if (urlInput && config.providers[activeKey]) {
+    config.providers[activeKey].baseUrl        = urlInput.value.trim();
+    config.providers[activeKey].model          = modelInput.value.trim();
+    config.providers[activeKey].apiKey         = keyInput.value;
+    config.providers[activeKey].fallbackModels = parseFallbackModels(fbInput.value);
+  }
+} catch (_e) { /* defensive — first pill click before form mounts */ }
+config.activeProvider = pkey;
+saveAiConfig(config);
+swapSection("providers");
+```
+
+`urlInput` / `modelInput` / `fbInput` / `keyInput` are var-hoisted within `buildSettingsBody`; at click time they're defined and reflect live DOM. The defensive try/catch handles the rare case of a pill click before the form has fully mounted (shouldn't happen but cheap to guard).
+
+### Regression test
+
+`V-FLOW-SETTINGS-PILL-COMMIT-1` — source-grep test asserting:
+- Pill click handler block exists.
+- Handler commits all 4 input values (`urlInput`, `modelInput`, `keyInput`, `fbInput`) to `config[activeKey]` before swap.
+- Order: commit precedes both `saveAiConfig` and `swapSection`.
+
+This is a source-grep test (consistent with the existing V-SETTINGS-SAVE-1 pattern from rc.4 Hotfix #1) — a behavioral test would need DOM-mounting the SettingsModal which is fragile. Source-grep is honest + deterministic.
+
+---
+
 **Status**: OPEN · Reported 2026-05-05 by user (office workshop test) · v3.0.0-rc.5 · Scheduled rc.6 (HIGH)
 **Reporter**: User
 **Severity**: High (user can't reliably configure providers; demos break)

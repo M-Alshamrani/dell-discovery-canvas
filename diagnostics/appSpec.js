@@ -15173,6 +15173,46 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "tools[0].function.name preserved");
     });
 
+    it("V-FLOW-SETTINGS-PILL-COMMIT-1 · BUG-034 regression: provider-pill click handler MUST commit current form input values to config BEFORE saveAiConfig + swapSection (else typed-but-unsaved values discard silently)", async () => {
+      // BUG-034 root cause: when user types an API key into the active
+      // provider's form, then clicks ANOTHER provider pill before the
+      // explicit Save button, the pill handler used to do
+      // `config.activeProvider = pkey; saveAiConfig(config); swapSection`
+      // — which persisted the OLD provider's UNCHANGED config snapshot
+      // (the typed-in-DOM-but-not-yet-in-config value was never copied).
+      // Then swapSection rebuilt the form for the new provider; the
+      // typed value silently disappeared. rc.6 / 6g fix: pill handler
+      // commits current form input values to config[oldActiveKey]
+      // BEFORE swap.
+      const settingsSrc = await (await fetch("/ui/views/SettingsModal.js")).text();
+      // Extract the pill click handler block.
+      const pillHandlerBlock = settingsSrc.match(/pill\.addEventListener\("click",\s*function\(\)\s*\{[\s\S]*?\n\s\s\s\s\}\);/);
+      assert(pillHandlerBlock !== null,
+        "V-FLOW-SETTINGS-PILL-COMMIT-1: pill click handler block must be present in SettingsModal.js");
+      const handler = pillHandlerBlock[0];
+      // Required: handler MUST read all 4 input values into config[activeKey]
+      // before the pill swap.
+      assert(/config\.providers\[activeKey\]\.baseUrl\s*=\s*urlInput\.value/.test(handler),
+        "V-FLOW-SETTINGS-PILL-COMMIT-1: pill handler MUST commit urlInput.value to config[activeKey].baseUrl before provider swap");
+      assert(/config\.providers\[activeKey\]\.apiKey\s*=\s*keyInput\.value/.test(handler),
+        "V-FLOW-SETTINGS-PILL-COMMIT-1: pill handler MUST commit keyInput.value to config[activeKey].apiKey before provider swap");
+      assert(/config\.providers\[activeKey\]\.model\s*=\s*modelInput\.value/.test(handler),
+        "V-FLOW-SETTINGS-PILL-COMMIT-1: pill handler MUST commit modelInput.value to config[activeKey].model before provider swap");
+      assert(/config\.providers\[activeKey\]\.fallbackModels\s*=\s*parseFallbackModels\(fbInput\.value\)/.test(handler),
+        "V-FLOW-SETTINGS-PILL-COMMIT-1: pill handler MUST commit fallbackModels (parsed) to config[activeKey] before provider swap");
+      // Order check: the commit MUST happen BEFORE saveAiConfig + swapSection
+      // (otherwise the OLD config gets persisted without the typed values).
+      const commitIdx     = handler.search(/config\.providers\[activeKey\]\.baseUrl/);
+      const saveIdx       = handler.search(/saveAiConfig\(/);
+      const swapIdx       = handler.search(/swapSection\(/);
+      assert(commitIdx >= 0 && saveIdx >= 0 && swapIdx >= 0,
+        "V-FLOW-SETTINGS-PILL-COMMIT-1: handler must contain the commit + save + swap calls");
+      assert(commitIdx < saveIdx,
+        "V-FLOW-SETTINGS-PILL-COMMIT-1: input commits MUST happen BEFORE saveAiConfig (got commitIdx=" + commitIdx + ", saveIdx=" + saveIdx + ")");
+      assert(commitIdx < swapIdx,
+        "V-FLOW-SETTINGS-PILL-COMMIT-1: input commits MUST happen BEFORE swapSection (got commitIdx=" + commitIdx + ", swapIdx=" + swapIdx + ")");
+    });
+
     it("V-SETTINGS-SAVE-1 · Settings Save scopes lookup to settings overlay panel + skips bodies mid-fade (HOTFIX #1)", async () => {
       const settingsSrc = await (await fetch("/ui/views/SettingsModal.js")).text();
       // Anti-pattern: prior code did document.querySelectorAll(".overlay-body")
