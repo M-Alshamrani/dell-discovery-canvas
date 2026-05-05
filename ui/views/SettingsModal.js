@@ -4,12 +4,15 @@
 // component so the visual language matches AI Assist (centered modal,
 // sticky head + scrollable body + sticky footer, backdrop blur, Escape
 // + backdrop close). Two top-level sections: AI Providers + Skills.
-// Skills section runs the SkillAdmin builder inside the wider overlay
-// so there's room to author + edit comfortably.
+// Skills section runs the Skill Builder inside the wider overlay so
+// there's room to author + edit comfortably. Per SPEC §S35 / RULES
+// CH31 (rc.4-dev Arc 4) this pill is the SINGLE entry point for skill
+// authoring; the chat-rail "+ Author new skill" affordance routes here
+// via skillBuilderOpener.js.
 
 import { loadAiConfig, saveAiConfig, PROVIDERS } from "../../core/aiConfig.js";
 import { testConnection } from "../../services/aiService.js";
-import { renderSkillAdmin } from "./SkillAdmin.js";
+import { renderSkillBuilder } from "./SkillBuilder.js";
 import { openOverlay, closeOverlay } from "../components/Overlay.js";
 
 // Provider hint copy. Drives the placeholder + helper text per provider
@@ -155,7 +158,7 @@ function buildSettingsBody(section) {
   body.className = "settings-body settings-body-" + section;
 
   if (section === "skills") {
-    renderSkillAdmin(body);
+    renderSkillBuilder(body);
     return body;
   }
 

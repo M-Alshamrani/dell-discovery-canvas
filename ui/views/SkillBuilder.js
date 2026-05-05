@@ -1,614 +1,796 @@
-// ui/views/SkillBuilder.js — v3.1 · SPEC §S29.4 · simplified rebuild
+// ui/views/SkillBuilder.js — v3.0.0-rc.4-dev Arc 4 (SPEC §S35 + RULES §16 CH31)
 //
-// **Migration from v3.0**: this file was rewritten 2026-05-03 (rc.3 #4)
-// per SPEC §S29. The previous 735-line builder assumed click-to-run +
-// entityKind binding + a chip palette. v3.1 collapses to: name +
-// description + prompt template + parameters[] + output_target +
-// validate + mock-run preview. The Lab tab continues to host this
-// surface until rc.3 #7 retires it in favor of the chat right-rail
-// slide-over.
+// Evolved Skill Builder. Replaces the rc.3-era lean v3.1 builder
+// (deleted in this same arc) AND replaces ui/views/SkillAdmin.js
+// (renamed/retired in this same arc). Mounted by SettingsModal under
+// the "Skills builder" pill — the SINGLE entry point for skill
+// authoring per CH31 (no version suffix in the label, no second pill,
+// no standalone overlay).
 //
-// Drops vs v3.0:
-//   - Chip palette (engagement is auto-resolved; users don't pick paths)
-//   - Scope picker (skillType: click-to-run | session-wide)
-//   - Entity-kind dropdown (no click-to-run scope)
-//   - 1-2-3 step wizard layout
-// Keeps:
-//   - Seed picker (load Dell mapping / Executive summary / CARE builder)
-//   - Saved-skill picker (load + delete)
-//   - Mock-run preview (deterministic, no provider call)
-//   - Real-LLM run (via active provider; produces real output)
-//   - Save with manifest-validate path checking
-// Adds:
-//   - Parameters editor (zero-or-more rows: name + type + description + required)
-//   - Output target radio (chat-bubble enabled; deferred targets disabled)
+// Architecture:
+//   - UX BASE preserved from v2.4 SkillAdmin (list + deploy toggle +
+//     edit form + chip palette + Refine-to-CARE + dual-textbox preview
+//     + Test button + save gate)
+//   - Storage SWITCHED to state/v3SkillStore.js (v3.1 schema). v2
+//     core/skillStore.js is read-only legacy for one release; v2
+//     records appear under a "Legacy (v2)" section with per-row
+//     "Migrate" button (opt-in, NOT auto)
+//   - parameters[] editor ADDED to the edit form (rows: name + type +
+//     description + required)
+//   - outputTarget radio ADDED (4 options; only chat-bubble enabled,
+//     other 3 disabled with "deferred to GA" hint per SPEC §S29.7)
+//   - DROPPED v2-only fields: tab, applyPolicy, deployed, outputSchema,
+//     providerKey, systemPrompt (per SPEC §S35.2 R35.8)
+//   - Chat-rail "+ Author new skill" routes here via the
+//     skillBuilderOpener.js shim (R35.3)
 //
-// Authority: docs/v3.0/SPEC.md §S29.4 · docs/RULES.md §16 CH23.
+// Authority: docs/v3.0/SPEC.md §S35 · docs/RULES.md §16 CH31 ·
+// feedback_no_version_prefix_in_names.md · feedback_spec_and_test_first.md.
 
-import { generateManifest }      from "../../services/manifestGenerator.js";
-import { validateSkillSave }     from "../../services/skillSaveValidator.js";
-import { createEmptySkill, migrateSkillToV31 } from "../../schema/skill.js";
-import { runSkill }              from "../../services/skillRunner.js";
-import { resolveTemplate }       from "../../services/pathResolver.js";
-import { createMockLLMProvider } from "../../services/mockLLMProvider.js";
-import { loadDemo }              from "../../core/demoEngagement.js";
-import { getActiveEngagement }   from "../../state/engagementStore.js";
-import { loadCatalog }           from "../../services/catalogLoader.js";
-import {
-  SEED_SKILL_DELL_MAPPING,
-  SEED_SKILL_EXECUTIVE_SUMMARY,
-  SEED_SKILL_CARE_BUILDER
-} from "../../core/v3SeedSkills.js";
 import {
   saveV3Skill, loadV3Skills, loadV3SkillById, deleteV3Skill
-} from "../../state/v3SkillStore.js";
+}                                          from "../../state/v3SkillStore.js";
+import { loadSkills as loadV2Skills }      from "../../core/skillStore.js"; // read-only legacy
+import { migrateV2SkillToV31 }             from "../../schema/skill.js";
+import { generateManifest }                from "../../services/manifestGenerator.js";
+import { runSkill }                        from "../../services/skillRunner.js";
+import { resolveTemplate }                 from "../../services/pathResolver.js";
+import { createMockLLMProvider }           from "../../services/mockLLMProvider.js";
 import {
-  createRealLLMProvider, getActiveProviderStatus, ProviderNotConfiguredError
-} from "../../services/realLLMProvider.js";
+  createRealLLMProvider, ProviderNotConfiguredError
+}                                          from "../../services/realLLMProvider.js";
+import { loadAiConfig }                    from "../../core/aiConfig.js";
+import { chatCompletion }                  from "../../services/aiService.js";
+import { REFINE_META_SYSTEM, REFINE_META_RULES } from "../../core/promptGuards.js";
+import { createPillEditor }                from "../components/PillEditor.js";
+import { getActiveEngagement }             from "../../state/engagementStore.js";
+import { loadDemo }                        from "../../core/demoEngagement.js";
+import { loadCatalog }                     from "../../services/catalogLoader.js";
 
-// Migrate the seeds at module load so the form always sees v3.1 shape.
-const SEED_SKILLS = [
-  { id: "dell-mapping",       label: "Dell mapping (parameterized on Gap, structured Dell-product output)",
-                              skill: migrateSkillToV31(SEED_SKILL_DELL_MAPPING) },
-  { id: "executive-summary",  label: "Executive summary (engagement-wide, free-text)",
-                              skill: migrateSkillToV31(SEED_SKILL_EXECUTIVE_SUMMARY) },
-  { id: "care-builder",       label: "CARE prompt builder (engagement-wide, structured skill output)",
-                              skill: migrateSkillToV31(SEED_SKILL_CARE_BUILDER) }
-];
-
-// Deterministic mock LLM responses keyed by seed skillId (so the
-// preview is reproducible without burning provider credits).
-const MOCK_RESPONSES_BY_SKILL_ID = {
-  "dell-mapping": {
-    model: "mock-claude-sonnet",
-    text:  JSON.stringify({
-      rationale: "Modernize storage with Dell PowerStore + protect against ransomware with PowerProtect Cyber Recovery.",
-      products: ["powerstore", "powerprotect_cyber", "smartfabric_manager"]
-    })
-  },
-  "executive-summary": {
-    model: "mock-claude-sonnet",
-    text:  "Acme Healthcare Group is positioned for a confident modernization push. The team has identified 8 gaps spanning data protection, storage, compute, and infrastructure layers — with cyber resilience the dominant theme. Recommend a 90-day kickoff focused on the High-urgency gaps in data protection (PPDM + Cyber Recovery) and storage (PowerStore + PowerScale)."
-  },
-  "care-builder": {
-    model: "mock-claude-sonnet",
-    text:  JSON.stringify({
-      id:           "00000000-0000-4000-8000-000000000001",
-      engagementId: "00000000-0000-4000-8000-000000000001",
-      createdAt:    "2026-05-01T00:00:00.000Z",
-      updatedAt:    "2026-05-01T00:00:00.000Z",
-      skillId:      "skl-care-output-1",
-      label:        "Generated CARE prompt",
-      version:      "1.0.0",
-      promptTemplate:       "CONTEXT: {{customer.name}} ({{customer.vertical}}). AUDIENCE: presales.\nREQUEST: 3-paragraph exec summary.",
-      bindings:             [{ path: "customer.name", source: "session" }, { path: "customer.vertical", source: "session" }],
-      outputContract:       "free-text",
-      outputTarget:         "chat-bubble",
-      parameters:           [],
-      validatedAgainst:     "3.1",
-      outdatedSinceVersion: null
-    })
-  }
-};
-
-// Output targets — only "chat-bubble" actively renders in v3.1.
-// The other three are documented placeholders per SPEC §S29.7.
+// outputTarget options. Only chat-bubble enabled; other 3 disabled
+// with "deferred to GA" hint per SPEC §S29.7 + §S35.6 decision A.
 const OUTPUT_TARGETS = [
-  { id: "chat-bubble",       label: "Chat bubble (markdown)",      enabled: true,  hint: "Free-text or structured output rendered as a chat message." },
-  { id: "structured-card",   label: "Structured card",             enabled: false, hint: "Schema-typed data + render template. Deferred to rc.4." },
-  { id: "reporting-panel",   label: "Reporting panel (visual)",    enabled: false, hint: "Visualization (heatmap, chart). Deferred to rc.4." },
-  { id: "proposed-changes",  label: "Proposed changes (mutate)",   enabled: false, hint: "Mutation proposals with per-item approval. Deferred to rc.4." }
+  { id: "chat-bubble",      label: "Chat bubble (markdown)",       enabled: true,
+    hint: "Free-text or structured output rendered as a chat message." },
+  { id: "structured-card",  label: "Structured card",              enabled: false,
+    hint: "Schema-typed data + render template. Deferred to GA." },
+  { id: "reporting-panel",  label: "Reporting panel (visual)",     enabled: false,
+    hint: "Visualization (heatmap, chart). Deferred to GA." },
+  { id: "proposed-changes", label: "Proposed changes (mutate)",    enabled: false,
+    hint: "Mutation proposals with per-item approval. Deferred to GA." }
 ];
 
 const PARAMETER_TYPES = [
-  { id: "string",   label: "String" },
-  { id: "number",   label: "Number" },
-  { id: "boolean",  label: "Boolean" },
-  { id: "entityId", label: "Entity (gap / driver / instance / environment)" }
+  { id: "string",   label: "string" },
+  { id: "number",   label: "number" },
+  { id: "boolean",  label: "boolean" },
+  { id: "entityId", label: "entityId (gap / driver / instance / environment)" }
 ];
 
-// Render the panel into `container`. Returns a destroy() function.
-export function renderSkillBuilder(container) {
-  // v3.1 state shape — no skillType / entityKind. Single scope: prompt
-  // + zero-or-more parameters supplied at invoke time.
-  let state = {
-    skillId:        "skl-draft-1",
-    label:          "New skill",
-    description:    "",
-    promptTemplate: "Hello {{customer.name}}!",
-    parameters:     [],
-    outputTarget:   "chat-bubble",
-    lastValidation: null,
-    providerMode:   "mock"   // "mock" | "real"
-  };
-  const manifest = generateManifest();
-
+// Render the panel into `container` (the settings modal body). Public
+// API matches v2 renderSkillAdmin so SettingsModal call site changes
+// from `renderSkillAdmin` to `renderSkillBuilder`.
+export function renderSkillBuilder(container, onChange) {
   container.innerHTML = "";
-  container.classList.add("skill-builder");
+  var root = mk("div", "skill-admin");
 
-  // ───── HEADER ─────
-  const header = document.createElement("div");
-  header.className = "skill-builder-header";
-  header.innerHTML = `
-    <h2 class="skill-builder-title">Skill Builder</h2>
-    <div class="skill-builder-subtitle">
-      Author AI skills with bindable canvas paths, validate them at save time, and try a mock run before deploying.
-    </div>
-  `;
-  container.appendChild(header);
-
-  // ───── SEED SKILL PICKER ─────
-  const seedPicker = document.createElement("section");
-  seedPicker.className = "skill-builder-seed-picker";
-  seedPicker.innerHTML = `
-    <label class="skill-builder-seed-label" for="seed-picker">
-      Start from a curated seed skill
-    </label>
-    <select id="seed-picker" class="skill-builder-seed-select">
-      <option value="">— Build from scratch —</option>
-      ${SEED_SKILLS.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.label)}</option>`).join("")}
-    </select>
-  `;
-  container.appendChild(seedPicker);
-  const seedSelect = seedPicker.querySelector("#seed-picker");
-
-  // ───── SAVED SKILLS PICKER ─────
-  const savedPicker = document.createElement("section");
-  savedPicker.className = "skill-builder-saved-picker";
-  savedPicker.innerHTML = `
-    <label class="skill-builder-saved-label" for="saved-picker">
-      Your saved skills <span class="skill-builder-saved-count"></span>
-    </label>
-    <div class="skill-builder-saved-row">
-      <select id="saved-picker" class="skill-builder-seed-select">
-        <option value="">— Pick a saved skill to load —</option>
-      </select>
-      <button type="button" class="skill-builder-saved-delete-btn"
-              title="Delete the selected saved skill">Delete</button>
-    </div>
-  `;
-  container.appendChild(savedPicker);
-  const savedSelect    = savedPicker.querySelector("#saved-picker");
-  const savedCountEl   = savedPicker.querySelector(".skill-builder-saved-count");
-  const savedDeleteBtn = savedPicker.querySelector(".skill-builder-saved-delete-btn");
-
-  function refreshSavedList() {
-    const all = loadV3Skills();
-    const ids = Object.keys(all);
-    savedCountEl.textContent = ids.length ? "(" + ids.length + ")" : "(none yet)";
-    const previous = savedSelect.value;
-    savedSelect.innerHTML = '<option value="">— Pick a saved skill to load —</option>' +
-      ids.map(id => {
-        const s = all[id];
-        const label = s.label || s.skillId;
-        const scope = (s.parameters && s.parameters.length > 0)
-          ? "parameterized (" + s.parameters.length + ")"
-          : "engagement-wide";
-        return `<option value="${escapeHtml(id)}">${escapeHtml(label)} · ${escapeHtml(scope)}</option>`;
-      }).join("");
-    if (ids.includes(previous)) savedSelect.value = previous;
-  }
-  refreshSavedList();
-
-  // ───── META (skillId + label + description) ─────
-  const meta = document.createElement("section");
-  meta.className = "skill-builder-meta";
-  meta.innerHTML = `
-    <div class="skill-builder-meta-row">
-      <div class="skill-builder-meta-cell">
-        <label class="skill-builder-meta-label" for="skill-builder-skill-id">Skill ID</label>
-        <input id="skill-builder-skill-id" class="skill-builder-meta-input" type="text"
-               placeholder="skl-my-skill-1" value="${escapeHtml(state.skillId)}" />
-      </div>
-      <div class="skill-builder-meta-cell">
-        <label class="skill-builder-meta-label" for="skill-builder-skill-label">Label</label>
-        <input id="skill-builder-skill-label" class="skill-builder-meta-input" type="text"
-               placeholder="My new skill" value="${escapeHtml(state.label)}" />
-      </div>
-    </div>
-    <div class="skill-builder-meta-row">
-      <div class="skill-builder-meta-cell skill-builder-meta-cell-wide">
-        <label class="skill-builder-meta-label" for="skill-builder-description">Description (optional)</label>
-        <input id="skill-builder-description" class="skill-builder-meta-input" type="text"
-               placeholder="One-line description shown on the skill card" value="${escapeHtml(state.description)}" />
-      </div>
-    </div>
-  `;
-  container.appendChild(meta);
-  const skillIdInput    = meta.querySelector("#skill-builder-skill-id");
-  const skillLabelInput = meta.querySelector("#skill-builder-skill-label");
-  const descriptionInput = meta.querySelector("#skill-builder-description");
-  skillIdInput.addEventListener("input",    e => { state.skillId    = e.target.value; });
-  skillLabelInput.addEventListener("input", e => { state.label      = e.target.value; });
-  descriptionInput.addEventListener("input", e => { state.description = e.target.value; });
-
-  // ───── PROMPT TEMPLATE ─────
-  const editor = document.createElement("section");
-  editor.className = "skill-builder-editor";
-  editor.innerHTML = `
-    <label class="skill-builder-editor-label" for="skill-builder-prompt">Prompt template</label>
-    <div class="skill-builder-editor-hint">
-      Reference engagement fields with double-brace placeholders such as <code>{{customer.name}}</code> or <code>{{drivers.allIds}}</code>. Parameters can be referenced by name; entity parameters expose their fields under the same name.
-    </div>
-    <textarea id="skill-builder-prompt" class="skill-builder-textarea" rows="8">${escapeHtml(state.promptTemplate)}</textarea>
-  `;
-  container.appendChild(editor);
-  const textarea = editor.querySelector("#skill-builder-prompt");
-  textarea.addEventListener("input", e => { state.promptTemplate = e.target.value; });
-
-  // ───── PARAMETERS EDITOR ─────
-  const paramSection = document.createElement("section");
-  paramSection.className = "skill-builder-params";
-  paramSection.innerHTML = `
-    <div class="skill-builder-params-head">
-      <label class="skill-builder-editor-label">Parameters <span class="skill-builder-params-count"></span></label>
-      <button type="button" class="skill-builder-params-add">+ Add parameter</button>
-    </div>
-    <div class="skill-builder-params-hint">
-      Zero or more values the user supplies at invocation time. Use <code>type: entityId</code> to pick a gap / driver / instance / environment from the engagement.
-    </div>
-    <div class="skill-builder-params-list" data-params-list></div>
-  `;
-  container.appendChild(paramSection);
-  const paramsList = paramSection.querySelector("[data-params-list]");
-  const paramsCountEl = paramSection.querySelector(".skill-builder-params-count");
-  const paramsAddBtn  = paramSection.querySelector(".skill-builder-params-add");
-
-  function paintParameters() {
-    paramsList.innerHTML = "";
-    paramsCountEl.textContent = state.parameters.length === 0
-      ? "(none)" : "(" + state.parameters.length + ")";
-    state.parameters.forEach((p, idx) => {
-      const row = document.createElement("div");
-      row.className = "skill-builder-param-row";
-      row.innerHTML = `
-        <input type="text" class="skill-builder-param-name" placeholder="name" value="${escapeHtml(p.name || "")}" />
-        <select class="skill-builder-param-type">
-          ${PARAMETER_TYPES.map(t =>
-            `<option value="${t.id}"${p.type === t.id ? " selected" : ""}>${escapeHtml(t.label)}</option>`
-          ).join("")}
-        </select>
-        <input type="text" class="skill-builder-param-desc" placeholder="description (e.g. 'Pick a gap')" value="${escapeHtml(p.description || "")}" />
-        <label class="skill-builder-param-required">
-          <input type="checkbox"${p.required ? " checked" : ""} /> required
-        </label>
-        <button type="button" class="skill-builder-param-delete" title="Remove parameter">×</button>
-      `;
-      const nameInp = row.querySelector(".skill-builder-param-name");
-      const typeInp = row.querySelector(".skill-builder-param-type");
-      const descInp = row.querySelector(".skill-builder-param-desc");
-      const reqInp  = row.querySelector(".skill-builder-param-required input");
-      const delBtn  = row.querySelector(".skill-builder-param-delete");
-      nameInp.addEventListener("input", e => { state.parameters[idx].name        = e.target.value; });
-      typeInp.addEventListener("change", e => { state.parameters[idx].type        = e.target.value; });
-      descInp.addEventListener("input", e => { state.parameters[idx].description = e.target.value; });
-      reqInp.addEventListener("change",  e => { state.parameters[idx].required    = e.target.checked; });
-      delBtn.addEventListener("click", () => {
-        state.parameters.splice(idx, 1);
-        paintParameters();
-      });
-      paramsList.appendChild(row);
-    });
-  }
-  paintParameters();
-  paramsAddBtn.addEventListener("click", () => {
-    state.parameters.push({ name: "", type: "string", description: "", required: false });
-    paintParameters();
+  var header = mk("div", "skill-admin-header");
+  var title  = mkt("div", "skill-admin-title", "Skills builder");
+  var addBtn = mkt("button", "btn-primary", "+ Add skill");
+  addBtn.addEventListener("click", function() {
+    renderEditForm(root, list, null /* new skill */, onChange);
   });
+  header.appendChild(title);
+  header.appendChild(addBtn);
+  root.appendChild(header);
 
-  // ───── OUTPUT TARGET ─────
-  const targetSection = document.createElement("section");
-  targetSection.className = "skill-builder-output-target";
-  targetSection.innerHTML = `
-    <label class="skill-builder-editor-label">Output target</label>
-    <div class="skill-builder-output-hint">
-      What the skill produces. Only <strong>Chat bubble</strong> is implemented in v3.1; the others are documented placeholders for rc.4.
-    </div>
-    <div class="skill-builder-output-grid">
-      ${OUTPUT_TARGETS.map(t => `
-        <label class="skill-builder-output-option${t.enabled ? "" : " is-disabled"}" title="${escapeHtml(t.hint)}">
-          <input type="radio" name="skill-builder-target" value="${t.id}"
-                 ${t.id === state.outputTarget ? "checked" : ""}
-                 ${t.enabled ? "" : "disabled"} />
-          <span>${escapeHtml(t.label)}</span>
-        </label>
-      `).join("")}
-    </div>
-  `;
-  container.appendChild(targetSection);
-  targetSection.querySelectorAll('input[name="skill-builder-target"]').forEach(input => {
-    input.addEventListener("change", e => { state.outputTarget = e.target.value; });
-  });
+  root.appendChild(mkt("div", "settings-help",
+    "Skills run against the active AI provider. Each skill is a parameterized prompt; " +
+    "users invoke it from the AI assistant chat right-rail. Click any chip below to " +
+    "insert a binding to engagement data (the customer name, a selected gap, an " +
+    "environment, and so on). Add parameters for runtime user input (e.g. 'Pick a gap')."));
 
-  // ───── ACTIONS ─────
-  const actions = document.createElement("section");
-  actions.className = "skill-builder-actions";
-  actions.innerHTML = `
-    <div class="skill-builder-provider-row">
-      <label class="skill-builder-provider-radio">
-        <input type="radio" name="skill-builder-provider" value="mock" checked /> Mock LLM
-      </label>
-      <label class="skill-builder-provider-radio">
-        <input type="radio" name="skill-builder-provider" value="real" /> Real (active provider)
-      </label>
-      <span class="skill-builder-provider-status" data-provider-status></span>
-    </div>
-    <div class="skill-builder-actions-row">
-      <button type="button" class="skill-builder-validate-btn">Validate</button>
-      <button type="button" class="skill-builder-run-btn">Run skill (mock LLM)</button>
-      <button type="button" class="skill-builder-save-btn btn-primary">Save skill</button>
-    </div>
-    <div class="skill-builder-result-panel" data-result-panel></div>
-    <div class="skill-builder-run-result" data-run-result></div>
-    <div class="skill-builder-save-result" data-save-result></div>
-  `;
-  container.appendChild(actions);
+  var list = mk("div", "skill-admin-list");
+  renderList(list, onChange);
+  root.appendChild(list);
 
-  const validateBtn      = actions.querySelector(".skill-builder-validate-btn");
-  const runBtn           = actions.querySelector(".skill-builder-run-btn");
-  const saveBtn          = actions.querySelector(".skill-builder-save-btn");
-  const resultPanel      = actions.querySelector("[data-result-panel]");
-  const runResultPanel   = actions.querySelector("[data-run-result]");
-  const saveResultPanel  = actions.querySelector("[data-save-result]");
-  const providerStatusEl = actions.querySelector("[data-provider-status]");
-
-  function refreshProviderStatus() {
-    if (state.providerMode === "real") {
-      const status = getActiveProviderStatus();
-      providerStatusEl.innerHTML = escapeHtml(status.label) + " " + (status.ready
-        ? '<span class="skill-builder-provider-ready">ready</span>'
-        : '<span class="skill-builder-provider-warn">' + escapeHtml(status.reason || "not configured") + "</span>");
-      runBtn.textContent = state.providerMode === "real" ? "Run skill (real LLM)" : "Run skill (mock LLM)";
-    } else {
-      providerStatusEl.textContent = "";
-      runBtn.textContent = "Run skill (mock LLM)";
-    }
-  }
-  refreshProviderStatus();
-  actions.querySelectorAll('input[name="skill-builder-provider"]').forEach(input => {
-    input.addEventListener("change", e => { state.providerMode = e.target.value; refreshProviderStatus(); });
-  });
-
-  // ───── SEED LOAD ─────
-  seedSelect.addEventListener("change", () => {
-    const seedId = seedSelect.value;
-    if (!seedId) return;
-    const seedEntry = SEED_SKILLS.find(s => s.id === seedId);
-    if (!seedEntry) return;
-    const seed = seedEntry.skill;   // already migrated to v3.1
-    state.skillId        = seed.skillId;
-    state.label          = seed.label;
-    state.description    = seed.description || "";
-    state.promptTemplate = seed.promptTemplate;
-    state.parameters     = JSON.parse(JSON.stringify(seed.parameters || []));
-    state.outputTarget   = seed.outputTarget || "chat-bubble";
-    skillIdInput.value     = state.skillId;
-    skillLabelInput.value  = state.label;
-    descriptionInput.value = state.description;
-    textarea.value         = state.promptTemplate;
-    paintParameters();
-    targetSection.querySelectorAll('input[name="skill-builder-target"]').forEach(inp => {
-      inp.checked = inp.value === state.outputTarget;
-    });
-    resultPanel.innerHTML = ""; runResultPanel.innerHTML = ""; saveResultPanel.innerHTML = "";
-  });
-
-  // ───── SAVED SKILL LOAD ─────
-  savedSelect.addEventListener("change", () => {
-    const id = savedSelect.value;
-    if (!id) return;
-    const saved = loadV3SkillById(id);   // already migrated by the store
-    if (!saved) return;
-    state.skillId        = saved.skillId;
-    state.label          = saved.label;
-    state.description    = saved.description || "";
-    state.promptTemplate = saved.promptTemplate;
-    state.parameters     = JSON.parse(JSON.stringify(saved.parameters || []));
-    state.outputTarget   = saved.outputTarget || "chat-bubble";
-    skillIdInput.value     = state.skillId;
-    skillLabelInput.value  = state.label;
-    descriptionInput.value = state.description;
-    textarea.value         = state.promptTemplate;
-    paintParameters();
-    targetSection.querySelectorAll('input[name="skill-builder-target"]').forEach(inp => {
-      inp.checked = inp.value === state.outputTarget;
-    });
-    resultPanel.innerHTML = ""; runResultPanel.innerHTML = ""; saveResultPanel.innerHTML = "";
-  });
-
-  savedDeleteBtn.addEventListener("click", () => {
-    const id = savedSelect.value;
-    if (!id) return;
-    const result = deleteV3Skill(id);
-    refreshSavedList();
-    saveResultPanel.innerHTML = result.ok
-      ? '<div class="skill-builder-save-success">Deleted ' + escapeHtml(id) + "</div>"
-      : '<div class="skill-builder-save-error">Delete failed: ' + escapeHtml(result.error || "") + "</div>";
-  });
-
-  // ───── VALIDATE ─────
-  validateBtn.addEventListener("click", () => {
-    const draft = createEmptySkill({
-      skillId:        state.skillId || "skl-draft-1",
-      label:          state.label || "Draft",
-      promptTemplate: state.promptTemplate,
-      parameters:     state.parameters,
-      outputTarget:   state.outputTarget
-    });
-    const result = validateSkillSave(draft, manifest);
-    state.lastValidation = result;
-    renderValidationResult(resultPanel, result);
-  });
-
-  // ───── RUN (mock OR real) ─────
-  runBtn.addEventListener("click", async () => {
-    runResultPanel.innerHTML = '<div class="skill-builder-run-pending">Running…</div>';
-    try {
-      const eng = getActiveEngagement() || loadDemo();
-      const dellCat = await loadCatalog("DELL_PRODUCT_TAXONOMY");
-      const catalogVersions = {
-        DELL_PRODUCT_TAXONOMY: dellCat.catalogVersion,
-        BUSINESS_DRIVERS:      "2026.04",
-        ENV_CATALOG:           "2026.04"
-      };
-      const ctx = {
-        engagement:      eng,
-        customer:        eng.customer,
-        engagementMeta:  eng.meta,
-        catalogVersions,
-        dellTaxonomyIds: new Set(dellCat.entries.map(e => e.id))
-      };
-
-      // Prefill parameter values: entityId → first entity of the
-      // hint kind from the engagement; primitives → "[example]".
-      const params = {};
-      for (const p of state.parameters) {
-        if (p.type === "entityId") {
-          const kindKey = entityKindKeyFromHint(p.description);
-          if (kindKey && eng[kindKey]?.allIds?.length) {
-            params[p.name] = eng[kindKey].allIds[0];
-          }
-        } else if (p.type === "number")  { params[p.name] = 0; }
-          else if (p.type === "boolean") { params[p.name] = true; }
-          else                            { params[p.name] = "[example]"; }
-      }
-
-      const skill = createEmptySkill({
-        skillId:        state.skillId || "skl-draft-1",
-        label:          state.label || "Draft",
-        promptTemplate: state.promptTemplate,
-        parameters:     state.parameters,
-        outputTarget:   state.outputTarget
-      });
-
-      const provider = state.providerMode === "real"
-        ? createRealLLMProvider()
-        : createMockLLMProvider({
-            defaultResponse: MOCK_RESPONSES_BY_SKILL_ID[state.skillId]
-                          || { model: "mock-claude-sonnet", text: "(mock response — no canned text for skillId='" + state.skillId + "')" }
-          });
-
-      // Resolve template once for display.
-      let augmentedCtx = { ...ctx };
-      for (const p of state.parameters) {
-        if (!(p.name in params)) continue;
-        augmentedCtx[p.name] = params[p.name];
-        if (p.type === "entityId" && typeof params[p.name] === "string") {
-          const eKey = entityKindKeyFromHint(p.description);
-          const eByCol = eKey && eng[eKey]?.byId?.[params[p.name]];
-          if (eByCol) {
-            if (!augmentedCtx.context) augmentedCtx.context = {};
-            augmentedCtx.context[p.name] = eByCol;
-          }
-        }
-      }
-      const resolvedPrompt = resolveTemplate(state.promptTemplate, augmentedCtx, { skillId: skill.skillId });
-      const envelope = await runSkill(skill, ctx, provider, {
-        params,
-        runTimestamp: "2026-05-03T00:00:00.000Z",
-        runIdSeed:    "skill-builder-run-" + state.skillId
-      });
-      renderRunResult(runResultPanel, state.skillId, state, { resolvedPrompt, envelope });
-    } catch (e) {
-      if (e instanceof ProviderNotConfiguredError) {
-        runResultPanel.innerHTML =
-          '<div class="skill-builder-run-error">Real provider not configured. Open Settings → Providers to set one, or switch to Mock LLM.</div>';
-      } else {
-        runResultPanel.innerHTML =
-          '<div class="skill-builder-run-error">' + escapeHtml(String(e && e.message || e)) + "</div>";
-      }
-    }
-  });
-
-  // ───── SAVE ─────
-  saveBtn.addEventListener("click", () => {
-    const draft = {
-      skillId:        state.skillId,
-      label:          state.label,
-      description:    state.description,
-      promptTemplate: state.promptTemplate,
-      parameters:     state.parameters,
-      outputTarget:   state.outputTarget,
-      outputContract: "free-text"
-    };
-    const result = saveV3Skill(draft, { manifest });
-    renderSaveResult(saveResultPanel, result);
-    if (result.ok) refreshSavedList();
-  });
-
-  // ───── DESTROY ─────
-  return function destroy() { container.innerHTML = ""; };
+  container.appendChild(root);
+  return root;
 }
 
-// Map a parameter description hint to an engagement collection key.
-//   "Pick a gap" → "gaps"; "Pick a driver" → "drivers"; etc.
+function renderList(list, onChange) {
+  list.innerHTML = "";
+  var savedMap     = loadV3Skills();
+  var savedSkills  = Object.keys(savedMap).map(function(k) { return savedMap[k]; });
+
+  if (savedSkills.length === 0) {
+    list.appendChild(mkt("div", "skill-admin-empty",
+      "No skills yet. Click '+ Add skill' to create one."));
+  } else {
+    savedSkills.forEach(function(s) {
+      list.appendChild(renderRow(s, list, onChange));
+    });
+  }
+
+  // Legacy section: rendered ONLY when current store is empty AND legacy
+  // store has records. One-release transition window — opt-in migration
+  // via per-row "Migrate" button. (SPEC + RULES references in comments.)
+  var legacySkills = [];
+  try { legacySkills = loadV2Skills(); } catch (e) { /* best-effort; legacy store is read-only */ }
+  if (savedSkills.length === 0 && Array.isArray(legacySkills) && legacySkills.length > 0) {
+    list.appendChild(renderLegacySection(legacySkills, list, onChange));
+  }
+}
+
+function renderLegacySection(legacySkills, list, onChange) {
+  var sec = mk("div", "skill-legacy-section");
+  sec.appendChild(mkt("div", "skill-legacy-section-head", "Legacy skills"));
+  sec.appendChild(mkt("div", "settings-help-inline",
+    "These skills come from the previous store. They're read-only here — click 'Migrate' " +
+    "on a row to translate it into the current schema and copy it to the new store. The " +
+    "original record stays in place as backup until the next release."));
+  legacySkills.forEach(function(legacy) {
+    var row = mk("div", "skill-row skill-row-legacy");
+    var nameCol = mk("div", "skill-row-name-col");
+    nameCol.appendChild(mkt("div", "skill-row-name", legacy.name || "(untitled legacy skill)"));
+    if (legacy.description) nameCol.appendChild(mkt("div", "skill-row-desc", legacy.description));
+    var meta = mk("div", "skill-row-meta");
+    if (legacy.tabId)          meta.appendChild(mkt("span", "skill-row-tab",    "tab: " + legacy.tabId));
+    if (legacy.responseFormat) meta.appendChild(mkt("span", "skill-row-format", legacy.responseFormat));
+    nameCol.appendChild(meta);
+    row.appendChild(nameCol);
+
+    var actions = mk("div", "skill-row-actions");
+    var migrateBtn = mkt("button", "btn-secondary skill-row-migrate", "Migrate");
+    migrateBtn.title = "Translate this legacy skill into the current schema and copy it to the new store. The original stays as backup.";
+    migrateBtn.addEventListener("click", function() {
+      var migrated = migrateV2SkillToV31(legacy);
+      // Drop the audit field before saving (it's not part of the strict
+      // schema). UI surfaces what was lost in a one-time confirm dialog.
+      var dropped = (migrated._droppedFromV2 || []).map(function(d) { return d.field; });
+      delete migrated._droppedFromV2;
+      var msg = "Migrate '" + migrated.label + "' into the current schema?";
+      if (dropped.length > 0) {
+        msg += "\n\nThese legacy fields will be dropped (no equivalent in the current schema): " + dropped.join(", ") + ".";
+      }
+      msg += "\n\nThe original legacy record stays as backup.";
+      if (!confirm(msg)) return;
+      var manifest = generateManifest();
+      var result = saveV3Skill(migrated, { manifest: manifest });
+      if (result.ok) {
+        renderList(list, onChange);
+        if (onChange) onChange();
+      } else {
+        alert("Migration failed: " + (result.errors || []).map(function(e) { return e.message || e; }).join("; "));
+      }
+    });
+    actions.appendChild(migrateBtn);
+    row.appendChild(actions);
+    sec.appendChild(row);
+  });
+  return sec;
+}
+
+function renderRow(skill, list, onChange) {
+  var row = mk("div", "skill-row");
+
+  var nameCol = mk("div", "skill-row-name-col");
+  nameCol.appendChild(mkt("div", "skill-row-name", skill.label || skill.skillId));
+  if (skill.description) nameCol.appendChild(mkt("div", "skill-row-desc", skill.description));
+  var meta = mk("div", "skill-row-meta");
+  meta.appendChild(mkt("span", "skill-row-format", skill.outputTarget || "chat-bubble"));
+  if (typeof skill.outputContract === "object" && skill.outputContract.schemaRef) {
+    meta.appendChild(mkt("span", "skill-row-policy", "structured: " + skill.outputContract.schemaRef));
+  } else {
+    meta.appendChild(mkt("span", "skill-row-policy", "free-text"));
+  }
+  if (Array.isArray(skill.parameters) && skill.parameters.length > 0) {
+    meta.appendChild(mkt("span", "skill-row-params", skill.parameters.length + " param" + (skill.parameters.length === 1 ? "" : "s")));
+  }
+  nameCol.appendChild(meta);
+  row.appendChild(nameCol);
+
+  var actions = mk("div", "skill-row-actions");
+
+  var editBtn = mkt("button", "btn-outline", "Edit");
+  editBtn.addEventListener("click", function() {
+    var adminRoot = list.parentElement;
+    if (adminRoot) renderEditForm(adminRoot, list, skill, onChange);
+  });
+  actions.appendChild(editBtn);
+
+  var delBtn = mkt("button", "btn-danger", "Delete");
+  delBtn.addEventListener("click", function() {
+    if (!confirm("Delete skill '" + (skill.label || skill.skillId) + "'? This cannot be undone.")) return;
+    deleteV3Skill(skill.skillId);
+    renderList(list, onChange);
+    if (onChange) onChange();
+  });
+  actions.appendChild(delBtn);
+
+  row.appendChild(actions);
+  return row;
+}
+
+function renderEditForm(adminRoot, list, existing, onChange) {
+  var old = adminRoot.querySelector(".skill-form");
+  if (old) old.remove();
+
+  var form = mk("div", "skill-form");
+  form.appendChild(mkt("div", "skill-form-title",
+    existing ? "Edit skill" : "Add skill"));
+
+  var nameInput = mkField(form, "Label *", "text",
+    existing ? existing.label : "",
+    "User-visible name shown in the chat right-rail and skill list.");
+  var descInput = mkField(form, "Description", "text",
+    existing ? existing.description : "",
+    "One-line summary; helps users know when to invoke this skill.");
+
+  // ─── Prompt template (pill editor) ─────────────────────────────
+  var tplLabelGroup = mk("div", "skill-form-field");
+  tplLabelGroup.appendChild(mkt("label", "skill-form-label", "Prompt template *"));
+  tplLabelGroup.appendChild(mkt("div", "settings-help-inline",
+    "Sent to the AI on every run. Click any field chip below to insert a binding pill (uneditable as a unit; " +
+    "Backspace removes it whole). Reference parameters with {{paramName}} (defined below)."));
+  form.appendChild(tplLabelGroup);
+
+  // Build the pill-editor manifest from the v3 manifestGenerator (engagement-wide
+  // bindable paths, NOT v2 fieldsForTab(tabId)).
+  var canvasManifest        = generateManifest();
+  var pillManifestList  = buildPillEditorManifest(canvasManifest);
+
+  var tplArea = createPillEditor({
+    initialValue: existing ? existing.promptTemplate : "Hello {{customer.name}}!",
+    manifest:     pillManifestList,
+    onInput:      function() { refreshBindingsAndPreview(); invalidateTest(); }
+  });
+  tplLabelGroup.appendChild(tplArea);
+
+  // ─── Refine to CARE button ─────────────────────────────────────
+  var refineRow = mk("div", "refine-row");
+  var refineBtn = mkt("button", "btn-secondary", "✨ Refine to CARE format");
+  refineBtn.title = "Rewrite this draft as a CARE-structured prompt (Context · Ask · Rules · Examples) using the active AI provider.";
+  refineRow.appendChild(refineBtn);
+  var refineStatus = mkt("span", "refine-status", "");
+  refineRow.appendChild(refineStatus);
+  form.appendChild(refineRow);
+  var refineDiff = mk("div", "refine-diff");
+  refineDiff.style.display = "none";
+  form.appendChild(refineDiff);
+
+  refineBtn.addEventListener("click", async function() {
+    var draft = tplArea.serialize().trim();
+    if (!draft) { alert("Write a draft first, or click a chip to insert a binding."); return; }
+    refineBtn.disabled = true;
+    refineStatus.textContent = " · refining via " + (loadAiConfig().activeProvider || "AI") + "…";
+    refineDiff.style.display = "none";
+    try {
+      var cfg = loadAiConfig();
+      var active = cfg.providers[cfg.activeProvider];
+      var res = await chatCompletion({
+        providerKey: cfg.activeProvider,
+        baseUrl:     active.baseUrl,
+        model:       active.model,
+        apiKey:      active.apiKey,
+        messages: [
+          { role: "system", content: REFINE_META_SYSTEM + "\n\n" + REFINE_META_RULES },
+          { role: "user",   content: "Original prompt to rewrite:\n---\n" + draft + "\n---" }
+        ]
+      });
+      renderRefineDiff(refineDiff, draft, res.text || "", function(accepted) {
+        if (accepted) { tplArea.setValue(accepted); refreshBindingsAndPreview(); invalidateTest(); }
+        refineDiff.style.display = "none";
+      });
+      refineDiff.style.display = "block";
+      refineStatus.textContent = "";
+    } catch (e) {
+      refineStatus.textContent = " · refine failed: " + (e.message || String(e));
+    } finally {
+      refineBtn.disabled = false;
+    }
+  });
+
+  // ─── Chip palette (engagement-wide; replaces v2 per-tab fields) ─
+  form.appendChild(mkt("div", "skill-form-label", "Bindable fields — click to insert"));
+  var chipsWrap = mk("div", "field-chip-list");
+  form.appendChild(chipsWrap);
+  renderChipPalette(chipsWrap, pillManifestList, tplArea);
+
+  // ─── Detected bindings + live preview ──────────────────────────
+  var bindingsEl = mkt("div", "skill-form-bindings", "");
+  form.appendChild(bindingsEl);
+  form.appendChild(mkt("div", "skill-form-label", "Preview with current engagement data"));
+  var previewBox = mk("pre", "template-preview");
+  form.appendChild(previewBox);
+
+  function refreshBindingsAndPreview() {
+    var serialized = tplArea.serialize();
+    var found = findPlaceholderPaths(serialized);
+    bindingsEl.textContent = found.length === 0
+      ? "No {{template.bindings}} detected."
+      : "Detected bindings: " + found.map(function(p) { return "{{" + p + "}}"; }).join(", ");
+    var ctx = buildEngagementCtxForPreview(state.parameters);
+    previewBox.textContent = resolveTemplate(serialized, ctx, { skillId: existing ? existing.skillId : "skl-draft-1" })
+      || "(empty — write a template above, or click a field chip to insert)";
+  }
+
+  // ─── Parameters editor (v3.1 NEW per CH31) ─────────────────────
+  form.appendChild(mkt("div", "skill-form-label", "Parameters (user-supplied at invoke time)"));
+  form.appendChild(mkt("div", "settings-help-inline",
+    "Zero or more parameters the user fills in when running this skill from the chat. " +
+    "Reference them in the template by name (paramName) wrapped in double-braces. " +
+    "Pick the entityId type to bind a parameter to a real gap / driver / instance / " +
+    "environment selected at run time."));
+  var paramsWrap = mk("div", "skill-form-parameters");
+  form.appendChild(paramsWrap);
+  var addParamBtn = mkt("button", "btn-outline skill-form-add-param", "+ Add parameter");
+  form.appendChild(addParamBtn);
+
+  // ─── outputTarget radio (v3.1 NEW per CH31) ────────────────────
+  form.appendChild(mkt("div", "skill-form-label", "Output target"));
+  form.appendChild(mkt("div", "settings-help-inline",
+    "Where the response renders. Only 'chat-bubble' is implemented in this release; the " +
+    "others are surfaced for visibility and will land in a future release."));
+  var outputTargetWrap = mk("div", "skill-form-output-target");
+  form.appendChild(outputTargetWrap);
+
+  // ─── Test button + result panel ────────────────────────────────
+  var testRow = mk("div", "skill-form-test-row");
+  var testBtn = mkt("button", "btn-secondary", "Test skill now");
+  var testProviderSel = mkSelect(testRow, "Provider for test", [
+    { value: "mock", label: "Mock (deterministic)" },
+    { value: "real", label: "Real (active provider)" }
+  ], "mock");
+  testProviderSel.classList.add("skill-test-provider-select");
+  testRow.appendChild(testBtn);
+  form.appendChild(testRow);
+  var testOut = mk("div", "ai-skill-result skill-form-test-out");
+  testOut.style.display = "none";
+  form.appendChild(testOut);
+
+  // Form-local state — drives parameters editor + outputTarget radio.
+  var state = {
+    parameters:   existing && Array.isArray(existing.parameters) ? existing.parameters.slice() : [],
+    outputTarget: existing && existing.outputTarget                ? existing.outputTarget       : "chat-bubble"
+  };
+
+  function renderParameters() {
+    paramsWrap.innerHTML = "";
+    if (state.parameters.length === 0) {
+      paramsWrap.appendChild(mkt("div", "settings-help-inline skill-param-empty",
+        "(No parameters — this skill runs without runtime input.)"));
+      return;
+    }
+    state.parameters.forEach(function(p, idx) {
+      paramsWrap.appendChild(renderParameterRow(p, idx));
+    });
+  }
+  function renderParameterRow(p, idx) {
+    var row = mk("div", "skill-param-row");
+    // name
+    var nameG = mk("div", "skill-param-cell skill-param-name");
+    nameG.appendChild(mkt("label", "skill-form-label", "Name"));
+    var nameI = mk("input", "settings-input");
+    nameI.type = "text"; nameI.value = p.name || "";
+    nameI.placeholder = "e.g. gap";
+    nameI.addEventListener("input", function() { state.parameters[idx].name = nameI.value; invalidateTest(); refreshBindingsAndPreview(); });
+    nameG.appendChild(nameI);
+    row.appendChild(nameG);
+    // type
+    var typeG = mk("div", "skill-param-cell skill-param-type");
+    typeG.appendChild(mkt("label", "skill-form-label", "Type"));
+    var typeS = mk("select", "settings-input");
+    PARAMETER_TYPES.forEach(function(t) {
+      var o = document.createElement("option");
+      o.value = t.id; o.textContent = t.label;
+      if (t.id === p.type) o.selected = true;
+      typeS.appendChild(o);
+    });
+    typeS.addEventListener("change", function() { state.parameters[idx].type = typeS.value; invalidateTest(); });
+    typeG.appendChild(typeS);
+    row.appendChild(typeG);
+    // description
+    var descG = mk("div", "skill-param-cell skill-param-desc");
+    descG.appendChild(mkt("label", "skill-form-label", "Description"));
+    var descI = mk("input", "settings-input");
+    descI.type = "text"; descI.value = p.description || "";
+    descI.placeholder = "e.g. Pick a gap";
+    descI.addEventListener("input", function() { state.parameters[idx].description = descI.value; invalidateTest(); });
+    descG.appendChild(descI);
+    row.appendChild(descG);
+    // required
+    var reqG = mk("div", "skill-param-cell skill-param-required");
+    var reqL = mkt("label", "skill-param-required-label", "Required");
+    var reqI = document.createElement("input");
+    reqI.type = "checkbox"; reqI.checked = !!p.required;
+    reqI.addEventListener("change", function() { state.parameters[idx].required = reqI.checked; invalidateTest(); });
+    reqL.prepend(reqI);
+    reqG.appendChild(reqL);
+    row.appendChild(reqG);
+    // remove
+    var rmBtn = mkt("button", "btn-danger skill-param-remove", "Remove");
+    rmBtn.addEventListener("click", function() {
+      state.parameters.splice(idx, 1);
+      renderParameters();
+      invalidateTest(); refreshBindingsAndPreview();
+    });
+    row.appendChild(rmBtn);
+    return row;
+  }
+  addParamBtn.addEventListener("click", function() {
+    state.parameters.push({ name: "", type: "string", description: "", required: false });
+    renderParameters();
+    invalidateTest();
+  });
+  renderParameters();
+
+  function renderOutputTarget() {
+    outputTargetWrap.innerHTML = "";
+    OUTPUT_TARGETS.forEach(function(opt) {
+      var optRow = mk("label", "skill-form-output-target-row" + (opt.enabled ? "" : " is-disabled"));
+      var radio = document.createElement("input");
+      radio.type = "radio"; radio.name = "outputTarget";
+      radio.value = opt.id;
+      radio.checked = (state.outputTarget === opt.id);
+      radio.disabled = !opt.enabled;
+      radio.addEventListener("change", function() { state.outputTarget = opt.id; invalidateTest(); });
+      optRow.appendChild(radio);
+      var labelText = mk("span", "skill-form-output-target-label");
+      labelText.textContent = opt.label;
+      optRow.appendChild(labelText);
+      var hintText = mk("span", "skill-form-output-target-hint");
+      hintText.textContent = opt.enabled ? opt.hint : "(deferred to GA — " + opt.hint + ")";
+      optRow.appendChild(hintText);
+      outputTargetWrap.appendChild(optRow);
+    });
+  }
+  renderOutputTarget();
+
+  // ─── Test gate state ───────────────────────────────────────────
+  var lastTestedSignature = null;
+  function currentSignature() {
+    return JSON.stringify([
+      tplArea.serialize(),
+      (nameInput.value || "").trim(),
+      (descInput.value || "").trim(),
+      JSON.stringify(state.parameters),
+      state.outputTarget
+    ]);
+  }
+  function invalidateTest() {
+    lastTestedSignature = null;
+    refreshSaveGate();
+  }
+
+  testBtn.addEventListener("click", async function() {
+    var signatureAtStart = currentSignature();
+    testBtn.disabled = true;
+    var originalLabel = testBtn.textContent;
+    testBtn.textContent = "Testing…";
+    testOut.style.display = "block";
+    testOut.className = "ai-skill-result skill-form-test-out running";
+    testOut.textContent = "Running with current engagement…";
+    try {
+      var ctx = await buildRunCtx();
+      var draftSkill = {
+        skillId:        existing && existing.skillId      ? existing.skillId      : "skl-draft-1",
+        label:          (nameInput.value || "Draft").trim(),
+        version:        "1.0.0",
+        promptTemplate: tplArea.serialize() || "Hello {{customer.name}}!",
+        parameters:     state.parameters.slice(),
+        outputContract: "free-text",
+        outputTarget:   state.outputTarget
+      };
+      var params  = prefillParamValuesFor(state.parameters, ctx.engagement);
+      var provider = testProviderSel.value === "real"
+        ? createRealLLMProvider()
+        : createMockLLMProvider({
+            defaultResponse: { model: "mock-claude-sonnet", text: "(mock test response — switch to Real to invoke the active provider)" }
+          });
+      var envelope = await runSkill(draftSkill, ctx, provider, {
+        params: params,
+        runTimestamp: new Date().toISOString(),
+        runIdSeed:    "skill-builder-test-" + draftSkill.skillId
+      });
+      testOut.innerHTML = "";
+      testOut.className = "ai-skill-result skill-form-test-out ok";
+      testOut.appendChild(mkt("div", "ai-skill-result-head",
+        "Test output · " + (envelope.provenance && envelope.provenance.model || "unknown") + " (draft — not saved)"));
+      var body = mk("pre", "ai-skill-result-body");
+      body.textContent = typeof envelope.value === "string"
+        ? envelope.value
+        : JSON.stringify(envelope.value, null, 2);
+      testOut.appendChild(body);
+      if (currentSignature() === signatureAtStart) {
+        lastTestedSignature = signatureAtStart;
+        refreshSaveGate();
+      }
+    } catch (e) {
+      testOut.innerHTML = "";
+      testOut.className = "ai-skill-result skill-form-test-out err";
+      testOut.textContent = (e instanceof ProviderNotConfiguredError)
+        ? "Real provider not configured. Open Settings → AI Providers to set one, or switch the test selector to Mock."
+        : "Test failed: " + (e.message || String(e));
+    } finally {
+      testBtn.disabled = false;
+      testBtn.textContent = originalLabel;
+    }
+  });
+
+  // ─── Save gate + buttons ───────────────────────────────────────
+  nameInput.addEventListener("input",  invalidateTest);
+  descInput.addEventListener("input",  invalidateTest);
+
+  var actions = mk("div", "form-actions");
+  var cancelBtn = mkt("button", "btn-secondary", "Cancel");
+  cancelBtn.addEventListener("click", function() { form.remove(); });
+  var saveBtn = mkt("button", "btn-primary", existing ? "Save changes" : "Create skill");
+  var saveHint = mkt("span", "save-gate-hint", "");
+
+  function refreshSaveGate() {
+    var needsTest = lastTestedSignature !== currentSignature();
+    var isNewSkill = !existing;
+    var gated = isNewSkill && needsTest;
+    saveBtn.disabled = gated;
+    if (gated) {
+      saveBtn.classList.add("save-disabled");
+      saveHint.textContent = lastTestedSignature === null
+        ? "← New skill — click 'Test skill now' and verify the output before creating."
+        : "← Changes detected — re-run the test to enable Create.";
+      saveHint.className = "save-gate-hint save-gate-hint-error";
+    } else if (needsTest) {
+      saveBtn.classList.remove("save-disabled");
+      saveHint.textContent = "⚠ Untested changes — saving without re-test is OK for tweaks; click 'Test skill now' first for behaviour changes.";
+      saveHint.className = "save-gate-hint save-gate-hint-warn";
+    } else {
+      saveBtn.classList.remove("save-disabled");
+      saveHint.textContent = lastTestedSignature === null
+        ? "✓ Safe to save — run 'Test skill now' any time to verify."
+        : "✓ Tested — safe to save.";
+      saveHint.className = "save-gate-hint save-gate-hint-ok";
+    }
+  }
+  refreshSaveGate();
+
+  saveBtn.addEventListener("click", function() {
+    var label = (nameInput.value || "").trim();
+    var tpl   = (tplArea.serialize() || "").trim();
+    if (!label) { alert("Label is required."); return; }
+    if (!tpl)   { alert("Prompt template is required — click a field chip or type text."); return; }
+
+    // skillId: existing keeps its id; new skills derive from label.
+    var skillId = existing && existing.skillId
+      ? existing.skillId
+      : ("skl-" + label.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24) + "-" + Math.floor(Math.random() * 1000));
+
+    var draft = {
+      skillId:         skillId,
+      label:           label,
+      description:     (descInput.value || "").trim(),
+      promptTemplate:  tpl,
+      parameters:      state.parameters.slice(),
+      outputTarget:    state.outputTarget,
+      outputContract:  "free-text"
+    };
+    var manifest = generateManifest();
+    var result = saveV3Skill(draft, { manifest: manifest });
+    if (!result.ok) {
+      alert("Save failed: " + (result.errors || []).map(function(e) { return e.message || e; }).join("; "));
+      return;
+    }
+    form.remove();
+    renderList(list, onChange);
+    if (onChange) onChange();
+  });
+
+  actions.appendChild(cancelBtn);
+  actions.appendChild(saveBtn);
+  actions.appendChild(saveHint);
+  form.appendChild(actions);
+
+  adminRoot.appendChild(form);
+  nameInput.focus();
+  refreshBindingsAndPreview();
+}
+
+// CARE-rewrite diff panel (preserved verbatim from v2 SkillAdmin).
+function renderRefineDiff(host, draft, refined, onDecision) {
+  host.innerHTML = "";
+  host.appendChild(mkt("div", "refine-diff-title", "Refined with CARE framework — review before accepting"));
+  var grid = mk("div", "refine-diff-grid");
+  var left = mk("div", "refine-side");
+  left.appendChild(mkt("div", "refine-side-head", "Your draft"));
+  var leftBox = mk("pre", "refine-side-body"); leftBox.textContent = draft;
+  left.appendChild(leftBox);
+  grid.appendChild(left);
+
+  var right = mk("div", "refine-side");
+  right.appendChild(mkt("div", "refine-side-head", "Refined (editable)"));
+  var rightBox = mk("textarea", "refine-side-body refine-side-edit");
+  rightBox.value = refined;
+  rightBox.rows = 10;
+  right.appendChild(rightBox);
+  grid.appendChild(right);
+  host.appendChild(grid);
+
+  var actions = mk("div", "form-actions");
+  var keepBtn = mkt("button", "btn-secondary", "Keep my draft");
+  keepBtn.addEventListener("click", function() { onDecision(null); });
+  var acceptBtn = mkt("button", "btn-primary", "Replace my draft with refined");
+  acceptBtn.addEventListener("click", function() { onDecision(rightBox.value); });
+  actions.appendChild(keepBtn);
+  actions.appendChild(acceptBtn);
+  host.appendChild(actions);
+}
+
+// ─── chip palette helpers (engagement-wide v3 manifest) ─────────────
+function buildPillEditorManifest(canvasManifest) {
+  // Produce an array of { path, label, kind } the createPillEditor + chip
+  // palette can render. Sources: sessionPaths + per-entity-kind ownPaths +
+  // linkedPaths. Drop placeholder/duplicate paths.
+  var out = [];
+  (canvasManifest.sessionPaths || []).forEach(function(p) {
+    out.push({ path: p.path, label: p.label || p.path, kind: p.type || "scalar", group: "Engagement-wide" });
+  });
+  Object.keys(canvasManifest.byEntityKind || {}).forEach(function(kind) {
+    var entry = canvasManifest.byEntityKind[kind] || {};
+    (entry.ownPaths || []).forEach(function(p) {
+      out.push({ path: p.path, label: p.label || p.path, kind: p.type || "scalar", group: kind });
+    });
+    (entry.linkedPaths || []).forEach(function(p) {
+      out.push({ path: p.path, label: (p.label || p.path) + " (linked)", kind: p.type || "scalar", group: kind + " (linked)" });
+    });
+  });
+  return out;
+}
+
+function renderChipPalette(container, manifest, tplArea) {
+  container.innerHTML = "";
+  if (manifest.length === 0) {
+    container.appendChild(mkt("div", "settings-help-inline",
+      "No bindable paths declared — generateManifest() returned empty."));
+    return;
+  }
+  // Group by `group` label.
+  var groups = {};
+  manifest.forEach(function(m) {
+    if (!groups[m.group]) groups[m.group] = [];
+    groups[m.group].push(m);
+  });
+  Object.keys(groups).forEach(function(g) {
+    container.appendChild(mkt("div", "skill-chip-group-head", g));
+    var groupWrap = mk("div", "skill-chip-group");
+    groups[g].forEach(function(f) {
+      var chip = mkt("button", "field-chip" + (f.kind === "array" ? " is-array" : ""), f.label);
+      chip.type = "button";
+      chip.title = "Click: insert labeled pill for " + f.label + ". Alt-click: insert bare {{" + f.path + "}} pill.";
+      chip.addEventListener("click", function(e) {
+        e.preventDefault();
+        tplArea.insertPillAtCursor(f.path, e.altKey);
+      });
+      chip.setAttribute("data-path", f.path);
+      groupWrap.appendChild(chip);
+    });
+    container.appendChild(groupWrap);
+  });
+}
+
+function findPlaceholderPaths(template) {
+  var seen = new Set();
+  var out = [];
+  var re = /\{\{([^{}]+?)\}\}/g;
+  var m;
+  while ((m = re.exec(template)) !== null) {
+    var path = m[1].trim();
+    if (seen.has(path)) continue;
+    seen.add(path);
+    out.push(path);
+  }
+  return out;
+}
+
+// Build a resolver context for the live preview / Test button. Falls back
+// to the demo engagement when no active engagement exists yet.
+async function buildRunCtx() {
+  var eng = getActiveEngagement() || loadDemo();
+  var dellCat = await loadCatalog("DELL_PRODUCT_TAXONOMY");
+  return {
+    engagement:      eng,
+    customer:        eng.customer,
+    engagementMeta:  eng.meta,
+    catalogVersions: {
+      DELL_PRODUCT_TAXONOMY: dellCat.catalogVersion,
+      BUSINESS_DRIVERS:      "2026.04",
+      ENV_CATALOG:           "2026.04"
+    },
+    dellTaxonomyIds: new Set(dellCat.entries.map(function(e) { return e.id; }))
+  };
+}
+
+function buildEngagementCtxForPreview(parameters) {
+  var eng = getActiveEngagement() || loadDemo();
+  var ctx = {
+    engagement:     eng,
+    customer:       eng.customer,
+    engagementMeta: eng.meta,
+    context:        {}
+  };
+  // Pre-fill {{paramName}} placeholders with sensible sample values so the
+  // preview reads like a real run rather than literal {{paramName}}.
+  (parameters || []).forEach(function(p) {
+    if (!p || !p.name) return;
+    if (p.type === "entityId") {
+      var key = entityKindKeyFromHint(p.description);
+      if (key && eng[key] && eng[key].allIds && eng[key].allIds[0]) {
+        var firstId = eng[key].allIds[0];
+        ctx[p.name] = firstId;
+        var entity = eng[key].byId && eng[key].byId[firstId];
+        if (entity) ctx.context[p.name] = entity;
+      } else {
+        ctx[p.name] = "[entity-id]";
+      }
+    } else if (p.type === "number")  { ctx[p.name] = 0; }
+      else if (p.type === "boolean") { ctx[p.name] = true; }
+      else                            { ctx[p.name] = "[example]"; }
+  });
+  return ctx;
+}
+
+function prefillParamValuesFor(parameters, eng) {
+  var out = {};
+  (parameters || []).forEach(function(p) {
+    if (!p || !p.name) return;
+    if (p.type === "entityId") {
+      var key = entityKindKeyFromHint(p.description);
+      if (key && eng[key] && eng[key].allIds && eng[key].allIds[0]) {
+        out[p.name] = eng[key].allIds[0];
+      }
+    } else if (p.type === "number")  { out[p.name] = 0; }
+      else if (p.type === "boolean") { out[p.name] = true; }
+      else                            { out[p.name] = "[example]"; }
+  });
+  return out;
+}
+
 function entityKindKeyFromHint(description) {
   if (typeof description !== "string") return null;
-  const lower = description.toLowerCase();
-  if (lower.includes("gap"))         return "gaps";
-  if (lower.includes("driver"))      return "drivers";
-  if (lower.includes("environment")) return "environments";
-  if (lower.includes("instance"))    return "instances";
+  var lower = description.toLowerCase();
+  if (lower.indexOf("gap") >= 0)         return "gaps";
+  if (lower.indexOf("driver") >= 0)      return "drivers";
+  if (lower.indexOf("environment") >= 0) return "environments";
+  if (lower.indexOf("instance") >= 0)    return "instances";
   return null;
 }
 
-function renderRunResult(panel, skillId, state, { resolvedPrompt, envelope }) {
-  if (!envelope) {
-    panel.innerHTML = '<div class="skill-builder-run-error">Run produced no envelope.</div>';
-    return;
-  }
-  const valueHtml = typeof envelope.value === "string"
-    ? '<pre class="skill-builder-run-text">' + escapeHtml(envelope.value) + "</pre>"
-    : '<pre class="skill-builder-run-text">' + escapeHtml(JSON.stringify(envelope.value, null, 2)) + "</pre>";
-  panel.innerHTML = `
-    <div class="skill-builder-run-head">
-      Run output · validation: <strong>${escapeHtml(envelope.provenance.validationStatus)}</strong>
-      · model: ${escapeHtml(envelope.provenance.model)}
-    </div>
-    <details class="skill-builder-run-resolved">
-      <summary>Resolved prompt</summary>
-      <pre class="skill-builder-run-text">${escapeHtml(resolvedPrompt)}</pre>
-    </details>
-    <div class="skill-builder-run-output">${valueHtml}</div>
-  `;
+// ─── Tiny form helpers (preserved from v2 SkillAdmin) ──────────────
+function mk(tag, cls)        { var el = document.createElement(tag); if (cls) el.className = cls; return el; }
+function mkt(tag, cls, txt)  { var el = mk(tag, cls); if (txt != null) el.textContent = txt; return el; }
+
+function mkField(parent, label, type, value, hint) {
+  var group = mk("div", "skill-form-field");
+  group.appendChild(mkt("label", "skill-form-label", label));
+  if (hint) group.appendChild(mkt("div", "settings-help-inline", hint));
+  var input = mk("input", "settings-input");
+  input.type = type;
+  input.value = value || "";
+  group.appendChild(input);
+  parent.appendChild(group);
+  return input;
 }
 
-function renderSaveResult(panel, result) {
-  if (result.ok) {
-    panel.innerHTML = '<div class="skill-builder-save-success">' +
-      "✓ Saved as " + escapeHtml(result.skill.skillId) + "</div>";
-  } else {
-    panel.innerHTML = '<div class="skill-builder-save-error"><strong>Save blocked</strong>' +
-      '<ul class="skill-builder-save-errors">' +
-      result.errors.map(e =>
-        "<li>" + escapeHtml(e.path || "(root)") + ": " + escapeHtml(e.message || JSON.stringify(e)) + "</li>"
-      ).join("") + "</ul></div>";
-  }
-}
-
-function renderValidationResult(panel, result) {
-  if (result.ok) {
-    panel.innerHTML = '<div class="skill-builder-validate-success">✓ Template paths valid; ready to save.</div>';
-  } else {
-    panel.innerHTML = '<div class="skill-builder-validate-error"><strong>Validation failed</strong>' +
-      '<ul class="skill-builder-validate-errors">' +
-      result.errors.map(e =>
-        "<li>" + escapeHtml(e.path || "(root)") + ": " + escapeHtml(e.message || JSON.stringify(e)) +
-        (Array.isArray(e.validPaths) && e.validPaths.length > 0
-          ? '<details class="skill-builder-valid-paths"><summary>Valid paths</summary><pre>' +
-            escapeHtml(e.validPaths.join("\n")) + "</pre></details>"
-          : "") +
-        "</li>"
-      ).join("") + "</ul></div>";
-  }
-}
-
-function escapeHtml(s) {
-  if (s == null) return "";
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+function mkSelect(parent, label, options, value) {
+  var group = mk("div", "skill-form-field");
+  if (label) group.appendChild(mkt("label", "skill-form-label", label));
+  var sel = mk("select", "settings-input");
+  options.forEach(function(o) {
+    var opt = document.createElement("option");
+    opt.value = o.value;
+    opt.textContent = o.label;
+    if (o.value === value) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  group.appendChild(sel);
+  parent.appendChild(group);
+  return sel;
 }

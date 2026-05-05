@@ -3264,7 +3264,7 @@ Once all 6 confirmed → V-THINK + V-TRY-ASK + V-SCRUB-WORKFLOW RED-first → im
 **Status**: **LOCKED 2026-05-04** on user approval of DRAFT v2 (`ace293a`) + acceptance of all 7 §S35.6 recommendations ("go" 2026-05-04 LATE). Original v1 DRAFT REJECTED 2026-05-04 for proposing a "Skills (v3)" pill label preserved below for audit (anchor `§S35-V1`).
 
 **Locked decisions** (from §S35.6 open-decision table, now closed):
-1. **(a)** Rename `ui/views/SkillAdmin.js` → `ui/views/SkillBuilder.js` (delete the lean v3.1 SkillBuilder.js currently at that path).
+1. **(a-revised 2026-05-05)** ADD new `ui/views/SkillBuilder.js` carrying the evolved admin (DELETING the lean v3.1 SkillBuilder.js that was at that path); KEEP `ui/views/SkillAdmin.js` on disk as DORMANT (no longer mounted in Settings) for one release. Reconciles the original "rename" pick with the locked memory `project_v2x_admin_deferred.md` ("keep v2.x admin intact" until v3 demonstrably covers every v2 flow). Six v2 test suites (§26, §27, §29, §37) keep importing `SkillAdmin.js` until their parity rewrite — which belongs to the v2-retirement arc, not Arc 4.
 2. **(ii)** Opt-in "Legacy (v2)" section with per-row "Migrate" button.
 3. **(A)** Show all 4 outputTargets; 3 disabled with "deferred to GA" hint.
 4. **(1)** Chat-rail "+ Author new skill" closes chat overlay + opens Settings → Skills builder.
@@ -3285,7 +3285,7 @@ Once all 6 confirmed → V-THINK + V-TRY-ASK + V-SCRUB-WORKFLOW RED-first → im
 ### S35.1 · One canonical Skill Builder home
 
 - **R35.1** (🔴 HARD) — `Settings → Skills builder` pill (label unchanged, neutral, **no `v3` / `v3.1` / version suffix anywhere in UI strings**) is the ONE entry point for skill authoring. The chat right-rail "+ Author new skill" button routes there. No second pill.
-- **R35.2** (🔴 HARD) — Pill content is rendered by an EVOLVED admin module. Module name TBD per S35.6 decision-1 (rename `ui/views/SkillAdmin.js` → `ui/views/SkillBuilder.js` after retiring the current v3.1 SkillBuilder.js · OR · keep `ui/views/SkillAdmin.js` filename for git-history continuity and rename the standalone v3.1 builder file out of the way). Either way, only ONE module is mounted in Settings.
+- **R35.2** (🔴 HARD) — Pill content is rendered by an EVOLVED admin module at `ui/views/SkillBuilder.js`. The lean v3.1 `SkillBuilder.js` previously at that path is DELETED. The v2.4 `ui/views/SkillAdmin.js` is KEPT on disk as DORMANT (no longer mounted in Settings) for one release per `project_v2x_admin_deferred.md`; six v2 test suites (§26, §27, §29, §37) continue to import it until their parity rewrite (out of Arc 4 scope). Only ONE module is MOUNTED in Settings; SkillAdmin.js becoming orphaned-by-Settings is intentional.
 - **R35.3** (🔴 HARD) — Standalone overlay (`#skillBuilderOverlay` div + `ui/skillBuilderOpener.js`) RETIRES. The opener becomes a thin shim that closes the chat overlay and opens Settings → Skills builder.
 
 ### S35.2 · Evolve admin UX to v3.1 schema + writes to v3 store
