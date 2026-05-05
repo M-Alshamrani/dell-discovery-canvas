@@ -15533,6 +15533,256 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-ANTI-V3-SEED-3: SkillBuilder.js MUST NOT carry the seed-picker UI section");
     });
 
+    // -----------------------------------------------------------------
+    // §T37 · UX consolidation arc — chat-persistent side-panel +
+    //   AiAssistOverlay dormant + test-flash residual cloak + chat polish
+    //   (rc.5 per SPEC §S36 + RULES §16 CH32)
+    //
+    // RED-first scaffold: V-OVERLAY-STACK-1..4 + V-FLOW-CHAT-PERSIST-1..3
+    // + V-AI-ASSIST-DORMANT-1 + V-NO-VISIBLE-TEST-FLASH-1 + V-CHAT-POLISH-1..2.
+    // All RED until the rc.5 sub-arcs ship (5a side-panel, 5b AiAssist
+    // retire, 5c BUG-027 cloak, 5d BUG-022 polish).
+    // -----------------------------------------------------------------
+
+    it("V-OVERLAY-STACK-1 · openOverlay({ sidePanel: true }) while another overlay is open pushes onto a stack (both .overlay nodes present in DOM)", async () => {
+      const overlayMod = await import("../ui/components/Overlay.js");
+      // Reset state.
+      try { overlayMod._resetForTests(); } catch (_e) {}
+      // Open base layer.
+      const baseBody = document.createElement("div");
+      baseBody.textContent = "BASE";
+      overlayMod.openOverlay({ title: "Base", body: baseBody, kind: "test-base" });
+      // Open side-panel layer.
+      const topBody = document.createElement("div");
+      topBody.textContent = "TOP";
+      overlayMod.openOverlay({ title: "Top", body: topBody, kind: "test-top", sidePanel: true });
+      // Both .overlay elements should be in DOM.
+      const overlays = document.querySelectorAll(".overlay");
+      assert(overlays.length >= 2,
+        "V-OVERLAY-STACK-1: openOverlay with sidePanel:true MUST push onto stack (both .overlay nodes in DOM); got " + overlays.length);
+      // Cleanup.
+      try { overlayMod._resetForTests(); } catch (_e) {}
+    });
+
+    it("V-OVERLAY-STACK-2 · closeOverlay() after a side-panel push pops top only; underlying overlay remains in DOM", async () => {
+      const overlayMod = await import("../ui/components/Overlay.js");
+      try { overlayMod._resetForTests(); } catch (_e) {}
+      overlayMod.openOverlay({ title: "Base", body: document.createElement("div"), kind: "test-base" });
+      overlayMod.openOverlay({ title: "Top", body: document.createElement("div"), kind: "test-top", sidePanel: true });
+      // Pop top.
+      overlayMod.closeOverlay();
+      const overlays = document.querySelectorAll(".overlay");
+      assert(overlays.length === 1,
+        "V-OVERLAY-STACK-2: closeOverlay MUST pop top only; expected 1 overlay remaining, got " + overlays.length);
+      const remaining = overlays[0];
+      assert(remaining.getAttribute("data-kind") === "test-base",
+        "V-OVERLAY-STACK-2: the BASE layer MUST be the surviving overlay after pop");
+      try { overlayMod._resetForTests(); } catch (_e) {}
+    });
+
+    it("V-OVERLAY-STACK-3 · ESC keystroke closes top-most layer only", async () => {
+      const overlayMod = await import("../ui/components/Overlay.js");
+      try { overlayMod._resetForTests(); } catch (_e) {}
+      overlayMod.openOverlay({ title: "Base", body: document.createElement("div"), kind: "test-base" });
+      overlayMod.openOverlay({ title: "Top", body: document.createElement("div"), kind: "test-top", sidePanel: true });
+      // Synthesise ESC.
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await new Promise(r => setTimeout(r, 30));
+      const overlays = document.querySelectorAll(".overlay");
+      assert(overlays.length === 1,
+        "V-OVERLAY-STACK-3: ESC MUST close top-most only; expected 1 overlay remaining, got " + overlays.length);
+      try { overlayMod._resetForTests(); } catch (_e) {}
+    });
+
+    it("V-OVERLAY-STACK-4 · stacking layout — base layer width transitions to ~50vw when a side-panel is on top, restores to default after pop", async () => {
+      const overlayMod = await import("../ui/components/Overlay.js");
+      try { overlayMod._resetForTests(); } catch (_e) {}
+      overlayMod.openOverlay({ title: "Base", body: document.createElement("div"), kind: "test-base" });
+      const baseEl = document.querySelector(".overlay[data-kind='test-base']");
+      assert(baseEl, "V-OVERLAY-STACK-4: base overlay must mount");
+      const fullWidth = baseEl.getBoundingClientRect().width;
+      // Open side-panel.
+      overlayMod.openOverlay({ title: "Top", body: document.createElement("div"), kind: "test-top", sidePanel: true });
+      // Allow CSS transition + DOM commit.
+      await new Promise(r => setTimeout(r, 30));
+      const stackPos = baseEl.getAttribute("data-stack-pos");
+      assert(stackPos === "left",
+        "V-OVERLAY-STACK-4: base layer MUST set data-stack-pos='left' under side-panel stack (got: " + stackPos + ")");
+      const shrunkWidth = baseEl.getBoundingClientRect().width;
+      assert(shrunkWidth < fullWidth * 0.7,
+        "V-OVERLAY-STACK-4: base layer width MUST shrink (was " + fullWidth + ", became " + shrunkWidth + ")");
+      // Pop top → base restores.
+      overlayMod.closeOverlay();
+      await new Promise(r => setTimeout(r, 30));
+      const restoredWidth = baseEl.getBoundingClientRect().width;
+      assert(restoredWidth >= fullWidth * 0.95,
+        "V-OVERLAY-STACK-4: base layer width MUST restore after pop (was " + fullWidth + ", restored " + restoredWidth + ")");
+      try { overlayMod._resetForTests(); } catch (_e) {}
+    });
+
+    it("V-FLOW-CHAT-PERSIST-1 · open Canvas AI Assistant + click '+ Author new skill' → chat overlay STILL in DOM + Settings mounted in side-panel mode (BUG-028 fix)", async () => {
+      try { _resetOverlayForTests(); } catch (_e) {}
+      _closeOverlay();
+      const chatMod = await import("../ui/views/CanvasChatOverlay.js");
+      chatMod.openCanvasChat();
+      await new Promise(r => setTimeout(r, 50));
+      const chatOverlay = document.querySelector(".overlay.open[data-kind='canvas-chat']");
+      assert(chatOverlay, "V-FLOW-CHAT-PERSIST-1: chat overlay must be open before triggering Skills");
+      // Click "+ Author new skill" footer button.
+      const authorBtn = Array.from(document.querySelectorAll(".overlay[data-kind='canvas-chat'] button"))
+        .find(b => /Author new skill/i.test(b.textContent));
+      assert(authorBtn, "V-FLOW-CHAT-PERSIST-1: '+ Author new skill' button must exist in chat footer");
+      authorBtn.click();
+      await new Promise(r => setTimeout(r, 80));
+      // Chat overlay must STILL be in DOM (BUG-028 fix).
+      const chatStillThere = document.querySelector(".overlay[data-kind='canvas-chat']");
+      assert(chatStillThere,
+        "V-FLOW-CHAT-PERSIST-1: chat overlay MUST persist when '+ Author new skill' is clicked (got unmounted; BUG-028 not fixed)");
+      // Settings mounted alongside.
+      const settingsOverlay = document.querySelector(".overlay[data-kind='settings']");
+      assert(settingsOverlay,
+        "V-FLOW-CHAT-PERSIST-1: Settings overlay must mount alongside chat (side-panel mode)");
+      // Settings must be the top layer (data-stack-pos='right').
+      assert(settingsOverlay.getAttribute("data-stack-pos") === "right",
+        "V-FLOW-CHAT-PERSIST-1: Settings must mount as side-panel right (got: " + settingsOverlay.getAttribute("data-stack-pos") + ")");
+      try { _resetOverlayForTests(); } catch (_e) {}
+      _closeOverlay();
+    });
+
+    it("V-FLOW-CHAT-PERSIST-2 · close Settings (top layer) → chat restores to full-width + chat input draft preserved", async () => {
+      try { _resetOverlayForTests(); } catch (_e) {}
+      _closeOverlay();
+      const chatMod = await import("../ui/views/CanvasChatOverlay.js");
+      chatMod.openCanvasChat();
+      await new Promise(r => setTimeout(r, 50));
+      // Type a draft in the chat input.
+      const chatInput = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-input");
+      assert(chatInput, "V-FLOW-CHAT-PERSIST-2: chat input must exist");
+      chatInput.value = "DRAFT-PERSIST-TEST";
+      chatInput.dispatchEvent(new Event("input", { bubbles: true }));
+      // Open Settings via the "+ Author new skill" path.
+      const authorBtn = Array.from(document.querySelectorAll(".overlay[data-kind='canvas-chat'] button"))
+        .find(b => /Author new skill/i.test(b.textContent));
+      authorBtn.click();
+      await new Promise(r => setTimeout(r, 80));
+      assert(document.querySelector(".overlay[data-kind='settings']"),
+        "V-FLOW-CHAT-PERSIST-2: Settings must open (precondition)");
+      // Close Settings (pop top).
+      _closeOverlay();
+      await new Promise(r => setTimeout(r, 80));
+      // Chat must restore to full-width.
+      const chatNow = document.querySelector(".overlay[data-kind='canvas-chat']");
+      assert(chatNow, "V-FLOW-CHAT-PERSIST-2: chat overlay must be in DOM after popping Settings");
+      const stackPos = chatNow.getAttribute("data-stack-pos");
+      assert(!stackPos || stackPos === "full",
+        "V-FLOW-CHAT-PERSIST-2: chat overlay MUST restore to full layout after pop (got data-stack-pos='" + stackPos + "')");
+      // Input draft preserved.
+      const inputAfter = chatNow.querySelector(".canvas-chat-input");
+      assertEqual(inputAfter.value, "DRAFT-PERSIST-TEST",
+        "V-FLOW-CHAT-PERSIST-2: chat input draft MUST survive the side-panel open/close cycle");
+      try { _resetOverlayForTests(); } catch (_e) {}
+      _closeOverlay();
+    });
+
+    it("V-FLOW-CHAT-PERSIST-3 · needs-key provider pill click in chat → Settings opens in side-panel mode (chat persists)", async () => {
+      // Source-grep — CanvasChatOverlay.js needs-key path passes
+      // sidePanel: true to openSettingsModal when chat is currently open.
+      const chatSrc = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
+      // Match the needs-key call site: openSettingsModal({ section: "providers", ... sidePanel: true })
+      assert(/openSettingsModal\(\s*\{[^}]*section:\s*["']providers["'][^}]*sidePanel:\s*true/m.test(chatSrc) ||
+             /openSettingsModal\(\s*\{[^}]*sidePanel:\s*true[^}]*section:\s*["']providers["']/m.test(chatSrc),
+        "V-FLOW-CHAT-PERSIST-3: needs-key provider click MUST pass sidePanel:true to openSettingsModal");
+    });
+
+    it("V-AI-ASSIST-DORMANT-1 · ui/views/AiAssistOverlay.js exists on disk but no production .js file imports it (rc.5 retirement; SPEC §S36.2)", async () => {
+      // File still served (preserved as dormant per project_v2x_admin_deferred.md).
+      const r = await fetch("/ui/views/AiAssistOverlay.js");
+      assertEqual(r.status, 200,
+        "V-AI-ASSIST-DORMANT-1: file must remain on disk (status 200 expected)");
+      // No production module imports it.
+      const productionFiles = [
+        "/app.js",
+        "/ui/views/CanvasChatOverlay.js",
+        "/ui/views/SettingsModal.js",
+        "/ui/views/SkillBuilder.js",
+        "/ui/skillBuilderOpener.js",
+        "/services/chatService.js",
+        "/services/aiService.js"
+      ];
+      const offenders = [];
+      for (const path of productionFiles) {
+        try {
+          const src = await (await fetch(path)).text();
+          if (/AiAssistOverlay/.test(src)) offenders.push(path);
+        } catch (_e) { /* file missing → ok */ }
+      }
+      assertEqual(offenders.length, 0,
+        "V-AI-ASSIST-DORMANT-1: AiAssistOverlay must not be imported by any production module (offenders: " + offenders.join(", ") + ")");
+    });
+
+    it("V-NO-VISIBLE-TEST-FLASH-1 · cloak extends to body-level rogue test probes (closes BUG-027 residual)", async () => {
+      const cssSrc = await (await fetch("/styles.css")).text();
+      // Source-grep — CSS rule must use the extended selector.
+      assert(/body\[data-running-tests\]\s*>\s*\*:not\(#app-header\):not\(#stepper\):not\(#main\):not\(#app-footer\):not\(#test-banner\):not\(\.overlay-backdrop\)/.test(cssSrc),
+        "V-NO-VISIBLE-TEST-FLASH-1: styles.css must define the extended cloak selector with all 6 :not() exemptions");
+
+      // Live: while body[data-running-tests] is set (we ARE running),
+      // append a rogue probe and assert it's hidden.
+      const probe = document.createElement("div");
+      probe.id = "rogue-probe-test-flash";
+      probe.style.cssText = "position:absolute; top:0; width:200px; height:50px; background:red;";
+      document.body.appendChild(probe);
+      try {
+        const cs = getComputedStyle(probe);
+        assertEqual(cs.visibility, "hidden",
+          "V-NO-VISIBLE-TEST-FLASH-1: rogue body-level probe must compute visibility:hidden under the extended cloak (got: " + cs.visibility + ")");
+      } finally {
+        probe.remove();
+      }
+    });
+
+    it("V-CHAT-POLISH-1 · chat Send button computed padding ≤ 14px horizontal (BUG-022 R36.14)", async () => {
+      try { _resetOverlayForTests(); } catch (_e) {}
+      _closeOverlay();
+      const chatMod = await import("../ui/views/CanvasChatOverlay.js");
+      chatMod.openCanvasChat();
+      await new Promise(r => setTimeout(r, 50));
+      const sendBtn = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-send-btn");
+      assert(sendBtn, "V-CHAT-POLISH-1: Send button must be present");
+      const cs = getComputedStyle(sendBtn);
+      const paddingX = parseFloat(cs.paddingLeft);
+      assert(paddingX <= 14,
+        "V-CHAT-POLISH-1: Send button horizontal padding MUST be ≤ 14px (got " + cs.paddingLeft + ")");
+      try { _resetOverlayForTests(); } catch (_e) {}
+      _closeOverlay();
+    });
+
+    it("V-CHAT-POLISH-2 · transcript bubble computed line-height ≤ 1.5 (BUG-022 R36.15)", async () => {
+      try { _resetOverlayForTests(); } catch (_e) {}
+      _closeOverlay();
+      const chatMod = await import("../ui/views/CanvasChatOverlay.js");
+      chatMod.openCanvasChat();
+      await new Promise(r => setTimeout(r, 50));
+      // Append a synthetic bubble so we can measure.
+      const scroll = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-scroll");
+      assert(scroll, "V-CHAT-POLISH-2: chat scroll container must exist");
+      const bubble = document.createElement("div");
+      bubble.className = "canvas-chat-bubble canvas-chat-bubble-user";
+      bubble.textContent = "hello world";
+      scroll.appendChild(bubble);
+      const cs = getComputedStyle(bubble);
+      // line-height can be a number (1.45) or px (e.g. "21px" for 14px @ 1.5).
+      // Compute a unitless multiplier.
+      const fontSize = parseFloat(cs.fontSize) || 14;
+      const lineHeightPx = parseFloat(cs.lineHeight);
+      const ratio = lineHeightPx / fontSize;
+      assert(ratio <= 1.5,
+        "V-CHAT-POLISH-2: bubble line-height ratio MUST be ≤ 1.5 (got fontSize=" + cs.fontSize + ", lineHeight=" + cs.lineHeight + ", ratio=" + ratio.toFixed(2) + ")");
+      bubble.remove();
+      try { _resetOverlayForTests(); } catch (_e) {}
+      _closeOverlay();
+    });
+
   });
 
   // -------------------------------------------------------------------

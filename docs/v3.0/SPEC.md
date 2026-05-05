@@ -3430,6 +3430,96 @@ Once all 5 confirmed → V-SKILL-V3-8..12 + V-ANTI-V3-SEED-1..3 RED-first → im
 
 ---
 
+## §S36 · UX consolidation arc — chat-persistent side-panel + AiAssistOverlay retirement + chat polish + test-flash residual fix (rc.5; LOCKED 2026-05-05)
+
+**Status**: **LOCKED 2026-05-05** on user direction "go all my recs" 2026-05-05 LATE accepting all rc.5 scope decisions in HANDOFF.md §4. The arc closes BUG-022 + BUG-027 + BUG-028 + completes the AiAssistOverlay retirement begun at rc.4 Arc 2.
+
+**Authority**: `docs/RULES.md §16` (CH32 to be added at LOCK) · `docs/BUG_LOG.md` BUG-022 / BUG-027 / BUG-028 · `feedback_group_b_spec_rewrite.md` (intensive SPEC review pattern; user approved scope before SPEC author) · `project_v2x_admin_deferred.md` (AiAssistOverlay file preserved as dormant module per same pattern as `ui/views/SkillAdmin.js` post-Arc-4) · user direction 2026-05-05 ("if I am on the chat AI Assist and need to open any other AI tools, the chat AI should persist until I close it, in a good UI/UX design way").
+
+### Pre-rc.5 state
+
+- `ui/components/Overlay.js` is a singleton: one `openEl` slot, `openOverlay()` calls `closeOverlay()` first, no notion of stacking. This is the architectural cause of BUG-028 (chat unmounted when Settings opens via `openSkillBuilderOverlay()` shim).
+- Chat → Settings paths today: (1) "+ Author new skill" footer → opener shim → `closeOverlay()` + `openSettingsModal()`; (2) needs-key provider pill click in chat → direct `openSettingsModal()` call. Both kill the chat.
+- `ui/views/AiAssistOverlay.js` (598 lines) — Cmd+K rebound away in rc.4 Arc 2 but file still served + never imported by production code in rc.5-dev. Dead surface area.
+- BUG-027 (test-pass DOM flash) — rc.4 Hotfix #3 cloaked `.overlay` + `.overlay-backdrop` + `#skillBuilderOverlay` but other body-level test artefacts (rogue probe DIVs from V-PROD / V-DEMO / VT* tests) still flash on screen during the pass.
+- BUG-022 chat polish — items 3 + 4 (typing dot loader + tool-call progress) shipped in rc.4 Arc 3a. Items 1 + 2 (Done/Send button density + transcript spacing) still open.
+
+### S36.1 · Chat-persistent side-panel (BUG-028 fix)
+
+The "good UI/UX design way" user asked for is the ChatGPT / Claude.ai pattern — chat shrinks to a left pane, settings opens as a right pane, closing the panel restores full-screen chat. Implemented via a stack-aware Overlay.js opt-in.
+
+- **R36.1** (🔴 HARD) — `ui/components/Overlay.js` `openOverlay({ ...opts, sidePanel: true })` pushes onto an internal `_stack` array instead of replacing `openEl`. The base layer (`_stack[0]`) shrinks to `width: calc(50vw - var(--gutter))` on the LEFT; the new layer renders as `width: calc(50vw - var(--gutter))` on the RIGHT. Single backdrop covers the page; clicking backdrop closes ONLY the top-most layer.
+- **R36.2** (🔴 HARD) — `closeOverlay()` pops only the top layer of `_stack`. If `_stack.length === 1` after pop, the remaining layer expands back to full-width (centered modal default). If `_stack.length === 0`, backdrop tears down.
+- **R36.3** (🔴 HARD) — ESC closes top-most layer only (was: closes the singleton). `persist: true` on the top layer blocks ESC for that layer; falls through to the next ESC press.
+- **R36.4** (🔴 HARD) — `openOverlay({ sidePanel: true })` called when `_stack` is empty MUST behave identically to a non-sidePanel `openOverlay({})` (full-screen / centered). The `sidePanel` opt is meaningful only when stacking.
+- **R36.5** (🔴 HARD) — `ui/skillBuilderOpener.js` shim updated: when chat is open, call `openSettingsModal({ section: "skills", sidePanel: true })`. Otherwise (chat closed) the existing `closeOverlay()` + `openSettingsModal()` path is kept.
+- **R36.6** (🔵 AUTO) — `ui/views/SettingsModal.js` `openSettingsModal({ ...opts, sidePanel })` propagates the `sidePanel` opt to the underlying `openOverlay()` call.
+- **R36.7** (🔵 AUTO) — Chat overlay `head-extras` Skills toggle button stays as-is (it toggles the right-rail visibility, not Settings — different contract). Same for the needs-key provider pill click → that goes via `openSettingsModal()` direct call site at `CanvasChatOverlay.js:786`; that one ALSO updates to pass `sidePanel: true` when chat is currently open.
+- **R36.8** (🔵 AUTO) — Chat input draft (whatever the user typed but didn't send) MUST be preserved across the side-panel open/close cycle. The transcript node stays mounted, so this is a free behaviour of R36.1 — no extra wiring.
+
+CSS:
+- `.overlay-backdrop` unchanged (one backdrop covers all stacked layers; visual dim is consistent regardless of stack depth).
+- `.overlay[data-stack-pos="left"]` and `.overlay[data-stack-pos="right"]` — new layout modes. Width 50vw, transform unset, height 80vh, top 10vh, left/right 5vw respectively.
+- `.overlay[data-stack-pos="full"]` — base mode (existing centered layout); applied when `_stack.length === 1` and the layer is NOT a sidePanel call.
+- Transitions: 220ms cubic-bezier(0.4,0,0.2,1) on width + transform when transitioning between full ↔ left.
+
+### S36.2 · AiAssistOverlay full retirement (dormant module)
+
+- **R36.9** (🔴 HARD) — No production .js file in `services/`, `state/`, `core/`, `ui/`, `selectors/`, `interactions/`, `migrations/`, `schema/`, `app.js` imports `ui/views/AiAssistOverlay.js`. Source-grep enforced via V-AI-ASSIST-DORMANT-1.
+- **R36.10** (🔵 AUTO) — `ui/views/AiAssistOverlay.js` STAYS on disk per `project_v2x_admin_deferred.md` pattern. File preserved as a dormant module for one release; deletion arc TBD.
+- **R36.11** (🔵 AUTO) — Tests that exercise `openAiOverlay`/`AiAssistOverlay` directly (V-AI-ASSIST-CMD-K source-grep was rc.3-era; replaced by V-CMD-K-CANVAS-1 in rc.4 Arc 2 — already done) are reframed or retired in this arc.
+
+### S36.3 · BUG-027 test-pass DOM flash residual
+
+The rc.4 Hotfix #3 cloak only covered `.overlay` + `.overlay-backdrop` + `#skillBuilderOverlay`. Other rogue body-level probes (V-PROD / V-DEMO / VT* tests append DIVs to body for layout tests) still paint visibly during the pass.
+
+- **R36.12** (🔴 HARD) — Extend the `body[data-running-tests]` cloak in `styles.css` to cover ANY direct child of `body` that isn't an app-shell element. Selector: `body[data-running-tests] > *:not(#app-header):not(#stepper):not(#main):not(#app-footer):not(#test-banner):not(.overlay-backdrop)` → `visibility: hidden !important; pointer-events: none !important`. Note: `.overlay-backdrop` is excluded from this rule because its existing cloak rule (Hotfix #3) already handles it.
+- **R36.13** (🔵 AUTO) — App-shell IDs are well-known + stable. Adding a new shell element requires either an explicit `id` allowlist update OR (better) wrapping it under an existing shell ID.
+
+### S36.4 · BUG-022 chat polish (residual items)
+
+Closed during rc.4: typing-dot indicator (R34.1) + per-tool status pill (R34.4) + multi-round badge (R34.5) + provenance breadcrumb slide-in (R34.7). Remaining:
+
+- **R36.14** (🔵 AUTO) — Send button visual density audit: tighten padding (was: ~10px 20px wide → target: 8px 14px), verify against the existing dark-theme button family in chat.
+- **R36.15** (🔵 AUTO) — Transcript bubble spacing audit: tighten line-height (was: 1.6 → target: 1.45) + reduce vertical padding between bubbles (was: 16px → target: 10px).
+
+These are **non-blocking polish**. Tests assert that the rules render with the expected computed values; visual-quality judgment stays manual.
+
+### S36.5 · V-* test contract (Suite 51 NEW · §T37)
+
+Tests in `docs/v3.0/TESTS.md §T37` (NEW):
+
+- **V-OVERLAY-STACK-1**: `openOverlay({ sidePanel: true })` while another overlay is open pushes onto stack; both `.overlay` elements present in DOM. Live DOM probe.
+- **V-OVERLAY-STACK-2**: `closeOverlay()` after a side-panel push pops only the top; the underlying overlay remains in DOM. Live DOM probe.
+- **V-OVERLAY-STACK-3**: ESC closes top-most layer only. Synthesised KeyboardEvent dispatch.
+- **V-OVERLAY-STACK-4**: stacking layout — base layer's `getComputedStyle().width` ≈ 50vw when a side-panel is on top; reverts to default (~720px / 90vw) when popped.
+- **V-FLOW-CHAT-PERSIST-1**: open Canvas AI Assistant chat → click "+ Author new skill" → assert chat overlay is STILL in DOM (not unmounted) AND Settings is mounted in side-panel mode.
+- **V-FLOW-CHAT-PERSIST-2**: same flow → close Settings → assert chat overlay restored to full-width AND chat input value preserved (typed text not lost).
+- **V-FLOW-CHAT-PERSIST-3**: needs-key provider pill click in chat → Settings opens in side-panel mode; closing returns to chat. Same continuity contract.
+- **V-AI-ASSIST-DORMANT-1**: source-grep across production .js files — no `import.*AiAssistOverlay.js` in any production module. Live `app.js` does not call `openAiOverlay()`.
+- **V-NO-VISIBLE-TEST-FLASH-1**: source-grep `styles.css` for the extended `body[data-running-tests] > *:not(...)` cloak rule. Live: while `body[data-running-tests]` is set, append a probe `<div>` to body and assert `getComputedStyle(probe).visibility === "hidden"`.
+- **V-CHAT-POLISH-1**: Send button computed padding ≤ 14px horizontal (verifies BUG-022 R36.14 landed).
+- **V-CHAT-POLISH-2**: Transcript bubble computed line-height ≤ 1.5 (verifies BUG-022 R36.15 landed).
+
+### S36.6 · Locked decisions (CLOSED 2026-05-05)
+
+| # | Decision | Picked | Rationale |
+|---|---|---|---|
+| 1 | BUG-028 architecture | **(B)** Side-panel pattern (ChatGPT / Claude.ai) | User asked for "good UI/UX design way"; industry standard for settings-while-chatting |
+| 2 | AiAssistOverlay retirement | **(B)** Keep file dormant on disk | Same pattern as SkillAdmin.js post-rc.4 Arc 4; safe; deletion arc TBD |
+| 3 | rc.5 scope | BUG-027 + BUG-022 + BUG-028 IN | BUG-001/002 propagate-criticality HOLD for rc.6; perf BUG-021 deferred to v3.1 |
+| 4 | Crown-jewel polish | DEFERRED to v3.1 minor | Per merge-soon direction 2026-05-05 |
+
+### S36.7 · Forbidden / out of scope
+
+- DELETING `ui/views/AiAssistOverlay.js` (file stays dormant per R36.10).
+- General Overlay.js redesign for 3+ stacked layers (only 2-layer side-panel supported in rc.5; recursive stacking is rc.6+ if needed).
+- Mobile / narrow-viewport responsive collapse of the side-panel layout (split UX is desktop-only; <900px viewport falls back to single-layer with the top layer covering the whole viewport — graceful degradation).
+- BUG-001 + BUG-002 propagate-criticality (rc.6 fold-in).
+- Crown-jewel polish per `project_crown_jewel_design.md` (deferred to v3.1).
+
+---
+
 ### Change log
 
 | Date | Section | Change |
@@ -3455,6 +3545,7 @@ Once all 5 confirmed → V-SKILL-V3-8..12 + V-ANTI-V3-SEED-1..3 RED-first → im
 | 2026-05-04 | rc.4-dev Hotfix #2b (`a8c4b4c`) | Local-LLM multi-turn correctness · 4 defensive OpenAI canonical translations in `services/aiService.js`: (1) consolidate adjacent `role:"system"` messages (some local vLLMs reject multiple) · (2) empty assistant content as `""` not `null` (Mistral-style strict validators 400 on null) · (3) tool-result content always stringified (non-string caused JSON-parse fails) · (4) `max_tokens` 1024 → 4096 (was truncating long-form, masking the protocol-level errors above). Closes user-reported "first response accurate, second turn rubbish" against local vLLM. New tests: V-PROVIDER-OPENAI-1..5. Banner 1134 → 1139 GREEN. |
 | 2026-05-04 | rc.4-dev Hotfix #3 (`3938458`) — BUG-026 closed | Diagnostic test pass flashed overlays in user's view during page load on slow hardware (Hotfix #1 only swept end-of-pass; this closes during-pass). `body[data-running-tests]` attribute toggled by `runAllTests` around `runIsolated`; CSS rule in `styles.css` applies `visibility: hidden !important; pointer-events: none !important` to `.overlay` + `.overlay-backdrop` + `#skillBuilderOverlay` while attribute is set. `visibility: hidden` (vs. `display: none`) preserves layout + computed styles + `getBoundingClientRect` + `.click()` + `querySelector` — tests keep working, only paint pixels disappear. Attribute cleared in `afterRestore` AFTER overlay sweep (order matters: clearing first would flash an orphan visible). New test: V-NO-VISIBLE-TEST-OVERLAY-1 in §T35-HOTFIX1 (source-grep + live cloak proof using a real `.overlay` probe). 100-frame smoke confirmed 0 visible overlays during the pass. Banner 1139 → 1140 GREEN. |
 | 2026-05-04 | CHANGELOG_PLAN backfill | Per `feedback_docs_inline.md` audit: rc.2, rc.3, and rc.4-dev sections were missing from `docs/CHANGELOG_PLAN.md` until 2026-05-04. Backfilled in same commit as this row. Future arcs land inline per the locked discipline. |
+| 2026-05-05 | §S36 LOCKED | NEW SPEC annex — UX consolidation arc per HANDOFF rc.5 plan + locked decisions (B side-panel for BUG-028 + B dormant for AiAssistOverlay). R36.1–R36.15 spanning four scopes: chat-persistent side-panel (Overlay.js stack-aware opt-in for the BUG-028 fix), AiAssistOverlay full retirement (dormant module per `project_v2x_admin_deferred.md`), BUG-027 test-pass DOM flash residual cloak extension, BUG-022 chat polish residual items (Send button density + transcript spacing). NEW V-OVERLAY-STACK-1..4 + V-FLOW-CHAT-PERSIST-1..3 + V-AI-ASSIST-DORMANT-1 + V-NO-VISIBLE-TEST-FLASH-1 + V-CHAT-POLISH-1..2 in Suite 51 §T37. RULES §16 CH32 added in same arc. User pre-approved scope ("go all my recs") so SPEC LOCKS without DRAFT phase per `feedback_group_b_spec_rewrite.md` review pattern (review happened in HANDOFF.md §4 rc.5 plan + rc.5 scope decision section). |
 | 2026-05-05 | rc.5-dev Hotfix #4 (post-rc.4) | Per user direction 2026-05-05 ("purge all the existing skills from old builds for now as we don't need them anymore"): v2 `core/skillStore.js` `loadSkills()` retires the first-read auto-install of the v2 seed library — fresh install + corrupt-cache + non-array storage all collapse to empty `[]` (was: dump the seed library to localStorage on every code path). The seed library records remain in `core/seedSkills.js` as reference data so DS8-DS12 in demoSpec keep working without changes. Suite 26 SB1 / SB2 / SB6 + Suite 37 QW3 / QW4 / QW6 reframed for the empty-library baseline (explicit `saveSkills(seedSkills())` setup where the test contract needed pre-populated rows). NEW V-FLOW-NO-SEEDS-1 in §T35-HOTFIX4 (source-grep + live-DOM regression guard for the auto-install retirement). APP_VERSION bumped to `3.0.0-rc.5-dev` per PREFLIGHT 1a (first commit past rc.4 tag). Banner target unchanged (1157 from rc.4 + V-FLOW-NO-SEEDS-1 = 1158 total). Companion entries: BUG-027 (test-pass DOM flash residual) + BUG-028 (chat doesn't persist when Skills clicked) logged in `docs/BUG_LOG.md` as rc.5 work. |
 | 2026-05-04 | §S35 (DRAFT v2 → LOCKED) | DRAFT v2 authored at `ace293a` 2026-05-04 LATE replacing the rejected v1; user approved all 7 §S35.6 decisions ("go"). LOCKED 2026-05-04. Locked decisions: rename `SkillAdmin.js` → `SkillBuilder.js` (delete current v3.1 SkillBuilder.js) · opt-in legacy v2 migration · show all 4 outputTargets (3 disabled) · chat-rail closes-and-opens Settings · keep CARE rewrite as-is · purge `core/v3SeedSkills.js` · filename rename accepted. RULES §16 CH31 added in same arc. V-* test contract: V-SKILL-V3-8..15 + V-ANTI-V3-IN-LABEL-1 + V-ANTI-V3-SEED-1..3 + V-ANTI-OVERLAY-RETIRED-1 + V-MIGRATE-V2-V3-1..4 (Suite 50 §T36 NEW). |
 | 2026-05-03 | RELEASE v3.0.0-rc.3 | **TAGGED 2026-05-03.** Closes the rc.3 implementation arc + AI-correctness consolidation. Banner 1103/1103 GREEN ✅ (was 1048 at rc.2; +55 tests). Rolled in: Phase A1 generic LLM connector (BUG-018 closed) + Phase B concept dictionary + Phase C workflow manifest + Skill v3.1 schema + Skill Builder UI rebuild + chat right-rail saved-skill cards + UseAiButton retirement + topbar consolidation to one "AI Assist" button (Dell-blue + diamond-glint 8s breathe) + APP_VERSION discipline + PREFLIGHT.md + Group A AI-correctness fixes (BUG-019 engagement rehydrate, BUG-020 streaming-time handshake strip, BUG-013 Path B UUID scrub, BUG-023 manifest layerId, BUG-011 + BUG-018 closed). New SPEC annexes: §S26 + §S27 + §S28 + §S29 + §S30 + §S31. New RULES: §16 CH20–CH27. New tests: V-CHAT-18..38, V-CONCEPT-1..5, V-WORKFLOW-1..5, V-SKILL-V3-1..7, V-VERSION-1..2, V-FLOW-REHYDRATE-1..3, V-PATH-31/32, V-TOPBAR-1, V-LAB-VIA-CHAT-RAIL, V-AI-ASSIST-CMD-K, V-ANTI-USE-AI, V-NAME-2, V-DEMO-V2-1 + V-DEMO-8/9 + V-FLOW-CHAT-DEMO-1/2. Real-Gemini live-key smoke deferred to first user-driven workshop run (V-CHAT-32 mock-fetch round-trip covers the protocol).  |
