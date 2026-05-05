@@ -882,6 +882,29 @@ Also possible: the engagement-id resolution logic may be falling back to a defau
 
 ## BUG-030 · AI assistant hallucinates engagement data (Anthropic + Gemini; gaps + dispositions invented out of thin air)
 
+**Status**: ROOT CAUSE CONFIRMED 2026-05-05 · investigation+architecture commit shipped in rc.6 / 6a (SPEC §S37 + RULES §16 CH33 + §T38 V-FLOW-GROUND-* RED scaffolds + groundingRouter/Verifier/grounded-mock STUBS). Plane 1 impl in 6b will close primary; plane 2 in 6c closes the date/phase fabrication subclass · v3.0.0-rc.5 → rc.6
+
+### Investigation note (2026-05-05 · 6a · principal-architect investigation)
+
+**Root cause** (architecture-class, two layers):
+
+1. **Layer 4 threshold cliff.** `services/systemPromptAssembler.js:36-38` defines `ENGAGEMENT_INLINE_THRESHOLD_INSTANCES = 20`, `_GAPS = 20`, `_DRIVERS = 5`. `buildEngagementSection` branches to "counts-only summary" when ANY threshold is exceeded (`isSmall = inst≤20 && gap≤20 && drv≤5`). The Acme Healthcare demo ships 23 instances + 8 gaps + 3 drivers: `23 > 20` → `isSmall=false` → engagement section drops gaps + instances entirely from Layer 4. Only counts + drivers + customer remain. The LLM is left with "INVOKE the appropriate analytical view tool" instruction and zero gap data in the prompt.
+
+2. **Tool invocation is not a guarantee, it's a hope.** The architecture relied on real-Anthropic + real-Gemini reliably calling `selectGapsKanban` / `selectMatrixView` whenever they need gap data. Real LLMs are imperfect at this — `tool_choice: "auto"` lets them skip tools whenever their training-data prior is confident. Anthropic + Gemini both ship strong Dell + healthcare + IT-modernization priors and gladly fill the information-sparse prompt with plausible-sounding fabrication.
+
+The 1169 V-CHAT GREEN test count did not catch this because `services/mockChatProvider.js createMockChatProvider` yields scripted responses without ever reading `call.messages`. Orchestration plumbing was tested; the grounding contract was not.
+
+**Architectural recast (locked 2026-05-05 by user)**: RAG-by-construction. See SPEC §S37 + memory `project_grounding_recast.md`. Three planes (all required, all approved):
+- Plane 1 — `services/groundingRouter.js` deterministic intent classifier → selector calls inlined into Layer 4 BEFORE LLM call (closes BUG-030 primary + BUG-033)
+- Plane 2 — `services/groundingVerifier.js` post-response cross-reference → render-error replaces hallucinated visible response (closes BUG-030 fabricated-date subclass: the Local-B "Q2 close / June 30" workshop screenshot)
+- Plane 3 — `createGroundedMockProvider` reads Layer 4 + answers from prompt only (RED-test infrastructure for the grounding contract)
+
+Threshold removal: `ENGAGEMENT_INLINE_THRESHOLD_*` constants gone in 6b (V-ANTI-THRESHOLD-1 source-grep guard against re-introduction). Replaced with token-budget guard at ~50K input tokens applied to router output.
+
+**SPEC + RED scaffolds in 6a · this commit**: SPEC §S37 LOCKED · RULES §16 CH33 added + CH3 rewritten · TESTS §T38 V-FLOW-GROUND-1..7 + V-FLOW-GROUND-FAIL-1..5 + V-ANTI-THRESHOLD-1 · groundingRouter.js + groundingVerifier.js + createGroundedMockProvider STUBS · APP_VERSION → 3.0.0-rc.6-dev. Tests RED by design. 6b + 6c land impl that turns them GREEN.
+
+---
+
 **Status**: OPEN · Reported 2026-05-05 by user (office workshop test) · v3.0.0-rc.5 · Scheduled rc.6 (HIGHEST PRIORITY — affects core value prop; ROOT CAUSE FIX REQUIRED)
 **Reporter**: User (workshop demo machine)
 **Severity**: Critical (the AI grounding architecture promises "no hallucinations"; user observed otherwise on real-LLM providers)
@@ -963,6 +986,22 @@ After investigation: surface to user, then wire correctly + add V-FLOW-LINK-DESI
 ---
 
 ## BUG-033 · Local A multi-turn context loss (partial regression of rc.4 Hotfix #2b — only first response is accurate)
+
+**Status**: ROOT CAUSE CONFIRMED 2026-05-05 (collapses into BUG-030 architectural recast — same shape) · 6a SPEC + RED scaffolds shipped; 6b plane-1 router closes the underlying cause · v3.0.0-rc.5 → rc.6
+
+### Investigation note (2026-05-05 · 6a · principal-architect investigation)
+
+**Same root cause as BUG-030**: the chat surface treats engagement as ambient (push, optional via tool invocation) instead of authoritative (pull, deterministic). On Local-A specifically, the failure mode is amplified by two compounding factors:
+- Local-A model (Qwen3-Coder via vLLM hermes parser) has weaker instruction-following than Anthropic/Gemini, so the "INVOKE the appropriate analytical view tool" instruction gets dropped more often.
+- Round-2 of the multi-turn transcript carries the round-1 tool result (when tools fired) in the messages array. Local-A is observed to misinterpret the round-1 tool-result-then-user-question shape — sometimes echoing single-word fragments from the tool result ("current"), sometimes returning empty.
+
+**Workshop screenshot evidence (2026-05-05)**: Local-A asked *"can you find the assets from the current state that are dell?"* → returned a verbatim chunk of the `Document current state` workflow body about `mappedAssetIds`. This is intent misclassification, not pure context loss — the model preferred a documented-procedure answer to a fact-retrieval one because the prompt lacked a deterministic cue saying "this is a vendor query, look at the vendor data". Plane 1 router closes this directly: `"find dell assets in current state"` → `selectVendorMix({state:"current"}) + selectMatrixView({state:"current"})` invoked server-side, results in Layer 4 before the LLM ever sees the question.
+
+**6b commit will resolve**: Local-A round-2 will receive a Layer 4 already containing the answer for both round-1 and round-2 questions (router runs every turn; selector results refresh per-turn). Tool round-trip is no longer the primary fact channel; the multi-turn fragility around tool-result-message-shape stops being grounding-critical.
+
+**SPEC + RED scaffolds in 6a · this commit**: see BUG-030 entry above for the architectural recast; V-FLOW-GROUND-1 includes the *"list the gaps currently defined"* + *"find dell assets in current state"* phrasings as router-classification cases.
+
+---
 
 **Status**: OPEN · Reported 2026-05-05 by user (office workshop test) · v3.0.0-rc.5 · Scheduled rc.6 (HIGH)
 **Reporter**: User

@@ -1267,6 +1267,76 @@ Final banner target after merging: **616 (v2.4.16 baseline) - obsolete (~120 v2.
 
 ---
 
+## §T38 · V-FLOW-GROUND — Grounding contract recast (rc.6)
+
+**Coverage**: SPEC §S37 + RULES §16 CH33 (rewritten CH3).
+
+**Approximate count**: 12 RED scaffolds + 1 source-grep guard = 13 vectors.
+
+| Vector | Assertion |
+|---|---|
+| V-FLOW-GROUND-1 | `services/groundingRouter.js` `route({userMessage, transcript, engagement})` returns `{selectorCalls: [...], rationale, fallback}`. Classifies "summarize the gaps" → `selectGapsKanban`; "what dispositions does the customer have?" → `selectGapsKanban + selectMatrixView`; "find dell assets in current state" → `selectVendorMix({state:"current"}) + selectMatrixView({state:"current"})`; "what does cyber resilience mean?" → `selectConcept`; unknown phrasing → CONTEXT_PACK fallback (gaps + vendor mix + executive summary inputs). Pure + deterministic — same input = same output. |
+| V-FLOW-GROUND-2 | `buildSystemPrompt({engagement, providerKind, routerOutput})` inlines selector results into Layer 4. Structural assertion: Layer 4 contains the gap descriptions / vendor mix data (not just counts) when router produces selectGapsKanban / selectVendorMix calls. |
+| V-FLOW-GROUND-3 | Acme demo regression (the test that would have caught BUG-030): with `engagement = getDemoEngagement()` and `userMessage = "summarize the gaps"`, Layer 4 contains all 8 gap descriptions inline (loose-substring match against `engagement.gaps.byId[*].description`). |
+| V-FLOW-GROUND-4 | Empty engagement: router returns `selectorCalls: []`; Layer 4 says "the canvas doesn't include data" or equivalent; no thrown exception. Existing V-CHAT-10 (empty-engagement smoke) still passes after the rewire. |
+| V-FLOW-GROUND-5 | `createGroundedMockProvider` against Acme demo + question "summarize the gaps" produces a response that paraphrases all 8 real gaps; no fabricated gap descriptions in the response (verified by absence of any string outside the engagement gap descriptions when checked against the engagement gap-description set). |
+| V-FLOW-GROUND-6 | Grounded mock against a question whose answer requires out-of-engagement data (e.g. "what's the customer's CISO's name?" where customer data has no CISO field) emits the literal phrase `"the canvas doesn't include the data needed to answer that"` — proving the grounding contract end-to-end without an LLM. |
+| V-FLOW-GROUND-FAIL-1 | `services/groundingVerifier.js` `verifyGrounding(response, engagement)` rejects a response that references a gap description not in the engagement; populates `violations[*].kind === "gap-description"`; `ok === false`. |
+| V-FLOW-GROUND-FAIL-2 | Verifier rejects a response that references a vendor name not in the engagement AND not in `DELL_PRODUCT_TAXONOMY`; populates `violations[*].kind === "vendor"`. |
+| V-FLOW-GROUND-FAIL-3 | Verifier rejects a response containing the Local-B regression case: a project plan with "Procurement Initiation: Issue RFP for PowerScale F710 & XE9680 (Q2 close)" or "Executive Review (June 30): Present Phase 1 progress & Q3 roadmap" — when those dates / phases / procurement steps are not in the engagement. Populates `violations[*].kind` ∈ `{"date-deliverable", "project-phase"}`. |
+| V-FLOW-GROUND-FAIL-4 | `streamChat` against grounded mock with a hand-built hallucinated scripted response (via `createMockChatProvider` for this one test path) replaces the visible response with the render-error message `"The model produced an answer with claims that don't trace to the engagement..."`; assistant message envelope carries `groundingViolations` array. |
+| V-FLOW-GROUND-FAIL-5 | Catalog-whitelist invariant: a response that mentions a Dell product (DELL_PRODUCT_TAXONOMY entry) NOT in the engagement does NOT trigger a violation (catalog reference data is allowed even if not in engagement). Same for BUSINESS_DRIVERS, ENV_CATALOG labels — these are reference data, not hallucination. |
+| V-FLOW-GROUND-7 | Token-budget guard: a synthetic 250-instance engagement triggers selector-drop fallback when router-output JSON exceeds 50K input-token estimate. Metadata + cheapest selectors stay inlined; over-cap selectors degrade to TOC + tool fallback. Engagement metadata (customer + drivers + env aliases) always preserved in Layer 4. |
+| V-ANTI-THRESHOLD-1 | Source-grep — no `ENGAGEMENT_INLINE_THRESHOLD_INSTANCES`, `ENGAGEMENT_INLINE_THRESHOLD_GAPS`, or `ENGAGEMENT_INLINE_THRESHOLD_DRIVERS` symbols exist in the tree post-rc.6. Regression guard against re-introducing the count-based small/large branch. |
+
+### T38.1 · Sample vector body (V-FLOW-GROUND-3 · Acme gap inlining)
+
+```js
+it("V-FLOW-GROUND-3 · Acme demo: Layer 4 contains all 8 gap descriptions inline", async () => {
+  const { route }              = await import("../services/groundingRouter.js");
+  const { buildSystemPrompt }  = await import("../services/systemPromptAssembler.js");
+  const { getDemoEngagement }  = await import("../core/demoEngagement.js");
+  const eng = getDemoEngagement();
+  const out = route({ userMessage: "summarize the gaps", transcript: [], engagement: eng });
+  const prompt = buildSystemPrompt({ engagement: eng, routerOutput: out });
+  const layer4 = prompt.messages[prompt.messages.length - 1].content;
+  for (const id of eng.gaps.allIds) {
+    const desc = eng.gaps.byId[id].description;
+    assert(layer4.includes(desc),
+      "V-FLOW-GROUND-3 · Layer 4 must inline gap description: " + desc);
+  }
+});
+```
+
+### T38.2 · Sample vector body (V-FLOW-GROUND-FAIL-3 · Local-B Q2/June-30 hallucination class)
+
+```js
+it("V-FLOW-GROUND-FAIL-3 · verifier rejects fabricated project-phase dates", async () => {
+  const { verifyGrounding } = await import("../services/groundingVerifier.js");
+  const { getDemoEngagement } = await import("../core/demoEngagement.js");
+  const eng = getDemoEngagement();
+  const hallucinated = [
+    "Bottom line: Acme needs a single-vendor platform.",
+    "Procurement Initiation: Issue RFP for PowerScale F710 & XE9680 (Q2 close).",
+    "Executive Review (June 30): Present Phase 1 progress & Q3 roadmap to CIO/CISO."
+  ].join("\n");
+  const result = verifyGrounding(hallucinated, eng);
+  assertEqual(result.ok, false, "verifier must flag fabricated deliverable dates");
+  const kinds = result.violations.map(v => v.kind);
+  assert(kinds.includes("date-deliverable") || kinds.includes("project-phase"),
+    "violations include date-deliverable or project-phase classification; got: " + JSON.stringify(kinds));
+});
+```
+
+### T38.3 · Forbidden test patterns
+
+- **F38T.1** · Stubbing `route(...)` internals; tests dispatch through the real router against deterministic user-message fixtures.
+- **F38T.2** · Asserting LLM output semantics. The verifier asserts a *structural* property (entity references trace to engagement); tests assert structural too.
+- **F38T.3** · Comparing router-output text byte-for-byte (brittle as intent table evolves); use intent-id assertions or selector-list set-equality.
+- **F38T.4** · Using `createMockChatProvider` (scripted) for V-FLOW-GROUND-* tests. Use `createGroundedMockProvider` (reads-prompt). Exception: V-FLOW-GROUND-FAIL-4 builds a hand-crafted hallucinated response via the scripted mock to exercise the streamChat-level verifier hookup.
+
+---
+
 ## §T28 · Open items
 
 | Item | Section | Tag |

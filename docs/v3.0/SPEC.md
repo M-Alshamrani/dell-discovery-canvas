@@ -1738,7 +1738,7 @@ ui/components/
 |---|---|---|
 | **R20.1** | `services/systemPromptAssembler.js` exports `buildSystemPrompt({engagement, manifest, catalogs, options}) → { messages: [...], cacheControl: [...] }` producing the 5-layer prompt per S20.4 | This SPEC |
 | **R20.2** | Layer 1 (role + ground rules) is identical across every chat call within a build; layer 2 (data model) and layer 3 (manifest) update only when schema or catalog versions change; together these three layers form the **stable prefix** that gets cached per S20.7 | S20.4 + S20.7 |
-| **R20.3** | Layer 4 (engagement snapshot) is token-budgeted per S20.6: small engagements (≤ ENGAGEMENT_INLINE_THRESHOLD entities) are dumped inline; larger engagements have only customer + drivers + counts inlined, with detail fetched via tool-use | S20.4.4 + S20.6 |
+| **R20.3** | (REWRITTEN rc.6 per §S37) Layer 4 (engagement snapshot) is built by the deterministic grounding router (`services/groundingRouter.js`) — see §S37.3.1. Customer + drivers + environment aliases are always inlined as metadata; instances + gaps + dispositions detail comes from router-invoked selector results, never from a raw engagement dump. The legacy count-based small/large branch (`ENGAGEMENT_INLINE_THRESHOLD_*`) is REMOVED. Token-budget guard at ~50K input tokens applied to router output per §S37.4 | §S20.4.4 + §S20.6 + §S37.3 + §S37.4 |
 | **R20.4** | Layer 5 (analytical views) is tool definitions when the provider supports tool-use, descriptive prose otherwise; the seven §S5 selectors (`selectMatrixView`, `selectGapsKanban`, `selectVendorMix`, `selectHealthSummary`, `selectExecutiveSummaryInputs`, `selectLinkedComposition`, `selectProjects`) MUST each have a corresponding tool in `services/chatTools.js` | S20.4.5 + S20.5 |
 | **R20.5** | `services/chatService.js` exports `streamChat({engagement, transcript, userMessage, providerConfig, onToken, onToolCall, onComplete}) → Promise<{response, provenance}>` — handles streaming, tool-call resolution, retry inheritance from `aiService.chatCompletion` | S20.5 + S20.8 |
 | **R20.6** | Tool-call dispatch is server-side-equivalent (the LLM emits a tool_use block; we resolve it in-browser by invoking the named selector against the active engagement; we feed the tool_result back; the LLM produces text or another tool_use). MULTI-ROUND chaining is supported up to `MAX_TOOL_ROUNDS=5`: chatService loops until the model emits a text-only response or hits the cap. On cap, the response includes a clear notice. Updated 2026-05-02 PM (was: 1-round only) — closes BUG-012 (multi-tool questions stuck on round-2 preamble) | S20.5.2 |
@@ -1784,14 +1784,17 @@ Includes:
 
 The serialized output of `generateManifest()` from §S7. This **is** the binding meta-model: every path the data model exposes, with type + label + composition rule + source (`schema` / `entity` / `linked` / `catalog`). The model uses this to know exactly where each kind of fact lives and how kinds compose (e.g., `context.driver.linkedGaps[*]` is "all gaps where `gap.driverId === driver.id`").
 
-#### S20.4.4 · Layer 4 — Engagement snapshot (NOT cached, token-budgeted)
+#### S20.4.4 · Layer 4 — Engagement snapshot (NOT cached, router-driven per §S37)
 
-The live engagement, JSON-serialized. Token-budgeted per S20.6:
+**REWRITTEN rc.6 per §S37 (Grounding contract recast)**. The live contract is in §S37.3.1 + §S37.4; this subsection is preserved for back-reference.
 
-| Engagement size | Snapshot strategy |
-|---|---|
-| ≤ 20 instances **and** ≤ 20 gaps **and** ≤ 5 drivers | Inline full engagement (estimated < 4K tokens) |
-| Anything larger | Inline customer + drivers + counts only (~500 tokens); detail fetched via tool-use per S20.5 |
+Layer 4 is produced by the deterministic grounding router (`services/groundingRouter.js`):
+1. Router classifies the user's current message → list of selector calls (per §S37.3.1).
+2. Selectors are invoked server-side; results are JSON-serialized with id-to-label expansion.
+3. Customer + drivers + environment aliases (always-inlined metadata, ~500 tokens) + selector results form Layer 4.
+4. Token-budget guard at ~50K input tokens (per §S37.4); above-cap selectors degrade to TOC + tool fallback.
+
+**REMOVED** in rc.6: the previous count-based small/large branch (`ENGAGEMENT_INLINE_THRESHOLD_INSTANCES = 20`, `_GAPS = 20`, `_DRIVERS = 5`) is gone. The threshold cliff at 23 instances was the proximate trigger of BUG-030 (Acme demo crosses → gaps drop → LLM left with counts-only → confabulation). The thresholds were an artifact of the pre-RAG era.
 
 Snapshot includes the catalog version stamps (`engagement.meta.catalogVersions` if present, else from `loadAllCatalogs()`) so the model can recognize stale references.
 
@@ -1881,12 +1884,14 @@ For each selector, the test contract V-CHAT-3 asserts the tool definition matche
 
 ### S20.6 · Token-budget management
 
+**Layer 4 row REWRITTEN rc.6 per §S37**. The size-driven counts-only branch is removed; Layer 4 size is bounded by the router-output token-budget guard at ~50K input tokens (per §S37.4).
+
 | Layer | Cache eligible | Approx tokens | Strategy when over budget |
 |---|---|---|---|
 | 1 (role) | ✅ | 400 | Never trim — defines anti-hallucination contract |
 | 2 (data model) | ✅ | 1500 | Trim least-used entity descriptions in pathological cases (200+ entity kinds — not v3.0 reality) |
 | 3 (manifest) | ✅ | 9000 | Trim per-kind detail when manifest exceeds 12K tokens; never drop a kind entirely |
-| 4 (engagement snapshot) | ❌ | budget-driven | Counts-only summary when full engagement > 4K tokens (per S20.4.4) |
+| 4 (engagement snapshot — router-driven per §S37.3.1) | ❌ | router-output-bounded; ≤ 50K input tokens | Drop cheapest-information selectors first; metadata always preserved; over 150K → router refuses with surfaced message (per §S37.4) |
 | 5 (views) | ✅ (descriptions) | 800 | Always full when ≤7 selectors |
 | Transcript | n/a | 0–12K | Summarize older turns into a single PRIOR CONTEXT message when the rolling window overflows (R20.10) |
 
@@ -3520,6 +3525,226 @@ Tests in `docs/v3.0/TESTS.md §T37` (NEW):
 
 ---
 
+## §S37 · Grounding contract recast — RAG-by-construction (rc.6; LOCKED 2026-05-05)
+
+**Status**: NEW SPEC annex. **LOCKED 2026-05-05** on user direction (*"yes, i like this principal architect approach, do as you recommend. I agree it is a RAG, and data are in the app."*). Authored as the architectural fix for BUG-030 (real-Anthropic + real-Gemini hallucinate gaps not in the engagement) and BUG-033 (Local A multi-turn degrades to single-word / empty responses), uncovered by the 2026-05-05 office workshop test against the rc.5 build.
+
+This annex deliberately recasts the chat-grounding contract first defined in §S20.4–§S20.6. Where §S20 said "chat with optional fact-retrieval tools and a count-based small-vs-large engagement branch," §S37 says **deterministic retrieval per turn, threshold cliffs removed, runtime grounding verification mandatory**. Layer 4 of the system prompt is now produced by a router, not by a `JSON.stringify(engagement)`. §S20.4.4 + §S20.6 are amended to point here for the live contract.
+
+### S37.1 · Why now
+
+BUG-030 evidence (collected by user 2026-05-05):
+
+- Real-Anthropic + real-Gemini answered *"summarize the gaps"* / *"what dispositions does the customer have?"* against the Acme Healthcare demo with **gaps + dispositions + drivers that are NOT in the engagement**. Confabulation from training-data prior, not engagement data.
+- Local B answered *"what's the executive ask"* with a confident multi-paragraph plan that included **"Procurement Initiation: Issue RFP for PowerScale F710 & XE9680 (Q2 close)"** and **"Executive Review (June 30): Present Phase 1 progress & Q3 roadmap to CIO/CISO"** — neither date nor procurement step is in `core/demoEngagement.js`. The names + products in the response *are* in the engagement; the dates and plan structure are training-prior fabrication.
+- Local A *"can you find the assets from the current state that are dell?"* returned a verbatim chunk of the **Document current state** workflow body — the model misclassified intent (vendor query → workflow lookup) because the prompt mentioned workflow tooling and the model preferred a documented-procedure answer to a fact-retrieval one.
+
+The 1169 V-CHAT GREEN test count did not catch any of this because the mock provider yields scripted responses without reading `call.messages` — orchestration plumbing is tested; grounding contract is not.
+
+### S37.2 · The architectural truth
+
+The rc.2..rc.5 chat surface was shipped as **chat-with-tools, where the LLM may optionally call selectors to ground answers**. That is a *hope*, not a guarantee. Real-Anthropic / real-Gemini / Local-A break the hope at workshop scale because:
+
+1. Tool invocation is an optional behavior choice the LLM makes per turn. `tool_choice: "auto"` lets the LLM skip tools whenever its training-data prior is confident.
+2. Real LLMs ship strong Dell + healthcare + IT-modernization priors that gladly fill an information-sparse prompt with plausible-sounding fabrication.
+3. The contract-ack handshake (§S25.5 / R20.16) proves the model saw layer 1 (the role section, where the sha is printed). It does **not** prove the model read layer 4 (engagement). We had been treating it as proof of grounding; it isn't.
+4. The mock provider can't test grounding because it doesn't read prompts.
+
+The correct shape is **RAG-by-construction**: every fact-bearing turn is preceded by *deterministic* selector retrieval against the user's question; the selector results are inlined into Layer 4 of the system prompt **before** the LLM call. The LLM is now answering from a prompt that *contains the answer*. Tools remain available as a safety net for unusual cross-cuts the router didn't anticipate, but they are no longer the primary fact channel.
+
+This is the same shape as production RAG systems (the user explicitly agreed *"i agree it is a RAG, and data are in the app."*). The chat-with-tools pattern is not wrong in general — it's wrong as a *grounding* mechanism on top of training-prior-rich models with optional tool dispatch.
+
+### S37.3 · Three planes (all required)
+
+The recast is three independently-valuable planes. The user pre-approved all three on 2026-05-05.
+
+#### S37.3.1 · Plane 1 — deterministic retrieval router (`services/groundingRouter.js`)
+
+A heuristic intent classifier (regex/keyword + phrase-pattern table + verb-object cues) that maps the user's current message → a list of selector calls to invoke server-side **before** the LLM sees the message. The router output drives Layer 4 assembly:
+
+```
+USER message: "summarize the gaps"
+ROUTER → [{ selector: "selectGapsKanban", args: {} }]
+
+USER message: "what dispositions does the customer have?"
+ROUTER → [{ selector: "selectGapsKanban", args: {} },
+          { selector: "selectMatrixView",  args: {} }]
+
+USER message: "find the dell assets in the current state"
+ROUTER → [{ selector: "selectVendorMix", args: { state: "current" } },
+          { selector: "selectMatrixView", args: { state: "current" } }]
+
+USER message: "what does cyber resilience mean?"
+ROUTER → [{ selector: "selectConcept", args: { id: "concept.cyber_resilience" } }]
+
+USER message: "<unrecognized>"
+ROUTER → CONTEXT_PACK = [
+  { selector: "selectGapsKanban",  args: {} },
+  { selector: "selectVendorMix",    args: {} },
+  { selector: "selectExecutiveSummaryInputs", args: {} }
+]
+```
+
+The router NEVER makes an LLM call. Adding a second LLM grounding surface is the wrong tradeoff at this scope (extra turn-time roundtrip + a second place that can hallucinate). Heuristics are deterministic, debuggable, fast, and cheap to evolve.
+
+Selector results are then inlined into Layer 4. Tools remain registered (`CHAT_TOOLS` unchanged) and the LLM may still emit `tool_use` for unanticipated cross-cuts.
+
+#### S37.3.2 · Plane 2 — runtime grounding verifier (`services/groundingVerifier.js`)
+
+After the LLM produces a response, scan the response for **entity-shaped claims** and cross-reference against the live engagement. Any claim that doesn't trace gets the response replaced by a render-error in the chat overlay — the hallucinated text is *never* rendered to the user.
+
+What plane 2 catches that plane 1 misses (the Local-B "Q2 close / June 30" class):
+
+- Plane 1 inlines the engagement gaps + drivers into the prompt. The LLM sees them. But nothing in the prompt prevents the LLM from also adding fabricated *dates*, *procurement steps*, *project plan structure*, *vendor names not in the engagement* on top of the grounded facts.
+- Plane 2 scans for: gap descriptions referenced in prose, vendor names, driver labels, environment aliases, instance labels, project names, ISO-shaped dates referenced as engagement deliverables, and "Phase N" / "Q[1-4]" project-phase references.
+- Cross-reference against the engagement (with help from `core/demoEngagement.js` + the catalogs). Names not in the engagement → render-error. Dates not in the engagement → render-error.
+- Render-error format: *"The model produced an answer with claims that don't trace to the engagement. Try rephrasing the question, switching providers, or adding the relevant data to the canvas."*
+
+Plane 2 is the runtime analogue of plane 1's compile-time fix. Even if the LLM dodges the deterministic prompt, the response can't *render* a hallucination.
+
+#### S37.3.3 · Plane 3 — grounding-aware mock provider (`services/mockChatProvider.js` `createGroundedMockProvider`)
+
+The existing `createMockChatProvider` (scripted-response mock) yields tokens without reading `call.messages` — fine for orchestration tests, useless for grounding tests. A new export `createGroundedMockProvider` is added that:
+
+1. Reads `call.messages`, finds the Layer 4 section in the system prompt.
+2. Parses the inlined selector results.
+3. Answers the user's last message ONLY by paraphrasing data found in Layer 4.
+4. If the user asks a question whose answer would require data not in Layer 4, the grounded mock emits the literal phrase *"the canvas doesn't include the data needed to answer that"* — proving the grounding contract end-to-end without an LLM.
+
+`createMockChatProvider` (scripted) is preserved unchanged for V-CHAT-{4,5,18,etc} orchestration tests. `createGroundedMockProvider` is new and powers V-FLOW-GROUND-* tests.
+
+### S37.4 · Threshold removal
+
+The rc.2 SPEC §S20.4.4 + §S20.6 carried a count-based small/large engagement branch:
+
+> Small engagements (≤ 20 instances **and** ≤ 20 gaps **and** ≤ 5 drivers) → inline full engagement.
+> Larger engagements → counts-only summary (~500 tokens); detail fetched via tool-use.
+
+This was the **proximate trigger** of BUG-030: the Acme Healthcare demo at 23 instances crosses the threshold → gaps drop from prompt → LLM left with counts-only + tool-hint → real LLMs skip the tool → confabulation. The thresholds (`ENGAGEMENT_INLINE_THRESHOLD_INSTANCES = 20`, `_GAPS = 20`, `_DRIVERS = 5`) are an artifact of the pre-RAG era and are **REMOVED** in rc.6.
+
+Replacement: a token-budget guard at ~50K input tokens applied to the **router output**, not to the raw engagement. Path:
+
+1. Router produces a list of selector calls.
+2. Each selector is invoked; results are JSON-serialized.
+3. Sum the serialized lengths against a token estimate (`bytes / 4` rule of thumb).
+4. If the sum > 50K input tokens, the router degrades: drop the cheapest-information selectors first, then move to TOC + tool fallback for the remainder. Metadata (customer + drivers + env aliases) stays inlined.
+5. Above ~150K input tokens (Anthropic 200K context window minus output budget), the router refuses and surfaces *"engagement too large for inline grounding — use the analytical view buttons in the side-panel"*. v3.0 demo + realistic workshop engagements never hit this; multi-engagement v3.1 might.
+
+The 50K cap is the new gate, not 20 instances. v3.0-realistic workshop engagements (≤ 200 instances, ≤ 50 gaps) all fit comfortably below 50K input tokens with full router output inlined.
+
+### S37.5 · R-numbered requirements
+
+| R | Requirement | Trace |
+|---|---|---|
+| **R37.1** | `services/groundingRouter.js` exports `route({userMessage, transcript, engagement}) → {selectorCalls: [{selector, args}], rationale: string, fallback: "context-pack" \| "tool-only" \| null}`. The router NEVER calls an LLM; it is deterministic and pure. Same input → same output across calls | This SPEC §S37.3.1 |
+| **R37.2** | `services/chatService.js streamChat(...)` MUST invoke the router before assembling the system prompt; selector results are inlined into Layer 4 by `services/systemPromptAssembler.js buildSystemPrompt({engagement, providerKind, routerOutput})`. The legacy threshold-based branch in `buildEngagementSection` is REMOVED in the same commit | §S37.3.1 + §S37.4 |
+| **R37.3** | Layer 4 of the system prompt always contains: (a) customer + drivers + environment aliases (always inlined, ~500 tokens); (b) router-invoked selector results, JSON-serialized with id-to-label expansion. Raw engagement dump (`JSON.stringify(engagement)`) is FORBIDDEN regardless of size | §S37.3.1 + §S37.4 |
+| **R37.4** | The router's intent classifier MUST cover at minimum: gap-summary, gap-by-urgency, gap-by-phase, driver-list, vendor-mix-current, vendor-mix-desired, dell-density, vendor-mix-by-env, matrix-current, matrix-desired, executive-summary, instance-by-vendor, concept-definition, workflow-howto, project-list, health-summary. Unrecognized intent → CONTEXT_PACK fallback (gaps + vendor mix + executive summary inputs) | §S37.3.1 |
+| **R37.5** | `services/groundingVerifier.js` exports `verifyGrounding(response, engagement) → {ok: bool, violations: [{kind, claim, reason}]}`. Verifier is pure + deterministic | §S37.3.2 |
+| **R37.6** | `streamChat(...)` MUST call `verifyGrounding(visibleResponse, engagement)` after the post-handshake-strip + post-UUID-scrub passes. On `ok: false`, the visible response is REPLACED with the render-error message; provenance still surfaces (so the user can switch providers); the `violations` array is logged via `console.warn` for the diagnostic suite + recorded on the assistant message envelope as `groundingViolations` | §S37.3.2 |
+| **R37.7** | The verifier's claim extractor MUST detect: (a) gap descriptions (loose substring against `engagement.gaps.byId[*].description`); (b) vendor names (against `DELL_PRODUCT_TAXONOMY` + `engagement.instances.byId[*].vendor`); (c) driver labels (against `BUSINESS_DRIVERS` + `engagement.drivers.byId[*]`); (d) environment aliases (against `ENV_CATALOG` + `engagement.environments.byId[*].alias`); (e) instance labels; (f) project names (`engagement.projects` if present); (g) ISO-shaped dates referenced as engagement deliverables; (h) "Phase [0-9]+" / "Q[1-4]" project-phase references. Each failed reference → one entry in `violations` | §S37.3.2 |
+| **R37.8** | The verifier MUST whitelist labels that come from the catalogs (BUSINESS_DRIVERS, LAYERS, GAP_TYPES, DISPOSITION_ACTIONS, SERVICE_TYPES, CUSTOMER_VERTICALS, DELL_PRODUCT_TAXONOMY) — those are reference data, not hallucination, even when not in the engagement | §S37.3.2 |
+| **R37.9** | `services/mockChatProvider.js` adds `createGroundedMockProvider(opts) → provider` (sibling to the existing `createMockChatProvider`). The grounded mock READS `call.messages`, finds Layer 4, parses inlined selector results, answers the user's last message ONLY by paraphrasing data found in Layer 4. When the answer would require data not in Layer 4, the mock emits the literal phrase `"the canvas doesn't include the data needed to answer that"` | §S37.3.3 |
+| **R37.10** | The legacy thresholds `ENGAGEMENT_INLINE_THRESHOLD_INSTANCES`, `_GAPS`, `_DRIVERS` in `services/systemPromptAssembler.js` are REMOVED in the rc.6 / 6b implementation commit. Source-grep V-ANTI-THRESHOLD-1 enforces no re-introduction | §S37.4 |
+| **R37.11** | Token-budget guard: the router output is size-checked against a 50K input-token cap (`serializedBytes / 4` estimate). Over-cap → drop cheapest-information selectors first; metadata always preserved. Over 150K → router refuses with surfaced message | §S37.4 |
+| **R37.12** | Real-LLM live-key smoke is a tag-time PREFLIGHT item starting rc.6 (added to `docs/PREFLIGHT.md` as item 5b): Anthropic + Gemini + Local A 3-turn each against the demo engagement, Network-panel inspection of wire body to confirm Layer 4 carries router output, response paraphrases real engagement data, no plane-2 violations. The mock-fetch smoke (existing PREFLIGHT 5) is preserved as the structural-correctness layer | §S37.3 |
+
+### S37.6 · Module shape
+
+Three files NEW; two files modified.
+
+**NEW** `services/groundingRouter.js`:
+```js
+// Pure intent classifier → selector list. No LLM calls. Deterministic.
+export function route({ userMessage, transcript, engagement }) {
+  const intents = classify(userMessage);            // returns array of intent ids
+  const selectorCalls = intents.flatMap(intent => SELECTORS_FOR_INTENT[intent] || []);
+  if (selectorCalls.length === 0) {
+    return { selectorCalls: CONTEXT_PACK, rationale: "unknown-intent", fallback: "context-pack" };
+  }
+  return { selectorCalls, rationale: intents.join("+"), fallback: null };
+}
+```
+
+**NEW** `services/groundingVerifier.js`:
+```js
+export function verifyGrounding(response, engagement) {
+  const claims = extractClaims(response);            // gap descs, vendor names, etc.
+  const map    = buildGroundingMap(engagement);      // valid labels from engagement + catalogs
+  const violations = claims.filter(c => !traces(c, map));
+  return { ok: violations.length === 0, violations };
+}
+```
+
+**MODIFIED** `services/systemPromptAssembler.js`: `buildSystemPrompt({engagement, providerKind, routerOutput})` accepts a new `routerOutput` param; `buildEngagementSection` is rewritten to consume `routerOutput.selectorCalls` results; thresholds removed.
+
+**MODIFIED** `services/chatService.js`: `streamChat` invokes `route(...)` once per turn before `buildSystemPrompt`; passes router output into the assembler; calls `verifyGrounding` on the final visible response and replaces with render-error on violation.
+
+**EXTENDED** `services/mockChatProvider.js`: adds `createGroundedMockProvider`; existing `createMockChatProvider` unchanged.
+
+### S37.7 · Forbidden patterns
+
+- Inlining `JSON.stringify(engagement)` into the system prompt (raw engagement dump). Layer 4 is router-driven only.
+- Reintroducing the `ENGAGEMENT_INLINE_THRESHOLD_*` constants or any count-based small-vs-large branch.
+- Adding an LLM-classifier router (a second LLM grounding surface). The router stays heuristic; if heuristics need maintenance, evolve them in code, not in a model.
+- Bypassing `verifyGrounding` on a chat response. Every visible assistant turn passes through the verifier.
+- "Just-this-once" allowing a hallucinated response through the verifier. Plane 2 is a hard gate.
+- Skipping the router on the FIRST turn or on EMPTY-engagement turns. Empty engagement → router returns `{ selectorCalls: [], rationale: "empty-engagement", fallback: "metadata-only" }`; assembler still runs.
+- Using `createMockChatProvider` (scripted) for grounding-contract tests. V-FLOW-GROUND-* tests use `createGroundedMockProvider` exclusively.
+- Asserting LLM output semantics in the verifier (we still don't test what an LLM says); the verifier asserts a *structural* property of the response (entity references trace to engagement), not a semantic one.
+
+### S37.8 · Test contract for §S37
+
+Vectors land in TESTS.md §T38 V-FLOW-GROUND-1..N. Coverage:
+
+- **V-FLOW-GROUND-1** · Router classifies "summarize the gaps" → selectGapsKanban; classifies "what dispositions does the customer have?" → selectGapsKanban + selectMatrixView; classifies "find dell assets in current state" → selectVendorMix({state:"current"}) + selectMatrixView({state:"current"}); classifies unknown phrasing → CONTEXT_PACK.
+- **V-FLOW-GROUND-2** · `buildSystemPrompt` with router output inlines selector results into Layer 4 (structural assertion: layer 4 contains the gap descriptions / vendor mix data, not just counts).
+- **V-FLOW-GROUND-3** · Acme demo (23 instances, 8 gaps): Layer 4 contains all 8 gap descriptions verbatim. (This was the test that would have caught BUG-030.)
+- **V-FLOW-GROUND-4** · Empty engagement: router returns `selectorCalls: []`; Layer 4 says "the canvas doesn't include data" or equivalent; existing V-CHAT-10 still passes.
+- **V-FLOW-GROUND-5** · Grounded mock against Acme demo + question "summarize the gaps" produces a response that paraphrases the 8 real gaps; no fabricated gap descriptions.
+- **V-FLOW-GROUND-6** · Grounded mock against question whose answer requires out-of-engagement data emits the literal "the canvas doesn't include the data needed to answer that".
+- **V-FLOW-GROUND-FAIL-1** · Verifier rejects a response that references a gap description not in the engagement; populates `violations[*].kind === "gap-description"`.
+- **V-FLOW-GROUND-FAIL-2** · Verifier rejects a response that references a vendor name not in the engagement (and not in DELL_PRODUCT_TAXONOMY).
+- **V-FLOW-GROUND-FAIL-3** · Verifier rejects a response that references "Q2 close" or "June 30" as engagement deliverables when those dates are not in the engagement (the Local-B regression case).
+- **V-FLOW-GROUND-FAIL-4** · `streamChat` against the grounded mock with a hand-built hallucinated response replaces the visible response with the render-error message; assistant message envelope carries `groundingViolations`.
+- **V-FLOW-GROUND-FAIL-5** · Verifier whitelist: a response that mentions a Dell product (DELL_PRODUCT_TAXONOMY entry) NOT in the engagement does NOT trigger a violation (catalog reference data is allowed).
+- **V-ANTI-THRESHOLD-1** · Source-grep — no `ENGAGEMENT_INLINE_THRESHOLD_INSTANCES`, `_GAPS`, `_DRIVERS` symbol exists in the tree post-rc.6.
+- **V-FLOW-GROUND-7** · Token-budget guard: a synthetic 250-instance engagement triggers selector-drop fallback; metadata + cheapest selectors stay inlined; over-cap selectors degrade to TOC.
+
+Sample vector body (V-FLOW-GROUND-3 · Acme gap inlining):
+```js
+it("V-FLOW-GROUND-3 · Acme demo: Layer 4 contains all 8 gap descriptions inline", () => {
+  const eng    = getDemoEngagement();
+  const router = await import("../services/groundingRouter.js");
+  const out    = router.route({ userMessage: "summarize the gaps", transcript: [], engagement: eng });
+  const prompt = buildSystemPrompt({ engagement: eng, routerOutput: out });
+  const layer4 = prompt.messages[prompt.messages.length - 1].content;
+  for (const id of eng.gaps.allIds) {
+    const desc = eng.gaps.byId[id].description;
+    assert(layer4.includes(desc), "Layer 4 must inline gap description: " + desc);
+  }
+});
+```
+
+### S37.9 · Forbidden test patterns
+
+- **F37T.1** · Stubbing `route(...)` internals; tests dispatch through the real router against deterministic user-message fixtures.
+- **F37T.2** · Asserting LLM output semantics. The verifier asserts a *structural* property; tests assert structural too.
+- **F37T.3** · Comparing router-output text byte-for-byte (brittle as intent table evolves); use intent-id assertions.
+- **F37T.4** · Using `createMockChatProvider` (scripted) for V-FLOW-GROUND-* tests. Grounded mock only.
+
+### S37.10 · Trace
+
+- **Principles**: P1 (schema is single source of truth — selector results derived from schema-bound entities); P3 (presentation derived — chat is a view; router is a deterministic projection); P5 (provenance — assistant message envelope carries `groundingViolations` alongside model + runId + timestamp); P10 (real-execution — V-FLOW-GROUND tests run end-to-end against real router + real assembler + grounded mock, no stubs).
+- **Memories**: `feedback_no_patches_flag_first.md` (the threshold cliff was the patch; this is the architectural fix); `feedback_spec_and_test_first.md` (this annex + §T38 + V-FLOW-GROUND-* RED scaffolds land BEFORE the impl); `feedback_test_or_it_didnt_ship.md` (V-FLOW-GROUND-3 is the regression test for BUG-030); `feedback_browser_smoke_required.md` (real-LLM live-key smoke added to PREFLIGHT 5b).
+- **Bugs closed by this arc**: BUG-030 (real-LLM hallucinates) by plane 1 + plane 2 in 6b + 6c; BUG-033 (Local A multi-turn) by plane 1 in 6b; BUG-029 (chat persists across sessions) lays cleanly on the "engagement is authoritative" architecture in 6d.
+
+### S37.11 · Cross-references to existing §S20
+
+§S20.4.4 (Layer 4 — engagement snapshot) is amended to point here for the live contract; the threshold table in that subsection is superseded. §S20.6 (Token-budget management) is amended: the size-driven row is replaced with a pointer to S37.4. R20.3 in §S20.3 is rewritten to express router-driven retrieval. CH3 in RULES §16 is rewritten to forbid raw-engagement-dump and threshold-based summarization. CH33 NEW (post-response grounding verification mandatory).
+
+---
+
 ### Change log
 
 | Date | Section | Change |
@@ -3547,6 +3772,7 @@ Tests in `docs/v3.0/TESTS.md §T37` (NEW):
 | 2026-05-04 | CHANGELOG_PLAN backfill | Per `feedback_docs_inline.md` audit: rc.2, rc.3, and rc.4-dev sections were missing from `docs/CHANGELOG_PLAN.md` until 2026-05-04. Backfilled in same commit as this row. Future arcs land inline per the locked discipline. |
 | 2026-05-05 | §S36 LOCKED | NEW SPEC annex — UX consolidation arc per HANDOFF rc.5 plan + locked decisions (B side-panel for BUG-028 + B dormant for AiAssistOverlay). R36.1–R36.15 spanning four scopes: chat-persistent side-panel (Overlay.js stack-aware opt-in for the BUG-028 fix), AiAssistOverlay full retirement (dormant module per `project_v2x_admin_deferred.md`), BUG-027 test-pass DOM flash residual cloak extension, BUG-022 chat polish residual items (Send button density + transcript spacing). NEW V-OVERLAY-STACK-1..4 + V-FLOW-CHAT-PERSIST-1..3 + V-AI-ASSIST-DORMANT-1 + V-NO-VISIBLE-TEST-FLASH-1 + V-CHAT-POLISH-1..2 in Suite 51 §T37. RULES §16 CH32 added in same arc. User pre-approved scope ("go all my recs") so SPEC LOCKS without DRAFT phase per `feedback_group_b_spec_rewrite.md` review pattern (review happened in HANDOFF.md §4 rc.5 plan + rc.5 scope decision section). |
 | 2026-05-05 | rc.5-dev Hotfix #4 (post-rc.4) | Per user direction 2026-05-05 ("purge all the existing skills from old builds for now as we don't need them anymore"): v2 `core/skillStore.js` `loadSkills()` retires the first-read auto-install of the v2 seed library — fresh install + corrupt-cache + non-array storage all collapse to empty `[]` (was: dump the seed library to localStorage on every code path). The seed library records remain in `core/seedSkills.js` as reference data so DS8-DS12 in demoSpec keep working without changes. Suite 26 SB1 / SB2 / SB6 + Suite 37 QW3 / QW4 / QW6 reframed for the empty-library baseline (explicit `saveSkills(seedSkills())` setup where the test contract needed pre-populated rows). NEW V-FLOW-NO-SEEDS-1 in §T35-HOTFIX4 (source-grep + live-DOM regression guard for the auto-install retirement). APP_VERSION bumped to `3.0.0-rc.5-dev` per PREFLIGHT 1a (first commit past rc.4 tag). Banner target unchanged (1157 from rc.4 + V-FLOW-NO-SEEDS-1 = 1158 total). Companion entries: BUG-027 (test-pass DOM flash residual) + BUG-028 (chat doesn't persist when Skills clicked) logged in `docs/BUG_LOG.md` as rc.5 work. |
+| 2026-05-05 | §S37 LOCKED + §S20 amendments | NEW SPEC annex — grounding contract recast (RAG-by-construction). Authored as architectural fix for BUG-030 (real-Anthropic + real-Gemini + Local-A/B hallucinate gaps + dispositions + dates not in engagement, 2026-05-05 office workshop). LOCKED 2026-05-05 on user direction (*"yes, i like this principal architect approach, do as you recommend. I agree it is a RAG."*). Three planes (all required): (1) deterministic retrieval router `services/groundingRouter.js` — heuristic intent classifier maps user message → selector calls, results inlined into Layer 4 BEFORE LLM call; (2) runtime grounding verifier `services/groundingVerifier.js` — entity-shaped claims cross-checked against engagement; render-error replaces hallucinated visible response; (3) grounded mock `createGroundedMockProvider` reads Layer 4 + answers from prompt only. Threshold cliff (`ENGAGEMENT_INLINE_THRESHOLD_*`) REMOVED entirely — replaced by 50K input-token budget guard on router output. R37.1–R37.12 + V-FLOW-GROUND-1..7 + V-FLOW-GROUND-FAIL-1..5 + V-ANTI-THRESHOLD-1 (§T38 NEW). RULES §16 CH33 added; CH3 rewritten. §S20.4.4 + §S20.6 amended to point at §S37 for the live contract; R20.3 rewritten for router-driven retrieval. Real-LLM live-key smoke added to PREFLIGHT (item 5b) starting rc.6. Closes BUG-030 (planes 1+2 in 6b+6c) + BUG-033 (plane 1 in 6b); BUG-029 lays cleanly on the new "engagement is authoritative" architecture in 6d. |
 | 2026-05-04 | §S35 (DRAFT v2 → LOCKED) | DRAFT v2 authored at `ace293a` 2026-05-04 LATE replacing the rejected v1; user approved all 7 §S35.6 decisions ("go"). LOCKED 2026-05-04. Locked decisions: rename `SkillAdmin.js` → `SkillBuilder.js` (delete current v3.1 SkillBuilder.js) · opt-in legacy v2 migration · show all 4 outputTargets (3 disabled) · chat-rail closes-and-opens Settings · keep CARE rewrite as-is · purge `core/v3SeedSkills.js` · filename rename accepted. RULES §16 CH31 added in same arc. V-* test contract: V-SKILL-V3-8..15 + V-ANTI-V3-IN-LABEL-1 + V-ANTI-V3-SEED-1..3 + V-ANTI-OVERLAY-RETIRED-1 + V-MIGRATE-V2-V3-1..4 (Suite 50 §T36 NEW). |
 | 2026-05-03 | RELEASE v3.0.0-rc.3 | **TAGGED 2026-05-03.** Closes the rc.3 implementation arc + AI-correctness consolidation. Banner 1103/1103 GREEN ✅ (was 1048 at rc.2; +55 tests). Rolled in: Phase A1 generic LLM connector (BUG-018 closed) + Phase B concept dictionary + Phase C workflow manifest + Skill v3.1 schema + Skill Builder UI rebuild + chat right-rail saved-skill cards + UseAiButton retirement + topbar consolidation to one "AI Assist" button (Dell-blue + diamond-glint 8s breathe) + APP_VERSION discipline + PREFLIGHT.md + Group A AI-correctness fixes (BUG-019 engagement rehydrate, BUG-020 streaming-time handshake strip, BUG-013 Path B UUID scrub, BUG-023 manifest layerId, BUG-011 + BUG-018 closed). New SPEC annexes: §S26 + §S27 + §S28 + §S29 + §S30 + §S31. New RULES: §16 CH20–CH27. New tests: V-CHAT-18..38, V-CONCEPT-1..5, V-WORKFLOW-1..5, V-SKILL-V3-1..7, V-VERSION-1..2, V-FLOW-REHYDRATE-1..3, V-PATH-31/32, V-TOPBAR-1, V-LAB-VIA-CHAT-RAIL, V-AI-ASSIST-CMD-K, V-ANTI-USE-AI, V-NAME-2, V-DEMO-V2-1 + V-DEMO-8/9 + V-FLOW-CHAT-DEMO-1/2. Real-Gemini live-key smoke deferred to first user-driven workshop run (V-CHAT-32 mock-fetch round-trip covers the protocol).  |
 

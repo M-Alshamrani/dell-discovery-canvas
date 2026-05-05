@@ -8809,8 +8809,15 @@ import { createMockChatProvider }                from "../tests/mocks/mockChatPr
 // V-DEMO + V-MOCK + V-ANTI-RUN-1 fail RED against stubs until impl
 // commits land per the spec-and-test-first cadence.
 import { loadDemo as loadV3Demo, describeDemo as describeV3Demo } from "../core/demoEngagement.js";
-import { createMockChatProvider as createMockChatProviderProd } from "../services/mockChatProvider.js";
+import { createMockChatProvider as createMockChatProviderProd, createGroundedMockProvider } from "../services/mockChatProvider.js";
 import { createMockLLMProvider  as createMockLLMProviderProd  } from "../services/mockLLMProvider.js";
+
+// rc.6 / 6a · SPEC §S37 · Grounding contract recast — RAG-by-construction.
+// Imports the STUB router + verifier modules. §T38 V-FLOW-GROUND-1..7 +
+// V-FLOW-GROUND-FAIL-1..5 + V-ANTI-THRESHOLD-1 fail RED against these
+// stubs by design; rc.6 / 6b + 6c land impl that turns them GREEN.
+import { route as groundingRoute, CONTEXT_PACK as GROUNDING_CONTEXT_PACK } from "../services/groundingRouter.js";
+import { verifyGrounding } from "../services/groundingVerifier.js";
 
 // rc.2 . SPEC §S25 . Data contract LLM grounding meta-model + §S20.16 handshake.
 // V-CONTRACT-1..7 fail RED against the STUB core/dataContract.js until
@@ -12126,37 +12133,17 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       }
     });
 
-    it("V-CHAT-2 · Layer-4 token-budget switch: small engagement inlined; large engagement counts-only", () => {
-      _resetChatEnv();
-      // Small engagement: empty default → trivially small.
-      const small = createEmptyEngagement();
-      const smallPrompt = buildSystemPrompt({ engagement: small });
-      const smallText = smallPrompt.messages.map(m =>
-        typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n");
-      // Small engagements should inline the customer object (engagement.customer.name visible).
-      assert(smallText.includes(small.customer.name) || smallText.includes('"customer"'),
-        "small engagement: customer block inlined in layer 4");
-
-      // Large engagement: 30+ instances + 30+ gaps. Build via actions.
-      let large = createEmptyEngagement();
-      large = addEnvironment(large, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
-      const envId = large.environments.allIds[0];
-      for (let i = 0; i < 25; i++) {
-        large = addInstanceV3(large, { state:"current", layerId:"compute", environmentId: envId,
-          label:"Asset-" + i, vendor:"Dell", vendorGroup:"dell", criticality:"Medium", disposition:"keep" }).engagement;
-      }
-      for (let i = 0; i < 25; i++) {
-        large = addGapV3(large, { description: "Gap " + i,
-          gapType: "ops", urgency: "Medium", phase: "now", status: "open",
-          layerId: "infrastructure", affectedLayers: ["infrastructure"] }).engagement;
-      }
-      const largePrompt = buildSystemPrompt({ engagement: large });
-      const largeText = largePrompt.messages.map(m =>
-        typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n");
-      // Large engagements should NOT inline every instance label — counts-only.
-      const labelInlineCount = (largeText.match(/Asset-/g) || []).length;
-      assert(labelInlineCount < 5,
-        "large engagement: counts-only (no full per-instance labels in layer 4); got " + labelInlineCount);
+    it("V-CHAT-2 · DEPRECATED rc.6 per SPEC §S37 — count-based small/large branch RETIRED; replaced by V-ANTI-THRESHOLD-1 + V-FLOW-GROUND-1..7", () => {
+      // Per TESTS.md §T1.2 (vector ids are permanent), this slot stays as
+      // a deprecation marker. The original V-CHAT-2 asserted the
+      // `ENGAGEMENT_INLINE_THRESHOLD_*` 20/20/5 small-vs-large branch in
+      // services/systemPromptAssembler.js. That branch is the proximate
+      // trigger of BUG-030 and is REMOVED in rc.6 per SPEC §S37.4.
+      // Replacements:
+      //   - V-ANTI-THRESHOLD-1 (source-grep regression guard for the
+      //     threshold constants, in §T38 below)
+      //   - V-FLOW-GROUND-1..7 (router-driven Layer 4 contract, in §T38)
+      assert(true, "V-CHAT-2 deprecated; see V-ANTI-THRESHOLD-1 + V-FLOW-GROUND-* (§T38)");
     });
 
     it("V-CHAT-3 · CHAT_TOOLS has one selector-backed entry per §S5 selector with matching invoke (additional non-selector tools like selectConcept are allowed)", () => {
@@ -16523,6 +16510,310 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       }
       assertEqual(offenders.length, 0,
         "V-ANTI-RUN-1: production code must not import from tests/ at runtime; offenders: " + offenders.join(", "));
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // §T38 · V-FLOW-GROUND · Grounding contract recast (per SPEC §S37 + RULES §16 CH33)
+  //
+  // RED-first scaffold per `feedback_spec_and_test_first.md`. The router +
+  // verifier modules ship as STUBS in rc.6 / 6a (return empty selector
+  // lists / always-ok validations); the impl in rc.6 / 6b + 6c turns
+  // these RED scaffolds GREEN.
+  //
+  // Scope:
+  //   V-FLOW-GROUND-1   router classifies known intents
+  //   V-FLOW-GROUND-2   buildSystemPrompt inlines selector results into Layer 4
+  //   V-FLOW-GROUND-3   Acme demo Layer 4 contains all 8 gap descriptions (BUG-030 regression)
+  //   V-FLOW-GROUND-4   empty engagement → empty selector list, no throw
+  //   V-FLOW-GROUND-5   grounded mock paraphrases real gaps
+  //   V-FLOW-GROUND-6   grounded mock falls back when answer needs out-of-engagement data
+  //   V-FLOW-GROUND-7   token-budget guard at 50K input tokens
+  //   V-FLOW-GROUND-FAIL-1  verifier rejects fabricated gap description
+  //   V-FLOW-GROUND-FAIL-2  verifier rejects out-of-engagement vendor name
+  //   V-FLOW-GROUND-FAIL-3  verifier catches Local-B "Q2 close / June 30" hallucination class
+  //   V-FLOW-GROUND-FAIL-4  streamChat replaces hallucinated visible response with render-error
+  //   V-FLOW-GROUND-FAIL-5  catalog whitelist (Dell products / catalog labels NOT in engagement OK)
+  //   V-ANTI-THRESHOLD-1    source-grep regression guard against re-introducing thresholds
+  // -------------------------------------------------------------------
+  describe("§T38 · V-FLOW-GROUND · Grounding contract recast (per SPEC §S37)", () => {
+
+    it("V-FLOW-GROUND-1 · router classifies known intents to selector calls (regex/keyword/intent table)", async () => {
+      const eng = createEmptyEngagement();
+      const cases = [
+        { msg: "summarize the gaps",                                expectIncludes: ["selectGapsKanban"] },
+        { msg: "what dispositions does the customer have?",         expectIncludes: ["selectGapsKanban", "selectMatrixView"] },
+        { msg: "find the dell assets in the current state",         expectIncludes: ["selectVendorMix", "selectMatrixView"] },
+        { msg: "what does cyber resilience mean?",                  expectIncludes: ["selectConcept"] },
+        { msg: "list the gaps currently defined in the session",    expectIncludes: ["selectGapsKanban"] },
+        { msg: "what is the executive summary?",                    expectIncludes: ["selectExecutiveSummaryInputs"] },
+        { msg: "show me the vendor mix",                            expectIncludes: ["selectVendorMix"] }
+      ];
+      for (const tc of cases) {
+        const out = groundingRoute({ userMessage: tc.msg, transcript: [], engagement: eng });
+        assert(out && Array.isArray(out.selectorCalls),
+          "V-FLOW-GROUND-1 · route() must return { selectorCalls: [...] } for: " + tc.msg);
+        const names = out.selectorCalls.map(c => c.selector);
+        for (const expected of tc.expectIncludes) {
+          assert(names.indexOf(expected) >= 0,
+            "V-FLOW-GROUND-1 · '" + tc.msg + "' must classify to include " + expected +
+            "; got: [" + names.join(", ") + "]");
+        }
+      }
+      // Unknown phrasing → CONTEXT_PACK fallback.
+      const unknown = groundingRoute({ userMessage: "qwerty asdf zxcv", transcript: [], engagement: eng });
+      assertEqual(unknown.fallback, "context-pack",
+        "V-FLOW-GROUND-1 · unknown phrasing must fall back to CONTEXT_PACK");
+      assert(GROUNDING_CONTEXT_PACK.length > 0,
+        "V-FLOW-GROUND-1 · CONTEXT_PACK must be a non-empty default selector set");
+    });
+
+    it("V-FLOW-GROUND-2 · buildSystemPrompt({routerOutput}) inlines selector results into Layer 4", async () => {
+      const { getDemoEngagement } = await import("../core/demoEngagement.js");
+      let eng;
+      try { eng = getDemoEngagement(); }
+      catch (_e) {
+        // Fallback if demo helper differs in rc.6.
+        const mod = await import("../core/demoEngagement.js");
+        eng = (mod.getDemoEngagement && mod.getDemoEngagement()) || (mod.loadDemo && mod.loadDemo());
+      }
+      const out = groundingRoute({ userMessage: "show me the vendor mix", transcript: [], engagement: eng });
+      const prompt = buildSystemPrompt({ engagement: eng, routerOutput: out });
+      const text = prompt.messages.map(m =>
+        typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n");
+      // Vendor-mix selector runs over the engagement and produces vendor counts/labels.
+      // We assert that some vendor-mix-shaped marker appears in Layer 4 (not in cached layers).
+      assert(/vendorMix|vendor_mix|byLayer|byEnvironment/i.test(text),
+        "V-FLOW-GROUND-2 · Layer 4 must contain vendor-mix selector results when router calls selectVendorMix");
+    });
+
+    it("V-FLOW-GROUND-3 · Acme demo: Layer 4 contains all gap descriptions inline (BUG-030 regression)", async () => {
+      const mod = await import("../core/demoEngagement.js");
+      let eng = (mod.getDemoEngagement && mod.getDemoEngagement()) ||
+                (mod.loadDemo && mod.loadDemo());
+      assert(eng && eng.gaps && eng.gaps.allIds && eng.gaps.allIds.length > 0,
+        "V-FLOW-GROUND-3 · demo engagement must have gaps");
+      const out = groundingRoute({ userMessage: "summarize the gaps", transcript: [], engagement: eng });
+      const prompt = buildSystemPrompt({ engagement: eng, routerOutput: out });
+      const layer4 = prompt.messages
+        .map(m => typeof m.content === "string" ? m.content : JSON.stringify(m.content))
+        .join("\n");
+      const missing = [];
+      for (const id of eng.gaps.allIds) {
+        const desc = eng.gaps.byId[id].description;
+        if (!desc) continue;
+        if (!layer4.includes(desc)) missing.push(desc);
+      }
+      assertEqual(missing.length, 0,
+        "V-FLOW-GROUND-3 · Layer 4 MUST inline every gap description (this is the BUG-030 regression). " +
+        "Missing " + missing.length + " gap descriptions: " + missing.slice(0, 3).join(" | "));
+    });
+
+    it("V-FLOW-GROUND-4 · empty engagement: router returns empty selector list, assembler produces 'canvas is empty' Layer 4", () => {
+      const eng = createEmptyEngagement();
+      const out = groundingRoute({ userMessage: "what's in the engagement?", transcript: [], engagement: eng });
+      assert(Array.isArray(out.selectorCalls),
+        "V-FLOW-GROUND-4 · empty engagement: route() must return a selectorCalls array");
+      // Either selectorCalls is [] (nothing to retrieve) OR it points at metadata-only;
+      // either way assembler must emit a non-throwing prompt with "canvas" + "empty" markers.
+      const prompt = buildSystemPrompt({ engagement: eng, routerOutput: out });
+      const text = prompt.messages.map(m =>
+        typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n");
+      assert(text.toLowerCase().includes("canvas") && text.toLowerCase().includes("empty"),
+        "V-FLOW-GROUND-4 · Layer 4 for empty engagement must include 'canvas' + 'empty' markers");
+    });
+
+    it("V-FLOW-GROUND-5 · grounded mock against demo + 'summarize the gaps' paraphrases real gap descriptions (no fabrication)", async () => {
+      _resetEngagementStoreForTests();
+      _resetChatMemoryForTests();
+      const mod = await import("../core/demoEngagement.js");
+      const eng = (mod.getDemoEngagement && mod.getDemoEngagement()) ||
+                  (mod.loadDemo && mod.loadDemo());
+      setActiveEngagement(eng);
+      const provider = createGroundedMockProvider({});
+      const result = await streamChat({
+        engagement:     eng,
+        transcript:     [],
+        userMessage:    "summarize the gaps",
+        providerConfig: { providerKey: "mock" },
+        provider:       provider
+      });
+      // The mock must paraphrase at least one real gap description, NOT
+      // fall back to the "doesn't include" sentinel.
+      const fallbackPhrase = "doesn't include the data needed to answer that";
+      assert(!result.response.toLowerCase().includes(fallbackPhrase.toLowerCase()),
+        "V-FLOW-GROUND-5 · grounded mock must NOT fall back when the answer is in Layer 4; got: " +
+        result.response.slice(0, 200));
+      // At least one real gap description should appear (paraphrase or verbatim).
+      const realDescs = eng.gaps.allIds.map(id => eng.gaps.byId[id].description).filter(Boolean);
+      const hit = realDescs.some(d => result.response.toLowerCase().includes(d.toLowerCase().slice(0, 24)));
+      assert(hit,
+        "V-FLOW-GROUND-5 · grounded mock response must include at least one real gap-description fragment");
+    });
+
+    it("V-FLOW-GROUND-6 · grounded mock falls back to 'doesn't include' phrase when the answer requires out-of-engagement data", async () => {
+      _resetEngagementStoreForTests();
+      _resetChatMemoryForTests();
+      const eng = createEmptyEngagement();   // no gaps, no instances → almost any specific question is unanswerable
+      setActiveEngagement(eng);
+      const provider = createGroundedMockProvider({});
+      const result = await streamChat({
+        engagement:     eng,
+        transcript:     [],
+        userMessage:    "what is the customer's CISO's email address?",
+        providerConfig: { providerKey: "mock" },
+        provider:       provider
+      });
+      assert(result.response.toLowerCase().includes("doesn't include the data needed to answer that"),
+        "V-FLOW-GROUND-6 · grounded mock must emit the literal fallback phrase when answer needs out-of-engagement data; got: " +
+        result.response.slice(0, 200));
+    });
+
+    it("V-FLOW-GROUND-FAIL-1 · verifier rejects a response referencing a fabricated gap description", async () => {
+      const mod = await import("../core/demoEngagement.js");
+      const eng = (mod.getDemoEngagement && mod.getDemoEngagement()) ||
+                  (mod.loadDemo && mod.loadDemo());
+      const fabricated = "The engagement has a gap titled 'Telekom mainframe modernization for legacy COBOL services' " +
+                         "and another titled 'BlackBerry Messenger BCP rollout for the C-suite'.";
+      const result = verifyGrounding(fabricated, eng);
+      assertEqual(result.ok, false,
+        "V-FLOW-GROUND-FAIL-1 · verifier MUST flag fabricated gap descriptions");
+      assert(Array.isArray(result.violations) && result.violations.length > 0,
+        "V-FLOW-GROUND-FAIL-1 · verifier must populate violations array");
+      const kinds = (result.violations || []).map(v => v.kind);
+      assert(kinds.indexOf("gap-description") >= 0 || kinds.indexOf("entity") >= 0,
+        "V-FLOW-GROUND-FAIL-1 · violations should include kind: 'gap-description' or 'entity'; got: " + JSON.stringify(kinds));
+    });
+
+    it("V-FLOW-GROUND-FAIL-2 · verifier rejects a response referencing a vendor name not in engagement nor in DELL_PRODUCT_TAXONOMY", async () => {
+      const mod = await import("../core/demoEngagement.js");
+      const eng = (mod.getDemoEngagement && mod.getDemoEngagement()) ||
+                  (mod.loadDemo && mod.loadDemo());
+      const fabricated = "The customer is running fictional vendor 'ZorblattCorp QuantaStack 9000' as their primary storage.";
+      const result = verifyGrounding(fabricated, eng);
+      assertEqual(result.ok, false,
+        "V-FLOW-GROUND-FAIL-2 · verifier MUST flag vendor names not in engagement nor in DELL_PRODUCT_TAXONOMY");
+    });
+
+    it("V-FLOW-GROUND-FAIL-3 · verifier catches Local-B 'Q2 close / June 30' fabricated-deliverable class", async () => {
+      const mod = await import("../core/demoEngagement.js");
+      const eng = (mod.getDemoEngagement && mod.getDemoEngagement()) ||
+                  (mod.loadDemo && mod.loadDemo());
+      // Verbatim-ish from the workshop screenshot (BUG-030 evidence).
+      const hallucinated = [
+        "Bottom line: Acme needs a single-vendor platform.",
+        "Procurement Initiation: Issue RFP for PowerScale F710 & XE9680 (Q2 close).",
+        "Executive Review (June 30): Present Phase 1 progress & Q3 roadmap to CIO/CISO."
+      ].join("\n");
+      const result = verifyGrounding(hallucinated, eng);
+      assertEqual(result.ok, false,
+        "V-FLOW-GROUND-FAIL-3 · verifier MUST catch fabricated deliverable dates / project phases (Local-B regression)");
+      const kinds = (result.violations || []).map(v => v.kind);
+      assert(kinds.indexOf("date-deliverable") >= 0 ||
+             kinds.indexOf("project-phase")    >= 0,
+        "V-FLOW-GROUND-FAIL-3 · violations should include 'date-deliverable' or 'project-phase'; got: " + JSON.stringify(kinds));
+    });
+
+    it("V-FLOW-GROUND-FAIL-4 · streamChat replaces a hallucinated visible response with the render-error message + records groundingViolations", async () => {
+      _resetEngagementStoreForTests();
+      _resetChatMemoryForTests();
+      const mod = await import("../core/demoEngagement.js");
+      const eng = (mod.getDemoEngagement && mod.getDemoEngagement()) ||
+                  (mod.loadDemo && mod.loadDemo());
+      setActiveEngagement(eng);
+      // Use the SCRIPTED mock to inject a known-hallucinated response so
+      // streamChat's plane-2 hookup is exercised (this is the one V-FLOW-
+      // GROUND-FAIL test that uses createMockChatProvider, per F38T.4).
+      const provider = createMockChatProviderProd({
+        responses: [{ kind: "text", text:
+          "The engagement has a gap titled 'Telekom mainframe modernization' that is not really there." }]
+      });
+      const result = await streamChat({
+        engagement:     eng,
+        transcript:     [],
+        userMessage:    "what gaps exist?",
+        providerConfig: { providerKey: "mock" },
+        provider:       provider
+      });
+      const text = (result && result.response) || "";
+      assert(text.toLowerCase().includes("don't trace to the engagement") ||
+             text.toLowerCase().includes("doesn't trace to the engagement") ||
+             text.toLowerCase().includes("grounding"),
+        "V-FLOW-GROUND-FAIL-4 · visible response MUST be replaced with the grounding render-error; got: " + text.slice(0, 200));
+      assert(Array.isArray(result.groundingViolations) && result.groundingViolations.length > 0,
+        "V-FLOW-GROUND-FAIL-4 · result envelope MUST carry groundingViolations array");
+    });
+
+    it("V-FLOW-GROUND-FAIL-5 · catalog whitelist: Dell products / catalog labels NOT in engagement do NOT trigger violations", async () => {
+      const mod = await import("../core/demoEngagement.js");
+      const eng = (mod.getDemoEngagement && mod.getDemoEngagement()) ||
+                  (mod.loadDemo && mod.loadDemo());
+      // Mention catalog reference data that may NOT be in the engagement
+      // (e.g. a Dell product line that this customer doesn't use). Catalog
+      // labels are reference data, not hallucination.
+      const grounded = "PowerProtect Cyber Recovery Vault is a Dell solution that fits cyber resilience use cases.";
+      const result = verifyGrounding(grounded, eng);
+      assertEqual(result.ok, true,
+        "V-FLOW-GROUND-FAIL-5 · verifier MUST whitelist DELL_PRODUCT_TAXONOMY references regardless of engagement membership; violations: " +
+        JSON.stringify((result.violations || []).slice(0, 3)));
+    });
+
+    it("V-FLOW-GROUND-7 · token-budget guard: synthetic 250-instance engagement triggers selector-drop fallback (metadata always preserved)", () => {
+      // Build a synthetic large engagement.
+      let eng = createEmptyEngagement();
+      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
+      const envId = eng.environments.allIds[0];
+      for (let i = 0; i < 250; i++) {
+        eng = addInstanceV3(eng, {
+          state:"current", layerId:"compute", environmentId: envId,
+          label:"BigAsset-" + i + "-with-extended-description-for-token-bloat",
+          vendor:"Dell", vendorGroup:"dell", criticality:"Medium", disposition:"keep"
+        }).engagement;
+      }
+      const out = groundingRoute({ userMessage: "summarize everything", transcript: [], engagement: eng });
+      const prompt = buildSystemPrompt({ engagement: eng, routerOutput: out });
+      const text = prompt.messages.map(m =>
+        typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n");
+      // Metadata MUST be present.
+      assert(text.includes("customer") || text.includes("drivers"),
+        "V-FLOW-GROUND-7 · metadata (customer / drivers) MUST always be inlined in Layer 4");
+      // Token-budget guard: full 250-instance dump would be >50K tokens.
+      // Layer 4 should be capped — assert byte-length is bounded.
+      const layer4 = prompt.messages[prompt.messages.length - 1].content;
+      const layer4Bytes = (typeof layer4 === "string" ? layer4 : JSON.stringify(layer4)).length;
+      // Rough cap: 50K tokens × 4 bytes/token = 200KB. We allow some slack.
+      assert(layer4Bytes < 250000,
+        "V-FLOW-GROUND-7 · Layer 4 byte size MUST be guarded (< 250KB raw); got " + layer4Bytes + " bytes — token-budget guard not in place");
+    });
+
+    it("V-ANTI-THRESHOLD-1 · source-grep: no ENGAGEMENT_INLINE_THRESHOLD_* constants in the tree (rc.6 removal regression guard)", async () => {
+      // Per SPEC §S37.4 + R37.10 — the legacy threshold constants are
+      // REMOVED. Source-grep is the regression guard against re-introducing
+      // them in any future refactor.
+      const FILES = [
+        "services/systemPromptAssembler.js",
+        "services/chatService.js",
+        "services/groundingRouter.js"
+      ];
+      const FORBIDDEN = [
+        "ENGAGEMENT_INLINE_THRESHOLD_INSTANCES",
+        "ENGAGEMENT_INLINE_THRESHOLD_GAPS",
+        "ENGAGEMENT_INLINE_THRESHOLD_DRIVERS"
+      ];
+      const offenders = [];
+      for (const file of FILES) {
+        let src;
+        try {
+          const res = await fetch("/" + file);
+          if (!res.ok) continue;
+          src = await res.text();
+        } catch (_e) { continue; }
+        for (const tok of FORBIDDEN) {
+          if (src.indexOf(tok) >= 0) offenders.push(file + " :: " + tok);
+        }
+      }
+      assertEqual(offenders.length, 0,
+        "V-ANTI-THRESHOLD-1 · count-based threshold constants must NOT exist post-rc.6 (per SPEC §S37.4 + R37.10); offenders: " + offenders.join(", "));
     });
   });
 

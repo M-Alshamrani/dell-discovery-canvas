@@ -71,3 +71,43 @@ export function createMockChatProvider(opts) {
     }
   };
 }
+
+// SPEC §S37.3.3 + R37.9 · Grounding-aware mock provider.
+//
+// READS call.messages, finds Layer 4 in the system prompt, parses the
+// inlined selector results, and answers the user's last message ONLY
+// by paraphrasing data found in Layer 4. When the answer would require
+// data not in Layer 4, emits the literal phrase
+//   "the canvas doesn't include the data needed to answer that"
+// proving the grounding contract end-to-end without an LLM.
+//
+// Used by V-FLOW-GROUND-5 + V-FLOW-GROUND-6 (and any future grounding-
+// contract test that exercises the streamChat → assembler → mock loop
+// without scripting). The scripted createMockChatProvider above is
+// preserved for V-CHAT-{4,5,18,...} orchestration tests.
+//
+// rc.6 / 6a · RED-BY-DESIGN STUB. Always emits the "doesn't include"
+// fallback. V-FLOW-GROUND-5 expects a paraphrase of real gap descriptions;
+// it fails. rc.6 / 6b lands the Layer-4 reader + paraphraser. RED → GREEN.
+export function createGroundedMockProvider(_opts) {
+  const callsRecorded = [];
+  return {
+    callsRecorded,
+    capabilities: { streaming: true, toolUse: false, caching: false },
+
+    async *stream(call) {
+      callsRecorded.push({
+        messages: call && call.messages,
+        tools:    call && call.tools,
+        at:       new Date().toISOString()
+      });
+      // STUB · always falls back. rc.6 / 6b reads Layer 4 here.
+      const text = "the canvas doesn't include the data needed to answer that";
+      const tokens = text.split(/(\s+)/).filter(t => t.length > 0);
+      for (const t of tokens) {
+        yield { kind: "text", token: t };
+      }
+      yield { kind: "done", text };
+    }
+  };
+}

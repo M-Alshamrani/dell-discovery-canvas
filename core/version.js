@@ -26,6 +26,23 @@
 //
 // ---
 //
+// **3.0.0-rc.6-dev** (2026-05-05) — between v3.0.0-rc.5 (TAGGED
+// 2026-05-05 at 1169/1169 GREEN) and the eventual v3.0.0-rc.6 tag.
+// In flight: rc.6 grounding contract recast per SPEC §S37 + RULES §16
+// CH33 (RAG-by-construction). Sub-arcs: 6a (SPEC §S37 + RULES CH33 +
+// §T38 V-FLOW-GROUND-* RED scaffolds + grounding-router/verifier/
+// grounded-mock STUBS — this commit), 6b (plane 1 router impl →
+// V-FLOW-GROUND-1..7 GREEN, closes BUG-030 + BUG-033), 6c (plane 2
+// verifier impl → V-FLOW-GROUND-FAIL-1..5 GREEN, closes BUG-030
+// hallucinated-deliverables class), 6d (BUG-029 engagement-id authority +
+// chat memory lifecycle), 6e..6i (BUG-035 nginx + vLLM error + BUG-034
+// settings save + BUG-031 propagate toast + BUG-032 gaps link plumbing).
+//
+// Per RULES §16 CH24 + PREFLIGHT.md item 1a: this is the FIRST commit
+// past the rc.5 tag, so the `-dev` suffix is added now.
+//
+// ---
+//
 // **3.0.0-rc.4-dev** (2026-05-03) — between v3.0.0-rc.3 (TAGGED
 // 2026-05-03 PM at 1103/1103 GREEN) and the eventual v3.0.0-rc.4 tag.
 // In flight: Group B UX consolidation arc per `feedback_group_b_spec_rewrite.md`
@@ -35,8 +52,8 @@
 // ID anti-leakage), Arc 4 (Skill Builder unification under Settings +
 // v3 seed-skill purge).
 //
-// Per RULES §16 CH24 + PREFLIGHT.md item 1a: this is the FIRST commit
-// past the rc.3 tag, so the `-dev` suffix is added now.
+// Per RULES §16 CH24 + PREFLIGHT.md item 1a: this WAS the FIRST commit
+// past the rc.3 tag at the time, so the `-dev` suffix was added then.
 //
 // ---
 //
@@ -93,4 +110,4 @@
 //   - At least one real-customer workshop run against a v3.0 engagement
 //   - Real-Anthropic streaming smoke against a live key
 
-export const APP_VERSION = "3.0.0-rc.5";
+export const APP_VERSION = "3.0.0-rc.6-dev";
