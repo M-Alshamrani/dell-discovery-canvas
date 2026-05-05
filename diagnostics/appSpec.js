@@ -8672,12 +8672,84 @@ import { buildReferenceEngagement } from "../tests/perf/buildReferenceEngagement
 import { measure, measureMin, assertWithinBudget, PERF_BUDGETS } from "../tests/perf/perfHarness.js";
 import { runSkill } from "../services/skillRunner.js";
 import { createMockLLMProvider } from "../tests/mocks/mockLLMProvider.js";
-import {
+// v3.0.0-rc.4-dev Arc 4b: core/v3SeedSkills.js was DELETED per SPEC §S35.3
+// (R35.9). The 3 seed records are inlined here as test fixtures so the
+// V-PROD-* + V-DEMO-* + V-FLOW-* tests that exercised them keep working.
+// Production code no longer references these — they survive only as
+// test-shaped data with the v3.0 schema (skillType + entityKind) so the
+// migrateSkillToV31 boundary at saveV3Skill exercises the migration path.
+const SEED_SKILL_DELL_MAPPING = Object.freeze({
+  skillId:        "dell-mapping",
+  label:          "Map gap to Dell solutions",
+  version:        "1.0.0",
+  skillType:      "click-to-run",
+  entityKind:     "gap",
+  promptTemplate: [
+    "You are a Dell presales architect. Map this customer gap to Dell products.",
+    "",
+    "Customer: {{customer.name}} ({{customer.vertical}})",
+    "Gap: {{context.gap.description}}",
+    "Layer: {{context.gap.layerId}}",
+    "Urgency: {{context.gap.urgency}}",
+    "",
+    "Return ONLY product ids from the Dell taxonomy. Do not invent products.",
+    "Specifically: never include Boomi (divested), Secureworks Taegis (divested),",
+    "VxRail (superseded by Dell Private Cloud), or 'SmartFabric Director'",
+    "(replaced by SmartFabric Manager). For AIOps, use products under the",
+    "'Dell APEX AIOps' umbrella; CloudIQ is one such product, not standalone."
+  ].join("\n"),
+  bindings:           [],
+  outputContract:     { schemaRef: "DellSolutionListSchema" },
+  validatedAgainst:   "3.0",
+  outdatedSinceVersion: null
+});
+const SEED_SKILL_EXECUTIVE_SUMMARY = Object.freeze({
+  skillId:        "executive-summary",
+  label:          "Generate executive summary",
+  version:        "1.0.0",
+  skillType:      "session-wide",
+  entityKind:     null,
+  promptTemplate: [
+    "Generate a 3-paragraph executive summary for the following customer engagement.",
+    "Tone: confident, specific, no boilerplate. Cite specific findings from the data.",
+    "",
+    "Customer: {{customer.name}} ({{customer.vertical}})",
+    "Region: {{customer.region}}",
+    "Status: {{engagementMeta.status}}",
+    "Engagement date: {{engagementMeta.engagementDate}}",
+    "",
+    "Use the customer's name in the summary. End with a one-sentence next-step recommendation."
+  ].join("\n"),
+  bindings:           [],
+  outputContract:     "free-text",
+  validatedAgainst:   "3.0",
+  outdatedSinceVersion: null
+});
+const SEED_SKILL_CARE_BUILDER = Object.freeze({
+  skillId:        "care-builder",
+  label:          "Build CARE-style prompt",
+  version:        "1.0.0",
+  skillType:      "session-wide",
+  entityKind:     null,
+  promptTemplate: [
+    "Generate a CARE-style prompt template for a presales engagement.",
+    "CARE: Context, Audience, Request, Examples.",
+    "",
+    "Customer: {{customer.name}}",
+    "Vertical: {{customer.vertical}}",
+    "",
+    "Output a save-able skill record with skillId / promptTemplate / outputContract."
+  ].join("\n"),
+  bindings:           [],
+  outputContract:     { schemaRef: "SkillSchema" },
+  validatedAgainst:   "3.0",
+  outdatedSinceVersion: null
+});
+const V3_SEED_SKILLS = Object.freeze([
   SEED_SKILL_DELL_MAPPING,
   SEED_SKILL_EXECUTIVE_SUMMARY,
-  SEED_SKILL_CARE_BUILDER,
-  V3_SEED_SKILLS
-} from "../core/v3SeedSkills.js";
+  SEED_SKILL_CARE_BUILDER
+]);
 import { SkillSchema, createEmptySkill } from "../schema/skill.js";
 import { validateSkillSave }             from "../services/skillSaveValidator.js";
 
@@ -13576,7 +13648,9 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
           "/core/skillStore.js",
           "/core/aiConfig.js",
           "/core/seedSkills.js",
-          "/core/v3SeedSkills.js",
+          // core/v3SeedSkills.js DELETED in rc.4-dev Arc 4b per SPEC §S35.3
+          // (R35.9). V-ANTI-V3-SEED-1..3 in §T36 are the regression guards
+          // for that purge.
           "/services/chatService.js",
           "/services/skillRunner.js",
           "/services/manifestGenerator.js",
