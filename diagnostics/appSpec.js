@@ -14949,24 +14949,46 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       _resetOverlayForTests();
     });
 
+    it("V-AISERVICE-VLLM-400-1 · BUG-035 part B regression: vLLM auto-tool-choice 400 surfaces a friendly server-config hint, not the raw vLLM payload", async () => {
+      // Per the 2026-05-05 office workshop screenshot, Local B (vLLM
+      // VLM) returned: HTTP 400 with body
+      //   {"error":{"message":"\"auto\" tool choice requires
+      //    --enable-auto-tool-choice and --tool-call-parser to be set",
+      //    "type":"BadRequestError","param":null,"code":400}}
+      // The chat overlay rendered the raw payload. rc.6 / 6e adds a
+      // hint translator in services/aiService.js buildHttpError().
+      const aiSvc = await import("../services/aiService.js");
+      assert(typeof aiSvc.buildHttpError === "function",
+        "V-AISERVICE-VLLM-400-1: aiService MUST export buildHttpError for testability");
+      const body = '{"error":{"message":"\\"auto\\" tool choice requires --enable-auto-tool-choice and --tool-call-parser to be set","type":"BadRequestError","param":null,"code":400}}';
+      const err = aiSvc.buildHttpError("local", 400, body);
+      assert(err && typeof err.message === "string",
+        "V-AISERVICE-VLLM-400-1: buildHttpError must return an Error");
+      assert(/vLLM server config|enable-auto-tool-choice|tool-call-parser/.test(err.message),
+        "V-AISERVICE-VLLM-400-1: 400 body matching the auto-tool-choice pattern MUST surface a server-config hint; got: " + err.message.slice(0, 220));
+      // Sanity: a 400 with an unrelated body falls back to generic HTTP 400.
+      const generic = aiSvc.buildHttpError("local", 400, '{"error":{"message":"some other error"}}');
+      assert(/HTTP 400/.test(generic.message),
+        "V-AISERVICE-VLLM-400-1: unrelated 400 bodies MUST keep the generic 'HTTP 400' prefix; got: " + generic.message.slice(0, 220));
+    });
+
     it("V-PROXY-LOCAL-B-1 · docker-entrypoint.d/45-setup-llm-proxy.sh writes a /api/llm/local-b/ location with proxy_pass to LLM_LOCAL_B_PORT (HOTFIX #2a per LLMs on GB10.docx — VLM on 8001)", async () => {
-      const proxySh = await (await fetch("/docker-entrypoint.d/45-setup-llm-proxy.sh")).text().catch(() => "");
-      // The proxy script may not be reachable via HTTP (it's outside the
-      // nginx-served paths); fall back to a fetch of the served conf
-      // snippet OR the raw script via a known path. As a baseline, the
-      // generated llm-proxy.conf includes the location block — we can
-      // probe it indirectly by issuing a request to /api/llm/local-b/v1/
-      // health and asserting the upstream-error shape (502/504) rather
-      // than 404. A 404 means nginx has no location block.
-      let res;
-      try { res = await fetch("/api/llm/local-b/v1/health", { method: "GET" }); }
-      catch (_e) { res = { status: 0 }; }
-      // Acceptable outcomes:
+      // Runtime probe — issue a request to /api/llm/local-b/v1/health and
+      // assert non-404. Acceptable outcomes:
       //   - 200 if a real backend is running on port 8001 (good!)
       //   - 502/504 if nginx tried to proxy + upstream wasn't reachable
       //   - any non-404 indicates the location block exists
+      // 404 means nginx has no location block (stale image · BUG-035).
+      // BUG-035 root-cause fix (rc.6 / 6e): the entrypoint script
+      // (docker-entrypoint.d/45-setup-llm-proxy.sh) now self-checks
+      // its own output and exits non-zero if any of the 4 expected
+      // location blocks is missing — so a stale image now fails LOUDLY
+      // at container start instead of silently 404-ing during workshop.
+      let res;
+      try { res = await fetch("/api/llm/local-b/v1/health", { method: "GET" }); }
+      catch (_e) { res = { status: 0 }; }
       assert(res.status !== 404,
-        "V-PROXY-LOCAL-B-1: /api/llm/local-b/* MUST be a configured nginx location (got status " + res.status + " — 404 means location block missing)");
+        "V-PROXY-LOCAL-B-1: /api/llm/local-b/* MUST be a configured nginx location (got status " + res.status + " — 404 means location block missing; check that the image was rebuilt against rc.4 hotfix #2a or later; the rc.6 entrypoint self-check now fails loudly on stale images instead of silent 404)");
     });
 
     it("V-PROVIDER-HINTS-1 · SettingsModal PROVIDER_HINTS covers every PROVIDERS entry; local + localB recommend absolute URL form (HOTFIX #2a per user direction 'we should put the http address with port and /v1')", async () => {

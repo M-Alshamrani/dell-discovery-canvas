@@ -132,7 +132,10 @@ export async function chatCompletion(opts) {
   throw new Error("aiService " + providerKey + " exhausted all retries");
 }
 
-function buildHttpError(providerKey, status, bodyText) {
+// Exported for V-AISERVICE-VLLM-400-1 + V-AISERVICE-AUTH-1 etc. — keeps
+// the error-shape contract testable without round-tripping through a
+// real fetch.
+export function buildHttpError(providerKey, status, bodyText) {
   var prefix;
   if (status === 401 || status === 403) {
     prefix = "auth failed — check your API key in gear icon → " + providerKey;
@@ -140,6 +143,12 @@ function buildHttpError(providerKey, status, bodyText) {
     prefix = "rate-limited — wait a moment or switch provider";
   } else if (status >= 500 && status < 600) {
     prefix = "upstream temporary error — try again or switch provider";
+  } else if (status === 400 && bodyText && /tool[- ]?choice|enable[- ]?auto[- ]?tool[- ]?choice|tool[- ]?call[- ]?parser/i.test(bodyText)) {
+    // BUG-035 part B (rc.6 / 6e): vLLM 400 when tool-use is requested
+    // but the server wasn't started with --enable-auto-tool-choice +
+    // --tool-call-parser. Surface a clearer server-config hint instead
+    // of dumping the raw vLLM error to the chat overlay.
+    prefix = "vLLM server config — start the LLM with --enable-auto-tool-choice + --tool-call-parser hermes (Code LLM) or disable tools for this provider in Settings";
   } else {
     prefix = "HTTP " + status;
   }

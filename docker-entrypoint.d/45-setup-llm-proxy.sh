@@ -109,3 +109,19 @@ location /api/llm/gemini/ {
 EOF
 
 echo "[entrypoint] LLM proxy snippet written (LLM_HOST=${LLM_HOST}, LLM_LOCAL_PORT=${LLM_LOCAL_PORT}, LLM_LOCAL_B_PORT=${LLM_LOCAL_B_PORT})."
+
+# BUG-035 root-cause-grade defensive check (rc.6 / 6e). The user's
+# 2026-05-05 workshop deploy showed V-PROXY-LOCAL-B-1 RED on the
+# workshop machine despite the local script being correct on this
+# machine — root cause was a stale Docker image (built before rc.4
+# hotfix #2a, no /api/llm/local-b/ block). Verify the snippet we just
+# wrote actually contains the four expected location blocks. If any
+# is missing, fail loudly so the workshop sysadmin sees the issue at
+# container start instead of mid-demo at the V-PROXY-LOCAL-B-1 RED.
+for loc in "/api/llm/local/" "/api/llm/local-b/" "/api/llm/anthropic/" "/api/llm/gemini/"; do
+  if ! grep -q "location ${loc}" "$LLM_INCLUDE"; then
+    echo "[entrypoint][ERROR] LLM proxy snippet is missing 'location ${loc}' — image may be stale (pre-rc.4 hotfix #2a). Rebuild with 'docker compose up -d --build' to refresh." >&2
+    exit 2
+  fi
+done
+echo "[entrypoint] LLM proxy snippet verified: 4/4 location blocks present (local, local-b, anthropic, gemini)."

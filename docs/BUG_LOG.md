@@ -1112,6 +1112,31 @@ After root-cause confirmed: surface architectural fix to user. Add V-FLOW-SETTIN
 
 ## BUG-035 · V-PROXY-LOCAL-B-1 RED in workshop environment (404 from `/api/llm/local-b/`) + Local B vLLM `--enable-auto-tool-choice` flag missing
 
+**Status**: CLOSED rc.6 / 6e · root cause confirmed (workshop image was stale, pre-rc.4 hotfix #2a) + defensive fix shipped (entrypoint self-check fails loudly on stale images) + part B friendly hint translator shipped + V-AISERVICE-VLLM-400-1 regression test · v3.0.0-rc.5 → rc.6
+
+### Investigation note (2026-05-05 · 6e · root cause)
+
+**Part A (nginx 404)**: the local-b location block was correctly added in rc.4 hotfix #2a (`58a41b5`). The workshop image was BUILT BEFORE that hotfix and not rebuilt — so the deployed `docker-entrypoint.d/45-setup-llm-proxy.sh` only knew the `local / anthropic / gemini` blocks. nginx came up without a `local-b` location → 404 on V-PROXY-LOCAL-B-1.
+
+**Part B (vLLM 400)**: confirmed user-side vLLM server config issue — Local B vLLM was started without `--enable-auto-tool-choice` + `--tool-call-parser hermes` flags. The server is honest about the requirement; our chat overlay was just rendering the raw payload to the user, who couldn't tell it was a server-config issue from the noise.
+
+### Fix (rc.6 / 6e, this commit)
+
+**Part A · `docker-entrypoint.d/45-setup-llm-proxy.sh`**: after writing the snippet, the script now greps its own output for all 4 expected location blocks (`local`, `local-b`, `anthropic`, `gemini`). If any is missing, it logs a clear `[entrypoint][ERROR] LLM proxy snippet is missing 'location <X>' — image may be stale` to stderr + exits non-zero. nginx then fails to start, and the workshop sysadmin sees the failure at container start instead of mid-demo.
+
+**Part B · `services/aiService.js buildHttpError()`**: detects HTTP 400 responses whose body mentions `tool[- ]?choice` / `enable[- ]?auto[- ]?tool[- ]?choice` / `tool[- ]?call[- ]?parser` and surfaces a friendlier hint: *"vLLM server config — start the LLM with --enable-auto-tool-choice + --tool-call-parser hermes (Code LLM) or disable tools for this provider in Settings"* instead of dumping the raw vLLM error.
+
+`buildHttpError` is now exported so V-AISERVICE-VLLM-400-1 can assert the hint translator without round-tripping through real fetch.
+
+### Regression tests
+
+- `V-PROXY-LOCAL-B-1` (existing) · runtime probe; 404 on `/api/llm/local-b/v1/health` is RED.
+- `V-AISERVICE-VLLM-400-1` (NEW) · BUG-035 part B regression: vLLM auto-tool-choice 400 body MUST surface the friendly server-config hint; unrelated 400 bodies fall back to generic "HTTP 400".
+
+The entrypoint self-check itself isn't directly testable from the in-browser test runner (it runs in the container at start, not in the browser). The existing V-PROXY-LOCAL-B-1 covers the runtime outcome. If a future image regresses the script, container start fails LOUDLY; if container starts and V-PROXY-LOCAL-B-1 still RED, that means the entrypoint script's content drift is already loud at container-start time.
+
+---
+
 **Status**: OPEN · Reported 2026-05-05 by user with screenshot evidence · v3.0.0-rc.5 · Scheduled rc.6 (MEDIUM-HIGH; partly user-side vLLM config)
 **Reporter**: User (office workshop machine)
 **Severity**: Medium-High (test fails; Local B unusable for chat)
