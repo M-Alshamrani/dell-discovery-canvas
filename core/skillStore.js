@@ -41,21 +41,27 @@ function now() { return new Date().toISOString(); }
 // exercises the writable fields declared in FIELD_MANIFEST.
 export function seedSkills() { return seedSkillsImpl(); }
 
+// rc.5-dev Hotfix #4 (2026-05-05): per user direction "purge all the
+// existing skills from old builds for now as we don't need them anymore"
+// the auto-install of the v2 seed library on first load is RETIRED.
+// Fresh install returns []; users author from scratch via the evolved
+// Skill Builder under Settings (SPEC §S35 / RULES §16 CH31). The
+// `seedSkills()` export is retained as a reference library so existing
+// tests that explicitly import seeds (DS8-DS12 in demoSpec) keep
+// working — the change is purely "don't auto-install", not "remove
+// the seed records from the codebase". On corrupt-cache or non-array
+// localStorage, also return [] (was: return seedSkills()) for
+// consistency — empty library is safer than silently dumping seeds
+// the user didn't ask for.
 export function loadSkills() {
   try {
     var raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      // First-run: write the seed skill so users see a working example in
-      // the admin panel AND so Tab 1 still works out of the box.
-      var seeds = seedSkills();
-      saveSkills(seeds);
-      return seeds;
-    }
+    if (!raw) return [];
     var parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return seedSkills();
+    if (!Array.isArray(parsed)) return [];
     return parsed.map(normalizeSkill).filter(Boolean);
   } catch (e) {
-    return seedSkills();
+    return [];
   }
 }
 

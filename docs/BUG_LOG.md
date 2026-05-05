@@ -769,6 +769,78 @@ Hide overlays from the user's view DURING the test run, without breaking tests:
 
 ---
 
+## BUG-027 · Test pass briefly flashes file content / tags / DOM fragments on screen at page load (residual of overlay cloak)
+
+**Status**: OPEN · Reported 2026-05-05 by user (post-rc.4) · v3.0.0-rc.4 · Scheduled rc.5 (low priority — flagged "not a big issue for development for now")
+**Reporter**: User (work computer)
+**Severity**: Low (visual polish; not blocking)
+**Regression**: No (pre-existing class of issue partially addressed by BUG-026 cloak)
+
+### Repro
+1. Load the app
+2. Watch the screen carefully during the 1-3s test pass
+3. → Briefly visible: snippets of test-injected DOM (tags, file content, partial UI fragments) flash on screen between test cases
+
+### Suspected root cause
+BUG-026 (HOTFIX #3) cloak hides `.overlay` + `.overlay-backdrop` + `#skillBuilderOverlay` while `body[data-running-tests]` is set. But other test artefacts — DOM nodes appended to body for matrix/gap/summary view rendering, fragment elements probed for `.click()` dispatch, etc. — are NOT covered by the cloak. They show up momentarily as the test pass paints them.
+
+### Fix plan (rc.5 low-priority polish)
+1. Audit which DOM-touching tests actually paint to body without parent containment. Target candidates: VT*, V-PROD-*, V-DEMO-* tests that do `document.body.appendChild(probe)`.
+2. Option A (broad): extend the BUG-026 cloak to cover `body[data-running-tests] > *:not(#app-header):not(#stepper):not(#main):not(#app-footer):not(#test-banner)` — hides any rogue test probe at body level.
+3. Option B (targeted): require tests to scope probes inside an off-screen test sandbox container (`#test-sandbox` with `position:absolute; top:-9999px`).
+4. Regression test V-NO-VISIBLE-TEST-FLASH-1: assert no rogue body-level node accumulates during the pass (snapshot body.children before + after; only known app-shell IDs allowed).
+
+### Out of scope
+- Re-architecting test runner to use shadow-DOM sandbox (covered by BUG-026 §Out-of-scope deferred).
+
+---
+
+## BUG-028 · Canvas AI Assistant chat doesn't persist when user clicks Skills button (chat-rail entry routes to Settings — chat closes)
+
+**Status**: OPEN · Reported 2026-05-05 by user (post-rc.4) · v3.0.0-rc.4 · Scheduled rc.5 (UX polish — paired with broader chat persistence concern)
+**Reporter**: User
+**Severity**: Medium (UX continuity gap — workshop-flow disrupted)
+**Regression**: New behavior introduced by Arc 4 opener-shim retirement (`8f7a90a`). The pre-Arc-4 standalone overlay path didn't have this problem because Skills opened a separate overlay layered atop chat. Post-Arc-4, opener calls `closeOverlay()` → loses chat overlay → opens Settings.
+
+### Repro
+1. Open Canvas AI Assistant (topbar AI Assist button)
+2. Type some prompts; build up a transcript
+3. Click "Skills" button in chat header (head-extras slot)
+4. → Settings opens with Skills builder pill ✅
+5. → BUT the Canvas AI Assistant overlay is gone; clicking AI Assist again opens a fresh chat with empty transcript ❌
+6. User wants the chat to STAY OPEN underneath Settings, so closing Settings returns to the still-running chat
+
+### Expected (per user direction)
+"if I am on the chat AI Assist and need to open any other AI tools, the chat AI should persist until I close it, in a good UI/UX design way."
+
+Implementing this means: AI-tool overlays (Settings → Skills builder, future tile-grids, etc.) should stack OVER the chat (or open as a side-panel) instead of replacing it. Closing the over-stacked overlay should return the user to the still-running chat with transcript intact.
+
+### Suspected root cause
+Two architectural overlaps:
+1. `ui/components/Overlay.js` is a SINGLETON — only one overlay open at a time. When Settings opens via `openSettingsModal({ section: "skills" })`, the singleton replaces the chat overlay node. The chat's transcript state lives on the DOM node that just got destroyed.
+2. `ui/skillBuilderOpener.js` (rewritten in Arc 4b at `8f7a90a`) explicitly calls `closeOverlay()` before opening Settings — that's where the chat goes away.
+
+Note: the chat transcript IS persisted to localStorage per-engagement (per SPEC §S20.6 chatMemory). Re-opening the chat does NOT restore the open-but-not-yet-sent draft + the transcript scroll position. So even with persistence, the workflow continuity loss is real.
+
+### Fix plan (rc.5 UX consolidation arc)
+This is the same architectural gap that drives the broader "AiAssistOverlay full retirement" discussion in HANDOFF rc.5 plan. Both issues come back to the singleton Overlay.js — when one AI surface opens another, the first must persist underneath, not be replaced.
+
+Three candidate approaches (decide during rc.5 SPEC rewrite session per `feedback_group_b_spec_rewrite.md`):
+1. **Stacked overlays** — extend Overlay.js to track a stack instead of a single slot; `openOverlay()` pushes, `closeOverlay()` pops. Z-index layered. Backdrop click closes top-most only.
+2. **Side-panel pattern** — Settings (and other AI tools) renders as a side-panel that slides in from the right while the chat stays mounted on the left. Half-screen split. Closing the panel restores full-screen chat.
+3. **Modal-over-chat** — Settings opens as a modal AT TOP of chat overlay (chat overlay receives a backdrop dim but its DOM stays mounted). Most surgical change.
+
+Per user direction "in a good UI/UX design way" — option 2 (side-panel) is the standard ChatGPT/Claude.ai pattern for settings-while-chatting. Option 3 is fastest to ship.
+
+Regression test V-FLOW-CHAT-PERSIST-1: open chat → type prompt (don't send) → click Skills → Settings opens → close Settings → chat is still open with the unsent prompt + transcript.
+
+### Out of scope (deferred to rc.5 SPEC rewrite)
+- Decision on which approach (1 / 2 / 3) — needs UX design pass.
+- Behavior for OTHER overlays (gear settings opened from outside chat; confirmAction; etc.) — broader Overlay.js redesign.
+- AiAssistOverlay (legacy tile-grid) full retirement — same architectural concern; folded into rc.5.
+
+---
+
 ## BUG-NNN · One-line headline
 
 **Status**: OPEN · Reported YYYY-MM-DD · vX.Y.Z · Scheduled <bucket>

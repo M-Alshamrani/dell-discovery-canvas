@@ -3999,30 +3999,32 @@ describe("26 · Phase 19b · Skill Builder — store, engine, admin UI", () => {
 
   function clearSkills() { window.localStorage.removeItem("ai_skills_v1"); }
 
-  it("SB1 · loadSkills auto-seeds the skill library on first run", () => {
-    // v2.4.5 · seed library expanded from 1 to SEED_SKILL_IDS.length
-    // (one per tab + an extra json-scalars on Context). Every seeded
-    // skill must be deployed so every tab's Use-AI dropdown is populated
-    // on a fresh install.
+  it("SB1 · loadSkills returns [] on fresh install (v2 seed auto-install RETIRED in rc.5-dev hotfix #4 per user direction 2026-05-05; users author from scratch via the evolved Skill Builder)", () => {
+    // Pre-rc.5-dev: v2.4.5 auto-installed SEED_SKILL_IDS.length seed
+    // skills on first load to populate every tab's Use-AI dropdown.
+    // Post-purge: clean slate. The seedSkills() export is preserved as
+    // a reference library (DS8-DS12 still exercise it) but loadSkills()
+    // no longer auto-installs anything.
     clearSkills();
     const skills = loadSkills();
-    assertEqual(skills.length, SEED_SKILL_IDS.length,
-      "fresh install must auto-seed all " + SEED_SKILL_IDS.length + " seed skills");
-    // The canonical Tab 1 driver-questions seed must be present (back-compat id).
-    const ctxSeed = skills.find(s => s.id === "skill-driver-questions-seed");
-    assert(ctxSeed, "legacy Context-tab driver-questions seed must be present by id");
-    assertEqual(ctxSeed.tabId, "context", "legacy seed targets the Context tab");
-    // Every seeded skill must be deployed + seed-flagged.
-    skills.forEach(s => {
-      assert(s.deployed, "seeded skill '" + s.id + "' must be deployed by default");
-      assert(s.seed,     "seeded skill '" + s.id + "' carries seed: true marker");
-    });
+    assertEqual(skills.length, 0,
+      "fresh install must start with EMPTY skill library (no auto-installed seeds post-rc.5-dev hotfix #4)");
+    // The seed library still exists in core/seedSkills.js for
+    // reference — DS8-DS12 in demoSpec still cover its shape contract —
+    // but it's NEVER written to localStorage by loadSkills.
+    assert(Array.isArray(SEED_SKILL_IDS),
+      "SEED_SKILL_IDS export remains in core/seedSkills.js for tests + reference");
+    assert(SEED_SKILL_IDS.length > 0,
+      "SEED_SKILL_IDS itself stays populated as a reference library (purge is auto-install only, not record removal)");
+    // Confirm no localStorage was written.
+    assertEqual(window.localStorage.getItem("ai_skills_v1"), null,
+      "loadSkills must NOT write to localStorage on first read (was the auto-install bug class)");
   });
 
-  it("SB2 · addSkill / updateSkill / deleteSkill round-trip via localStorage", () => {
+  it("SB2 · addSkill / updateSkill / deleteSkill round-trip via localStorage (post-seed-purge baseline)", () => {
     clearSkills();
-    loadSkills(); // trigger the seed so we start from a known baseline
-    const seedCount = SEED_SKILL_IDS.length;
+    loadSkills();              // empty library on first read post-purge
+    const baseline = 0;        // was: SEED_SKILL_IDS.length pre-purge
     const created = addSkill({
       name: "Gap description writer",
       tabId: "gaps",
@@ -4031,7 +4033,7 @@ describe("26 · Phase 19b · Skill Builder — store, engine, admin UI", () => {
     });
     assert(created.id, "addSkill must return a skill with an id");
     var all = loadSkills();
-    assertEqual(all.length, seedCount + 1, "persistence must include seed library + added skill");
+    assertEqual(all.length, baseline + 1, "persistence holds the added skill");
 
     const updated = updateSkill(created.id, { name: "Renamed skill", deployed: false });
     assertEqual(updated.name, "Renamed skill", "updateSkill applies patch");
@@ -4039,7 +4041,7 @@ describe("26 · Phase 19b · Skill Builder — store, engine, admin UI", () => {
 
     deleteSkill(created.id);
     all = loadSkills();
-    assertEqual(all.length, seedCount, "deleteSkill removes the row (seed library remains)");
+    assertEqual(all.length, baseline, "deleteSkill removes the row");
     clearSkills();
   });
 
@@ -4084,14 +4086,18 @@ describe("26 · Phase 19b · Skill Builder — store, engine, admin UI", () => {
     clearSkills();
   });
 
-  it("SB6 · Skills admin renders a row per saved skill + the + Add button", () => {
+  it("SB6 · Skills admin renders a row per saved skill + the + Add button (post-seed-purge: explicit population)", () => {
     clearSkills();
-    loadSkills(); // seed library = SEED_SKILL_IDS.length rows
+    // Post-rc.5-dev hotfix #4: loadSkills no longer auto-seeds, so we
+    // explicitly populate one skill via addSkill before asserting that
+    // a row renders for it. This isolates the SB6 contract ("one row
+    // per skill record") from the seed-library dependency.
+    addSkill({ name: "SB6 fixture", tabId: "context", promptTemplate: "x", outputMode: "suggest" });
     const container = document.createElement("div");
     renderSkillAdmin(container);
     const rows = container.querySelectorAll(".skill-row");
-    assertEqual(rows.length, SEED_SKILL_IDS.length,
-      "one row per seeded skill (v2.4.5 seed library = " + SEED_SKILL_IDS.length + ")");
+    assertEqual(rows.length, 1,
+      "one row per saved skill (we added exactly one fixture)");
     const addBtn = [...container.querySelectorAll("button")].find(b => b.textContent.indexOf("Add") >= 0);
     assert(addBtn, "+ Add skill button must render");
     clearSkills();
@@ -4171,12 +4177,13 @@ describe("27 · Phase 19c · Field manifest + click-to-insert in skill builder",
 
   it("FP5 · Skill admin edit form renders a field-chip per bindable field of the selected tab", () => {
     clearSkills();
-    loadSkills(); // ensures seed in list
+    // Post-rc.5-dev hotfix #4 (no auto-seed): explicitly populate.
+    saveSkills(seedSkills());
     var container = document.createElement("div");
     document.body.appendChild(container); // form relies on DOM focus; attach for realism
     renderSkillAdmin(container);
     var editBtns = [...container.querySelectorAll("button")].filter(b => b.textContent === "Edit");
-    assert(editBtns[0], "Edit button on the seeded row must be present");
+    assert(editBtns[0], "Edit button on the populated row must be present");
     editBtns[0].click();
     var chips = container.querySelectorAll(".field-chip");
     // Seed targets 'context'; field manifest has ≥ 8 entries for that tab.
@@ -4190,7 +4197,7 @@ describe("27 · Phase 19c · Field manifest + click-to-insert in skill builder",
 
   it("FP6 · chip click inserts LABELED binding pill into the pill-editor; serialize reads back as 'Label: {{path}}'", () => {
     clearSkills();
-    loadSkills();
+    saveSkills(seedSkills()); // post-rc.5-dev hotfix #4: explicit populate
     var container = document.createElement("div");
     document.body.appendChild(container);
     renderSkillAdmin(container);
@@ -4227,7 +4234,7 @@ describe("27 · Phase 19c · Field manifest + click-to-insert in skill builder",
 
   it("FP8 · Alt-click on a chip inserts a BARE pill; serialize reads back as bare {{path}} (no label)", () => {
     clearSkills();
-    loadSkills();
+    saveSkills(seedSkills()); // post-rc.5-dev hotfix #4: explicit populate
     var container = document.createElement("div");
     document.body.appendChild(container);
     renderSkillAdmin(container);
@@ -4251,7 +4258,7 @@ describe("27 · Phase 19c · Field manifest + click-to-insert in skill builder",
 
   it("FP9 · Skill admin edit form renders a 'Test skill now' button that wires to a test-output target", () => {
     clearSkills();
-    loadSkills();
+    saveSkills(seedSkills()); // post-rc.5-dev hotfix #4: explicit populate
     var container = document.createElement("div");
     document.body.appendChild(container);
     renderSkillAdmin(container);
@@ -4424,7 +4431,7 @@ describe("29 · Phase 19d.1 · Prompt guards + Refine-to-CARE button + test-befo
     // lives in Suite 37 QW5. This test covers EDIT-mode: Save enabled
     // AND the save-gate hint is present (warn flavour, not error).
     clearSkills();
-    loadSkills();
+    saveSkills(seedSkills()); // post-rc.5-dev hotfix #4: explicit populate
     const container = document.createElement("div");
     document.body.appendChild(container);
     renderSkillAdmin(container);
@@ -4916,7 +4923,7 @@ describe("36 · Phase 19f · AI reliability — Anthropic header + retry + fallb
 
 // ── Phase 19g / v2.4.6 · UX quick-wins (QW1-QW7) ──────────────────────
 import { APP_VERSION } from "../core/version.js";
-import { SEED_SKILL_IDS as SEED_IDS_FOR_QW } from "../core/seedSkills.js";
+import { SEED_SKILL_IDS as SEED_IDS_FOR_QW, seedSkills as seedSkillsForQW } from "../core/seedSkills.js";
 
 describe("37 · Phase 19g · v2.4.6 UX quick-wins — version chip + skill chip + save gate + banner", () => {
 
@@ -4955,14 +4962,18 @@ describe("37 · Phase 19g · v2.4.6 UX quick-wins — version chip + skill chip 
       "session meta chip must NOT display the session-schema version (v2.4.6 removed it)");
   });
 
-  it("QW3 · every seeded skill round-trips into a renderSkillAdmin row with non-empty chip set (no more empty `mode` chip)", () => {
+  it("QW3 · every saved skill round-trips into a renderSkillAdmin row with non-empty chip set (no more empty `mode` chip)", () => {
     clearSkills();
-    loadSkills(); // seed
+    // Post-rc.5-dev hotfix #4: loadSkills() doesn't auto-seed, so we
+    // explicitly populate fixtures via saveSkills(seedSkills()) to
+    // exercise the chip-set rendering contract on the same record
+    // shapes as before. Tests the rendering, not the auto-install.
+    saveSkills(seedSkillsForQW());
     const container = document.createElement("div");
     renderSkillAdmin(container);
     const rows = container.querySelectorAll(".skill-row");
     assertEqual(rows.length, SEED_IDS_FOR_QW.length,
-      "one row per seeded skill");
+      "one row per saved skill (we explicitly populated " + SEED_IDS_FOR_QW.length + " seeds for this test)");
     rows.forEach(function(row) {
       // Old bug: skill.outputMode was rendered → empty <span> → empty chip.
       const oldChip = row.querySelector(".skill-row-mode");
@@ -4988,7 +4999,9 @@ describe("37 · Phase 19g · v2.4.6 UX quick-wins — version chip + skill chip 
 
   it("QW4 · skill-row chip vocabulary matches RESPONSE_FORMATS + APPLY_POLICIES (no stale values)", () => {
     clearSkills();
-    loadSkills();
+    // Post-rc.5-dev hotfix #4: explicitly populate fixtures (see QW3
+    // comment for the same migration pattern).
+    saveSkills(seedSkillsForQW());
     const container = document.createElement("div");
     renderSkillAdmin(container);
     container.querySelectorAll(".skill-row-format").forEach(function(c) {
@@ -5026,8 +5039,11 @@ describe("37 · Phase 19g · v2.4.6 UX quick-wins — version chip + skill chip 
 
   it("QW6 · Save button for EDIT mode stays ENABLED even without re-test (v2.4.6 rule change)", () => {
     clearSkills();
-    loadSkills();
-    // Pick an existing seed skill and render its edit form directly.
+    // Post-rc.5-dev hotfix #4: explicitly populate one fixture via
+    // saveSkills(seedSkills()) so the Edit button has a row to
+    // operate on. The contract here is "EDIT button enables Save
+    // even untested" — independent of how the row got into storage.
+    saveSkills(seedSkillsForQW());
     const seedId = SEED_IDS_FOR_QW[0];
     const container = document.createElement("div");
     renderSkillAdmin(container);
@@ -14729,6 +14745,53 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     //   2. Settings save flaky during 90ms cross-fade (stale .overlay-body)
     //   3. Clear-chat closes the chat overlay (Overlay.js singleton)
     // -----------------------------------------------------------------
+    // -----------------------------------------------------------------
+    // §T35-HOTFIX4 · v2 seed-library auto-install retired (rc.5-dev hotfix #4)
+    //
+    // Per user direction 2026-05-05 ("purge all the existing skills
+    // from old builds for now as we don't need them anymore"). The v2
+    // SkillStore.loadSkills() no longer auto-installs the seed library
+    // on first read; users author from scratch via the evolved Skill
+    // Builder. The seedSkills() export stays as reference data.
+    // -----------------------------------------------------------------
+
+    it("V-FLOW-NO-SEEDS-1 · loadSkills() returns [] on fresh install + corrupt-cache + non-array fallback (rc.5-dev hotfix #4)", async () => {
+      // Source-grep first: the auto-install code path must be absent.
+      const storeSrc = await (await fetch("/core/skillStore.js")).text();
+      assert(!/saveSkills\(\s*seeds\s*\)/.test(storeSrc),
+        "V-FLOW-NO-SEEDS-1: loadSkills MUST NOT call saveSkills(seeds) at first read (auto-install retired)");
+      assert(!/var seeds\s*=\s*seedSkills\(\)/.test(storeSrc),
+        "V-FLOW-NO-SEEDS-1: loadSkills MUST NOT compute auto-install seed payload");
+
+      // Live behaviour: clear localStorage → loadSkills returns [] AND
+      // does NOT write to localStorage.
+      window.localStorage.removeItem("ai_skills_v1");
+      const fresh = loadSkills();
+      assertEqual(fresh.length, 0,
+        "V-FLOW-NO-SEEDS-1: fresh install must load to an empty library (got " + fresh.length + " skills)");
+      assertEqual(window.localStorage.getItem("ai_skills_v1"), null,
+        "V-FLOW-NO-SEEDS-1: loadSkills MUST NOT write on first read (was the v2.4.5 auto-install bug class)");
+
+      // Non-array storage → returns [].
+      window.localStorage.setItem("ai_skills_v1", JSON.stringify({ not: "an array" }));
+      const nonArray = loadSkills();
+      assertEqual(nonArray.length, 0,
+        "V-FLOW-NO-SEEDS-1: non-array storage must collapse to empty (was: dump seed library)");
+
+      // Corrupt JSON → returns [].
+      window.localStorage.setItem("ai_skills_v1", "not-valid-json{{{");
+      const corrupt = loadSkills();
+      assertEqual(corrupt.length, 0,
+        "V-FLOW-NO-SEEDS-1: corrupt JSON must collapse to empty (was: dump seed library)");
+
+      // Cleanup.
+      window.localStorage.removeItem("ai_skills_v1");
+
+      // Reference library still exists for tests + audit.
+      assert(Array.isArray(SEED_SKILL_IDS) && SEED_SKILL_IDS.length > 0,
+        "V-FLOW-NO-SEEDS-1: SEED_SKILL_IDS export still populated (purge is auto-install only, not record removal)");
+    });
+
     it("V-NO-STRAY-OVERLAY-1 · runAllTests afterRestore force-removes every .overlay + .overlay-backdrop + #skillBuilderOverlay so the user never sees stacked modals at app load (HOTFIX #1)", async () => {
       const appSpecSrc = await (await fetch("/diagnostics/appSpec.js")).text();
       // Source-grep — afterRestore must contain the sweep code.
