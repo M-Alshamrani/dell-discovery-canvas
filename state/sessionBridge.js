@@ -42,6 +42,12 @@ import { session as liveSession }     from "./sessionStore.js";
 import { onSessionChanged }            from "../core/sessionEvents.js";
 import { createEmptyEngagement, EngagementSchema } from "../schema/engagement.js";
 import { setActiveEngagement, getActiveEngagement } from "./engagementStore.js";
+// SPEC §S20.9 + RULES §16 CH9 + BUG-029 fix (rc.6 / 6d) — chat memory is
+// per-engagement; on session-reset the v3 engagement-id changes and the
+// prior chat transcript MUST drop so the new session opens with a clean
+// chat. Without this, +New session leaves stale workshop data leaking
+// across customer engagements (the BUG-029 cross-session leak).
+import { clearTranscript } from "./chatMemory.js";
 
 let _running   = false;
 let _lastError = null;
@@ -68,6 +74,30 @@ async function bridgeOnce(reason) {
   try {
     const customerPatch = v2CustomerPatch(liveSession);
     const current       = getActiveEngagement();
+
+    // BUG-029 fix (rc.6 / 6d) — on +New session (`session-reset` reason),
+    // the user's intent is "start fresh." That means the v3 engagement
+    // ALSO resets (new engagement-id) AND the prior chat transcript
+    // drops from localStorage. Without this, v2 session resets but v3
+    // engagementStore stays on the old engagement-id, so the chat
+    // overlay re-loads the OLD transcript on next open — the cross-
+    // session leak the user flagged 2026-05-05 office workshop.
+    if (reason === "session-reset" && current) {
+      const priorEngagementId = current && current.meta && current.meta.engagementId;
+      if (priorEngagementId) {
+        try { clearTranscript(priorEngagementId); }
+        catch (e) { console.warn("[sessionBridge] clearTranscript failed:", e && e.message); }
+      }
+      // Swap to a fresh empty v3 engagement. The default engagement-id
+      // is fixed (zero UUID) per createEmptyEngagementMeta; this is OK
+      // because (a) the prior transcript was just dropped, (b) on
+      // re-load the bridge will re-seed if needed, (c) the engagement
+      // shape is otherwise empty so the chat sees "canvas is empty"
+      // until the user adds data.
+      setActiveEngagement(createEmptyEngagement());
+      _lastError = null;
+      return;
+    }
 
     // Boot path: no active engagement yet. Seed from a clean empty v3
     // engagement + apply any v2 customer patch we have. After this the

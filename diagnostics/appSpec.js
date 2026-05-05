@@ -12364,6 +12364,77 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "openai-compatible prompt has no cacheControl markers (provider does not support caching)");
     });
 
+    // -------------------------------------------------------------------
+    // BUG-029 regression tests (rc.6 / 6d) — chat memory cross-session
+    // leak. Per feedback_test_or_it_didnt_ship.md, every BUG-NNN fix
+    // ships with a regression test that would have caught the original
+    // incident.
+    // -------------------------------------------------------------------
+
+    it("V-FLOW-CHAT-LIFECYCLE-1 · BUG-029 regression: after sessionStore.resetSession(), prior chat transcript MUST be dropped from localStorage", async () => {
+      _resetEngagementStoreForTests();
+      _resetChatMemoryForTests();
+      const { _bridgeOnceForTests } = await import("../state/sessionBridge.js");
+      const { resetSession }        = await import("../state/sessionStore.js");
+
+      // Boot the bridge against a clean state — get a current engagement.
+      _bridgeOnceForTests("test-boot");
+      const eng1 = getActiveEngagement();
+      const id1  = eng1 && eng1.meta && eng1.meta.engagementId;
+      assert(id1, "V-FLOW-CHAT-LIFECYCLE-1 · bridge must seed an engagement on boot");
+
+      // Author a transcript against this engagement.
+      saveTranscript(id1, {
+        messages: [
+          { role: "user",      content: "what gaps exist?", at: new Date().toISOString() },
+          { role: "assistant", content: "the canvas has 0 gaps.", at: new Date().toISOString() }
+        ],
+        summary: null
+      });
+      const beforeReset = loadTranscript(id1);
+      assertEqual(beforeReset.messages.length, 2,
+        "V-FLOW-CHAT-LIFECYCLE-1 · transcript must be authored before reset");
+
+      // Trigger +New session via resetSession + bridge dispatch.
+      resetSession();   // resetSession emits "session-reset" via emitSessionChanged
+      _bridgeOnceForTests("session-reset");
+
+      // After reset: prior engagement-id transcript MUST be gone.
+      const afterReset = loadTranscript(id1);
+      assertEqual(afterReset.messages.length, 0,
+        "V-FLOW-CHAT-LIFECYCLE-1 · BUG-029: after resetSession(), the prior chat transcript MUST be dropped " +
+        "(was: " + beforeReset.messages.length + " messages, expected: 0; got: " + afterReset.messages.length + ")");
+    });
+
+    it("V-FLOW-CHAT-LIFECYCLE-2 · BUG-029 architectural: chat memory key follows engagement.meta.engagementId so a +New session yields a clean transcript on re-open", async () => {
+      _resetEngagementStoreForTests();
+      _resetChatMemoryForTests();
+      const { _bridgeOnceForTests } = await import("../state/sessionBridge.js");
+      const { resetSession }        = await import("../state/sessionStore.js");
+
+      _bridgeOnceForTests("test-boot");
+      const id1 = getActiveEngagement().meta.engagementId;
+
+      // Stash a synthetic prior transcript at id1.
+      saveTranscript(id1, {
+        messages: [{ role: "user", content: "pre-reset chat", at: new Date().toISOString() }],
+        summary: null
+      });
+
+      // resetSession + bridge → new engagement.
+      resetSession();
+      _bridgeOnceForTests("session-reset");
+
+      // After reset, a chat overlay opening would query loadTranscript
+      // on the CURRENT engagement-id. Even if id stays the same (as
+      // for createEmptyEngagement default UUID), the prior transcript
+      // is still expected to be dropped.
+      const id2 = getActiveEngagement().meta.engagementId;
+      const fresh = loadTranscript(id2);
+      assertEqual(fresh.messages.length, 0,
+        "V-FLOW-CHAT-LIFECYCLE-2 · loadTranscript(currentEngagementId) MUST return an empty transcript after +New session");
+    });
+
     // -----------------------------------------------------------------
     // V-CHAT-13/14/15 · Step 7 chat-perfection · Real-Anthropic tool-use
     // round-trip (per SPEC §S20.18 + RULES §16 CH19). RED-first until

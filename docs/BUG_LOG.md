@@ -843,6 +843,46 @@ Regression test V-FLOW-CHAT-PERSIST-1: open chat → type prompt (don't send) �
 
 ## BUG-029 · Canvas AI Assistant chat transcript persists across session boundaries (clear-all-data + new-session do not reset chat memory)
 
+**Status**: CLOSED rc.6 / 6d · root cause confirmed + architectural fix shipped via `state/sessionBridge.js` cleanup hook on `session-reset` event · V-FLOW-CHAT-LIFECYCLE-1 + V-FLOW-CHAT-LIFECYCLE-2 added as regression tests · v3.0.0-rc.5 → rc.6
+
+### Investigation note (2026-05-05 · 6d · root cause confirmed)
+
+**Root cause** (architecture-class):
+
+The v2 `state/sessionStore.js resetSession()` only clears the v2 `session` object. The v3 `state/engagementStore.js` is decoupled — its `_active` engagement (with engagement-id) is UNCHANGED on session-reset. Result: after "+ New session", `getActiveEngagement().meta.engagementId` returns the SAME id as before; chat overlay calls `loadTranscript(sameId)` and gets the OLD transcript back from localStorage.
+
+The v2/v3 sessionBridge subscribes to session-changed events but only ever shallow-merges customer fields into the v3 engagement. It had no handler for `reason === "session-reset"` — so v3 stayed bound to the prior engagement.
+
+"Clear all data" was already correct (it does `localStorage.clear()` + page reload — wipes everything).
+
+### Fix (rc.6 / 6d, this commit)
+
+`state/sessionBridge.js` `bridgeOnce(reason)` now handles `reason === "session-reset"` explicitly:
+1. Captures the prior engagement-id from `getActiveEngagement().meta.engagementId`.
+2. Calls `clearTranscript(priorEngagementId)` to drop the chat memory key from localStorage.
+3. Calls `setActiveEngagement(createEmptyEngagement())` to swap v3 to a fresh engagement.
+
+Why through the bridge (not sessionStore.resetSession itself):
+- The sessionBridge is the v2↔v3 lifecycle owner per its module header. resetSession() emits a session-changed event; the bridge IS the subscriber that translates that event into v3 actions.
+- Keeps sessionStore.js layer-pure (no direct chatMemory or engagementStore imports).
+- Same place future "session-replace" / "session-import" handlers go.
+
+### Regression tests (per feedback_test_or_it_didnt_ship.md)
+
+- `V-FLOW-CHAT-LIFECYCLE-1` — author transcript at id1; `resetSession()` + bridge dispatch; assert `loadTranscript(id1).messages.length === 0`.
+- `V-FLOW-CHAT-LIFECYCLE-2` — loadTranscript(current-engagement-id) returns empty after `+New session` regardless of whether engagement-id changed.
+
+### Architectural alignment with §S37 grounding recast
+
+This fix is consistent with the §S37 principle: engagement is the AUTHORITATIVE context for chat. When the user resets the engagement, EVERYTHING bound to it (including chat memory) must follow. The lifecycle is now coherent: engagement-id is the cleanup key + the binding key, and both are managed by the bridge on session-changed events.
+
+### Out of scope (already correct)
+
+- "Clear all data" path: `localStorage.clear()` + reload is already correct; no change.
+- File open path (`session-replace`): the file's engagement (or fresh seed) takes over; prior chat transcript orphans but is harmless. The post-rc.6 mock-purge arc may add an orphan-pruner pass on app boot if storage bloat becomes an issue.
+
+---
+
 **Status**: OPEN · Reported 2026-05-05 by user (office workshop test) · v3.0.0-rc.5 · Scheduled rc.6 (HIGH PRIORITY — ROOT CAUSE FIX REQUIRED)
 **Reporter**: User (workshop demo machine)
 **Severity**: High (cross-session leak of customer data; impacts workshop reset workflow)
