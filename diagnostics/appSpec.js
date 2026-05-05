@@ -15173,6 +15173,47 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "tools[0].function.name preserved");
     });
 
+    it("V-FLOW-PROPAGATE-CRIT-TOAST-1 · BUG-031 regression: propagate-criticality toast text MUST bind to the level applied (applied[0].newCrit or freshWorkload.criticality) — not to a closure-captured workload reference that may be stale", async () => {
+      // BUG-031 root cause: runPropagation() in ui/views/MatrixView.js
+      // computed proposals via proposeCriticalityUpgrades (which re-
+      // resolves the workload internally from session) but then read
+      // workload.criticality from the CLOSURE for the toast text. If
+      // the user changed the workload tile's criticality between detail-
+      // panel-render and propagate-click, the toast would show the
+      // stale criticality (typically "Low" — the default for new
+      // current-state workload tiles). The fix re-resolves
+      // freshWorkload at click time + uses applied[0].newCrit (the
+      // value actually written to dependents) for the toast text.
+      const matrixSrc = await (await fetch("/ui/views/MatrixView.js")).text();
+      // Locate the runPropagation function block.
+      const fnMatch = matrixSrc.match(/function runPropagation\s*\([^)]*\)\s*\{[\s\S]*?\n\s\s\}/);
+      assert(fnMatch !== null,
+        "V-FLOW-PROPAGATE-CRIT-TOAST-1: runPropagation function block must be present in MatrixView.js");
+      const fn = fnMatch[0];
+      // Required: re-resolve a freshWorkload from session at click time.
+      assert(/freshWorkload/.test(fn),
+        "V-FLOW-PROPAGATE-CRIT-TOAST-1: runPropagation MUST re-resolve a freshWorkload from session.instances at click time (not rely on closure-captured workload)");
+      // Required: toast text reads from applied[0].newCrit (the level
+      // ACTUALLY applied) — not from raw workload.criticality.
+      assert(/applied\[0\]\.newCrit|applied\[0\] && applied\[0\]\.newCrit/.test(fn),
+        "V-FLOW-PROPAGATE-CRIT-TOAST-1: toast text MUST bind to applied[0].newCrit (level actually applied to dependents)");
+      // The showToast call (which contains nested parens for the
+      // `(applied.length === 1 ? "" : "s")` ternary) must consume
+      // `appliedLevel` somewhere in its argument list. Use a multiline-
+      // tolerant proximity check: any `showToast(` followed (within
+      // ~300 chars) by `appliedLevel`.
+      const toastCallIdx = fn.indexOf("showToast(");
+      assert(toastCallIdx >= 0,
+        "V-FLOW-PROPAGATE-CRIT-TOAST-1: runPropagation MUST contain a showToast(...) call");
+      const toastSlice = fn.substring(toastCallIdx, toastCallIdx + 300);
+      assert(/appliedLevel/.test(toastSlice),
+        "V-FLOW-PROPAGATE-CRIT-TOAST-1: showToast call MUST consume appliedLevel (the rebound variable), not raw workload.criticality. Slice: " + toastSlice.slice(0, 160));
+      // Anti-pattern: toast must NOT consume the bare closure-captured
+      // workload.criticality. Search the same slice.
+      assert(!/workload\.criticality/.test(toastSlice),
+        "V-FLOW-PROPAGATE-CRIT-TOAST-1: showToast call site MUST NOT reference the closure-captured workload.criticality (use appliedLevel from the actual upgrade); got slice: " + toastSlice.slice(0, 160));
+    });
+
     it("V-FLOW-SETTINGS-PILL-COMMIT-1 · BUG-034 regression: provider-pill click handler MUST commit current form input values to config BEFORE saveAiConfig + swapSection (else typed-but-unsaved values discard silently)", async () => {
       // BUG-034 root cause: when user types an API key into the active
       // provider's form, then clicks ANOTHER provider pill before the

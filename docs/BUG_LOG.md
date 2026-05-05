@@ -984,6 +984,37 @@ Per HANDOFF rc.5 §6: "Real-LLM live-key smoke (Anthropic + Gemini + Local) defe
 
 ## BUG-031 · Propagate-criticality toast text always says "Low" regardless of actual propagated level (visible regression on rc.5; tightens BUG-001 scope)
 
+**Status**: CLOSED rc.6 / 6h · root cause confirmed (closure-captured workload reference goes stale; toast read criticality from stale closure instead of the applied level) + fix shipped + V-FLOW-PROPAGATE-CRIT-TOAST-1 regression test · v3.0.0-rc.5 → rc.6
+
+### Investigation note (2026-05-05 · 6h · root cause)
+
+`ui/views/MatrixView.js runPropagation(workload, right)` was called from a `propBtn.click` handler that captured the workload-tile reference at detail-panel render time. The function correctly used `proposeCriticalityUpgrades(session, workload.id)` which RE-RESOLVES the workload internally from `session.instances` via `findInstance` — so the propagation logic was correct. But the toast at the function tail read the closure-captured `workload.criticality` directly. If the user changed the tile's criticality (Low → High) between detail-panel render and propagate-click, the closure-captured `workload.criticality` was stale (still "Low") even though the actual upgrade landed at "High".
+
+Result: assets were upgraded to "High" correctly, but the toast said *"N assets upgraded to Low"*. The user's workshop screenshot showed the discrepancy clearly.
+
+### Fix (rc.6 / 6h, this commit)
+
+`ui/views/MatrixView.js runPropagation()`:
+1. Re-resolves `freshWorkload` from `session.instances` at click time. Used for all detail strings (alert, confirm, re-render).
+2. Toast text now consumes `applied[0].newCrit` — the level actually written to dependents (guaranteed correct since proposals all target the same workload criticality level). Eliminates closure-staleness ambiguity.
+
+```js
+var freshWorkload = (session.instances || []).find(i => i.id === workload.id) || workload;
+// ...
+var appliedLevel = (applied[0] && applied[0].newCrit) || freshWorkload.criticality || "(unknown)";
+showToast(applied.length + " asset(s) upgraded to " + appliedLevel, "ok");
+```
+
+### Regression test
+
+`V-FLOW-PROPAGATE-CRIT-TOAST-1` (source-grep):
+- Asserts `runPropagation` function block exists.
+- Asserts `freshWorkload` is re-resolved at click time.
+- Asserts toast consumes `applied[0].newCrit` (the applied level), not the bare closure-captured `workload.criticality`.
+- Anti-pattern guard: showToast call site MUST NOT reference `workload.criticality` directly.
+
+---
+
 **Status**: OPEN · Reported 2026-05-05 by user (office workshop test) · v3.0.0-rc.5 · Scheduled rc.6 (MEDIUM)
 **Reporter**: User
 **Severity**: Medium (functional behavior is correct; toast string is misleading)

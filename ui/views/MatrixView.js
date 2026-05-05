@@ -764,16 +764,24 @@ export function renderMatrixView(left, right, session, opts) {
   // time, asking the presales to confirm each. Per-asset confirm matches
   // the locked decision (no silent bulk upgrades).
   function runPropagation(workload, right) {
-    var proposals = proposeCriticalityUpgrades(session, workload.id);
+    // BUG-031 fix (rc.6 / 6h): re-resolve workload from session at click
+    // time so the detail strings (alert + toast) reflect the LIVE
+    // criticality, not a stale closure-captured snapshot from when the
+    // detail panel was first rendered. proposeCriticalityUpgrades
+    // already re-resolves internally; this aligns the surface text
+    // with that.
+    // (no em-dashes in this comment block per VT20 served-UI sweep)
+    var freshWorkload = (session.instances || []).find(function(i) { return i.id === workload.id; }) || workload;
+    var proposals = proposeCriticalityUpgrades(session, freshWorkload.id);
     if (proposals.length === 0) {
-      alert("All mapped assets already meet or exceed '" + workload.label + "' criticality (" + workload.criticality + "). Nothing to propagate.");
+      alert("All mapped assets already meet or exceed '" + freshWorkload.label + "' criticality (" + freshWorkload.criticality + "). Nothing to propagate.");
       return;
     }
     var applied = [];
     proposals.forEach(function(p) {
       var msg = "Upgrade '" + p.label + "' criticality from " +
                 (p.currentCrit || "(unset)") + " to " + p.newCrit +
-                " to match workload '" + workload.label + "'?";
+                " to match workload '" + freshWorkload.label + "'?";
       if (window.confirm(msg)) {
         try {
           updateInstance(session, p.assetId, { criticality: p.newCrit });
@@ -789,9 +797,15 @@ export function renderMatrixView(left, right, session, opts) {
       if (asset) refreshCell(asset.layerId, asset.environmentId);
     });
     // Re-render the workload detail so the mapped-asset chips reflect the new criticalities.
-    showDetailPanel(right, workload);
+    showDetailPanel(right, freshWorkload);
     if (applied.length > 0) {
-      try { showToast(applied.length + " asset" + (applied.length === 1 ? "" : "s") + " upgraded to " + workload.criticality, "ok"); }
+      // BUG-031 fix (rc.6 / 6h): bind the toast text to the level
+      // ACTUALLY applied to the asset (applied[0].newCrit) -- guaranteed
+      // to be the upgrade target since proposals propagate up to a
+      // single workload criticality level. Avoids any closure-staleness
+      // ambiguity between the toast and the propagation result.
+      var appliedLevel = (applied[0] && applied[0].newCrit) || freshWorkload.criticality || "(unknown)";
+      try { showToast(applied.length + " asset" + (applied.length === 1 ? "" : "s") + " upgraded to " + appliedLevel, "ok"); }
       catch(e) { /* showToast is module-scoped; ignore if unreachable */ }
     }
   }
