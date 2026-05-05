@@ -782,8 +782,12 @@ function paintProviderPills(slot) {
         if (headSlot) injectHeaderExtras();
         return;
       }
-      closeOverlay();
-      openSettingsModal({ section: "providers", focusProvider: providerKey });
+      // rc.5 §S36.1 R36.7 (BUG-028 fix): keep the chat overlay mounted
+      // and open Settings as a side-panel instead of replacing chat.
+      // We're inside the chat right now, so chat IS open by definition.
+      // Do NOT call closeOverlay(); Overlay.js stack will handle the
+      // 50/50 layout via sidePanel:true.
+      openSettingsModal({ section: "providers", focusProvider: providerKey, sidePanel: true });
     });
 
     popover.appendChild(row);

@@ -14,17 +14,25 @@
 import { closeOverlay } from "./components/Overlay.js";
 
 export async function openSkillBuilderOverlay() {
-  // 1. Close whatever overlay is open (likely the Canvas AI Assistant
-  //    chat overlay since that's the primary call site post-rc.3).
-  //    Settings will mount a fresh overlay via Overlay.js singleton.
-  try { closeOverlay(); } catch (_e) { /* no-op if nothing's open */ }
+  // rc.5 §S36.1 R36.5: when the Canvas AI Assistant chat is already
+  // open, pass sidePanel:true so Settings opens as a side-panel and
+  // the chat persists alongside (BUG-028 fix). When the chat is NOT
+  // open (e.g. a future invocation from the topbar), default to the
+  // pre-rc.5 full-layout behavior — closeOverlay() defensively, then
+  // openSettingsModal() without sidePanel:true.
+  var chatOpen = !!document.querySelector(".overlay[data-kind='canvas-chat']");
 
-  // 2. Open Settings → Skills builder. Lazy-import to keep this module
-  //    cheap if it's never invoked, and so the schema/zod surface only
-  //    loads when the user actually opens the builder.
+  if (!chatOpen) {
+    // No chat to preserve — close anything else that might be open
+    // and mount Settings full-screen.
+    try { closeOverlay(); } catch (_e) { /* no-op if nothing's open */ }
+  }
+  // If chat IS open: do NOT call closeOverlay(); Overlay.js stack will
+  // push Settings as the side-panel right pane while chat shrinks left.
+
   try {
     const mod = await import("./views/SettingsModal.js");
-    mod.openSettingsModal({ section: "skills" });
+    mod.openSettingsModal({ section: "skills", sidePanel: chatOpen });
   } catch (e) {
     // Last-resort visible fallback — should never happen in a
     // properly-built container, but if it does we want the user to

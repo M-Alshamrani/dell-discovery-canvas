@@ -1,48 +1,59 @@
-// ui/components/Overlay.js, v2.4.13 S3
+// ui/components/Overlay.js, v2.4.13 S3 + rc.5 §S36.1 stack-aware
 //
 // Centered modal component, sister to ui/components/Drawer.js. Used for
 // flows that need more workspace than the 560px right drawer:
-//   - AI Assist (global top-right button click) . v2.4.13 S4
-//   - "+ Add tile / + Add gap / + Add driver" flows . v2.5.0
+//   - Canvas AI Assistant (top-bar AI Assist click)
+//   - Settings (gear button) — incl. Skills builder pill (rc.4 Arc 4)
+//   - "+ Add tile / + Add gap / + Add driver" flows
 //
 // Default size: ~min(720px, 90vw) wide x ~min(640px, 80vh) tall, centered
 // with backdrop blur. Close paths: backdrop click + Escape + close button
-// (unless persist:true, see below).
+// (unless persist:true).
+//
+// **rc.5 (SPEC §S36.1)**: stack-aware. `openOverlay({ ...opts, sidePanel:
+// true })` while another overlay is open pushes onto a stack instead of
+// replacing the singleton. The base layer shrinks to a 50vw left pane;
+// the new layer renders as a 50vw right pane (ChatGPT/Claude.ai pattern).
+// Backdrop is shared. closeOverlay() pops top only; if stack is now 1,
+// the survivor expands to full layout. ESC closes top-most.
 //
 // API:
-//   openOverlay({ title, lede, body, footer, kind, size, persist, transparent })
-//     title       string (sentence-case h3)
-//     lede        string (one-line ink-soft summary, optional)
-//     body        HTMLElement (the overlay body content)
-//     footer      HTMLElement (sticky footer for primary CTA + cancel, optional)
-//     kind        "ai-assist" | "add-current-tile" | "add-desired-tile"
-//                 | "add-gap" | "add-driver"
-//     size        "default" (720x640) | "wide" (1000x720) | "tall"
-//                 (720x800), optional
-//     persist     boolean (default false). When true, backdrop click does
-//                 NOT close. Only Escape + close button + a "Done" CTA in
-//                 the footer close. AI Assist uses this so the user can
-//                 chain multiple skills in one session.
-//     transparent boolean (default false). When true, overlay drops to
-//                 ~70% opacity and backdrop is interactive (pointer-
-//                 events pass through) so the user can click elements
-//                 on the page underneath. Used when a skill needs an
-//                 entity selection.
+//   openOverlay({ title, lede, body, footer, kind, size, persist,
+//                 transparent, sidePanel })
+//     ...
+//     sidePanel   boolean (default false). When true AND another overlay
+//                 is already open, push onto stack with side-panel
+//                 layout. When false OR stack empty, behaves like the
+//                 pre-rc.5 singleton (full-layout centered).
 //
-//   closeOverlay()         idempotent close. Programmatic override path,
-//                          ignores persist.
-//   setTransparent(bool)   toggle transparency on an open overlay
-//   isOpen()               boolean
-//   _resetForTests()       clears DOM + listeners for test isolation
+//   closeOverlay()         pops top of stack (or full close if last).
+//                          Idempotent. Programmatic; ignores persist.
+//   setTransparent(bool)   toggles transparency on top layer
+//   isOpen()               boolean — any layer mounted
+//   _resetForTests()       wipes entire stack
+//
+// Authority: docs/v3.0/SPEC.md §S36.1 · docs/RULES.md §16 CH32.
 
-var openEl       = null;       // .overlay panel currently in DOM, or null
-var backdropEl   = null;       // .overlay-backdrop
-var keydownBound = null;       // currently-bound document keydown handler
+// rc.5 §S36.1: stack-aware state. Each entry is { panel, options }.
+// Pre-rc.5 singletons (`openEl`, `keydownBound`) become derived from
+// the stack — keep them as module-private for backward shape.
+var _stack       = [];        // bottom (full) → top (side-panel)
+var backdropEl   = null;       // shared single backdrop
+var keydownBound = null;       // single ESC handler; targets top-most
 
 export function openOverlay(opts) {
   opts = opts || {};
-  // Always close any open overlay first (programmatic override).
-  closeOverlay();
+  var sidePanel = !!opts.sidePanel;
+
+  // rc.5 §S36.1 R36.1: stack push only when sidePanel:true AND stack
+  // already non-empty. Otherwise, behave like pre-rc.5 singleton —
+  // close any existing overlay first, then mount fresh full-layout.
+  var willStack = sidePanel && _stack.length > 0;
+
+  if (!willStack) {
+    // Pre-rc.5 path: programmatic override.
+    closeOverlay({ _allLayers: true });
+  }
 
   var title       = opts.title || "";
   var lede        = opts.lede || "";
@@ -53,16 +64,20 @@ export function openOverlay(opts) {
   var persist     = !!opts.persist;
   var transparent = !!opts.transparent;
 
-  // Backdrop element. Behind the panel; click closes (unless persist
-  // OR transparent because transparent = pointer-events should pass
-  // through, see setTransparent).
-  backdropEl = document.createElement("div");
-  backdropEl.className = "overlay-backdrop";
-  backdropEl.addEventListener("click", function(e) {
-    if (e.target !== backdropEl) return;
-    if (persist) return;
-    closeOverlay();
-  });
+  // Backdrop element. Lazy-create only if no existing backdrop (the
+  // stack reuses ONE backdrop across both layers — single visual dim).
+  if (!backdropEl) {
+    backdropEl = document.createElement("div");
+    backdropEl.className = "overlay-backdrop";
+    backdropEl.addEventListener("click", function(e) {
+      if (e.target !== backdropEl) return;
+      // Backdrop click closes top-most layer only (unless persist).
+      var top = _stack[_stack.length - 1];
+      if (top && top.options && top.options.persist) return;
+      closeOverlay();
+    });
+    document.body.appendChild(backdropEl);
+  }
 
   // Panel itself. Triple-section: head (sticky) + body (scrollable) +
   // footer (sticky, optional).
@@ -72,6 +87,20 @@ export function openOverlay(opts) {
   panel.setAttribute("data-size", size);
   if (persist)     panel.setAttribute("data-persist", "true");
   if (transparent) panel.classList.add("is-transparent");
+
+  // rc.5 §S36.1: stack-position attribute drives the CSS layout mode.
+  // - "full"  : pre-rc.5 centered single-layer behavior
+  // - "left"  : 50vw on the left (used when this layer becomes the base
+  //             of a 2-layer stack)
+  // - "right" : 50vw on the right (used for the side-panel top layer)
+  if (willStack) {
+    // Re-position the EXISTING base layer to "left".
+    var basePrev = _stack[_stack.length - 1];
+    if (basePrev && basePrev.panel) basePrev.panel.setAttribute("data-stack-pos", "left");
+    panel.setAttribute("data-stack-pos", "right");
+  } else {
+    panel.setAttribute("data-stack-pos", "full");
+  }
 
   // Head
   var head = document.createElement("div");
@@ -99,12 +128,8 @@ export function openOverlay(opts) {
   headExtras.className = "overlay-head-extras";
   head.appendChild(headExtras);
 
-  // v2.4.15-polish . persist-mode hint replaces the previous blue-dot
-  // ::before pseudo (which read as a notification glitch). A small
-  // Lucide lock icon appears INSIDE the close button's title slot when
-  // persist=true, with a native tooltip explaining "click outside is
-  // locked". The X glyph itself stays the same so users still recognize
-  // the close affordance.
+  // v2.4.15-polish . persist-mode hint: small Lucide lock icon inside
+  // the close button when persist=true, with native tooltip.
   var closeBtn = document.createElement("button");
   closeBtn.type = "button";
   closeBtn.className = "overlay-close";
@@ -158,21 +183,31 @@ export function openOverlay(opts) {
   }
 
   // Mount
-  document.body.appendChild(backdropEl);
   document.body.appendChild(panel);
-  openEl = panel;
+  _stack.push({ panel: panel, options: opts });
 
-  // Escape always closes (override even persist; matches drawer pattern
-  // and the v2.4.13 spec which lists Escape as a forced-close path).
-  keydownBound = function(e) {
-    if (e.key === "Escape" || e.keyCode === 27) {
+  // ESC handler. Single shared listener; targets top-most layer.
+  // R36.3: ESC closes top-most only (was: closes the singleton).
+  // Capture-phase + stopImmediatePropagation: defends against other
+  // global ESC handlers (HelpModal, AiAssistOverlay's cancelOnEsc when
+  // pick-mode is active, future overlays) double-firing on the same
+  // Escape keystroke. Without stop-propagation a single ESC dispatch
+  // could fire 2-3 listeners → 2-3 closeOverlay calls → stack popped
+  // too aggressively (V-OVERLAY-STACK-3 mid-pass regression).
+  if (!keydownBound) {
+    keydownBound = function(e) {
+      if (e.key !== "Escape" && e.keyCode !== 27) return;
+      // Only act if we have a layer to close. If the stack is empty
+      // (race with concurrent close), let other handlers have the event.
+      if (_stack.length === 0) return;
+      e.stopImmediatePropagation();
       closeOverlay();
-    }
-  };
-  document.addEventListener("keydown", keydownBound);
+    };
+    // Capture phase (third arg true) so we run BEFORE other listeners.
+    document.addEventListener("keydown", keydownBound, true);
+  }
 
-  // Focus management. Move focus into the overlay so screen readers and
-  // keyboard users land in the right context.
+  // Focus management. Move focus into the new (top-most) overlay.
   setTimeout(function() {
     var firstFocusable = panel.querySelector(
       "input, select, textarea, button:not(.overlay-close), [tabindex]:not([tabindex='-1'])"
@@ -187,36 +222,82 @@ export function openOverlay(opts) {
   return panel;
 }
 
-export function closeOverlay() {
-  if (keydownBound) {
-    document.removeEventListener("keydown", keydownBound);
-    keydownBound = null;
+// closeOverlay():
+//   - With no opts: pop top of stack. If stack is now empty, tear down
+//     backdrop + ESC. If stack now has 1 layer, expand it to "full".
+//   - With { _allLayers: true } (internal): wipe entire stack — used
+//     by openOverlay() when called WITHOUT sidePanel:true to enforce
+//     the pre-rc.5 "one overlay at a time" default.
+export function closeOverlay(opts) {
+  opts = opts || {};
+  var clearAll = !!opts._allLayers;
+
+  if (clearAll) {
+    while (_stack.length > 0) {
+      var entry = _stack.pop();
+      if (entry.panel && entry.panel.parentNode) {
+        entry.panel.parentNode.removeChild(entry.panel);
+      }
+    }
+  } else {
+    var top = _stack.pop();
+    if (top && top.panel && top.panel.parentNode) {
+      top.panel.parentNode.removeChild(top.panel);
+    }
+    // R36.2: if stack is now 1 layer, restore it to full-layout.
+    if (_stack.length === 1) {
+      var survivor = _stack[0];
+      if (survivor.panel) survivor.panel.setAttribute("data-stack-pos", "full");
+    }
   }
-  if (backdropEl && backdropEl.parentNode) {
-    backdropEl.parentNode.removeChild(backdropEl);
+
+  // If stack is empty, tear down the shared backdrop + ESC handler.
+  if (_stack.length === 0) {
+    if (keydownBound) {
+      // Match the capture-phase registration in openOverlay.
+      document.removeEventListener("keydown", keydownBound, true);
+      keydownBound = null;
+    }
+    if (backdropEl && backdropEl.parentNode) {
+      backdropEl.parentNode.removeChild(backdropEl);
+    }
+    backdropEl = null;
   }
-  if (openEl && openEl.parentNode) {
-    openEl.parentNode.removeChild(openEl);
-  }
-  backdropEl = null;
-  openEl     = null;
 }
 
 export function isOpen() {
-  return !!(openEl && openEl.parentNode);
+  return _stack.length > 0;
 }
 
 export function setTransparent(flag) {
-  if (!openEl) return;
+  // Operate on top-most layer (pre-rc.5: the singleton; same identity).
+  var top = _stack[_stack.length - 1];
+  if (!top || !top.panel) return;
   if (flag) {
-    openEl.classList.add("is-transparent");
+    top.panel.classList.add("is-transparent");
     if (backdropEl) backdropEl.classList.add("is-transparent");
   } else {
-    openEl.classList.remove("is-transparent");
+    top.panel.classList.remove("is-transparent");
     if (backdropEl) backdropEl.classList.remove("is-transparent");
   }
 }
 
 export function _resetForTests() {
-  closeOverlay();
+  closeOverlay({ _allLayers: true });
+  // Defense-in-depth: sweep ANY orphan .overlay or .overlay-backdrop
+  // node that isn't tracked by the in-memory stack (e.g. from a prior
+  // test that mounted via direct DOM manipulation rather than openOverlay).
+  // Mirrors the runAllTests afterRestore sweep in diagnostics/appSpec.js.
+  try {
+    document.querySelectorAll(".overlay, .overlay-backdrop").forEach(function(el) {
+      try { el.remove(); } catch (_e) { /* best-effort */ }
+    });
+  } catch (_e) { /* best-effort */ }
+  // Reset module-private state to defensive defaults.
+  _stack = [];
+  backdropEl = null;
+  if (keydownBound) {
+    document.removeEventListener("keydown", keydownBound, true);
+    keydownBound = null;
+  }
 }

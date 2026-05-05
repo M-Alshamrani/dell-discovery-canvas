@@ -14139,11 +14139,15 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         assertEqual(uStyle.color, hexToRgb("#E6EDF3"),
           "V-THEME-7: user bubble color MUST be #E6EDF3");
 
-        // Body size + line-height per R32.11.
+        // Body size + line-height. R32.11 originally specified 22px
+        // (~1.55 ratio); rc.5 §S36.4 R36.15 (BUG-022 polish) tightens
+        // to 20px (~1.43 ratio) per user feedback "the text is shown
+        // with large spaces". V-CHAT-POLISH-2 in §T37 enforces the new
+        // ratio contract; this rc.4-era assertion adopts the new value.
         assertEqual(aStyle.fontSize, "14px",
           "V-THEME-7: assistant bubble font-size MUST be 14px");
-        assertEqual(aStyle.lineHeight, Math.round(14 * 1.55) + "px",
-          "V-THEME-7: assistant bubble line-height MUST resolve to 14 × 1.55 = " + Math.round(14 * 1.55) + "px");
+        assertEqual(aStyle.lineHeight, "20px",
+          "V-THEME-7: assistant bubble line-height MUST be 20px (rc.5 §S36.4 R36.15 polish; was 22px in rc.4)");
 
         scroll.removeChild(assistantBubble);
         scroll.removeChild(userBubble);
@@ -15594,29 +15598,42 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       try { overlayMod._resetForTests(); } catch (_e) {}
     });
 
-    it("V-OVERLAY-STACK-4 · stacking layout — base layer width transitions to ~50vw when a side-panel is on top, restores to default after pop", async () => {
+    it("V-OVERLAY-STACK-4 · stacking layout — base layer occupies left half + restores to centered after pop", async () => {
       const overlayMod = await import("../ui/components/Overlay.js");
       try { overlayMod._resetForTests(); } catch (_e) {}
       overlayMod.openOverlay({ title: "Base", body: document.createElement("div"), kind: "test-base" });
       const baseEl = document.querySelector(".overlay[data-kind='test-base']");
       assert(baseEl, "V-OVERLAY-STACK-4: base overlay must mount");
-      const fullWidth = baseEl.getBoundingClientRect().width;
       // Open side-panel.
       overlayMod.openOverlay({ title: "Top", body: document.createElement("div"), kind: "test-top", sidePanel: true });
-      // Allow CSS transition + DOM commit.
-      await new Promise(r => setTimeout(r, 30));
+      // Allow CSS transition + DOM commit (animation duration is 220ms).
+      await new Promise(r => setTimeout(r, 260));
       const stackPos = baseEl.getAttribute("data-stack-pos");
-      assert(stackPos === "left",
+      assertEqual(stackPos, "left",
         "V-OVERLAY-STACK-4: base layer MUST set data-stack-pos='left' under side-panel stack (got: " + stackPos + ")");
-      const shrunkWidth = baseEl.getBoundingClientRect().width;
-      assert(shrunkWidth < fullWidth * 0.7,
-        "V-OVERLAY-STACK-4: base layer width MUST shrink (was " + fullWidth + ", became " + shrunkWidth + ")");
-      // Pop top → base restores.
+      // Honest layout intent: panel's right edge sits in the left half of
+      // the viewport (so the right-pane top layer can occupy the right
+      // half). On wide viewports the default-size 720px overlay is
+      // narrower than 50vw, so we don't enforce a width-ratio shrink —
+      // we just assert the panel doesn't bleed past the centerline.
+      const baseRect = baseEl.getBoundingClientRect();
+      const vw = window.innerWidth;
+      assert(baseRect.right <= vw / 2 + 8,
+        "V-OVERLAY-STACK-4: base layer right edge MUST stay within left half + small slack (got: right=" + baseRect.right + ", vw/2=" + (vw / 2) + ")");
+      // Top layer (side-panel right) lives in the right half.
+      const topEl = document.querySelector(".overlay[data-kind='test-top']");
+      assert(topEl, "V-OVERLAY-STACK-4: side-panel top layer must mount");
+      const topRect = topEl.getBoundingClientRect();
+      assert(topRect.left >= vw / 2 - 8,
+        "V-OVERLAY-STACK-4: top layer left edge MUST sit at or after viewport center (got: left=" + topRect.left + ", vw/2=" + (vw / 2) + ")");
+      // Pop top → base restores to "full" centered.
       overlayMod.closeOverlay();
-      await new Promise(r => setTimeout(r, 30));
-      const restoredWidth = baseEl.getBoundingClientRect().width;
-      assert(restoredWidth >= fullWidth * 0.95,
-        "V-OVERLAY-STACK-4: base layer width MUST restore after pop (was " + fullWidth + ", restored " + restoredWidth + ")");
+      await new Promise(r => setTimeout(r, 260));
+      const baseStillInDom = !!baseEl.parentNode;
+      assert(baseStillInDom, "V-OVERLAY-STACK-4: base layer MUST stay in DOM after popping top");
+      const restoredStackPos = baseEl.getAttribute("data-stack-pos");
+      assertEqual(restoredStackPos, "full",
+        "V-OVERLAY-STACK-4: base data-stack-pos MUST flip back to 'full' after pop (got: " + restoredStackPos + ")");
       try { overlayMod._resetForTests(); } catch (_e) {}
     });
 
@@ -15713,7 +15730,17 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       for (const path of productionFiles) {
         try {
           const src = await (await fetch(path)).text();
-          if (/AiAssistOverlay/.test(src)) offenders.push(path);
+          // Strip line + block comments so historical references in
+          // module-archaeology comments don't count as live imports.
+          const codeOnly = src
+            .split(/\r?\n/)
+            .filter(ln => !ln.trim().startsWith("//") && !ln.trim().startsWith("*"))
+            .join("\n")
+            .replace(/\/\*[\s\S]*?\*\//g, "");
+          // Only flag actual `import ... from ".../AiAssistOverlay.js"`.
+          if (/import[\s\S]*?from\s*["'][^"']*AiAssistOverlay\.js["']/.test(codeOnly)) {
+            offenders.push(path);
+          }
         } catch (_e) { /* file missing → ok */ }
       }
       assertEqual(offenders.length, 0,
@@ -15747,7 +15774,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       const chatMod = await import("../ui/views/CanvasChatOverlay.js");
       chatMod.openCanvasChat();
       await new Promise(r => setTimeout(r, 50));
-      const sendBtn = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-send-btn");
+      const sendBtn = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-send");
       assert(sendBtn, "V-CHAT-POLISH-1: Send button must be present");
       const cs = getComputedStyle(sendBtn);
       const paddingX = parseFloat(cs.paddingLeft);
@@ -15757,28 +15784,31 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       _closeOverlay();
     });
 
-    it("V-CHAT-POLISH-2 · transcript bubble computed line-height ≤ 1.5 (BUG-022 R36.15)", async () => {
+    it("V-CHAT-POLISH-2 · transcript bubble computed line-height ratio ≤ 1.5 (BUG-022 R36.15)", async () => {
       try { _resetOverlayForTests(); } catch (_e) {}
       _closeOverlay();
       const chatMod = await import("../ui/views/CanvasChatOverlay.js");
       chatMod.openCanvasChat();
       await new Promise(r => setTimeout(r, 50));
-      // Append a synthetic bubble so we can measure.
-      const scroll = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-scroll");
-      assert(scroll, "V-CHAT-POLISH-2: chat scroll container must exist");
-      const bubble = document.createElement("div");
-      bubble.className = "canvas-chat-bubble canvas-chat-bubble-user";
-      bubble.textContent = "hello world";
-      scroll.appendChild(bubble);
-      const cs = getComputedStyle(bubble);
-      // line-height can be a number (1.45) or px (e.g. "21px" for 14px @ 1.5).
-      // Compute a unitless multiplier.
+      // Mount a synthetic bubble matching the real DOM shape produced
+      // by paintTranscript() — .canvas-chat-msg-content is where the
+      // font + line-height rule lives.
+      const scroll = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-transcript");
+      assert(scroll, "V-CHAT-POLISH-2: chat transcript scroll container must exist");
+      const msgWrap = document.createElement("div");
+      msgWrap.className = "canvas-chat-msg canvas-chat-msg-user";
+      const content = document.createElement("div");
+      content.className = "canvas-chat-msg-content";
+      content.textContent = "hello world";
+      msgWrap.appendChild(content);
+      scroll.appendChild(msgWrap);
+      const cs = getComputedStyle(content);
       const fontSize = parseFloat(cs.fontSize) || 14;
       const lineHeightPx = parseFloat(cs.lineHeight);
       const ratio = lineHeightPx / fontSize;
       assert(ratio <= 1.5,
         "V-CHAT-POLISH-2: bubble line-height ratio MUST be ≤ 1.5 (got fontSize=" + cs.fontSize + ", lineHeight=" + cs.lineHeight + ", ratio=" + ratio.toFixed(2) + ")");
-      bubble.remove();
+      msgWrap.remove();
       try { _resetOverlayForTests(); } catch (_e) {}
       _closeOverlay();
     });

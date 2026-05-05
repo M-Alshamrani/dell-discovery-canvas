@@ -71,6 +71,11 @@ var PROVIDER_HINTS = {
 
 export function openSettingsModal(opts) {
   var initialSection = (opts && opts.section) || "providers";
+  // rc.5 §S36.1 R36.6: forward the sidePanel opt to Overlay.js so
+  // when chat is open the Settings opens as a 50vw side-panel instead
+  // of replacing the chat. Defaults to false (centered modal) when
+  // omitted — matches pre-rc.5 behavior.
+  var sidePanel = !!(opts && opts.sidePanel);
 
   var body   = buildSettingsBody(initialSection);
   var footer = buildSettingsFooter(initialSection);
@@ -83,7 +88,8 @@ export function openSettingsModal(opts) {
     kind:    "settings",
     size:    "wide",
     persist: false,
-    transparent: false
+    transparent: false,
+    sidePanel: sidePanel
   });
 
   injectSectionPills(initialSection);

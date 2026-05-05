@@ -29,7 +29,11 @@ import { renderSummaryHealthView }   from "./ui/views/SummaryHealthView.js";
 import { renderSummaryGapsView }     from "./ui/views/SummaryGapsView.js";
 import { renderSummaryVendorView }   from "./ui/views/SummaryVendorView.js";
 import { renderSummaryRoadmapView }  from "./ui/views/SummaryRoadmapView.js";
-import { openAiOverlay }             from "./ui/views/AiAssistOverlay.js";
+// rc.5 §S36.2 R36.9 (V-AI-ASSIST-DORMANT-1): the legacy AiAssistOverlay
+// tile-grid is RETIRED from production. Cmd+K rebound to openCanvasChat
+// in rc.4 Arc 2; the file remains on disk as a dormant module per
+// project_v2x_admin_deferred.md but no production .js file imports it.
+// (Was: `import { openAiOverlay } from "./ui/views/AiAssistOverlay.js";`)
 
 // v2.5.0 TB6: stepper steps render with mono leading-zero pattern
 // (01 Context, 02 Current State, ...). The label is just the readable

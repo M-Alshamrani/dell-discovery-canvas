@@ -3920,6 +3920,20 @@ body[data-running-tests] #skillBuilderOverlay {
   pointer-events: none !important;
 }
 
+/* rc.5 §S36.3 R36.12 (BUG-027 fix): extend the test-pass cloak to
+   cover ANY direct child of <body> that isn't an app-shell element.
+   Closes the residual flash where rogue test probes (V-PROD / V-DEMO
+   / VT* tests append DIVs to body for layout assertions) painted
+   visibly during the test pass on slow hardware. The :not() exemption
+   list is the closed set of well-known app-shell IDs + the overlay
+   backdrop (whose own cloak rule above handles it). Adding a new
+   shell element requires either updating this list OR wrapping the
+   element under an existing shell ID. */
+body[data-running-tests] > *:not(#app-header):not(#stepper):not(#main):not(#app-footer):not(#test-banner):not(.overlay-backdrop) {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 .overlay-backdrop {
   position: fixed;
   inset: 0;
@@ -3971,6 +3985,82 @@ body[data-running-tests] #skillBuilderOverlay {
 .overlay[data-size="tall"] {
   width: min(720px, 90vw);
   max-height: min(800px, 90vh);
+}
+
+/* rc.5 §S36.1 R36.1 - stack-aware side-panel layout. When the user
+   opens a second AI tool (Settings → Skills builder, future tile-grids,
+   etc.) while the Canvas AI Assistant chat is mounted, Overlay.js
+   sets data-stack-pos on both layers so the chat shrinks to a left
+   pane and the new tool renders as a right pane (ChatGPT/Claude.ai
+   pattern). Closing the top layer pops it; the survivor restores to
+   data-stack-pos="full" (default centered behavior).
+
+   Transitions are 220ms cubic-bezier so the layout shift reads as
+   intentional, not a layout glitch.
+
+   Mobile fallback (<900px viewport): the side-panel layout collapses
+   back to single-layer with the top covering the whole viewport -
+   graceful degradation per SPEC §S36.7.
+*/
+.overlay[data-stack-pos="full"] {
+  /* Default centered behavior - matches the un-attributed pre-rc.5
+     positioning. Explicit rule so transitions FROM left/right back
+     to full have a target to animate toward. */
+  top: 50%;
+  left: 50%;
+  right: auto;
+  transform: translate(-50%, -50%);
+  width: min(720px, 90vw);
+  transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1),
+              left 220ms cubic-bezier(0.4, 0, 0.2, 1),
+              transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.overlay[data-size="chat"][data-stack-pos="full"] {
+  /* Chat overlay is wider - preserve its existing min(1280px, 96vw)
+     when in full layout. */
+  width: min(1280px, 96vw);
+}
+.overlay[data-stack-pos="left"] {
+  top: 10vh;
+  left: 2vw;
+  transform: none;
+  width: calc(50vw - 3vw);
+  max-height: 80vh;
+  /* Same transition as ="full" so the shrink is smooth. */
+  transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1),
+              left 220ms cubic-bezier(0.4, 0, 0.2, 1),
+              transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.overlay[data-stack-pos="right"] {
+  top: 10vh;
+  /* Anchor on right edge instead of left. */
+  left: auto;
+  right: 2vw;
+  transform: none;
+  width: calc(50vw - 3vw);
+  max-height: 80vh;
+  /* Slide-in from the right edge. */
+  animation: overlay-slide-in-right 0.22s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+@keyframes overlay-slide-in-right {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@media (max-width: 900px) {
+  /* Graceful degradation per SPEC §S36.7 - mobile / narrow viewports
+     fall back to single-layer (the top layer covers the page). The
+     base layer is hidden to avoid a half-width sliver of chat behind
+     the side-panel that wouldn't be usable at this viewport. */
+  .overlay[data-stack-pos="left"]  { display: none; }
+  .overlay[data-stack-pos="right"] {
+    top: 50%;
+    left: 50%;
+    right: auto;
+    transform: translate(-50%, -50%);
+    width: min(720px, 90vw);
+    max-height: min(640px, 80vh);
+  }
 }
 /* "chat" size for the Canvas Chat overlay (BUG-014 Phase 3 redesign).
    Wider + taller than "wide" so the chat reads like a 2026 AI product
@@ -5983,9 +6073,13 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
    edge for direction-of-speech cue. Pre-fix bubbles had heavy borders +
    backgrounds; post-fix they breathe. */
 .canvas-chat-msg-content {
+  /* rc.5 §S36.4 R36.15 (BUG-022 polish): tightened from 22px line-height
+     (ratio 1.57) to 20px (ratio 1.43) for tighter density per user
+     feedback "the text is shown with large spaces". Padding 4px 0
+     unchanged - already minimal. */
   padding: 4px 0;
   white-space: pre-wrap; word-wrap: break-word;
-  font: 400 14px/22px "Inter", var(--font-sans, system-ui, sans-serif);
+  font: 400 14px/20px "Inter", var(--font-sans, system-ui, sans-serif);
 }
 .canvas-chat-msg-assistant .canvas-chat-msg-content {
   color: #C9D1D9;
