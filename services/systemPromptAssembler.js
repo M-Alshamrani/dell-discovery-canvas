@@ -1,9 +1,9 @@
 // services/systemPromptAssembler.js
 //
-// SPEC §S20.4 · 5-layer system-prompt builder for Canvas Chat. The
-// returned prompt is the binding meta-model that grounds the LLM and
-// minimizes hallucinations: every claim the model can make traces back
-// to data we explicitly passed.
+// SPEC §S20.4 + §S37 · 5-layer system-prompt builder for Canvas Chat.
+// The returned prompt is the binding meta-model that grounds the LLM
+// and minimizes hallucinations: every claim the model can make traces
+// back to data we explicitly passed.
 //
 // Layer order:
 //   1. Role + ground rules        (cached on Anthropic)
@@ -18,26 +18,43 @@
 // `cacheControl` is an array of message indices that carry the
 // Anthropic-specific cache_control marker.
 //
-// Layer 4 is token-budgeted per S20.6: small engagements (<= the
-// inline thresholds) get the full JSON inlined; larger engagements get
-// counts-only summary, and the model is directed to invoke selector
-// tools for detail.
+// Layer 4 is built per SPEC §S37 (rc.6 grounding contract recast):
+//   - Always-inlined metadata: customer + drivers + environment aliases.
+//   - Router-invoked selector results: `routerOutput.selectorCalls` are
+//     dispatched against CHAT_TOOLS, results JSON-serialized with
+//     id-to-label expansion, and inlined.
+//   - Token-budget guard at ~50K input tokens (~200KB) on the combined
+//     router output; over-cap selectors are dropped cheapest-first;
+//     metadata is always preserved.
 //
-// Authority: docs/v3.0/SPEC.md §S20.4–§S20.7 ·
-//            docs/v3.0/TESTS.md §T20 V-CHAT-{1,2,10,12} ·
-//            docs/RULES.md §16 CH3+CH8.
+// The legacy count-based small/large branch (`ENGAGEMENT_INLINE_THRESHOLD_*`)
+// is REMOVED in rc.6. See SPEC §S37.4 + RULES §16 CH3 (rewritten).
+//
+// Authority: docs/v3.0/SPEC.md §S20.4 + §S20.6 (amended) + §S37 ·
+//            docs/v3.0/TESTS.md §T20 V-CHAT-{1,10,12} + §T38 V-FLOW-GROUND-* ·
+//            docs/RULES.md §16 CH3 (rewritten) + CH33.
 
 import { generateManifest, serializeManifestStable } from "./manifestGenerator.js";
 import { CHAT_TOOLS } from "./chatTools.js";
 import { getDataContract, getContractChecksum } from "../core/dataContract.js";
 import { getConceptTOC } from "../core/conceptManifest.js";
 import { APP_SURFACES, getWorkflowTOC, RECOMMENDATIONS } from "../core/appManifest.js";
+import { BUSINESS_DRIVERS, ENV_CATALOG, LAYERS } from "../core/config.js";
 
-const ENGAGEMENT_INLINE_THRESHOLD_INSTANCES = 20;
-const ENGAGEMENT_INLINE_THRESHOLD_GAPS      = 20;
-const ENGAGEMENT_INLINE_THRESHOLD_DRIVERS   = 5;
+// Per SPEC §S37.4 + R37.11: ~50K input tokens cap on router output
+// (rough estimate at 4 bytes/token = ~200KB JSON). Above this, we
+// drop cheapest-information selectors first; metadata stays inlined.
+const LAYER4_BYTE_BUDGET = 200 * 1024;
 
-// buildSystemPrompt({engagement, providerKind?, manifestOverride?, options?})
+// Catalog id → label lookup map for Layer-4 metadata expansion.
+// Built at module load so the assembler stays fast.
+const _CATALOGS = {
+  BUSINESS_DRIVERS: BUSINESS_DRIVERS,
+  ENV_CATALOG:      ENV_CATALOG,
+  LAYERS:           LAYERS
+};
+
+// buildSystemPrompt({engagement, providerKind?, manifestOverride?, routerOutput?, options?})
 //   → { messages: [...], cacheControl: [...] }
 //
 // `messages` is an ordered array of { role, content } objects ready to
@@ -46,10 +63,18 @@ const ENGAGEMENT_INLINE_THRESHOLD_DRIVERS   = 5;
 // `cache_control: {"type":"ephemeral"}` marker — non-Anthropic
 // providers ignore the array; the chat service re-emits messages with
 // Anthropic-shape blocks at dispatch time.
+//
+// `routerOutput` is `{selectorCalls, rationale, fallback}` from
+// services/groundingRouter.js route(...). When omitted, Layer 4 falls
+// back to a metadata-only snapshot (customer + drivers + envs only).
+// When present, the router's selector calls are dispatched against
+// CHAT_TOOLS and the results are inlined into Layer 4 with id-to-label
+// expansion. See SPEC §S37.3.1 + R37.2 + R37.3.
 export function buildSystemPrompt(opts) {
   const engagement      = opts && opts.engagement;
   const providerKind    = (opts && opts.providerKind) || null;
   const manifest        = (opts && opts.manifestOverride) || generateManifest();
+  const routerOutput    = (opts && opts.routerOutput) || null;
 
   const messages = [];
   const cacheControl = [];
@@ -81,8 +106,8 @@ export function buildSystemPrompt(opts) {
     cacheControl.push(messages.length - 1);
   }
 
-  // Layer 4 — engagement snapshot (NOT cached; varies per turn).
-  messages.push({ role: "system", content: buildEngagementSection(engagement) });
+  // Layer 4 — engagement snapshot per SPEC §S37 (router-driven; threshold-free).
+  messages.push({ role: "system", content: buildEngagementSection(engagement, routerOutput) });
 
   return { messages, cacheControl };
 }
@@ -254,7 +279,19 @@ function buildConceptDictionaryBlock(toc) {
   return lines.join("\n");
 }
 
-function buildEngagementSection(eng) {
+// buildEngagementSection(engagement, routerOutput?)
+//
+// SPEC §S37 (rc.6 grounding contract recast). Builds Layer 4 of the
+// system prompt as router-driven retrieval results, NOT a raw engagement
+// dump. Always-inlined metadata (customer + drivers + environment
+// aliases) is followed by router-invoked selector results with
+// id-to-label expansion. Token-budget guard at LAYER4_BYTE_BUDGET drops
+// cheapest-information selectors first; metadata is always preserved.
+//
+// When `routerOutput` is null/undefined (e.g. legacy callers, V-CHAT-1
+// marker test), Layer 4 falls back to metadata-only output. Tests that
+// exercise the new contract pass a real routerOutput.
+function buildEngagementSection(eng, routerOutput) {
   const lines = ["== Engagement snapshot =="];
   if (!eng) {
     lines.push("There is no active engagement. The canvas is empty — the user has not loaded a session yet.");
@@ -266,37 +303,123 @@ function buildEngagementSection(eng) {
   const driverCount = (eng.drivers      && eng.drivers.allIds      && eng.drivers.allIds.length)      || 0;
   const envCount    = (eng.environments && eng.environments.allIds && eng.environments.allIds.length) || 0;
 
+  // Empty engagement (per V-CHAT-10 + V-FLOW-GROUND-4).
   if (instCount === 0 && gapCount === 0 && driverCount === 0 && envCount === 0) {
     lines.push("The canvas is empty. The user has not added any drivers, environments, instances, or gaps yet.");
     lines.push("customer: " + safeStringify(eng.customer));
     return lines.join("\n");
   }
 
-  const isSmall =
-    instCount   <= ENGAGEMENT_INLINE_THRESHOLD_INSTANCES &&
-    gapCount    <= ENGAGEMENT_INLINE_THRESHOLD_GAPS &&
-    driverCount <= ENGAGEMENT_INLINE_THRESHOLD_DRIVERS;
+  // Always-inlined metadata: customer + drivers + environments (R37.3).
+  // Drivers + envs get id-to-label expansion so the LLM never has to
+  // emit a bare catalog id (per CH3a anti-leakage rules).
+  lines.push("── Engagement metadata (always inlined) ──");
+  lines.push("customer: " + safeStringify(eng.customer));
 
-  if (isSmall) {
-    lines.push("Engagement is small enough to inline. Full v3 engagement object follows.");
-    lines.push(safeStringify({
-      meta:         eng.meta,
-      customer:     eng.customer,
-      drivers:      eng.drivers,
-      environments: eng.environments,
-      instances:    eng.instances,
-      gaps:         eng.gaps
-    }, 2));
-  } else {
-    lines.push("Engagement is large (counts: instances=" + instCount + ", gaps=" + gapCount +
-      ", drivers=" + driverCount + ", environments=" + envCount + "). Inlining customer + drivers only; for instance/gap detail, INVOKE the appropriate analytical view tool.");
-    lines.push("customer: " + safeStringify(eng.customer));
-    if (driverCount > 0) {
-      lines.push("drivers: " + safeStringify(eng.drivers.allIds.map(id => eng.drivers.byId[id])));
+  if (driverCount > 0) {
+    const driversWithLabels = eng.drivers.allIds.map((id) => {
+      const d = eng.drivers.byId[id];
+      return Object.assign({}, d, {
+        _driverLabel: lookupCatalogLabel("BUSINESS_DRIVERS", d.businessDriverId)
+      });
+    });
+    lines.push("drivers (with id→label expansion): " + safeStringify(driversWithLabels, 2));
+  }
+
+  if (envCount > 0) {
+    const envsWithLabels = eng.environments.allIds.map((id) => {
+      const e = eng.environments.byId[id];
+      return Object.assign({}, e, {
+        _catalogLabel: lookupCatalogLabel("ENV_CATALOG", e.envCatalogId)
+      });
+    });
+    lines.push("environments (with id→label expansion): " + safeStringify(envsWithLabels, 2));
+  }
+
+  // Counts header so the LLM has a quick anchor for "how many".
+  lines.push("counts: instances=" + instCount + ", gaps=" + gapCount +
+    ", drivers=" + driverCount + ", environments=" + envCount + ".");
+
+  // Router-invoked selector results (R37.2 + R37.3). Empty selectorCalls
+  // → no detail layer (legacy fallback or out-of-scope question).
+  const selectorCalls = (routerOutput && Array.isArray(routerOutput.selectorCalls))
+    ? routerOutput.selectorCalls
+    : [];
+  if (selectorCalls.length === 0) {
+    lines.push("");
+    lines.push("── No router-driven selector results for this turn ──");
+    lines.push("(Either the router was not invoked, or the user's intent was empty/metadata-only. " +
+      "If the user asks for entity detail, prefer invoking a §S5 selector tool over guessing.)");
+    return lines.join("\n");
+  }
+
+  // Dispatch each selector call against CHAT_TOOLS. Apply the token-
+  // budget guard: serialize each result, sum byte-lengths, drop from
+  // the END (cheapest-information) when over LAYER4_BYTE_BUDGET.
+  const dispatched = [];
+  let runningBytes = 0;
+  let dropped = [];
+  for (let i = 0; i < selectorCalls.length; i++) {
+    const call = selectorCalls[i];
+    const tool = CHAT_TOOLS.find((t) => t.name === call.selector);
+    if (!tool) {
+      dispatched.push({ name: call.selector, args: call.args || {}, error: "unknown-selector" });
+      continue;
     }
+    let result;
+    try {
+      result = tool.invoke(eng, call.args || {});
+    } catch (e) {
+      result = { error: "selector-threw", message: (e && e.message) || String(e) };
+    }
+    const serialized = safeStringify(result, 2);
+    if (runningBytes + serialized.length > LAYER4_BYTE_BUDGET && dispatched.length > 0) {
+      // Token-budget cap reached; drop this and remaining selectors.
+      for (let j = i; j < selectorCalls.length; j++) {
+        dropped.push(selectorCalls[j].selector);
+      }
+      break;
+    }
+    runningBytes += serialized.length;
+    dispatched.push({ name: call.selector, args: call.args || {}, serialized: serialized });
+  }
+
+  lines.push("");
+  lines.push("── Router-invoked selector results (rationale: " +
+    ((routerOutput && routerOutput.rationale) || "unknown") + ") ──");
+  lines.push("These results are pre-fetched against the live engagement BEFORE you read the user's message. " +
+    "Use them as your authoritative source for facts about gaps, instances, vendors, drivers, environments, etc.");
+  lines.push("");
+  for (let i = 0; i < dispatched.length; i++) {
+    const d = dispatched[i];
+    if (d.error) {
+      lines.push(d.name + "(" + safeStringify(d.args) + ") → ERROR: " + d.error);
+    } else {
+      lines.push(d.name + "(" + safeStringify(d.args) + ") →");
+      lines.push(d.serialized);
+    }
+    lines.push("");
+  }
+  if (dropped.length > 0) {
+    lines.push("── Selector-drop fallback (token-budget guard) ──");
+    lines.push("The following selector(s) were dropped to keep Layer 4 under the " +
+      LAYER4_BYTE_BUDGET + "-byte budget: " + dropped.join(", ") +
+      ". If the user asks about data covered by these, INVOKE the corresponding tool directly.");
   }
 
   return lines.join("\n");
+}
+
+// Static catalog-label lookup. Imports happen at module load; we keep
+// the helper local so circular-import risk is zero.
+function lookupCatalogLabel(catalogName, id) {
+  if (!id) return null;
+  try {
+    const cat = _CATALOGS[catalogName];
+    if (!cat) return null;
+    const entry = cat.find((e) => e.id === id);
+    return entry ? (entry.label || null) : null;
+  } catch (_e) { return null; }
 }
 
 function safeStringify(value, indent) {

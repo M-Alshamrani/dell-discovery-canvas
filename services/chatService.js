@@ -27,6 +27,14 @@
 import { buildSystemPrompt }  from "./systemPromptAssembler.js";
 import { CHAT_TOOLS }         from "./chatTools.js";
 import { getContractChecksum } from "../core/dataContract.js";
+// SPEC §S37 + RULES §16 CH33 — grounding contract recast (rc.6).
+// streamChat invokes the deterministic retrieval router BEFORE
+// assembling the system prompt; selector results are inlined into
+// Layer 4 by buildSystemPrompt. After the LLM responds, streamChat
+// runs verifyGrounding on the visible response; hallucinated entity
+// references → render-error replaces visible response (per CH33 (c)).
+import { route as groundingRoute } from "./groundingRouter.js";
+import { verifyGrounding }         from "./groundingVerifier.js";
 // SPEC §S20.16 + §S25.5 + BUG-020 fix (2026-05-03) — handshake regex
 // + strip helper now live in services/chatHandshake.js so chatService,
 // chatMemory, AND CanvasChatOverlay (streaming-time onToken path) all
@@ -112,8 +120,20 @@ export async function streamChat(opts) {
   // Resolve providerKind for the assembler's cache_control branch.
   const providerKind = mapProviderKindForAssembler(providerConfig.providerKey);
 
-  // Layer 1+2+3+5+4 — system prompt (cached prefix + volatile snapshot).
-  const systemPrompt = buildSystemPrompt({ engagement, providerKind });
+  // SPEC §S37.3.1 + R37.2 + RULES §16 CH33 (a)+(b) — invoke the
+  // deterministic grounding router BEFORE assembling the system prompt.
+  // The router classifies the user message → list of selector calls;
+  // results are inlined into Layer 4 by buildSystemPrompt, so the LLM
+  // sees the engagement data BEFORE answering (RAG-by-construction,
+  // not chat-with-tools-as-hope).
+  const routerOutput = groundingRoute({
+    userMessage: userMessage,
+    transcript:  transcript,
+    engagement:  engagement
+  });
+
+  // Layer 1+2+3+5+4 — system prompt (cached prefix + router-driven Layer 4).
+  const systemPrompt = buildSystemPrompt({ engagement, providerKind, routerOutput });
 
   // Build the initial conversation: system messages + prior transcript +
   // current user turn. We do not summarize transcript here; that is the
@@ -258,7 +278,29 @@ export async function streamChat(opts) {
     }
   }
 
-  const result = { response: visibleResponse, provenance, contractAck };
+  // SPEC §S37.3.2 + R37.6 + RULES §16 CH33 (c) — runtime grounding
+  // verification. After all post-stream scrubbing (handshake strip +
+  // UUID scrub) but BEFORE return, cross-reference the visible response
+  // against the engagement. Hallucinated entity claims → render-error
+  // replaces visible response; provenance still surfaces; the
+  // groundingViolations array is recorded on the result envelope.
+  let groundingViolations = [];
+  try {
+    const verifyResult = verifyGrounding(visibleResponse, engagement);
+    if (verifyResult && verifyResult.ok === false) {
+      groundingViolations = verifyResult.violations || [];
+      visibleResponse =
+        "The model produced an answer with claims that don't trace to the engagement. " +
+        "Try rephrasing the question, switching providers, or adding the relevant data to the canvas.";
+      console.warn("[chatService] groundingViolations replaced visible response:",
+        JSON.stringify(groundingViolations).slice(0, 400));
+    }
+  } catch (e) {
+    // Verifier failure must NOT swallow the assistant turn; log + continue.
+    console.warn("[chatService] verifyGrounding threw:", e && e.message);
+  }
+
+  const result = { response: visibleResponse, provenance, contractAck, groundingViolations };
   try { onComplete(result); } catch (e) { console.warn("[chatService] onComplete threw:", e && e.message); }
   return result;
 }
