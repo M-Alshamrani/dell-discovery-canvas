@@ -113,7 +113,7 @@ import {
 
 import { renderReportingOverview } from "../ui/views/ReportingView.js";
 
-import { renderContextView }       from "../ui/views/ContextView.js";
+import { renderContextView, _resetSelectionForTests as _resetContextSelectionForTests } from "../ui/views/ContextView.js";
 import { renderMatrixView }        from "../ui/views/MatrixView.js";
 import { renderGapsEditView }      from "../ui/views/GapsEditView.js";
 import { renderSummaryHealthView } from "../ui/views/SummaryHealthView.js";
@@ -167,17 +167,20 @@ function _installSessionAsV3Engagement(s) {
   try { _rearmBridgeMirrorForTests(); } catch (_e) { /* if not loaded yet, harmless */ }
   setActiveEngagement(createEmptyEngagement());
 
-  // Materialize envs. If the v2 session has session.environments,
-  // use those (in order); else fall back to the default-4 (matches
-  // the v2 freshSession + getVisibleEnvironments fallback).
+  // Materialize envs. If the v2 session has session.environments, use
+  // those (preserving hidden flag); else fall back to default-4 (the
+  // v2 freshSession + getVisibleEnvironments fallback). PRESERVE the
+  // hidden flag at materialization so SD2/SD6/SD8-style tests that
+  // expect hidden envs in v3 see them. Earlier the filter dropped
+  // hidden envs; now we forward them with hidden:true intact.
   var v2Envs = (Array.isArray(s.environments) && s.environments.length > 0)
-    ? s.environments.filter(function(e) { return !e.hidden; })
+    ? s.environments
     : ["coreDc", "drDc", "publicCloud", "edge"].map(function(id) { return { id, hidden: false }; });
 
   var envUuidMap = {};
   v2Envs.forEach(function(v2env) {
     if (!v2env || !v2env.id || envUuidMap[v2env.id]) return;
-    var input = { envCatalogId: v2env.id };
+    var input = { envCatalogId: v2env.id, hidden: !!v2env.hidden };
     if (typeof v2env.alias    === "string" && v2env.alias.length    > 0) input.alias    = v2env.alias;
     if (typeof v2env.location === "string" && v2env.location.length > 0) input.location = v2env.location;
     if (typeof v2env.sizeKw   === "number") input.sizeKw   = v2env.sizeKw;
@@ -246,6 +249,41 @@ function _installSessionAsV3Engagement(s) {
 
   (s.instances || []).filter(function(i) { return i.state !== "desired"; }).forEach(_addOne);
   (s.instances || []).filter(function(i) { return i.state === "desired"; }).forEach(_addOne);
+
+  // rc.7 / 7e-8b' · materialize drivers from session.customer.drivers
+  // so v3-pure ContextView (which reads engagement.drivers) sees the
+  // test fixture's setup. v2 driver shape: { id (= businessDriverId),
+  // priority, outcomes }.
+  var v2Drivers = (s.customer && Array.isArray(s.customer.drivers)) ? s.customer.drivers : [];
+  v2Drivers.forEach(function(v2d) {
+    if (!v2d || !v2d.id) return;
+    commitDriverAdd({
+      businessDriverId: v2d.id,
+      priority:         v2d.priority || "Medium",
+      outcomes:         typeof v2d.outcomes === "string" ? v2d.outcomes : ""
+    });
+  });
+
+  // rc.7 / 7e-8b' · migrate customer scalar fields (name, vertical,
+  // region, notes) from v2 session.customer to v3 engagement.customer
+  // so v3-pure ContextView reads correct data. createEmptyCustomer
+  // populates default placeholders ("New customer", etc.); replace
+  // with the test fixture's values where present.
+  if (s.customer) {
+    // v3 CustomerSchema: name + vertical are min(1); only patch when
+    // the test fixture supplies non-empty values. Empty strings would
+    // fail .strict() validation; we leave the createEmptyCustomer
+    // defaults ("New customer", "Financial Services") in place when
+    // the test session is empty.
+    var customerPatch = {};
+    if (typeof s.customer.name     === "string" && s.customer.name.length     > 0) customerPatch.name     = s.customer.name;
+    if (typeof s.customer.vertical === "string" && s.customer.vertical.length > 0) customerPatch.vertical = s.customer.vertical;
+    if (typeof s.customer.region   === "string") customerPatch.region   = s.customer.region;
+    if (typeof s.customer.notes    === "string") customerPatch.notes    = s.customer.notes;
+    if (Object.keys(customerPatch).length > 0) {
+      commitContextEdit({ customer: customerPatch });
+    }
+  }
 
   // Materialize gaps. v2 gap shape: { id, description, layerId,
   // affectedLayers (catalog refs), affectedEnvironments (catalog refs),
@@ -417,12 +455,35 @@ function _installSessionAsV3Engagement(s) {
       }
     }
     s.gaps = nextGaps;
-    // Mirror customer + isDemo for SD-style tests.
+    // Mirror customer + drivers (v2 shape: { id (= businessDriverId),
+    // priority, outcomes }) + isDemo. T1.17 etc. read
+    // s.customer.drivers[0].outcomes after a v3 commit; the mirror
+    // back-fills the test's s reference each emit so the assertion
+    // sees the post-commit value without manual refresh.
     if (eng.customer && s.customer) {
       s.customer.name     = eng.customer.name     || s.customer.name     || "";
       s.customer.vertical = eng.customer.vertical || s.customer.vertical || "";
       s.customer.region   = eng.customer.region   || s.customer.region   || "";
       s.customer.notes    = eng.customer.notes    || s.customer.notes    || "";
+    }
+    // Rebuild s.customer.drivers from v3 engagement.drivers so tests
+    // that assert on s.customer.drivers[i].priority / .outcomes after
+    // a v3 commit see the post-commit value (the v3 commit fires the
+    // engagementStore emit which calls this subscriber).
+    if (s.customer) {
+      var nextDrivers = [];
+      if (eng.drivers && Array.isArray(eng.drivers.allIds)) {
+        for (var di = 0; di < eng.drivers.allIds.length; di++) {
+          var v3d = eng.drivers.byId[eng.drivers.allIds[di]];
+          if (!v3d) continue;
+          nextDrivers.push({
+            id:       v3d.businessDriverId,
+            priority: v3d.priority || "Medium",
+            outcomes: typeof v3d.outcomes === "string" ? v3d.outcomes : ""
+          });
+        }
+      }
+      s.customer.drivers = nextDrivers;
     }
     if (eng.meta && typeof eng.meta.isDemo === "boolean") s.isDemo = eng.meta.isDemo;
   });
@@ -1814,7 +1875,14 @@ describe("12 · ui/views/ContextView — DOM contract", () => {
   function mountContext(sess) {
     const l = document.createElement("div");
     const r = document.createElement("div");
-    renderContextView(l, r, sess || freshSession());
+    const s = sess || freshSession();
+    // rc.7 / 7e-8b' · v3-pure ContextView reads engagement state via
+    // getActiveEngagement(); install the v2-shape session as a v3
+    // engagement before render. Also reset module-scope selection so
+    // prior-test residue doesn't pre-select a tile.
+    _installSessionAsV3Engagement(s);
+    try { _resetContextSelectionForTests(); } catch (_e) { /* helper may not be loaded yet */ }
+    renderContextView(l, r, s);
     return { l, r };
   }
 
@@ -2855,7 +2923,9 @@ describe("22 · services/programsService", () => {
   it("Clicking a help icon opens a modal with non-empty body (T6.15)", () => {
     document.querySelectorAll("#help-modal").forEach(o => o.remove());
     const l = document.createElement("div"); const r = document.createElement("div");
-    renderContextView(l, r, freshSession());
+    const _tmpFreshCtx = freshSession();
+    _installSessionAsV3Engagement(_tmpFreshCtx);
+    renderContextView(l, r, _tmpFreshCtx);
     const btn = l.querySelector(".help-icon-btn");
     btn.click();
     const modal = document.getElementById("help-modal");
@@ -2868,7 +2938,9 @@ describe("22 · services/programsService", () => {
   it("Help modal closes via Esc, backdrop click, and close button (T6.17)", () => {
     document.querySelectorAll("#help-modal").forEach(o => o.remove());
     const l = document.createElement("div"); const r = document.createElement("div");
-    renderContextView(l, r, freshSession());
+    const _tmpFreshCtx = freshSession();
+    _installSessionAsV3Engagement(_tmpFreshCtx);
+    renderContextView(l, r, _tmpFreshCtx);
     const btn = l.querySelector(".help-icon-btn");
 
     // Esc
@@ -5511,6 +5583,7 @@ describe("38 · Phase 19h · v2.4.7 fresh-start UX — empty default + welcome c
     };
     const l = document.createElement("div");
     const r = document.createElement("div");
+    _installSessionAsV3Engagement(emptySession);
     renderContextView(l, r, emptySession);
     const card = l.querySelector(".fresh-start-card");
     assert(card, "fresh-start card must render for empty session");
@@ -5533,6 +5606,7 @@ describe("38 · Phase 19h · v2.4.7 fresh-start UX — empty default + welcome c
     };
     const l = document.createElement("div");
     const r = document.createElement("div");
+    _installSessionAsV3Engagement(populatedSession);
     renderContextView(l, r, populatedSession);
     assert(!l.querySelector(".fresh-start-card"),
       "fresh-start card must hide as soon as any data exists (customer name alone is enough)");
@@ -7590,6 +7664,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       { id: "drDc",   hidden: false, alias: "Jeddah DR" }
     ]);
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderContextView(l, r, s);
     document.body.appendChild(l);
     try {
@@ -7614,6 +7689,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
   it("DE7 · Add new env via palette appends to session.environments", () => {
     var s = makeEnvSession([{ id: "coreDc", hidden: false }]);
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderContextView(l, r, s);
     document.body.appendChild(l);
     try {
@@ -7647,6 +7723,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       { id: "drDc",   hidden: false }
     ]);
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderContextView(l, r, s);
     document.body.appendChild(l);
     document.body.appendChild(r);
@@ -7776,6 +7853,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       { id: "coreDc", hidden: false }
     ]);
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderContextView(l, r, s);
     document.body.appendChild(l);
     document.body.appendChild(r);
@@ -7841,6 +7919,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       { id: "drDc",   hidden: true }
     ]);
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderContextView(l, r, s);
     document.body.appendChild(l);
     try {
@@ -7864,6 +7943,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       { id: "drDc",   hidden: false }
     ]);
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderContextView(l, r, s);
     document.body.appendChild(l);
     document.body.appendChild(r);
@@ -7897,6 +7977,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
       label: "SD4-B", vendorGroup: "dell", criticality: "Medium" });
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderContextView(l, r, s);
     document.body.appendChild(l);
     document.body.appendChild(r);
@@ -7933,6 +8014,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       { id: "drDc",   hidden: false }
     ]);
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderContextView(l, r, s);
     document.body.appendChild(l);
     document.body.appendChild(r);
@@ -7975,6 +8057,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       { id: "drDc",   hidden: true }
     ]);
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderContextView(l, r, s);
     document.body.appendChild(l);
     try {
@@ -9183,7 +9266,9 @@ import {
   commitInstanceAdd,
   commitEnvAdd,
   // rc.7 / 7e-4 · v3-pure gap fixture surface.
-  commitGapAdd
+  commitGapAdd,
+  // rc.7 / 7e-8b' · v3-pure driver fixture surface for Suite 12.
+  commitDriverAdd
 } from "../state/adapter.js";
 import {
   getActiveEngagement,
