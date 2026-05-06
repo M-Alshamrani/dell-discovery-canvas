@@ -11993,6 +11993,150 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assert(/_projectV3CustomerToV2|liveSession\.customer\.name\s*=|liveSession\.customer\.vertical\s*=/.test(bridgeSrc),
         "V-FLOW-MIGRATE-TAB1-CUSTOMER-2: state/sessionBridge.js v3→v2 mirror MUST project customer fields to liveSession.customer (RED until rc.7 / 7d-2)");
     });
+
+    // -----------------------------------------------------------------
+    // rc.7 / 7e-1 · §S40 v3-pure architecture decision · RED-first
+    // scaffolds for the v2.x deletion arc. These vectors flip GREEN
+    // one-by-one across rc.7 / 7e-2..7e-8. Authority: SPEC §S40 +
+    // RULES §16 CH34. Per `feedback_spec_and_test_first.md` 7e-1 is
+    // RED-by-design — docs + tests precede any code changes.
+    //
+    // V-FLOW-V3-PURE-1..5 assert the v2.x modules ARE GONE post-7e-8.
+    // V-FLOW-V3-PURE-6..10 assert specific v2.x usages have been cut.
+    // V-ANTI-V2-IMPORT-1..3 enforce the import-graph invariant.
+    // -----------------------------------------------------------------
+
+    it("V-FLOW-V3-PURE-1 · state/sessionStore.js MUST not exist (deleted in rc.7 / 7e-8 per SPEC §S40.1) — RED until then", async () => {
+      const r = await fetch("/state/sessionStore.js", { method: "HEAD" });
+      assert(r.status === 404,
+        "V-FLOW-V3-PURE-1: state/sessionStore.js MUST be deleted in rc.7 / 7e-8 (currently served, status " + r.status + ")");
+    });
+
+    it("V-FLOW-V3-PURE-2 · state/sessionBridge.js MUST not exist (deleted in rc.7 / 7e-8 per SPEC §S40.1) — RED until then", async () => {
+      const r = await fetch("/state/sessionBridge.js", { method: "HEAD" });
+      assert(r.status === 404,
+        "V-FLOW-V3-PURE-2: state/sessionBridge.js MUST be deleted in rc.7 / 7e-8 (currently served, status " + r.status + ")");
+    });
+
+    it("V-FLOW-V3-PURE-3 · interactions/matrixCommands.js MUST not exist (deleted in rc.7 / 7e-8 per SPEC §S40.1) — RED until then", async () => {
+      const r = await fetch("/interactions/matrixCommands.js", { method: "HEAD" });
+      assert(r.status === 404,
+        "V-FLOW-V3-PURE-3: interactions/matrixCommands.js MUST be deleted in rc.7 / 7e-8 (currently served, status " + r.status + ")");
+    });
+
+    it("V-FLOW-V3-PURE-4 · interactions/gapsCommands.js MUST not exist (deleted in rc.7 / 7e-8 per SPEC §S40.1) — RED until then", async () => {
+      const r = await fetch("/interactions/gapsCommands.js", { method: "HEAD" });
+      assert(r.status === 404,
+        "V-FLOW-V3-PURE-4: interactions/gapsCommands.js MUST be deleted in rc.7 / 7e-8 (currently served, status " + r.status + ")");
+    });
+
+    it("V-FLOW-V3-PURE-5 · interactions/desiredStateSync.js MUST not exist (deleted in rc.7 / 7e-8 per SPEC §S40.1) — RED until then", async () => {
+      const r = await fetch("/interactions/desiredStateSync.js", { method: "HEAD" });
+      assert(r.status === 404,
+        "V-FLOW-V3-PURE-5: interactions/desiredStateSync.js MUST be deleted in rc.7 / 7e-8 (currently served, status " + r.status + ")");
+    });
+
+    it("V-FLOW-V3-PURE-6 · ui/views/MatrixView.js MUST NOT import from v2 modules (sessionStore / matrixCommands / desiredStateSync) per SPEC §S40 — RED until rc.7 / 7e-3", async () => {
+      const src = await (await fetch("/ui/views/MatrixView.js")).text();
+      const FORBIDDEN = /import\s*[^;]*\bfrom\s*["'][^"']*\b(sessionStore|matrixCommands|desiredStateSync)(?:\.js)?["']/;
+      assert(!FORBIDDEN.test(src),
+        "V-FLOW-V3-PURE-6: ui/views/MatrixView.js MUST NOT import from v2 sessionStore/matrixCommands/desiredStateSync (RED until rc.7 / 7e-3 cuts MatrixView to v3-native)");
+    });
+
+    it("V-FLOW-V3-PURE-7 · ui/views/GapsEditView.js MUST NOT import from v2 modules (sessionStore / gapsCommands / desiredStateSync) per SPEC §S40 — RED until rc.7 / 7e-4", async () => {
+      const src = await (await fetch("/ui/views/GapsEditView.js")).text();
+      const FORBIDDEN = /import\s*[^;]*\bfrom\s*["'][^"']*\b(sessionStore|gapsCommands|desiredStateSync)(?:\.js)?["']/;
+      assert(!FORBIDDEN.test(src),
+        "V-FLOW-V3-PURE-7: ui/views/GapsEditView.js MUST NOT import from v2 sessionStore/gapsCommands/desiredStateSync (RED until rc.7 / 7e-4 cuts GapsEditView to v3-native)");
+    });
+
+    it("V-FLOW-V3-PURE-8 · services/canvasFile.js MUST validate via EngagementSchema directly (no v2 envelope, no migrator at runtime) per SPEC §S40 — RED until rc.7 / 7e-7", async () => {
+      const src = await (await fetch("/services/canvasFile.js")).text();
+      assert(/EngagementSchema\.safeParse/.test(src),
+        "V-FLOW-V3-PURE-8: services/canvasFile.js MUST call EngagementSchema.safeParse directly on load (RED until rc.7 / 7e-7)");
+      assert(!/migrateToVersion|migrations\/v2/.test(src),
+        "V-FLOW-V3-PURE-8: services/canvasFile.js MUST NOT call the v2→v3 migrator at runtime (RED until rc.7 / 7e-7)");
+    });
+
+    it("V-FLOW-V3-PURE-9 · state/aiUndoStack.js push/undoLast paths MUST snapshot/restore the v3 engagement object per SPEC §S40 — RED until rc.7 / 7e-5", async () => {
+      const src = await (await fetch("/state/aiUndoStack.js")).text();
+      assert(/getActiveEngagement\b|setActiveEngagement\b/.test(src),
+        "V-FLOW-V3-PURE-9: state/aiUndoStack.js MUST import + use getActiveEngagement / setActiveEngagement from engagementStore (RED until rc.7 / 7e-5)");
+      assert(!/replaceSession\b/.test(src),
+        "V-FLOW-V3-PURE-9: state/aiUndoStack.js MUST NOT call v2 replaceSession (RED until rc.7 / 7e-5)");
+    });
+
+    it("V-FLOW-V3-PURE-10 · core/bindingResolvers.js WRITE_RESOLVERS dispatch MUST route through commitAction per SPEC §S40 — RED until rc.7 / 7e-5", async () => {
+      const src = await (await fetch("/core/bindingResolvers.js")).text();
+      assert(/commitAction\b|commitInstanceEdit|commitGapEdit|commitDriverUpdate/.test(src),
+        "V-FLOW-V3-PURE-10: core/bindingResolvers.js MUST dispatch writes via state/adapter.js commit* helpers (RED until rc.7 / 7e-5)");
+      // The v2 mutation pattern (direct array mutation in WRITE_RESOLVERS) must be gone.
+      assert(!/setPathFromRoot\(\s*\{\s*session\s*[:,]/.test(src),
+        "V-FLOW-V3-PURE-10: core/bindingResolvers.js MUST NOT use setPathFromRoot({session:...}) v2 dispatch (RED until rc.7 / 7e-5)");
+    });
+
+    // V-ANTI-V2-IMPORT-* · import-graph invariants (post-7e-8 forbidden patterns).
+    // These walk the production module surface and assert no module
+    // imports from the deleted v2 modules. Source-grep based: HEAD requests
+    // 404 on the module file imply no import can resolve. We additionally
+    // scan known-consumer files to belt-and-brace the 404 contract.
+
+    it("V-ANTI-V2-IMPORT-1 · NO production module imports state/sessionStore (forbidden per SPEC §S40.4 F40.4.1) — RED until rc.7 / 7e-8", async () => {
+      const consumers = [
+        "/app.js",
+        "/ui/views/ContextView.js",
+        "/ui/views/MatrixView.js",
+        "/ui/views/GapsEditView.js",
+        "/ui/views/ReportingView.js",
+        "/state/aiUndoStack.js",
+        "/interactions/aiCommands.js",
+        "/core/bindingResolvers.js"
+      ];
+      for (const url of consumers) {
+        const r = await fetch(url, { method: "HEAD" });
+        if (r.status === 404) continue;            // module already deleted; vacuously OK
+        const src = await (await fetch(url)).text();
+        const FORBIDDEN = /import\s*[^;]*\bfrom\s*["'][^"']*\bsessionStore(?:\.js)?["']/;
+        assert(!FORBIDDEN.test(src),
+          "V-ANTI-V2-IMPORT-1: " + url + " MUST NOT import from state/sessionStore (RED until rc.7 / 7e-8)");
+      }
+    });
+
+    it("V-ANTI-V2-IMPORT-2 · NO production module imports interactions/{matrixCommands, gapsCommands, desiredStateSync} (forbidden per SPEC §S40.4 F40.4.2) — RED until rc.7 / 7e-8", async () => {
+      const consumers = [
+        "/ui/views/MatrixView.js",
+        "/ui/views/GapsEditView.js",
+        "/interactions/aiCommands.js",
+        "/core/bindingResolvers.js",
+        "/core/promptGuards.js"
+      ];
+      for (const url of consumers) {
+        const r = await fetch(url, { method: "HEAD" });
+        if (r.status === 404) continue;
+        const src = await (await fetch(url)).text();
+        const FORBIDDEN = /import\s*[^;]*\bfrom\s*["'][^"']*\b(matrixCommands|gapsCommands|desiredStateSync)(?:\.js)?["']/;
+        assert(!FORBIDDEN.test(src),
+          "V-ANTI-V2-IMPORT-2: " + url + " MUST NOT import from interactions/matrixCommands|gapsCommands|desiredStateSync (RED until rc.7 / 7e-8)");
+      }
+    });
+
+    it("V-ANTI-V2-IMPORT-3 · NO production module imports state/sessionBridge (forbidden per SPEC §S40.4 F40.4.3) — RED until rc.7 / 7e-8", async () => {
+      const consumers = [
+        "/app.js",
+        "/ui/views/ContextView.js",
+        "/ui/views/MatrixView.js",
+        "/ui/views/GapsEditView.js",
+        "/state/adapter.js"
+      ];
+      for (const url of consumers) {
+        const r = await fetch(url, { method: "HEAD" });
+        if (r.status === 404) continue;
+        const src = await (await fetch(url)).text();
+        const FORBIDDEN = /import\s*[^;]*\bfrom\s*["'][^"']*\bsessionBridge(?:\.js)?["']/;
+        assert(!FORBIDDEN.test(src),
+          "V-ANTI-V2-IMPORT-3: " + url + " MUST NOT import from state/sessionBridge (RED until rc.7 / 7e-8)");
+      }
+    });
   });
 
   // -------------------------------------------------------------------

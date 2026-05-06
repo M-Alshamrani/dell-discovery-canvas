@@ -1587,6 +1587,8 @@ Plus the v2.4.16 baseline of 616 GREEN that survives v3.0 migration (some vector
 
 ## §S19 · v3.0 → v2.x consumption adapter (SPEC-only annex)
 
+> **STATUS: SUPERSEDED by §S40 (rc.7 / 7e-1, 2026-05-06).** The cutover-window framing in this section (and the §S19.3.1 amendment) was premised on v2.x staying alive as a "compatibility shim" through the v3.0 GA push. User direction 2026-05-06 retires that premise — v2.x is being deleted in full across the rc.7 / 7e arc. **The v3-pure architecture decision lives in §S40.** This section's content is preserved verbatim for traceability of how the cutover-window thinking was reasoned through, but it no longer governs implementation. Read §S40 first; treat references to "the bridge" / "the cutover window" / "v3→v2 mirror" / "co-existence window" below as artefacts of the prior plan.
+
 **Status**: NEW 2026-05-01. SPEC-only annex; not in [`data-architecture-directive.md`](../../data-architecture-directive.md). The directive §0.4 sequenced *manifest → skill builder UI → perf gates → smoke* on the implicit assumption that v3.0 ships and v2.x views are rewritten in-place. The adapter is the pragmatic bridge that ships `3.0.0` GA without rewriting every view atom in one release: existing 5 v2.x view tabs (Context · Architecture · Heatmap · Workload Mapping · Gaps · Reporting) read v3.0 data through a thin module instead of the v2.x `state/sessionState.js` store. The v3.0 Lab tab (Skill Builder, shipped at v3.0.0-beta) already reads from v3.0 selectors directly; this annex extends the same pattern to the rest of the app.
 
 **Authority cascade**: SPEC §19 → RULES delta (`docs/RULES.md` adapter invariant) → TESTS.md §T19 V-ADP-* → Suite N RED-first → `state/v3Adapter.js` + `state/v3EngagementStore.js` → per-view migrations → browser smoke.
@@ -3780,7 +3782,118 @@ it("V-FLOW-GROUND-3 · Acme demo: Layer 4 contains all 8 gap descriptions inline
 | 2026-05-06 | §S19 AMENDED · §S19.3.1 cutover-dual-write · rc.7 / 7b Tab 1 Context migration scaffold | Per BUG-036 (chat reports "canvas is empty" when user enters data via v2.x UI tabs) + locked direction "continue per the rc.7 view migration plan." NEW §S19.3.1 documents the cutover-window bidirectional sync: writes go v3-first via `state/adapter.js` `commitAction → engagementStore`; the existing v2→v3 customer merge in `state/sessionBridge.js` is paired with a NEW v3→v2 mirror that projects v3 engagement.{customer, drivers, environments, sessionMeta} back into the v2 session, gated by an `_inSync` flag to prevent v2↔v3 recursion. Mirror retires per-collection as each tab migrates. NOT a v2→v3 translator (forbidden by `project_v3_no_file_migration_burden.md`); the v3→v2 direction is the WRITE-side analogue of the read-side adapter §S19 was designed for. NEW: `state/adapter.js` exports `commitDriverAdd / commitDriverUpdate / commitDriverRemove` per SPEC §S19.1 R19.1. NEW: V-FLOW-MIGRATE-TAB1-DRIVERS-1/2/3 RED-first scaffolds in §T19 (DRIVERS-1 GREEN; DRIVERS-2/3 RED until rc.7 / 7c migrates ContextView consumers + adds the bridge mirror). 7b is RED-by-design per `feedback_spec_and_test_first.md`; rc.7 / 7c flips DRIVERS-2/3 to GREEN. Tab 2 (current-state instances, the user's specific BUG-036 symptom) follows in rc.7 / 7e. |
 | 2026-05-06 | rc.7 / 7c · DRIVERS-2/3 + T1.8/T1.9 GREEN · ContextView driver writes cut to v3 adapter + sessionBridge v3→v2 mirror | ContextView's four driver write paths (`addDriver` overlay, remove tile, priority change, outcomes input) now go v3-first via `commitDriverAdd / commitDriverUpdateByBusinessDriverId / commitDriverRemoveByBusinessDriverId`. NEW v3→v2 driver mirror in `state/sessionBridge.js` projects `engagement.drivers.allIds[*] = {businessDriverId, priority, outcomes}` → `liveSession.customer.drivers[*] = {id, priority, outcomes}` on every engagementStore emit, with a `_lastV3Projection` baseline so emits that don't touch v3 drivers (e.g. customer-merge from `bridgeOnce`) leave v2 alone — non-destructive cutover behavior caught by SVC14 P2 byte-identical round-trip during smoke. Loop guard: `_mirroring` flag + `emitSessionChanged("v3-mirror")` reason; `bridgeOnce` early-returns on `"v3-mirror"` to break v2↔v3 ping-pong. Test-only `_rearmMirrorForTests()` re-subscribes after `_resetEngagementStoreForTests()` clears `_subs`. T1.8 + T1.9 rewritten as v3-first contracts asserting both surfaces; V-FLOW-MIGRATE-TAB1-DRIVERS-3 source-grep updated to assert `subscribeActiveEngagement` + `liveSession.customer.drivers =` + `"v3-mirror"`. Banner: 1188/1190 (2 RED-by-design 7b) → 1190/1190 GREEN. Tab 1 driver writes complete; rc.7 / 7d covers Tab 1 customer + envs writes. |
 | 2026-05-06 | rc.7 / 7d-1 · §S19.3.1 amendment · adapter env helpers + RED scaffolds for Tab 1 customer + envs migration | Extends rc.7 / 7c's driver migration to the remaining Tab 1 surfaces: `customer.{name,vertical,region,notes}` (already bridged v2→v3; needs v3→v2 mirror after Save context cuts to adapter) + `environments[]` (not bridged in either direction yet). NEW: `state/adapter.js` exports `commitEnvAdd / commitEnvUpdate / commitEnvHide / commitEnvUnhide / commitEnvRemove` (UUID-keyed) + `commitEnvUpdateByCatalogId / commitEnvHideByCatalogId / commitEnvUnhideByCatalogId / commitEnvRemoveByCatalogId` (catalog-ref-keyed cutover-window helpers, parallel to driver `*ByBusinessDriverId` pattern). Returns `{ok:false, error:...}` on missing v3 env match — only legitimate failure mode for cutover call-sites. NEW: V-FLOW-MIGRATE-TAB1-ENVS-1 (adapter env helpers exist · GREEN) + V-FLOW-MIGRATE-TAB1-ENVS-2 (ContextView consumes commitEnv* · RED until 7d-2) + V-FLOW-MIGRATE-TAB1-ENVS-3 (sessionBridge mirrors v3.environments → v2 session.environments · RED until 7d-2) + V-FLOW-MIGRATE-TAB1-CUSTOMER-1 (ContextView Save context calls commitContextEdit · RED until 7d-2) + V-FLOW-MIGRATE-TAB1-CUSTOMER-2 (sessionBridge mirrors v3.customer → v2 · RED until 7d-2) RED-first scaffolds in §T19. 7d-1 is RED-by-design per `feedback_spec_and_test_first.md`; rc.7 / 7d-2 flips ENVS-2/3 + CUSTOMER-1/2 to GREEN by migrating ContextView writes + extending sessionBridge mirror. |
+| 2026-05-06 | rc.7 / 7d-2 · ENVS-2/3 + CUSTOMER-1/2 GREEN · ContextView customer + envs writes cut to v3 adapter; bridge mirror extends to envs + customer; markSaving v3-mirror guard | ContextView Save-context handler routes customer fields through `commitContextEdit({customer:...})`; sessionMeta still routes via `applyContextSave` (sessionMeta is v2-only, not in v3 engagement.customer shape). Env palette add / hide / unhide / metadata-edit (all 6 fields) cut to adapter `commitEnv*ByCatalogId` helpers. NEW `_ensureV3EnvsMaterialized` helper materializes v3 env records when v2 falls back to default-4. sessionBridge gains `_projectV3EnvironmentsToV2` + `_projectV3CustomerToV2` projections; per-collection `_lastV3*Projection` baselines; per-collection bootstrap-empty guards (skip projection on first emit when v3 is empty AND last is null, so v2 data populated outside the v3 path survives). Single subscriber `_v3ToV2Mirror` runs all three channels, emits one `"v3-mirror"` if anything wrote. `core/sessionEvents.js` `emitSessionChanged` skips `markSaving()` for `"v3-mirror"` reason — programmatic mirror was permanently flipping topbar to "Saving" and routing hide flow into save-guard modal (caught by DE8/SD5 smoke). Banner: 1191/1195 → 1195/1195 GREEN. **Tab 1 Context migration COMPLETE** (customer + drivers + envs all write v3-first). |
+| 2026-05-06 | §S40 LOCKED · §S19 SUPERSEDED · v3-pure architecture decision · v2 deletion contract (rc.7 / 7e-1) | Per user direction 2026-05-06 (*"if you truly believe the new data architecture is the superior one, then we need to follow what we started... not to patch... but to grow to a better code"*) + (*"i could not care less for any data from before, we can completely move past v2 in everyway"*): the v2.x sessionStore/matrixCommands/gapsCommands/desiredStateSync/sessionBridge surface is scheduled for FULL DELETION across the rc.7 / 7e arc. Architectural shift: v3 engagementStore is the SOLE source of truth for entity state; views read via `state/adapter.js` selectors and write via `commitAction(actionFn, ...)`. The §S19.3.1 cutover-window framing (introduced rc.7 / 7b) is RETIRED — bridge mirror was always cutover scaffolding; deleted in 7e-8. NEW §S40 documents: (a) the v2 surface inventory (state/sessionStore + state/sessionBridge + interactions/{matrixCommands, gapsCommands, desiredStateSync} + interactions/aiCommands WRITE_RESOLVERS table + state/aiUndoStack v2-snapshot path + migrations/v2-0_to_v3-0 + the v2.x AI admin panel from `project_v2x_admin_deferred.md`); (b) the per-tab cutover ordering (7e-2 adapter completion · 7e-3 MatrixView · 7e-4 GapsEditView + desiredStateSync · 7e-5 AI machinery · 7e-6 Reporting + Summary views · 7e-7 canvasFile v3-native · 7e-8 v2 deletion); (c) the deletion-readiness checklist; (d) the post-deletion test contract. NEW V-FLOW-V3-PURE-1..10 + V-ANTI-V2-IMPORT-1..3 RED-first scaffolds in §T19. 7e-1 is RED-by-design per `feedback_spec_and_test_first.md`; vectors flip GREEN one-by-one across 7e-2..7e-8. RULES §16 CH34 added: "v3 engagement is the sole source of truth for entity state; no view module imports state/sessionStore.js". The pre-existing `project_v2x_admin_deferred.md` direction is SUPERSEDED — the parity gate was a deferral mechanism for a release that no longer exists; v2 admin is deleted in 7e-8 alongside the rest of the v2 surface. |
 | 2026-05-04 | §S35 (DRAFT v2 → LOCKED) | DRAFT v2 authored at `ace293a` 2026-05-04 LATE replacing the rejected v1; user approved all 7 §S35.6 decisions ("go"). LOCKED 2026-05-04. Locked decisions: rename `SkillAdmin.js` → `SkillBuilder.js` (delete current v3.1 SkillBuilder.js) · opt-in legacy v2 migration · show all 4 outputTargets (3 disabled) · chat-rail closes-and-opens Settings · keep CARE rewrite as-is · purge `core/v3SeedSkills.js` · filename rename accepted. RULES §16 CH31 added in same arc. V-* test contract: V-SKILL-V3-8..15 + V-ANTI-V3-IN-LABEL-1 + V-ANTI-V3-SEED-1..3 + V-ANTI-OVERLAY-RETIRED-1 + V-MIGRATE-V2-V3-1..4 (Suite 50 §T36 NEW). |
 | 2026-05-03 | RELEASE v3.0.0-rc.3 | **TAGGED 2026-05-03.** Closes the rc.3 implementation arc + AI-correctness consolidation. Banner 1103/1103 GREEN ✅ (was 1048 at rc.2; +55 tests). Rolled in: Phase A1 generic LLM connector (BUG-018 closed) + Phase B concept dictionary + Phase C workflow manifest + Skill v3.1 schema + Skill Builder UI rebuild + chat right-rail saved-skill cards + UseAiButton retirement + topbar consolidation to one "AI Assist" button (Dell-blue + diamond-glint 8s breathe) + APP_VERSION discipline + PREFLIGHT.md + Group A AI-correctness fixes (BUG-019 engagement rehydrate, BUG-020 streaming-time handshake strip, BUG-013 Path B UUID scrub, BUG-023 manifest layerId, BUG-011 + BUG-018 closed). New SPEC annexes: §S26 + §S27 + §S28 + §S29 + §S30 + §S31. New RULES: §16 CH20–CH27. New tests: V-CHAT-18..38, V-CONCEPT-1..5, V-WORKFLOW-1..5, V-SKILL-V3-1..7, V-VERSION-1..2, V-FLOW-REHYDRATE-1..3, V-PATH-31/32, V-TOPBAR-1, V-LAB-VIA-CHAT-RAIL, V-AI-ASSIST-CMD-K, V-ANTI-USE-AI, V-NAME-2, V-DEMO-V2-1 + V-DEMO-8/9 + V-FLOW-CHAT-DEMO-1/2. Real-Gemini live-key smoke deferred to first user-driven workshop run (V-CHAT-32 mock-fetch round-trip covers the protocol).  |
+
+## §S40 · v2.x deletion contract — v3-pure architecture (rc.7 / 7e; LOCKED 2026-05-06)
+
+**Status**: LOCKED 2026-05-06 in rc.7 / 7e-1. Authored as the architectural decision commit for the v2.x deletion arc. SUPERSEDES §S19 (the cutover-window read-side adapter framing) and §S19.3.1 (the cutover-window bidirectional sync amendment from rc.7 / 7b). Both prior framings were premised on v2 staying alive as a "rollback anchor" / "compatibility shim" through the v3.0 GA push. User direction 2026-05-06 retires that premise: *"if you truly believe the new data architecture is the superior one, then we need to follow what we started... not to patch... but to grow to a better code"* and *"i could not care less for any data from before, we can completely move past v2 in everyway."*
+
+The choice between (a) a dual-system path with a permanent v2↔v3 bridge and (b) a v3-pure path with v2 deleted in full was decided in favor of (b) because every v3.1+ feature on the roadmap (AI write-back with provenance, skill execution, undo via engagement snapshots, multi-engagement reporting, eventual server-side persistence) requires v3 to be the WRITE authority — not the projected shadow of v2. Keeping v2 alive is paying for the same migration twice.
+
+### S40.1 · v2.x surface inventory (everything scheduled for deletion)
+
+The following modules are deleted in rc.7 / 7e-8 (final commit of the arc):
+
+```
+state/sessionStore.js                        # v2 in-memory session singleton
+state/sessionBridge.js                       # v2↔v3 sync (was cutover scaffolding)
+interactions/matrixCommands.js               # v2 instance actions (addInstance, etc.)
+interactions/gapsCommands.js                 # v2 gap actions (createGap, etc.)
+interactions/desiredStateSync.js             # v2 desired-state synchronization helpers
+interactions/aiCommands.js                   # v2 applyProposal / applyAllProposals
+                                             # (rewritten as thin wrapper over v3 commitAction in 7e-5)
+core/bindingResolvers.js                     # WRITE_RESOLVERS table (v2-path dispatch)
+                                             # (rewritten as v3-path dispatch in 7e-5)
+state/aiUndoStack.js                         # v2-snapshot undo
+                                             # (rewritten to snapshot v3 engagement in 7e-5)
+migrations/v2-0_to_v3-0/                     # v2.x .canvas → v3 schema migrator
+                                             # (deleted; user confirmed no v2 file data preservation)
+ui/views/AiAssistOverlay.js                  # v2.x admin panel surface
+                                             # (per `project_v2x_admin_deferred.md` parity gate; SUPERSEDED)
+```
+
+The following v2.x test scaffolding is retired in step with the modules above (per TESTS §T1.2 append-only contract — vector ids preserved as deprecation markers):
+
+```
+Suite 06 · interactions/matrixCommands tests
+Suite 13 · ui/views/MatrixView v2-shape DOM contract tests
+Suite 14 · ui/views/GapsEditView v2-shape DOM contract tests
+Suite 46 · DE / SD env tests that assert against session.environments
+... and any other test that imports from the deleted modules above
+```
+
+Replacement v3-pure suites are authored in 7e-3..7e-8 (one per tab + AI machinery).
+
+### S40.2 · Cutover ordering (v3-pure migration sub-arcs)
+
+Each sub-arc is a single commit, pushed to `origin` after browser smoke confirms GREEN, so every step is an independent recovery point.
+
+| Sub-arc | Scope | Test outcome | Risk gate |
+|---|---|---|---|
+| **7e-1** | THIS COMMIT — SPEC §S40 + RULES §16 CH34 + V-FLOW-V3-PURE-1..10 + V-ANTI-V2-IMPORT-1..3 RED-first scaffolds. Docs-only. | RED count goes up; GREEN total preserved (1195) | Trivial — no code changes |
+| **7e-2** | Adapter completion. New v3 write helpers: `commitInstanceAdd / Update / Delete / SetDisposition / SetCriticality / SetOriginId`, `commitWorkloadMap`, `commitGapAdd / Delete / Link / Unlink / SetDriver`, `commitProposeAndApply` (transactional v3 batch write replacing `aiCommands.applyAllProposals`). | +N GREEN (helpers exist) | Adapter-only; no view changes |
+| **7e-3** | MatrixView v3-native. Reads via `adaptArchitectureView` + `adaptMatrixView`. Writes via adapter. v2 `matrixCommands.js` exists but unused. **Closes BUG-036 main symptom** (chat sees current-state instances). | +M GREEN; Suite 13 stays GREEN via mirror until 7e-8 deletion | First UI-touching commit; high smoke risk |
+| **7e-4** | GapsEditView + desiredStateSync v3-native. Gaps writes through adapter; desiredStateSync logic ported into v3 actions or selectors. | +K GREEN; Suite 14 stays GREEN | Cross-ref complexity peaks here |
+| **7e-5** | AI machinery v3-native. `applyProposal` / `applyAllProposals` dispatch via `commitAction` with provenance fields populated. `aiUndoStack` snapshots/restores the v3 engagement object (immutable; one-line restore). `WRITE_RESOLVERS` table replaced by v3-path dispatch. | +J GREEN; AI write-back roadmap unblocked | AI grounding integration; chat must continue grounding correctly |
+| **7e-6** | ReportingView + 4 Summary views v3-native. Read via adapter selectors. | +I GREEN | Read-only; lower risk |
+| **7e-7** | `services/canvasFile.js` v3-native. Load + save validate against `EngagementSchema` directly. v2 envelope + migrator no longer invoked. | +H GREEN | File I/O surface |
+| **7e-8** | v2 deletion. All modules in §S40.1 removed. Test suites retired. Bridge mirror retired. `core/sessionEvents.js` v3-only. localStorage `dell_discovery_session_v1` key retired (replaced by v3 `v3_engagement_v1` per §S31). | Banner stable at v3-pure total; RED count zero | Final deletion; reversible only via revert |
+| **rc.7 tag** | Banner GREEN, browser smoke GREEN, real-LLM smoke per PREFLIGHT 5b. | Architecture pure | GA-readiness gate |
+
+### S40.3 · Deletion-readiness checklist (every box must tick before 7e-8)
+
+- [ ] All 5 view tabs read engagement state via `state/adapter.js` (no view imports `state/sessionStore.js`)
+- [ ] All 5 view tabs write via `state/adapter.js` `commit*` helpers (no view imports `interactions/{matrixCommands, gapsCommands, desiredStateSync}.js`)
+- [ ] AI `applyProposal` + `applyAllProposals` dispatch through `commitAction` (no `setPathFromRoot({session: ...})` calls remain)
+- [ ] `aiUndoStack.push` snapshots `getActiveEngagement()`; `undoLast` restores via `setActiveEngagement(snapshot)` (no `replaceSession(snapshot)` v2 path)
+- [ ] `core/bindingResolvers.js` WRITE_RESOLVERS dispatches via `commitAction` (no v2 instance/gap mutation in resolvers)
+- [ ] `services/canvasFile.js` save/load operates on `EngagementSchema` directly (no v2 envelope serialization)
+- [ ] `core/sessionEvents.js` `emitSessionChanged` only fires for v3-driven reasons (no `"v3-mirror"` reason exists post-deletion since the mirror itself is gone)
+- [ ] All `_lastV3*Projection`, `_v3ToV2Mirror`, `_rearmMirrorForTests`, `_inSync`/`_mirroring` flags removed from `state/sessionBridge.js` (because the file itself is removed)
+- [ ] All `_ensureV3EnvsMaterialized`-style cutover-window helpers removed from view code (because v3 is canonical from the start of every flow)
+- [ ] All catalog-ref-keyed cutover helpers removed from `state/adapter.js` (`commitDriverUpdateByBusinessDriverId`, `commitEnvHideByCatalogId`, etc. — they exist only because v2 used catalog refs as primary keys; in v3-pure mode all writes use UUIDs)
+- [ ] No test imports from the deleted modules in §S40.1
+- [ ] `localStorage.removeItem("dell_discovery_session_v1")` runs once on first boot post-deletion (silent cleanup; v3 engagement persistence per §S31 is the sole survivor)
+- [ ] Browser smoke + real-LLM smoke (Anthropic + Gemini + Local-A) GREEN against demo engagement
+- [ ] V-FLOW-V3-PURE-1..10 + V-ANTI-V2-IMPORT-1..3 all GREEN
+
+### S40.4 · Forbidden patterns (post-deletion invariants)
+
+- **F40.4.1** · No module imports `state/sessionStore.js`. (Caught by V-ANTI-V2-IMPORT-1.)
+- **F40.4.2** · No module imports `interactions/{matrixCommands, gapsCommands, desiredStateSync}.js`. (V-ANTI-V2-IMPORT-2.)
+- **F40.4.3** · No module imports `state/sessionBridge.js`. (V-ANTI-V2-IMPORT-3.)
+- **F40.4.4** · No view module exports a function that mutates the engagement object directly. All writes go through `commitAction(actionFn, ...)`.
+- **F40.4.5** · `aiUndoStack` does NOT call `replaceSession(snapshot)`. The v3 path is `setActiveEngagement(snapshot)` against an immutable engagement reference.
+- **F40.4.6** · `applyProposal` does NOT bypass `commitAction`. Provenance fields (`aiSuggestedDellMapping.provenance`) MUST be populated for AI-authored writes per SPEC §S8.1.
+- **F40.4.7** · No new code introduces a v2 sessionStore re-implementation under a different name. The session-shape model is dead — v3 collections are the only entity-storage form.
+
+### S40.5 · Test contract for §S40
+
+V-FLOW-V3-PURE-* + V-ANTI-V2-IMPORT-* in TESTS.md §T19. Summary:
+
+- **V-FLOW-V3-PURE-1** · `state/sessionStore.js` MUST not exist (RED until 7e-8).
+- **V-FLOW-V3-PURE-2** · `state/sessionBridge.js` MUST not exist (RED until 7e-8).
+- **V-FLOW-V3-PURE-3** · `interactions/matrixCommands.js` MUST not exist.
+- **V-FLOW-V3-PURE-4** · `interactions/gapsCommands.js` MUST not exist.
+- **V-FLOW-V3-PURE-5** · `interactions/desiredStateSync.js` MUST not exist.
+- **V-FLOW-V3-PURE-6** · `ui/views/MatrixView.js` MUST NOT import from `state/sessionStore.js` / `interactions/matrixCommands.js` / `interactions/desiredStateSync.js` (RED until 7e-3).
+- **V-FLOW-V3-PURE-7** · `ui/views/GapsEditView.js` MUST NOT import from `state/sessionStore.js` / `interactions/gapsCommands.js` / `interactions/desiredStateSync.js` (RED until 7e-4).
+- **V-FLOW-V3-PURE-8** · `services/canvasFile.js` MUST validate via `EngagementSchema` directly (no v2 envelope) (RED until 7e-7).
+- **V-FLOW-V3-PURE-9** · `state/aiUndoStack.js` push/undoLast paths MUST snapshot/restore the v3 engagement object (RED until 7e-5).
+- **V-FLOW-V3-PURE-10** · `core/bindingResolvers.js` WRITE_RESOLVERS dispatch MUST route through `commitAction` (RED until 7e-5).
+- **V-ANTI-V2-IMPORT-1** · No production module under `app.js` / `core/` / `services/` / `state/` / `ui/` / `interactions/` imports `state/sessionStore` (RED until 7e-8).
+- **V-ANTI-V2-IMPORT-2** · No production module imports `interactions/matrixCommands` / `interactions/gapsCommands` / `interactions/desiredStateSync` (RED until 7e-8).
+- **V-ANTI-V2-IMPORT-3** · No production module imports `state/sessionBridge` (RED until 7e-8).
+
+**Forbidden test patterns**: stubbing `state/v3Adapter.js` internals; constructing engagement objects bypassing `createEmptyEngagement` / `loadCanvasV3`; reintroducing v2 mock providers (per `feedback_no_mocks.md`).
+
+### S40.6 · Trace
+
+- **Principles**: P2 (storage normalized — v3 collections are the only storage form) + P3 (presentation derived — views read via memoized selectors only) + P9 (performance budget — single-emit per write, no double-pass through bridge).
+- **Sections**: §S3 (entity schemas — the canonical truth) + §S4 (action functions — the only mutators) + §S5 (selectors — the only readers) + §S8 (AI provenance — preserved end-to-end through `commitAction`) + §S31 (v3 engagement persistence — the sole storage path post-deletion) + §S37 (RAG-by-construction grounding — chat reads v3 directly, no translator).
+- **Memory anchors**: `feedback_spec_and_test_first.md` (this very section is the spec-first artifact; sub-arcs author RED scaffolds before code) + `feedback_browser_smoke_required.md` (per-commit smoke between sub-arcs) + `feedback_no_patches_flag_first.md` (this is a flag-first decision the user approved as architectural commitment, not a patch) + the user's 2026-05-06 direction quoted in §S40 status header.
 
 End of SPEC.
