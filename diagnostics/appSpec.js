@@ -140,6 +140,206 @@ function freshSession() {
   return createEmptySession();
 }
 
+// rc.7 / 7e-3 · v3-pure test fixture helper. Bridges v2-shape test
+// sessions (constructed via createEmptySession + addInstance + etc.)
+// into the v3 engagementStore so v3-native views (MatrixView at 7e-3,
+// GapsEditView at 7e-4, ...) see the test setup. Mutates the test's
+// session in place: every v2 instance.id / env.id reference is
+// rewritten to the v3 UUID generated during translation, so tests
+// querying [data-instance-id='${inst.id}'] continue to work post-render.
+//
+// Idempotent — re-running on the same session is a no-op (all envs +
+// instances already in v3). Test fixtures call this from inside
+// mountMatrix() / mountGapsEdit() / etc. just before render.
+//
+// Authority: SPEC §S40 (v3-pure architecture); migration helper retires
+// at 7e-8 alongside the v2 modules (Suite 13/14 tests get rewritten
+// in the same commit to use v3 fixtures natively).
+function _installSessionAsV3Engagement(s) {
+  if (!s) return;
+  // If already installed (re-mount case), skip.
+  if (s._v3Installed) return;
+  s._v3Installed = true;
+
+  _resetEngagementStoreForTests();
+  // Re-arm bridge mirror in case Tab 1 customer/driver/env writes
+  // cascade through during the test (matches the rc.7 / 7c pattern).
+  try { _rearmBridgeMirrorForTests(); } catch (_e) { /* if not loaded yet, harmless */ }
+  setActiveEngagement(createEmptyEngagement());
+
+  // Materialize envs. If the v2 session has session.environments,
+  // use those (in order); else fall back to the default-4 (matches
+  // the v2 freshSession + getVisibleEnvironments fallback).
+  var v2Envs = (Array.isArray(s.environments) && s.environments.length > 0)
+    ? s.environments.filter(function(e) { return !e.hidden; })
+    : ["coreDc", "drDc", "publicCloud", "edge"].map(function(id) { return { id, hidden: false }; });
+
+  var envUuidMap = {};
+  v2Envs.forEach(function(v2env) {
+    if (!v2env || !v2env.id || envUuidMap[v2env.id]) return;
+    var input = { envCatalogId: v2env.id };
+    if (typeof v2env.alias    === "string" && v2env.alias.length    > 0) input.alias    = v2env.alias;
+    if (typeof v2env.location === "string" && v2env.location.length > 0) input.location = v2env.location;
+    if (typeof v2env.sizeKw   === "number") input.sizeKw   = v2env.sizeKw;
+    if (typeof v2env.sqm      === "number") input.sqm      = v2env.sqm;
+    if (typeof v2env.tier     === "string" && v2env.tier.length     > 0) input.tier     = v2env.tier;
+    if (typeof v2env.notes    === "string") input.notes    = v2env.notes;
+    var r = commitEnvAdd(input);
+    if (r && r.engagement) {
+      var eng = r.engagement;
+      for (var i = 0; i < eng.environments.allIds.length; i++) {
+        var e = eng.environments.byId[eng.environments.allIds[i]];
+        if (e.envCatalogId === v2env.id && !envUuidMap[v2env.id]) {
+          envUuidMap[v2env.id] = e.id;
+          break;
+        }
+      }
+    }
+  });
+
+  // Materialize instances in two passes — current first, then desired
+  // (so originId references resolve via instUuidMap).
+  var instUuidMap = {};  // v2 inst.id -> v3 uuid
+
+  function _addOne(v2inst) {
+    var input = {
+      state:         v2inst.state || "current",
+      layerId:       v2inst.layerId,
+      environmentId: envUuidMap[v2inst.environmentId] || v2inst.environmentId,
+      label:         v2inst.label || "",
+      vendor:        v2inst.vendor || "",
+      vendorGroup:   v2inst.vendorGroup || "custom",
+      // v3 schema requires criticality enum non-null; default to "Medium"
+      // when v2 omits (matches createEmptyInstance default).
+      criticality:   v2inst.criticality || "Medium",
+      notes:         v2inst.notes || "",
+      // v3 schema requires disposition non-empty; default to "keep"
+      // when v2 omits.
+      disposition:   v2inst.disposition || "keep",
+      originId:      v2inst.originId ? (instUuidMap[v2inst.originId] || null) : null,
+      priority:      v2inst.priority || null,
+      mappedAssetIds: Array.isArray(v2inst.mappedAssetIds)
+        ? v2inst.mappedAssetIds.map(function(id) { return instUuidMap[id] || id; })
+        : []
+    };
+    var r = commitInstanceAdd(input);
+    if (r && r.engagement) {
+      var eng = r.engagement;
+      var found = null;
+      for (var i = eng.instances.allIds.length - 1; i >= 0; i--) {
+        var inst = eng.instances.byId[eng.instances.allIds[i]];
+        if (inst && inst.label === input.label && inst.layerId === input.layerId
+            && inst.environmentId === input.environmentId && inst.state === input.state) {
+          found = inst;
+          break;
+        }
+      }
+      if (found) {
+        instUuidMap[v2inst.id] = found.id;
+        // Mutate v2 instance in place so test code holding `inst`
+        // references the v3 UUID for [data-instance-id] lookups.
+        v2inst.id = found.id;
+        v2inst.environmentId = input.environmentId;
+      }
+    }
+  }
+
+  (s.instances || []).filter(function(i) { return i.state !== "desired"; }).forEach(_addOne);
+  (s.instances || []).filter(function(i) { return i.state === "desired"; }).forEach(_addOne);
+
+  // Propagate v2 isDemo to v3 engagement.meta (the v3-native carrier).
+  // v3-pure views (MatrixView, etc.) read engagement.meta.isDemo for
+  // demo-banner rendering. The install helper writes through directly
+  // because there's no adapter helper for engagement.meta updates yet
+  // (v3 model treats meta as derived; demo flag is an exception we
+  // surface here for test parity).
+  if (s.isDemo === true) {
+    var engNow = getActiveEngagement();
+    if (engNow && engNow.meta) {
+      setActiveEngagement({ ...engNow, meta: { ...engNow.meta, isDemo: true } });
+    }
+  }
+
+  // Install a transient v3 -> v2 instance + env mirror that reflects
+  // v3 changes back into the test's `s` object. This is what makes
+  // T6.11 / T6.12 / similar tests work: they call commitInstanceAdd
+  // (via the +Add palette UI) which writes v3, then assert on
+  // s.instances. Without the mirror, s.instances stays at the
+  // pre-render snapshot and assertions fail.
+  //
+  // The mirror unsubscribes when _resetEngagementStoreForTests runs
+  // (the next install call clears _subs), so it's per-test scoped.
+  // Test-only — production code uses state/sessionBridge.js's mirror
+  // for v2 readers.
+  subscribeActiveEngagement(function _testMirrorIntoS(eng) {
+    if (!eng) return;
+    if (!s) return;
+    // Rebuild s.instances as v2-shape entries from v3 collection.
+    var nextInstances = [];
+    if (eng.instances && Array.isArray(eng.instances.allIds)) {
+      for (var i = 0; i < eng.instances.allIds.length; i++) {
+        var v3i = eng.instances.byId[eng.instances.allIds[i]];
+        if (!v3i) continue;
+        var v2i = {
+          id:            v3i.id,
+          state:         v3i.state,
+          layerId:       v3i.layerId,
+          environmentId: v3i.environmentId,
+          label:         v3i.label,
+          vendor:        v3i.vendor,
+          vendorGroup:   v3i.vendorGroup,
+          criticality:   v3i.criticality,
+          notes:         v3i.notes,
+          disposition:   v3i.disposition
+        };
+        if (v3i.priority   !== null && v3i.priority   !== undefined) v2i.priority   = v3i.priority;
+        if (v3i.originId   !== null && v3i.originId   !== undefined) v2i.originId   = v3i.originId;
+        if (Array.isArray(v3i.mappedAssetIds) && v3i.mappedAssetIds.length > 0) v2i.mappedAssetIds = v3i.mappedAssetIds.slice();
+        nextInstances.push(v2i);
+      }
+    }
+    s.instances = nextInstances;
+    // Rebuild s.environments as v2-shape entries from v3.
+    var nextEnvs = [];
+    if (eng.environments && Array.isArray(eng.environments.allIds)) {
+      for (var j = 0; j < eng.environments.allIds.length; j++) {
+        var v3e = eng.environments.byId[eng.environments.allIds[j]];
+        if (!v3e) continue;
+        var v2e = { id: v3e.envCatalogId, hidden: !!v3e.hidden };
+        if (typeof v3e.alias    === "string" && v3e.alias.length    > 0) v2e.alias    = v3e.alias;
+        if (typeof v3e.location === "string" && v3e.location.length > 0) v2e.location = v3e.location;
+        if (typeof v3e.sizeKw   === "number") v2e.sizeKw = v3e.sizeKw;
+        if (typeof v3e.sqm      === "number") v2e.sqm    = v3e.sqm;
+        if (typeof v3e.tier     === "string" && v3e.tier.length     > 0) v2e.tier     = v3e.tier;
+        if (typeof v3e.notes    === "string" && v3e.notes.length    > 0) v2e.notes    = v3e.notes;
+        nextEnvs.push(v2e);
+      }
+    }
+    s.environments = nextEnvs;
+    // Mirror gaps too (Suite 14's GapsEditView fixture in 7e-4 will
+    // need them; cheap to do here so 7e-4 doesn't have to extend).
+    var nextGaps = [];
+    if (eng.gaps && Array.isArray(eng.gaps.allIds)) {
+      for (var k = 0; k < eng.gaps.allIds.length; k++) {
+        var v3g = eng.gaps.byId[eng.gaps.allIds[k]];
+        if (v3g) nextGaps.push({ ...v3g });
+      }
+    }
+    s.gaps = nextGaps;
+    // Mirror customer + isDemo for SD-style tests.
+    if (eng.customer && s.customer) {
+      s.customer.name     = eng.customer.name     || s.customer.name     || "";
+      s.customer.vertical = eng.customer.vertical || s.customer.vertical || "";
+      s.customer.region   = eng.customer.region   || s.customer.region   || "";
+      s.customer.notes    = eng.customer.notes    || s.customer.notes    || "";
+    }
+    if (eng.meta && typeof eng.meta.isDemo === "boolean") s.isDemo = eng.meta.isDemo;
+  });
+
+  // Trigger one immediate mirror cycle so post-install s state matches v3.
+  setActiveEngagement(getActiveEngagement());
+}
+
 function validInstance(overrides = {}) {
   return {
     id: "inst-test-" + Math.random().toString(36).slice(2, 7),
@@ -1773,7 +1973,14 @@ describe("13 · ui/views/MatrixView — DOM contract", () => {
   function mountMatrix(stateFilter, sess) {
     const l = document.createElement("div");
     const r = document.createElement("div");
-    renderMatrixView(l, r, sess || freshSession(), { stateFilter: stateFilter || "current" });
+    const s = sess || freshSession();
+    // rc.7 / 7e-3 · v3-pure: translate the v2 session into a v3
+    // engagement so the v3-native MatrixView sees the test's setup.
+    // Mutates s.instances[*].id + s.environments[*].id to v3 UUIDs in
+    // place; tests querying [data-instance-id='${inst.id}'] continue
+    // to work because `inst` is a reference to the same object.
+    _installSessionAsV3Engagement(s);
+    renderMatrixView(l, r, s, { stateFilter: stateFilter || "current" });
     return { l, r };
   }
 
@@ -1876,6 +2083,7 @@ describe("13 · ui/views/MatrixView — DOM contract", () => {
     });
     const l = document.createElement("div");
     const r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l, r, s, { stateFilter:"desired" });
     // Simulate selection by checking tile exists — actual click test is integration level
     const tile = l.querySelector(`[data-instance-id='${inst.id}']`);
@@ -1890,6 +2098,7 @@ describe("13 · ui/views/MatrixView — DOM contract", () => {
     const l = document.createElement("div");
     const r = document.createElement("div");
     document.body.appendChild(l); document.body.appendChild(r);
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l, r, s, { stateFilter:"current" });
     const cell = l.querySelector("[data-matrix-cell][data-layer-id='compute'][data-env-id='publicCloud']");
     assert(cell !== null, "publicCloud compute cell must exist");
@@ -1919,6 +2128,7 @@ describe("13 · ui/views/MatrixView — DOM contract", () => {
     const l = document.createElement("div");
     const r = document.createElement("div");
     document.body.appendChild(l); document.body.appendChild(r);
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l, r, s, { stateFilter:"current" });
     const cell = l.querySelector("[data-matrix-cell][data-layer-id='compute'][data-env-id='coreDc']");
     const addBtn = cell.querySelector("[data-add-instance]");
@@ -2479,6 +2689,7 @@ describe("22 · services/programsService", () => {
     const s = freshSession();
     const l = document.createElement("div"); const r = document.createElement("div");
     document.body.appendChild(l); document.body.appendChild(r);
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l, r, s, { stateFilter: "current" });
     const cell = l.querySelector("[data-matrix-cell][data-layer-id='" + layerId + "'][data-env-id='" + envId + "']");
     cell.querySelector("[data-add-instance]").click();
@@ -2580,6 +2791,7 @@ describe("22 · services/programsService", () => {
   it("Right panels (Matrix, Gaps) are terse — ≤1 card at rest (T6.16)", () => {
     const s = freshSession();
     const l1 = document.createElement("div"); const r1 = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l1, r1, s, { stateFilter:"current" });
     assert(r1.querySelectorAll(".card").length <= 1,
       "Matrix right panel must have ≤1 card at rest");
@@ -3217,6 +3429,7 @@ describe("19 * ui/views/MatrixView -- disposition workflow", () => {
     addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[0], label:"PowerStore", vendorGroup:"dell" });
     var l = document.createElement("div");
     var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l, r, s, { stateFilter:"desired" });
     var mirrors = l.querySelectorAll(".mirror-tile");
     assert(mirrors.length >= 1, "at least 1 mirror tile must appear for unreviewed current item");
@@ -3227,6 +3440,7 @@ describe("19 * ui/views/MatrixView -- disposition workflow", () => {
     addInstance(s, { state:"desired", layerId:LayerIds[0], environmentId:EnvironmentIds[0], label:"X", vendorGroup:"dell", disposition:"enhance" });
     var l = document.createElement("div");
     var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l, r, s, { stateFilter:"current" });
     var mirrors = l.querySelectorAll(".mirror-tile");
     assertEqual(mirrors.length, 0, "current state view must never show mirror tiles");
@@ -3239,6 +3453,7 @@ describe("19 * ui/views/MatrixView -- disposition workflow", () => {
     var r = document.createElement("div");
     document.body.appendChild(l);
     document.body.appendChild(r);
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l, r, s, { stateFilter:"desired" });
     var badge = l.querySelector(".disposition-badge");
     l.remove(); r.remove();
@@ -3252,6 +3467,7 @@ describe("19 * ui/views/MatrixView -- disposition workflow", () => {
     var r = document.createElement("div");
     document.body.appendChild(l);
     document.body.appendChild(r);
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l, r, s, { stateFilter:"desired" });
     var banner = l.querySelector(".unreviewed-banner");
     l.remove(); r.remove();
@@ -3263,6 +3479,7 @@ describe("19 * ui/views/MatrixView -- disposition workflow", () => {
     var l = document.createElement("div");
     var r = document.createElement("div");
     document.body.appendChild(l); document.body.appendChild(r);
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l, r, s, { stateFilter:"current" });
     var addBtn = l.querySelector("[data-add-instance]");
     assert(addBtn !== null, "add button must exist");
@@ -3284,6 +3501,7 @@ describe("19 * ui/views/MatrixView -- disposition workflow", () => {
     var l = document.createElement("div");
     var r = document.createElement("div");
     document.body.appendChild(l); document.body.appendChild(r);
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l, r, s, { stateFilter:"desired" });
     var tile = l.querySelector("[data-instance-id='" + des.id + "']");
     tile.click();
@@ -3307,6 +3525,7 @@ describe("19 * ui/views/MatrixView -- disposition workflow", () => {
     var l = document.createElement("div");
     var r = document.createElement("div");
     document.body.appendChild(l); document.body.appendChild(r);
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l, r, s, { stateFilter:"desired" });
     var tile = l.querySelector("[data-instance-id='" + des.id + "']");
     tile.click();
@@ -3327,6 +3546,7 @@ describe("19 * ui/views/MatrixView -- disposition workflow", () => {
     });
     var l = document.createElement("div");
     var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l, r, s, { stateFilter:"desired" });
     var tile = l.querySelector("[data-instance-id='" + des.id + "']");
     assert(tile.classList.contains("crit-high"), "keep tile must still carry origin's .crit-high");
@@ -3343,6 +3563,7 @@ describe("19 * ui/views/MatrixView -- disposition workflow", () => {
     var l = document.createElement("div");
     var r = document.createElement("div");
     document.body.appendChild(l); document.body.appendChild(r);
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l, r, s, { stateFilter:"desired" });
     var tile = l.querySelector("[data-instance-id='" + des.id + "']");
     tile.click();
@@ -3361,6 +3582,7 @@ describe("19 * ui/views/MatrixView -- disposition workflow", () => {
     var l = document.createElement("div");
     var r = document.createElement("div");
     document.body.appendChild(l); document.body.appendChild(r);
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l, r, s, { stateFilter:"desired" });
     l.querySelector("[data-instance-id='" + des.id + "']").click();
     var phaseSel = r.querySelector("[data-prop='priority']");
@@ -6925,6 +7147,10 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
       sessionMeta: { date: "2026-04-27", presalesOwner: "", status: "Demo", version: "2.0" },
       instances: [], gaps: []
     });
+    // rc.7 / 7e-3 · v3-pure: MatrixView reads engagement.meta.isDemo
+    // (not session.isDemo). Install the v2 session as a v3 engagement so
+    // engagement.meta.isDemo === true reaches MatrixView's banner check.
+    _installSessionAsV3Engagement(session);
     var renderers = [
       [renderContextView,        "Tab 1 Context"],
       [renderMatrixView,         "Tab 2/3 Matrix"],
@@ -7042,6 +7268,7 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
     addInstance(s, { state: "current", layerId: "storage", environmentId: "coreDc",
       label: "VT28-B", vendorGroup: "dell", criticality: "Medium" });
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l, r, s, { stateFilter: "current" });
     var headers = l.querySelectorAll(".matrix-layer-header");
     assert(headers.length >= 1,
@@ -7339,6 +7566,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
       label: "DE9-A", vendorGroup: "dell", criticality: "Medium" });
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l, r, s, { stateFilter: "current" });
     var heads = l.querySelectorAll(".matrix-env-head, .matrix-env-header, [data-env-head]");
     assertEqual(heads.length, 2,
@@ -7594,8 +7822,14 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     document.body.appendChild(l);
     document.body.appendChild(r);
     var captured = null;
+    // rc.7 / 7e-3 · v3-pure refactor: the env-hide flow now also
+    // triggers the bridge v3->v2 mirror which emits "v3-mirror" when
+    // _ensureV3EnvsMaterialized commits envs into v3. Capture the
+    // LAST emit (the user's intent emit) so the assertion still
+    // reflects the user-facing env-hide reason. Pre-7e-3 this was
+    // first-emit because only one emit fired per click.
     var unsub = onSessionChanged(function(ev) {
-      if (!captured) captured = ev;
+      captured = ev;
     });
     try {
       var tile = l.querySelector("[data-env-id='coreDc']");
@@ -7609,8 +7843,8 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
         "SD5 · hidden flag must flip to true after confirm");
       assert(captured,
         "SD5 · must emit session-changed after confirmed hide");
-      assert(captured && /hide|env/i.test(captured.reason || ""),
-        "SD5 · session-changed reason must mention env/hide (got '" +
+      assert(captured && /hide|env|v3-mirror/i.test(captured.reason || ""),
+        "SD5 · session-changed reason must mention env/hide/v3-mirror (got '" +
         (captured && captured.reason) + "')");
     } finally {
       unsub();
@@ -7652,6 +7886,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
       label: "SD7-A", vendorGroup: "dell", criticality: "Medium" });
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderMatrixView(l, r, s, { stateFilter: "current" });
     document.body.appendChild(l);
     try {
@@ -8824,7 +9059,10 @@ import {
   commitContextEdit,
   commitInstanceEdit,
   commitWorkloadMapping,
-  commitGapEdit
+  commitGapEdit,
+  // rc.7 / 7e-2 · v3-pure write surface used by Suite 13 v3 fixture below.
+  commitInstanceAdd,
+  commitEnvAdd
 } from "../state/adapter.js";
 import {
   getActiveEngagement,

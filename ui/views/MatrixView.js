@@ -1,24 +1,45 @@
-// ui/views/MatrixView.js -- current / desired state matrix (fixed disposition workflow)
+// ui/views/MatrixView.js -- current / desired state matrix (v3-pure).
+//
+// rc.7 / 7e-3 · v3-pure rewrite per SPEC §S40 + RULES §16 CH34. All
+// reads operate on the v3 engagement (via getActiveEngagement()); all
+// writes route through state/adapter.js commit* helpers. The legacy
+// `session` arg in the renderer signature is preserved for caller
+// compatibility but ignored by the body -- every entity reference is
+// resolved against engagementStore. Suite 13 tests that previously
+// constructed v2 sessions and asserted on session.instances now set
+// the v3 engagementStore via setActiveEngagement before rendering.
 
-import { LAYERS, ENVIRONMENTS, CATALOG, getEnvLabel, getVisibleEnvironments } from "../../core/config.js";
-import { addInstance, updateInstance, deleteInstance,
-         mapAsset, unmapAsset, proposeCriticalityUpgrades } from "../../interactions/matrixCommands.js";
-import { createGap } from "../../interactions/gapsCommands.js";
-import { saveToLocalStorage } from "../../state/sessionStore.js";
+import { LAYERS, ENV_CATALOG, CATALOG } from "../../core/config.js";
+import {
+  // v3-pure adapter write surface (rc.7 / 7e-2):
+  commitInstanceAdd,
+  commitInstanceUpdate,
+  commitInstanceRemove,
+  commitWorkloadMap,
+  commitGapAdd
+} from "../../state/adapter.js";
+import { getActiveEngagement } from "../../state/engagementStore.js";
 import {
   DISPOSITION_ACTIONS, ACTION_TO_GAP_TYPE,
   getDesiredCounterpart, getCurrentSource, buildGapFromDisposition,
-  syncGapFromDesired, syncGapsFromCurrentCriticality
-} from "../../interactions/desiredStateSync.js";
+  proposeCriticalityUpgrades,
+  commitSyncGapFromDesired,
+  commitSyncGapsFromCurrentCriticality
+} from "../../state/dispositionLogic.js";
 import { helpButton } from "./HelpModal.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
 
-export function renderMatrixView(left, right, session, opts) {
+export function renderMatrixView(left, right, _legacySession, opts) {
+  // _legacySession is ignored in v3-pure mode -- kept in the signature
+  // so existing callers (app.js, Suite 13 tests) don't break. Every
+  // read in this view resolves against getActiveEngagement().
   var stateFilter    = (opts && opts.stateFilter) || "current";
   var selectedInstId = null;
 
-  // Demo banner
-  if (session.isDemo) renderDemoBanner(left);
+  // Demo banner -- v3 engagement carries isDemo on engagement.meta.
+  // Falls back to false if meta missing (defensive).
+  var bootEng = getActiveEngagement();
+  if (bootEng && bootEng.meta && bootEng.meta.isDemo) renderDemoBanner(left);
 
   // Header
   var header = mk("div", "card");
@@ -40,46 +61,44 @@ export function renderMatrixView(left, right, session, opts) {
     unreviewedEl.id = "unreviewed-banner-wrap";
     left.appendChild(header);
     left.appendChild(unreviewedEl);
-    updateUnreviewedBanner(unreviewedEl, session);
+    updateUnreviewedBanner(unreviewedEl);
   } else {
     left.appendChild(header);
   }
 
-  // v2.4.15-polish . hidden envs drop entirely from Tab 2/3 (was: greyed
-  // top-to-bottom). The single mental model is: hide = remove from view
-  // everywhere except Tab 1's Hidden sub-section, which is the only place
-  // a user sees + restores them. Reduces visual noise + keeps the grid
-  // honest with what the report will show.
-  var activeEnvs = getVisibleEnvironments(session);
+  // v3-pure visible-env list. Walks engagement.environments + filters
+  // by !hidden. Each entry exposes { uuid (v3 id), envCatalogId, label,
+  // alias } so downstream code can address either by UUID (data-env-id
+  // attribute, instance.environmentId match) or by display label.
+  var activeEnvs = _getVisibleEnvs();
 
   // Grid
   var wrap = mk("div", "matrix-scroll-wrap");
   var grid = mk("div", "matrix-grid");
   grid.style.gridTemplateColumns = "160px repeat(" + activeEnvs.length + ", 1fr)";
 
-  // Header row. v2.4.13 polish iter-2: each env header now follows the
-  // GPLC sample's "code + name" idiom: a mono "E.0X" code in Dell-blue
-  // above (or before) the sentence-case env name, so the column header
-  // reads as a deliberate reference label instead of a flat caps line.
+  // Header row.
   grid.appendChild(mk("div", "matrix-corner"));
   activeEnvs.forEach(function(env, eIdx) {
     var h = mk("div", "matrix-env-head");
-    h.setAttribute("data-env-id", env.id);
-    h.setAttribute("data-env",    env.id);
+    // data-env-id: v2-compatible catalog ref (e.g. "coreDc") so Suite 13
+    // tests + any external CSS / a11y selector keep working with the
+    // v2-shape attribute. The v3 UUID lives on data-env-uuid; internal
+    // cell-targeting code reads data-env-uuid for instance.environmentId
+    // matching, never data-env-id.
+    h.setAttribute("data-env-id",   env.envCatalogId);
+    h.setAttribute("data-env-uuid", env.uuid);
+    h.setAttribute("data-env",      env.envCatalogId);
     var code = mk("span", "matrix-env-code");
     code.textContent = "E." + ("0" + (eIdx + 1)).slice(-2);
     var name = mk("span", "matrix-env-name");
-    name.textContent = getEnvLabel(env.id, session);
+    name.textContent = env.label;
     h.appendChild(code);
     h.appendChild(name);
     grid.appendChild(h);
   });
 
-  // Layer rows. v2.4.13 polish iter-2: each layer header now matches
-  // the GPLC L.0X pattern: a mono Dell-blue "L.0X" code prefix + sans
-  // 14px layer name + a 2px muted-hue left bar for at-a-glance
-  // recognition. Header wrapper carries font-weight 600 so VT28 stays
-  // GREEN; the inner .matrix-layer-name can override to lighter weight.
+  // Layer rows.
   LAYERS.forEach(function(layer, lIdx) {
     var hdr = mk("div", "matrix-layer-header");
     hdr.setAttribute("data-layer-id", layer.id);
@@ -97,8 +116,12 @@ export function renderMatrixView(left, right, session, opts) {
       var cell = mk("div", "matrix-cell");
       cell.setAttribute("data-matrix-cell", "");
       cell.setAttribute("data-layer-id", layer.id);
-      cell.setAttribute("data-env-id",   env.id);
-      renderCell(cell, layer.id, env.id);
+      // data-env-id: v2-compatible catalog ref. data-env-uuid: v3 UUID.
+      // Internal refreshCell + renderCell address by UUID; tests +
+      // legacy CSS use data-env-id.
+      cell.setAttribute("data-env-id",   env.envCatalogId);
+      cell.setAttribute("data-env-uuid", env.uuid);
+      renderCell(cell, layer.id, env.uuid);
       grid.appendChild(cell);
     });
   });
@@ -107,19 +130,21 @@ export function renderMatrixView(left, right, session, opts) {
   left.appendChild(wrap);
   showHint(right);
 
-  // ---- Cell renderer ----
-  function renderCell(cell, layerId, envId) {
+  // ---- Cell renderer (v3-pure) ----
+  function renderCell(cell, layerId, envUuid) {
     cell.innerHTML = "";
+    var eng = getActiveEngagement();
+    if (!eng) return;
 
     // In desired view: show current items not yet reviewed as ghost tiles
     if (stateFilter === "desired") {
-      var currentInCell = (session.instances || []).filter(function(i) {
-        return i.state === "current" && i.layerId === layerId && i.environmentId === envId;
+      var currentInCell = _walkInstances(eng, function(i) {
+        return i.state === "current" && i.layerId === layerId && i.environmentId === envUuid;
       });
       currentInCell.forEach(function(curInst) {
-        var hasCounterpart = (session.instances || []).some(function(d) {
+        var hasCounterpart = _walkInstances(eng, function(d) {
           return d.state === "desired" && d.originId === curInst.id;
-        });
+        }).length > 0;
         if (!hasCounterpart) {
           cell.appendChild(buildGhostTile(curInst));
         }
@@ -127,8 +152,8 @@ export function renderMatrixView(left, right, session, opts) {
     }
 
     // Actual desired/current instances in this cell
-    var instances = (session.instances || []).filter(function(i) {
-      return i.state === stateFilter && i.layerId === layerId && i.environmentId === envId;
+    var instances = _walkInstances(eng, function(i) {
+      return i.state === stateFilter && i.layerId === layerId && i.environmentId === envUuid;
     });
     instances.forEach(function(inst) {
       cell.appendChild(buildTile(inst));
@@ -138,21 +163,23 @@ export function renderMatrixView(left, right, session, opts) {
     var addBtn = mk("button", "add-tile-btn");
     addBtn.setAttribute("data-add-instance", "");
     addBtn.setAttribute("data-layer-id", layerId);
-    addBtn.setAttribute("data-env-id",   envId);
+    addBtn.setAttribute("data-env-id",   envUuid);
     addBtn.textContent = "+ Add";
     addBtn.addEventListener("click", function(e) {
       e.stopPropagation();
-      openCommandPalette(layerId, envId);
+      openCommandPalette(layerId, envUuid);
     });
     cell.appendChild(addBtn);
   }
 
-  function refreshCell(layerId, envId) {
-    var cell = grid.querySelector("[data-layer-id='" + layerId + "'][data-env-id='" + envId + "']");
-    if (cell) renderCell(cell, layerId, envId);
+  function refreshCell(layerId, envUuid) {
+    // Cells are now keyed by data-env-uuid for internal lookups (the
+    // v3 invariant); data-env-id is the v2-compat catalog ref attribute.
+    var cell = grid.querySelector("[data-layer-id='" + layerId + "'][data-env-uuid='" + envUuid + "']");
+    if (cell) renderCell(cell, layerId, envUuid);
     if (stateFilter === "desired") {
       var wrap2 = document.getElementById("unreviewed-banner-wrap");
-      if (wrap2) updateUnreviewedBanner(wrap2, session);
+      if (wrap2) updateUnreviewedBanner(wrap2);
     }
   }
 
@@ -179,16 +206,14 @@ export function renderMatrixView(left, right, session, opts) {
   function buildTile(inst) {
     var vg  = inst.vendorGroup || "custom";
 
-    // Severity accent , current tiles use own criticality;
-    // desired tiles with an originId inherit from the source current instance (carry-through).
-    // Net-new desired tiles (introduce, no originId) get no criticality class (T2.14).
     var critLevel   = null;
     var critSourceLbl = null;
     if (stateFilter === "current" && inst.criticality) {
       critLevel = inst.criticality.toLowerCase();
       critSourceLbl = inst.criticality;
     } else if (stateFilter === "desired" && inst.originId) {
-      var origin = (session.instances || []).find(function(i) { return i.id === inst.originId; });
+      var eng = getActiveEngagement();
+      var origin = eng && eng.instances && eng.instances.byId[inst.originId];
       if (origin && origin.criticality) {
         critLevel = origin.criticality.toLowerCase();
         critSourceLbl = origin.criticality + " , carried from '" + origin.label + "'";
@@ -203,19 +228,16 @@ export function renderMatrixView(left, right, session, opts) {
 
     var lbl = mk("span", "tile-label"); lbl.textContent = inst.label; tile.appendChild(lbl);
 
-    // Disposition badge (desired with originId)
     if (stateFilter === "desired" && inst.disposition) {
       var da = DISPOSITION_ACTIONS.find(function(a) { return a.id === inst.disposition; });
       var badge = mk("span", "disposition-badge badge-" + inst.disposition);
       badge.textContent = da ? da.label : inst.disposition;
       tile.appendChild(badge);
     }
-    // Priority badge
     if (stateFilter === "desired" && inst.priority && !inst.disposition) {
       var pb = mk("span", "priority-badge priority-" + inst.priority.toLowerCase());
       pb.textContent = inst.priority; tile.appendChild(pb);
     }
-    // Severity shape (dual-channel accessibility; SPEC §4.2).
     if (critLevel) {
       var shape = mk("span", "crit-shape-" + critLevel);
       shape.title = "Criticality: " + critSourceLbl;
@@ -226,8 +248,8 @@ export function renderMatrixView(left, right, session, opts) {
     del.addEventListener("click", function(e) {
       e.stopPropagation();
       if (!confirm("Remove " + inst.label + "?")) return;
-      deleteInstance(session, inst.id);
-      saveToLocalStorage();
+      var r = commitInstanceRemove(inst.id);
+      if (r && r.ok === false) { showToast(r.errors ? "Remove failed: " + r.errors[0].message : "Remove failed", "err"); return; }
       if (selectedInstId === inst.id) { selectedInstId = null; showHint(right); }
       refreshCell(inst.layerId, inst.environmentId);
     });
@@ -239,8 +261,8 @@ export function renderMatrixView(left, right, session, opts) {
         t.classList.toggle("selected", t.getAttribute("data-instance-id") === inst.id);
       });
       if (stateFilter === "desired" && inst.originId && !inst.disposition) {
-        // Has an origin but no disposition yet -- show disposition panel
-        var srcInst = getCurrentSource(session, inst);
+        var eng = getActiveEngagement();
+        var srcInst = getCurrentSource(eng, inst);
         if (srcInst) { showDispositionPanel(right, srcInst, inst.disposition); return; }
       }
       showDetailPanel(right, inst);
@@ -261,7 +283,6 @@ export function renderMatrixView(left, right, session, opts) {
 
     panel.appendChild(mkSep("Choose a disposition"));
 
-    // Big action buttons
     var grid2 = mk("div", "disposition-grid");
     DISPOSITION_ACTIONS.forEach(function(action) {
       var btn = mk("div", "disposition-btn" + (preselected === action.id ? " disposition-btn-selected" : ""));
@@ -275,7 +296,6 @@ export function renderMatrixView(left, right, session, opts) {
     });
     panel.appendChild(grid2);
 
-    // Notes for this review
     var notesGroup = mk("div", "form-group");
     notesGroup.style.marginTop = "12px";
     var notesLabel = mk("label", "form-label"); notesLabel.textContent = "Notes (optional)";
@@ -288,30 +308,29 @@ export function renderMatrixView(left, right, session, opts) {
     right.appendChild(panel);
   }
 
-  // ---- Apply disposition (fixed: update vs create) ----
+  // ---- Apply disposition (v3-pure) ----
   function applyDisposition(curInst, actionId) {
     var notes = (document.getElementById("disposition-notes") || {}).value || "";
+    var eng = getActiveEngagement();
+    if (!eng) return;
 
-    // Find existing desired counterpart (may have been created before)
-    var existing = getDesiredCounterpart(session, curInst.id);
+    // Find existing desired counterpart (may have been created before).
+    var existing = getDesiredCounterpart(eng, curInst.id);
 
     var desiredInst;
     if (existing) {
-      // Update the existing desired instance instead of creating a new one
-      desiredInst = updateInstance(session, existing.id, {
+      var r = commitInstanceUpdate(existing.id, {
         disposition: actionId,
         notes:       notes || existing.notes || ""
       });
+      if (r && r.ok === false) { showToast("Update failed: " + (r.errors && r.errors[0] && r.errors[0].message), "err"); return; }
+      desiredInst = getActiveEngagement().instances.byId[existing.id];
     } else {
-      // First time -- create the desired counterpart
-      var newLabel = actionId === "retire"
-        ? curInst.label + " [RETIRE]"
-        : curInst.label;
-
-      desiredInst = addInstance(session, {
+      var newLabel = actionId === "retire" ? curInst.label + " [RETIRE]" : curInst.label;
+      var addRes = commitInstanceAdd({
         state:         "desired",
         layerId:       curInst.layerId,
-        environmentId: curInst.environmentId,
+        environmentId: curInst.environmentId,   // v3 env UUID
         label:         newLabel,
         vendor:        curInst.vendor,
         vendorGroup:   curInst.vendorGroup,
@@ -320,36 +339,48 @@ export function renderMatrixView(left, right, session, opts) {
         notes:         notes,
         priority:      "Now"
       });
+      if (addRes && addRes.ok === false) { showToast("Create failed: " + (addRes.errors && addRes.errors[0] && addRes.errors[0].message), "err"); return; }
+      // Find the freshly-added instance -- newest by createdAt OR matched
+      // by all the fields we just set; use the engagement reference
+      // that commitAction returned.
+      var nextEng = (addRes && addRes.engagement) || getActiveEngagement();
+      desiredInst = _walkInstances(nextEng, function(i) {
+        return i.state === "desired" && i.originId === curInst.id;
+      })[0];
     }
 
-    // Auto-create gap draft if applicable (only if no existing gap already links these)
+    // Auto-create gap draft if applicable. Walk gaps from the latest
+    // engagement reference (post commit).
     var gapDrafted = false;
-    if (ACTION_TO_GAP_TYPE[actionId]) {
-      var alreadyLinked = (session.gaps || []).some(function(g) {
-        return (g.relatedCurrentInstanceIds || []).indexOf(curInst.id) >= 0
-            || (g.relatedDesiredInstanceIds  || []).indexOf(desiredInst.id) >= 0;
+    var engPost = getActiveEngagement();
+    if (ACTION_TO_GAP_TYPE[actionId] && desiredInst) {
+      var alreadyLinked = engPost.gaps.allIds.some(function(gapId) {
+        var g = engPost.gaps.byId[gapId];
+        return (Array.isArray(g.relatedCurrentInstanceIds) && g.relatedCurrentInstanceIds.indexOf(curInst.id) >= 0)
+            || (Array.isArray(g.relatedDesiredInstanceIds) && g.relatedDesiredInstanceIds.indexOf(desiredInst.id) >= 0);
       });
       if (!alreadyLinked) {
-        var gapProps = buildGapFromDisposition(session, desiredInst);
+        var gapProps = buildGapFromDisposition(engPost, desiredInst);
         if (gapProps) {
-          try { createGap(session, gapProps); gapDrafted = true; } catch(e) { /* soft fail */ }
+          var gapRes = commitGapAdd(gapProps);
+          if (gapRes && gapRes.ok !== false) gapDrafted = true;
         }
       }
     }
 
-    // Sync: if disposition changed to "keep", drop any existing linked gaps (SPEC §7.3 / T3.5).
-    // Also handles gapType re-derive when disposition changed between non-keep values.
-    syncGapFromDesired(session, desiredInst.id);
+    // Sync linked gaps' phase/gapType/urgency from the post-edit
+    // desired instance.
+    if (desiredInst) commitSyncGapFromDesired(desiredInst.id);
 
-    saveToLocalStorage();
     refreshCell(curInst.layerId, curInst.environmentId);
-    // Show the detail panel with the selected disposition pre-populated
-    showDetailPanel(right, desiredInst);
+    if (desiredInst) showDetailPanel(right, _liveInstance(desiredInst.id) || desiredInst);
 
-    // v2.4.11 · C1 · post-draft toast tells the user where to find the
-    // freshly-drafted gap. Counts unreviewed so the user knows the total.
     if (gapDrafted) {
-      var unreviewed = (session.gaps || []).filter(function(g) { return g.reviewed === false && g.status !== "closed"; }).length;
+      var engNow = getActiveEngagement();
+      var unreviewed = engNow.gaps.allIds.filter(function(gid) {
+        var g = engNow.gaps.byId[gid];
+        return g.reviewed === false && g.status !== "closed";
+      }).length;
       showToast("↳ Gap drafted on Tab 4 (" + unreviewed + " unreviewed)", "ok");
     } else if (actionId === "keep") {
       showToast("Set to Keep , any linked gaps were closed (Tab 4 → Show closed)", "ok");
@@ -359,15 +390,16 @@ export function renderMatrixView(left, right, session, opts) {
   }
 
   // ---- Command palette ----
-  function openCommandPalette(layerId, envId) {
+  function openCommandPalette(layerId, envUuid) {
     document.getElementById("cmd-palette")?.remove();
     var overlay = mk("div", "cmd-overlay"); overlay.id = "cmd-palette";
     var box     = mk("div", "cmd-box");
 
     var layerObj = LAYERS.find(function(l) { return l.id === layerId; });
-    var envObj   = ENVIRONMENTS.find(function(e) { return e.id === envId; });
+    var envCatalogId = _envCatalogIdFromUuid(envUuid);
+    var envCatalogObj = ENV_CATALOG.find(function(e) { return e.id === envCatalogId; });
     var ctx = mk("div", "cmd-context");
-    ctx.textContent = (layerObj ? layerObj.label : layerId) + " -- " + (envObj ? envObj.label : envId);
+    ctx.textContent = (layerObj ? layerObj.label : layerId) + " -- " + (envCatalogObj ? envCatalogObj.label : envCatalogId);
     box.appendChild(ctx);
 
     var srch = document.createElement("input");
@@ -384,11 +416,10 @@ export function renderMatrixView(left, right, session, opts) {
     document.body.appendChild(overlay);
     srch.focus();
 
-    // Environment-appropriate catalog: entries without an `environments`
-    // whitelist are valid everywhere; entries with one must include the
-    // current cell's envId (SPEC §3.4, T2.2 / T2.5).
+    // Catalog filter is keyed by envCatalogId (the v2-style "coreDc" /
+    // "publicCloud" key) -- entries opt into specific env catalogs.
     var catalog = (CATALOG[layerId] || []).filter(function(t) {
-      return !t.environments || t.environments.indexOf(envId) >= 0;
+      return !t.environments || t.environments.indexOf(envCatalogId) >= 0;
     });
     var activeIdx = -1;
 
@@ -411,14 +442,11 @@ export function renderMatrixView(left, right, session, opts) {
         });
       });
 
-      // v2.1 · Three-path add for names not in the catalog (SPEC §7.2).
       if (q && !filtered.find(function(t) { return t.label.toLowerCase() === q.toLowerCase(); })) {
         results.appendChild(mkt("div", "cmd-group-sep", "Add new"));
-        // 1) Dell SKU
         results.appendChild(buildItem("+ Add \"" + q + "\" , Dell SKU", "Dell", "dell", function() {
           addToCell(q, "Dell", "dell");
         }));
-        // 2) 3rd-party vendor , opens inline chooser
         var thirdParty = mk("div", "cmd-item cmd-item-3p");
         thirdParty.appendChild(mk("span", "cmd-dot cmd-dot-nonDell"));
         thirdParty.appendChild(mkt("span", "cmd-item-name", "+ Add \"" + q + "\" , 3rd-party vendor..."));
@@ -429,14 +457,12 @@ export function renderMatrixView(left, right, session, opts) {
           items.forEach(function(el, i) { el.classList.toggle("active", el === thirdParty); if (el === thirdParty) activeIdx = i; });
         });
         results.appendChild(thirdParty);
-        // 3) Custom / internal
         results.appendChild(buildItem("+ Add \"" + q + "\" , Custom / internal", "Custom", "custom", function() {
           addToCell(q, "Custom", "custom");
         }));
       }
     }
 
-    // v2.1 · 3rd-party vendor quick-picker. Known list first, "Other (type)" fallback.
     var COMMON_VENDORS = ["HPE","Cisco","NetApp","Pure","IBM","Microsoft","VMware","Nutanix","Red Hat","AWS","Azure","Google"];
     function openVendorChooser(name) {
       results.innerHTML = "";
@@ -446,7 +472,6 @@ export function renderMatrixView(left, right, session, opts) {
           addToCell(name, v, "nonDell");
         }));
       });
-      // Other → reveals a text input
       var otherRow = mk("div", "cmd-item");
       otherRow.appendChild(mk("span", "cmd-dot cmd-dot-nonDell"));
       otherRow.appendChild(mkt("span", "cmd-item-name", "Other (type vendor name)"));
@@ -488,9 +513,19 @@ export function renderMatrixView(left, right, session, opts) {
     function getItems() { return Array.from(results.querySelectorAll(".cmd-item")); }
 
     function addToCell(label, vendor, vg) {
-      addInstance(session, { state:stateFilter, layerId:layerId, environmentId:envId, label:label, vendor:vendor, vendorGroup:vg });
-      saveToLocalStorage();
-      refreshCell(layerId, envId);
+      var r = commitInstanceAdd({
+        state:         stateFilter,
+        layerId:       layerId,
+        environmentId: envUuid,
+        label:         label,
+        vendor:        vendor,
+        vendorGroup:   vg
+      });
+      if (r && r.ok === false) {
+        showToast("Add failed: " + (r.errors && r.errors[0] && r.errors[0].message), "err");
+        return;
+      }
+      refreshCell(layerId, envUuid);
     }
 
     function close() { overlay.remove(); }
@@ -524,9 +559,9 @@ export function renderMatrixView(left, right, session, opts) {
     vb.textContent = inst.vendorGroup === "dell" ? "Dell" : inst.vendorGroup === "nonDell" ? "Non-Dell" : "Custom";
     panel.appendChild(vb);
 
-    // Show origin link info
     if (inst.originId) {
-      var src = getCurrentSource(session, inst);
+      var eng = getActiveEngagement();
+      var src = getCurrentSource(eng, inst);
       if (src) {
         var originNote = mk("div", "detail-origin");
         originNote.textContent = "Mirrors current: " + src.label;
@@ -539,16 +574,12 @@ export function renderMatrixView(left, right, session, opts) {
     if (stateFilter === "current") {
       form.appendChild(fg("Criticality", selEl("criticality", ["","Low","Medium","High"], inst.criticality || "")));
     } else {
-      // Disposition
       var dispOpts = [""].concat(DISPOSITION_ACTIONS.map(function(a) { return a.id; }));
       var dispLabels = {};
       DISPOSITION_ACTIONS.forEach(function(a) { dispLabels[a.id] = a.label; });
       form.appendChild(fg("Action", selEl("disposition", dispOpts, inst.disposition || "", dispLabels)));
 
-      // Phase , hidden entirely when disposition is "keep" (no change = no schedule).
-      // Label uses compound "Now (0-12 months)" etc. per SPEC §7.3; the JSON key stays `priority`.
       if (inst.disposition !== "keep") {
-        // Default "Next" for net-new introduce items (no originId, no priority yet).
         var currentPhase = inst.priority || (!inst.originId ? "Next" : "");
         var phaseLabels = {
           "":      "-- choose --",
@@ -561,7 +592,6 @@ export function renderMatrixView(left, right, session, opts) {
           "Phase drives the roadmap column and the linked gap's phase. Defaults to 'Next' for net-new items. Change it to reschedule the related project.");
         form.appendChild(fg("Phase", phaseSel));
       }
-      // Timeline dropped per SPEC §7.3 , collapsed into the compound Phase label.
     }
 
     var notesHint = stateFilter === "current"
@@ -574,22 +604,36 @@ export function renderMatrixView(left, right, session, opts) {
     saveBtn.addEventListener("click", function() {
       var patch = {};
       form.querySelectorAll("[data-prop]").forEach(function(el) {
-        patch[el.getAttribute("data-prop")] = el.value || undefined;
-      });
-      try {
-        updateInstance(session, inst.id, patch);
-        // Post-save sync: keep linked gaps in line with upstream changes (SPEC §6.3).
-        if (stateFilter === "desired") {
-          syncGapFromDesired(session, inst.id);
-        } else if (stateFilter === "current") {
-          syncGapsFromCurrentCriticality(session, inst.id);
+        var v = el.value;
+        // v3-pure: schema fields default to "" for notes, null for
+        // optional priority/disposition. Map empty-string to null
+        // for nullable fields; pass through for others.
+        var prop = el.getAttribute("data-prop");
+        if ((prop === "priority" || prop === "disposition") && (v === "" || v === undefined)) {
+          patch[prop] = null;
+        } else if (prop === "criticality" && (v === "" || v === undefined)) {
+          // criticality is required-non-null in schema; coerce empty to "Low" default.
+          patch[prop] = "Low";
+        } else {
+          patch[prop] = v;
         }
-        saveToLocalStorage();
-        saveBtn.textContent = "Saved";
-        setTimeout(function() { saveBtn.textContent = "Save changes"; refreshCell(inst.layerId, inst.environmentId); }, 800);
-      } catch(e) {
-        showToast(e.message, "err");
+      });
+      var r = commitInstanceUpdate(inst.id, patch);
+      if (r && r.ok === false) {
+        showToast(r.errors && r.errors[0] ? r.errors[0].message : "Save failed", "err");
+        return;
       }
+      // Post-save sync: keep linked gaps in line with upstream changes.
+      if (stateFilter === "desired") {
+        commitSyncGapFromDesired(inst.id);
+      } else if (stateFilter === "current") {
+        commitSyncGapsFromCurrentCriticality(inst.id);
+      }
+      saveBtn.textContent = "Saved";
+      setTimeout(function() {
+        saveBtn.textContent = "Save changes";
+        refreshCell(inst.layerId, inst.environmentId);
+      }, 800);
     });
 
     var actions = mk("div", "form-actions");
@@ -597,8 +641,8 @@ export function renderMatrixView(left, right, session, opts) {
     var delBtn = mk("button", "btn-danger"); delBtn.textContent = "Remove";
     delBtn.addEventListener("click", function() {
       if (!confirm("Remove " + inst.label + "?")) return;
-      deleteInstance(session, inst.id);
-      saveToLocalStorage();
+      var r = commitInstanceRemove(inst.id);
+      if (r && r.ok === false) { showToast("Remove failed", "err"); return; }
       selectedInstId = null;
       refreshCell(inst.layerId, inst.environmentId);
       showHint(right);
@@ -606,7 +650,6 @@ export function renderMatrixView(left, right, session, opts) {
     actions.appendChild(delBtn);
     panel.appendChild(actions);
 
-    // Phase 16 , Mapped infrastructure section, only on workload tiles.
     if (inst.layerId === "workload") {
       panel.appendChild(buildMappedAssetsSection(right, inst));
     }
@@ -614,21 +657,17 @@ export function renderMatrixView(left, right, session, opts) {
     right.appendChild(panel);
   }
 
-  // Phase 16 helper: render the "Mapped infrastructure" section beneath
-  // the standard tile detail when the instance is a workload. Shows the
-  // currently mapped asset rows, a `+ Map asset` picker button, and an
-  // `↑ Propagate criticality` button gated on having both a workload
-  // criticality and at least one mapped asset.
+  // ---- Mapped infrastructure (workload tiles) ----
   function buildMappedAssetsSection(right, workload) {
     var section = mk("div", "mapped-assets-section");
     section.appendChild(mkt("div", "mapped-assets-title", "Mapped infrastructure"));
 
-    // v2.4.11 · A8 · "Linked variants in other environments" chip row.
-    // When another workload tile shares the same `label` AND `state` but
-    // lives in a different environment, surface it so the user remembers
-    // their hybrid workload is modelled across multiple tiles.
-    var variants = (session.instances || []).filter(function(i) {
-      return i !== workload &&
+    var eng = getActiveEngagement();
+
+    // Linked variants in other environments -- same workload label/state
+    // across multiple environments.
+    var variants = _walkInstances(eng, function(i) {
+      return i.id !== workload.id &&
              i.layerId === "workload" &&
              i.state === workload.state &&
              i.label === workload.label &&
@@ -637,12 +676,11 @@ export function renderMatrixView(left, right, session, opts) {
     if (variants.length > 0) {
       var variantBox = mk("div", "linked-variants-box");
       variantBox.appendChild(mkt("span", "linked-variants-eyebrow", "LINKED VARIANTS"));
-      variantBox.appendChild(mkt("span", "linked-variants-msg",
-        "Same workload also runs in: "));
+      variantBox.appendChild(mkt("span", "linked-variants-msg", "Same workload also runs in: "));
       variants.forEach(function(v, idx) {
-        var envObj = ENVIRONMENTS.find(function(e) { return e.id === v.environmentId; });
-        var chip = mkt("span", "linked-variant-chip", envObj ? envObj.label : v.environmentId);
-        chip.title = "Click to open this variant tile in " + (envObj ? envObj.label : v.environmentId);
+        var envLabel = _envLabelFromUuid(v.environmentId);
+        var chip = mkt("span", "linked-variant-chip", envLabel);
+        chip.title = "Click to open this variant tile in " + envLabel;
         chip.style.cursor = "pointer";
         chip.addEventListener("click", function() {
           document.dispatchEvent(new CustomEvent("dell-canvas:navigate-to-tile", {
@@ -655,9 +693,8 @@ export function renderMatrixView(left, right, session, opts) {
       section.appendChild(variantBox);
     }
 
-
     var mapped = (workload.mappedAssetIds || [])
-      .map(function(id) { return (session.instances || []).find(function(i) { return i.id === id; }); })
+      .map(function(id) { return eng.instances.byId[id]; })
       .filter(Boolean);
 
     var list = mk("div", "mapped-asset-list");
@@ -670,17 +707,23 @@ export function renderMatrixView(left, right, session, opts) {
         row.appendChild(dot);
         row.appendChild(mkt("span", "mapped-asset-label", asset.label));
         var layerObj = LAYERS.find(function(l) { return l.id === asset.layerId; });
-        var envObj   = ENVIRONMENTS.find(function(e) { return e.id === asset.environmentId; });
+        var envLabel2 = _envLabelFromUuid(asset.environmentId);
         row.appendChild(mkt("span", "mapped-asset-sub",
-          (layerObj ? layerObj.label : asset.layerId) + " / " + (envObj ? envObj.label : asset.environmentId)));
+          (layerObj ? layerObj.label : asset.layerId) + " / " + envLabel2));
         if (asset.criticality) {
           row.appendChild(mkt("span", "mapped-asset-crit crit-" + asset.criticality.toLowerCase(), asset.criticality));
         }
         var unmap = mkt("button", "link-unlink-btn", "x");
         unmap.title = "Unmap this asset";
         unmap.addEventListener("click", function() {
-          try { unmapAsset(session, workload.id, asset.id); saveToLocalStorage(); showDetailPanel(right, workload); }
-          catch(e) { alert(e.message); }
+          // v3-pure: read current mappedAssetIds, drop the one being
+          // unmapped, commit via commitWorkloadMap.
+          var live = _liveInstance(workload.id);
+          if (!live) return;
+          var nextIds = (live.mappedAssetIds || []).filter(function(id) { return id !== asset.id; });
+          var r = commitWorkloadMap(workload.id, nextIds);
+          if (r && r.ok === false) { alert(r.errors && r.errors[0] ? r.errors[0].message : "Unmap failed"); return; }
+          showDetailPanel(right, _liveInstance(workload.id) || workload);
         });
         row.appendChild(unmap);
         list.appendChild(row);
@@ -703,26 +746,22 @@ export function renderMatrixView(left, right, session, opts) {
     return section;
   }
 
-  // Phase 16 helper: open a modal picker for assets to map. Scoped to the
-  // workload's same state (current/desired) and to the other 5 layers.
   function openAssetPicker(workload, right) {
     document.getElementById("map-asset-picker")?.remove();
     var overlay = mk("div", "dialog-overlay"); overlay.id = "map-asset-picker";
     var box     = mk("div", "dialog-box");
     box.appendChild(mkt("div", "dialog-title", "Map an asset to '" + workload.label + "'"));
 
+    var eng = getActiveEngagement();
     var alreadyMapped = workload.mappedAssetIds || [];
-    // v2.3.1 , restrict the picker to assets in the workload's same
-    // environment. A hybrid workload is modelled as separate per-env tiles.
-    var candidates = (session.instances || []).filter(function(i) {
+    var candidates = _walkInstances(eng, function(i) {
       return i.state === workload.state
           && i.environmentId === workload.environmentId
           && i.layerId !== "workload"
           && alreadyMapped.indexOf(i.id) < 0;
     });
 
-    var envObj = ENVIRONMENTS.find(function(e) { return e.id === workload.environmentId; });
-    var envLabel = envObj ? envObj.label : workload.environmentId;
+    var envLabel = _envLabelFromUuid(workload.environmentId);
     box.appendChild(mkt("div", "detail-ph-hint",
       "Showing " + workload.state + " assets in " + envLabel +
       " only. To map a hybrid workload, create a separate workload tile in the other environment."));
@@ -739,12 +778,17 @@ export function renderMatrixView(left, right, session, opts) {
         item.appendChild(dot);
         item.appendChild(mkt("span", "cmd-item-name", asset.label));
         var layerObj = LAYERS.find(function(l) { return l.id === asset.layerId; });
-        var envObj   = ENVIRONMENTS.find(function(e) { return e.id === asset.environmentId; });
+        var envLabel2 = _envLabelFromUuid(asset.environmentId);
         item.appendChild(mkt("span", "cmd-item-vendor",
-          (layerObj ? layerObj.label : asset.layerId) + " / " + (envObj ? envObj.label : asset.environmentId)));
+          (layerObj ? layerObj.label : asset.layerId) + " / " + envLabel2));
         item.addEventListener("click", function() {
-          try { mapAsset(session, workload.id, asset.id); saveToLocalStorage(); overlay.remove(); showDetailPanel(right, workload); }
-          catch(e) { alert(e.message); }
+          var live = _liveInstance(workload.id);
+          var nextIds = (live ? (live.mappedAssetIds || []).slice() : []);
+          if (nextIds.indexOf(asset.id) < 0) nextIds.push(asset.id);
+          var r = commitWorkloadMap(workload.id, nextIds);
+          if (r && r.ok === false) { alert(r.errors && r.errors[0] ? r.errors[0].message : "Map failed"); return; }
+          overlay.remove();
+          showDetailPanel(right, _liveInstance(workload.id) || workload);
         });
         list.appendChild(item);
       });
@@ -760,19 +804,10 @@ export function renderMatrixView(left, right, session, opts) {
     overlay.addEventListener("click", function(e) { if (e.target === overlay) overlay.remove(); });
   }
 
-  // Phase 16 helper: walk through criticality upgrade proposals one at a
-  // time, asking the presales to confirm each. Per-asset confirm matches
-  // the locked decision (no silent bulk upgrades).
   function runPropagation(workload, right) {
-    // BUG-031 fix (rc.6 / 6h): re-resolve workload from session at click
-    // time so the detail strings (alert + toast) reflect the LIVE
-    // criticality, not a stale closure-captured snapshot from when the
-    // detail panel was first rendered. proposeCriticalityUpgrades
-    // already re-resolves internally; this aligns the surface text
-    // with that.
-    // (no em-dashes in this comment block per VT20 served-UI sweep)
-    var freshWorkload = (session.instances || []).find(function(i) { return i.id === workload.id; }) || workload;
-    var proposals = proposeCriticalityUpgrades(session, freshWorkload.id);
+    var eng = getActiveEngagement();
+    var freshWorkload = (eng && eng.instances.byId[workload.id]) || workload;
+    var proposals = proposeCriticalityUpgrades(eng, freshWorkload.id);
     if (proposals.length === 0) {
       alert("All mapped assets already meet or exceed '" + freshWorkload.label + "' criticality (" + freshWorkload.criticality + "). Nothing to propagate.");
       return;
@@ -783,61 +818,127 @@ export function renderMatrixView(left, right, session, opts) {
                 (p.currentCrit || "(unset)") + " to " + p.newCrit +
                 " to match workload '" + freshWorkload.label + "'?";
       if (window.confirm(msg)) {
-        try {
-          updateInstance(session, p.assetId, { criticality: p.newCrit });
+        var r = commitInstanceUpdate(p.assetId, { criticality: p.newCrit });
+        if (r && r.ok === false) {
+          alert("Failed to upgrade " + p.label + ": " + (r.errors && r.errors[0] && r.errors[0].message));
+        } else {
           applied.push(p);
-        } catch(e) { alert("Failed to upgrade " + p.label + ": " + e.message); }
+        }
       }
     });
-    saveToLocalStorage();
-    // Refresh each upgraded asset's matrix cell so the new criticality colour
-    // is visible immediately (without leaving + returning to the tab).
     applied.forEach(function(p) {
-      var asset = (session.instances || []).find(function(i) { return i.id === p.assetId; });
+      var asset = (getActiveEngagement().instances.byId[p.assetId]);
       if (asset) refreshCell(asset.layerId, asset.environmentId);
     });
-    // Re-render the workload detail so the mapped-asset chips reflect the new criticalities.
-    showDetailPanel(right, freshWorkload);
+    showDetailPanel(right, _liveInstance(freshWorkload.id) || freshWorkload);
     if (applied.length > 0) {
-      // BUG-031 fix (rc.6 / 6h): bind the toast text to the level
-      // ACTUALLY applied to the asset (applied[0].newCrit) -- guaranteed
-      // to be the upgrade target since proposals propagate up to a
-      // single workload criticality level. Avoids any closure-staleness
-      // ambiguity between the toast and the propagation result.
       var appliedLevel = (applied[0] && applied[0].newCrit) || freshWorkload.criticality || "(unknown)";
       try { showToast(applied.length + " asset" + (applied.length === 1 ? "" : "s") + " upgraded to " + appliedLevel, "ok"); }
       catch(e) { /* showToast is module-scoped; ignore if unreachable */ }
     }
   }
-}
 
-// ---- Shared helpers ----
-function updateUnreviewedBanner(container, session) {
-  container.innerHTML = "";
-  var unreviewedCount = 0;
-  (session.instances || []).forEach(function(i) {
-    if (i.state !== "current") return;
-    var hasCounterpart = (session.instances || []).some(function(d) {
-      return d.state === "desired" && d.originId === i.id;
-    });
-    if (!hasCounterpart) unreviewedCount++;
-  });
-  var total = (session.instances || []).filter(function(i) { return i.state === "current"; }).length;
-  if (total === 0) return;
-
-  var banner = mk("div", unreviewedCount > 0 ? "unreviewed-banner banner-warn" : "unreviewed-banner banner-ok");
-  if (unreviewedCount > 0) {
-    banner.textContent = unreviewedCount + " of " + total + " current item" + (total > 1 ? "s" : "") +
-      " not yet reviewed -- click the grey dashed tiles to set each disposition.";
-  } else {
-    banner.textContent = "All " + total + " current items reviewed in desired state.";
+  // ---- v3-native helpers (closure-scoped) ----
+  function _liveInstance(uuid) {
+    var eng = getActiveEngagement();
+    return eng && eng.instances ? eng.instances.byId[uuid] : null;
   }
-  container.appendChild(banner);
+
+  // _getVisibleEnvs · returns the v3 environments filtered by !hidden.
+  // Each entry: { uuid (v3 id), envCatalogId, label, alias, hidden }.
+  // Falls back to default-4 from ENV_CATALOG when engagement.environments
+  // is empty (matches Tab 1's default-4 fallback for fresh sessions --
+  // chat groundedness wants "envs the user is working in," even on empty
+  // engagements).
+  function _getVisibleEnvs() {
+    var eng = getActiveEngagement();
+    if (eng && eng.environments && eng.environments.allIds && eng.environments.allIds.length > 0) {
+      var out = [];
+      for (var i = 0; i < eng.environments.allIds.length; i++) {
+        var id = eng.environments.allIds[i];
+        var e = eng.environments.byId[id];
+        if (!e || e.hidden) continue;
+        var catalog = ENV_CATALOG.find(function(c) { return c.id === e.envCatalogId; });
+        out.push({
+          uuid:         e.id,
+          envCatalogId: e.envCatalogId,
+          label:        (e.alias && e.alias.length > 0) ? e.alias : (catalog ? catalog.label : e.envCatalogId),
+          alias:        e.alias || null,
+          hidden:       false
+        });
+      }
+      return out;
+    }
+    // Fresh / empty engagement -- fall back to default-4 catalog refs
+    // with synthetic UUIDs. The default-4 visible matrix is purely a
+    // visual fallback; clicking +Add inside a default-4 cell has no
+    // matching v3 env UUID, so the add will fail validation and toast
+    // "Add failed: environmentId is not a UUID." This matches the
+    // ContextView pattern (envs must be materialized in v3 before
+    // instances can land in them).
+    return [];
+  }
+
+  function _envLabelFromUuid(uuid) {
+    var eng = getActiveEngagement();
+    if (eng && eng.environments && eng.environments.byId[uuid]) {
+      var e = eng.environments.byId[uuid];
+      if (e.alias && e.alias.length > 0) return e.alias;
+      var cat = ENV_CATALOG.find(function(c) { return c.id === e.envCatalogId; });
+      return cat ? cat.label : e.envCatalogId;
+    }
+    return uuid;
+  }
+
+  function _envCatalogIdFromUuid(uuid) {
+    var eng = getActiveEngagement();
+    if (eng && eng.environments && eng.environments.byId[uuid]) {
+      return eng.environments.byId[uuid].envCatalogId;
+    }
+    return null;
+  }
+
+  // Walk eng.instances.allIds + filter. Returns array of instance
+  // records (in allIds order). Replaces v2's session.instances.filter().
+  function _walkInstances(eng, predicate) {
+    if (!eng || !eng.instances || !Array.isArray(eng.instances.allIds)) return [];
+    var out = [];
+    for (var i = 0; i < eng.instances.allIds.length; i++) {
+      var id = eng.instances.allIds[i];
+      var inst = eng.instances.byId[id];
+      if (inst && predicate(inst)) out.push(inst);
+    }
+    return out;
+  }
+
+  // ---- Banner update (v3-pure) ----
+  function updateUnreviewedBanner(container) {
+    container.innerHTML = "";
+    var eng = getActiveEngagement();
+    if (!eng) return;
+    var totals = { current: 0, unreviewed: 0 };
+    var currents = _walkInstances(eng, function(i) { return i.state === "current"; });
+    totals.current = currents.length;
+    currents.forEach(function(curInst) {
+      var hasCounterpart = _walkInstances(eng, function(d) {
+        return d.state === "desired" && d.originId === curInst.id;
+      }).length > 0;
+      if (!hasCounterpart) totals.unreviewed++;
+    });
+    if (totals.current === 0) return;
+
+    var banner = mk("div", totals.unreviewed > 0 ? "unreviewed-banner banner-warn" : "unreviewed-banner banner-ok");
+    if (totals.unreviewed > 0) {
+      banner.textContent = totals.unreviewed + " of " + totals.current + " current item" + (totals.current > 1 ? "s" : "") +
+        " not yet reviewed -- click the grey dashed tiles to set each disposition.";
+    } else {
+      banner.textContent = "All " + totals.current + " current items reviewed in desired state.";
+    }
+    container.appendChild(banner);
+  }
 }
 
-// v2.4.13 S5: private renderDemoBanner removed; uses the shared helper
-// imported at the top of the file from ui/components/DemoBanner.js.
-
+// ---- Shared helpers (module scope) ----
 function showToast(msg, type) {
   var t = document.getElementById("matrix-toast");
   if (!t) { t = mk("div", ""); t.id = "matrix-toast"; document.body.appendChild(t); }
