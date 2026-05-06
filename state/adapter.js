@@ -32,11 +32,22 @@ import { selectMatrixView }    from "../selectors/matrix.js";
 import { selectHealthSummary } from "../selectors/healthSummary.js";
 import { commitAction, getActiveEngagement } from "./engagementStore.js";
 import { updateCustomer }      from "./collections/customerActions.js";
+// rc.7 / 7e-2 · v3-pure adapter completion per SPEC §S40 — full
+// instance + gap write surface (no v2 dual-running). MatrixView /
+// GapsEditView / desiredStateSync consume these in 7e-3..7e-4.
 import {
+  addInstance,
   updateInstance,
+  removeInstance,
+  linkOrigin,
   mapWorkloadAssets
 } from "./collections/instanceActions.js";
-import { updateGap } from "./collections/gapActions.js";
+import {
+  addGap,
+  updateGap,
+  removeGap,
+  attachInstances
+} from "./collections/gapActions.js";
 // rc.7 / 7b · Tab 1 Context migration · driver write helpers per
 // SPEC §S19.3.1 cutover-window bidirectional sync. ContextView
 // consumes these helpers in rc.7 / 7c.
@@ -299,4 +310,180 @@ export function commitEnvRemoveByCatalogId(envCatalogId) {
     return { ok: false, error: "no v3 environment with envCatalogId='" + envCatalogId + "'" };
   }
   return commitAction(removeEnvironment, e.id);
+}
+
+// ─── rc.7 / 7e-2 · v3-pure instance + gap write surface ──────────────────────
+// Per SPEC §S40 — these helpers replace the v2 interactions/matrixCommands.js
+// and interactions/gapsCommands.js surfaces entirely. MatrixView (7e-3),
+// GapsEditView + desiredStateSync (7e-4), and AI machinery (7e-5) consume
+// them. NO catalog-ref-keyed cutover variants — v3-pure mode keys all
+// writes by UUID. Callers (views) own UUID resolution at click time.
+
+// Instance writes ---------------------------------------------------------
+export function commitInstanceAdd(input) {
+  return commitAction(addInstance, input);
+}
+
+export function commitInstanceUpdate(instanceId, patch) {
+  return commitAction(updateInstance, instanceId, patch);
+}
+
+export function commitInstanceRemove(instanceId) {
+  return commitAction(removeInstance, instanceId);
+}
+
+// Convenience wrappers for the matrix UI's frequent single-field edits.
+// All three route through commitInstanceUpdate; named helpers exist so
+// the view call-sites read intentionally (and so V-FLOW vectors can
+// source-grep for the specific helper).
+export function commitInstanceSetCriticality(instanceId, criticality) {
+  return commitAction(updateInstance, instanceId, { criticality });
+}
+
+export function commitInstanceSetDisposition(instanceId, disposition) {
+  return commitAction(updateInstance, instanceId, { disposition });
+}
+
+export function commitInstanceSetPriority(instanceId, priority) {
+  // priority is desired-only per InstanceSchema superRefine; null clears.
+  return commitAction(updateInstance, instanceId, { priority });
+}
+
+export function commitInstanceSetNotes(instanceId, notes) {
+  return commitAction(updateInstance, instanceId, { notes });
+}
+
+export function commitInstanceSetVendor(instanceId, vendor, vendorGroup) {
+  return commitAction(updateInstance, instanceId, { vendor, vendorGroup });
+}
+
+// Cross-cutting linkage. originId on a desired instance points at a
+// current instance; linkOrigin handles the cross-env case.
+export function commitInstanceSetOrigin(desiredInstanceId, currentInstanceId) {
+  return commitAction(linkOrigin, desiredInstanceId, currentInstanceId);
+}
+
+// Workload mappedAssetIds (Tab 4). Only valid on layerId==='workload'
+// per InstanceSchema superRefine; the action enforces the invariant
+// at commit time.
+export function commitWorkloadMap(workloadInstanceId, assetInstanceIds) {
+  return commitAction(mapWorkloadAssets, workloadInstanceId, assetInstanceIds);
+}
+
+// Gap writes --------------------------------------------------------------
+export function commitGapAdd(input) {
+  return commitAction(addGap, input);
+}
+
+export function commitGapUpdate(gapId, patch) {
+  return commitAction(updateGap, gapId, patch);
+}
+
+export function commitGapRemove(gapId) {
+  return commitAction(removeGap, gapId);
+}
+
+// Cross-cutting gap linkage. The gap stores arrays of instance UUIDs;
+// the link/unlink helpers fetch the current arrays, apply the change,
+// and commit the next arrays through attachInstances. Idempotent.
+function _gapLinkInstance(gapId, instanceId, side) {
+  // side: "current" or "desired"
+  const eng = getActiveEngagement();
+  if (!eng || !eng.gaps || !eng.gaps.byId) {
+    return { ok: false, error: "no active engagement" };
+  }
+  const gap = eng.gaps.byId[gapId];
+  if (!gap) {
+    return { ok: false, error: "gap '" + gapId + "' not found" };
+  }
+  const field = side === "desired" ? "relatedDesiredInstanceIds" : "relatedCurrentInstanceIds";
+  const cur = Array.isArray(gap[field]) ? gap[field] : [];
+  if (cur.indexOf(instanceId) >= 0) return { ok: true, engagement: eng };  // already linked
+  const next = cur.concat([instanceId]);
+  const patch = side === "desired"
+    ? { relatedDesiredInstanceIds: next }
+    : { relatedCurrentInstanceIds: next };
+  return commitAction(updateGap, gapId, patch);
+}
+
+function _gapUnlinkInstance(gapId, instanceId, side) {
+  const eng = getActiveEngagement();
+  if (!eng || !eng.gaps || !eng.gaps.byId) {
+    return { ok: false, error: "no active engagement" };
+  }
+  const gap = eng.gaps.byId[gapId];
+  if (!gap) {
+    return { ok: false, error: "gap '" + gapId + "' not found" };
+  }
+  const field = side === "desired" ? "relatedDesiredInstanceIds" : "relatedCurrentInstanceIds";
+  const cur = Array.isArray(gap[field]) ? gap[field] : [];
+  const next = cur.filter(id => id !== instanceId);
+  if (next.length === cur.length) return { ok: true, engagement: eng };  // no-op
+  const patch = side === "desired"
+    ? { relatedDesiredInstanceIds: next }
+    : { relatedCurrentInstanceIds: next };
+  return commitAction(updateGap, gapId, patch);
+}
+
+export function commitGapLinkCurrentInstance(gapId, instanceId) {
+  return _gapLinkInstance(gapId, instanceId, "current");
+}
+export function commitGapLinkDesiredInstance(gapId, instanceId) {
+  return _gapLinkInstance(gapId, instanceId, "desired");
+}
+export function commitGapUnlinkCurrentInstance(gapId, instanceId) {
+  return _gapUnlinkInstance(gapId, instanceId, "current");
+}
+export function commitGapUnlinkDesiredInstance(gapId, instanceId) {
+  return _gapUnlinkInstance(gapId, instanceId, "desired");
+}
+
+export function commitGapSetDriver(gapId, driverId) {
+  // driverId is the v3 driver UUID (or null to clear). View call-sites
+  // that hold the v2-style businessDriverId resolve via
+  // commitGapSetDriverByBusinessDriverId below.
+  return commitAction(updateGap, gapId, { driverId });
+}
+
+export function commitGapAttachInstances(gapId, { current = [], desired = [] }) {
+  return commitAction(attachInstances, gapId, { current, desired });
+}
+
+// Convenience for views that hold the v2-style businessDriverId
+// (e.g. "cyber_resilience") rather than the v3 driver UUID. This
+// wrapper retires alongside the rest of the *ByBusinessDriverId
+// helpers at 7e-8 (per SPEC §S40 deletion-readiness checklist).
+export function commitGapSetDriverByBusinessDriverId(gapId, businessDriverId) {
+  if (businessDriverId === null || businessDriverId === undefined) {
+    return commitAction(updateGap, gapId, { driverId: null });
+  }
+  const eng = getActiveEngagement();
+  if (!eng || !eng.drivers || !Array.isArray(eng.drivers.allIds)) {
+    return { ok: false, error: "no active engagement" };
+  }
+  for (const id of eng.drivers.allIds) {
+    const d = eng.drivers.byId[id];
+    if (d && d.businessDriverId === businessDriverId) {
+      return commitAction(updateGap, gapId, { driverId: d.id });
+    }
+  }
+  return { ok: false, error: "no v3 driver with businessDriverId='" + businessDriverId + "'" };
+}
+
+// AI proposal application -----------------------------------------------
+// commitProposeAndApply replaces interactions/aiCommands.js's
+// applyProposal + applyAllProposals v2 dispatch (which mutated session
+// in place via setPathFromRoot / WRITE_RESOLVERS). The v3-pure version
+// takes an array of `{path, after}` proposals and applies them as a
+// single transactional engagement update — one commitAction call,
+// one setActiveEngagement, one emit, one undo entry.
+//
+// Path → action resolution lives in core/bindingResolvers.js
+// WRITE_RESOLVERS (rewritten in 7e-5 to dispatch via this helper).
+// The signature here is intentionally narrow: it accepts a function
+// that takes the engagement and returns the next engagement (or
+// {ok, engagement, errors}). Callers compose path-specific actions
+// into that function.
+export function commitProposeAndApply(actionFn, ...args) {
+  return commitAction(actionFn, ...args);
 }

@@ -12006,6 +12006,48 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     // V-ANTI-V2-IMPORT-1..3 enforce the import-graph invariant.
     // -----------------------------------------------------------------
 
+    it("V-FLOW-V3-PURE-ADAPTER-1 · state/adapter.js exports the v3-pure instance write surface (commitInstanceAdd / Update / Remove / SetCriticality / SetDisposition / SetPriority / SetNotes / SetVendor / SetOrigin) per SPEC §S40 (rc.7 / 7e-2)", async () => {
+      const m = await import("../state/adapter.js");
+      const required = [
+        "commitInstanceAdd",
+        "commitInstanceUpdate",
+        "commitInstanceRemove",
+        "commitInstanceSetCriticality",
+        "commitInstanceSetDisposition",
+        "commitInstanceSetPriority",
+        "commitInstanceSetNotes",
+        "commitInstanceSetVendor",
+        "commitInstanceSetOrigin",
+        "commitWorkloadMap"
+      ];
+      required.forEach(name => assert(typeof m[name] === "function",
+        "V-FLOW-V3-PURE-ADAPTER-1: state/adapter.js MUST export " + name + " (per SPEC §S40 rc.7 / 7e-2)"));
+    });
+
+    it("V-FLOW-V3-PURE-ADAPTER-2 · state/adapter.js exports the v3-pure gap write surface (commitGapAdd / Update / Remove / Link/Unlink Current/Desired Instance / SetDriver / AttachInstances + SetDriverByBusinessDriverId cutover helper) per SPEC §S40 (rc.7 / 7e-2)", async () => {
+      const m = await import("../state/adapter.js");
+      const required = [
+        "commitGapAdd",
+        "commitGapUpdate",
+        "commitGapRemove",
+        "commitGapLinkCurrentInstance",
+        "commitGapLinkDesiredInstance",
+        "commitGapUnlinkCurrentInstance",
+        "commitGapUnlinkDesiredInstance",
+        "commitGapSetDriver",
+        "commitGapSetDriverByBusinessDriverId",
+        "commitGapAttachInstances"
+      ];
+      required.forEach(name => assert(typeof m[name] === "function",
+        "V-FLOW-V3-PURE-ADAPTER-2: state/adapter.js MUST export " + name + " (per SPEC §S40 rc.7 / 7e-2)"));
+    });
+
+    it("V-FLOW-V3-PURE-ADAPTER-3 · state/adapter.js exports commitProposeAndApply (replaces interactions/aiCommands.js v2 dispatch) per SPEC §S40 (rc.7 / 7e-2)", async () => {
+      const m = await import("../state/adapter.js");
+      assert(typeof m.commitProposeAndApply === "function",
+        "V-FLOW-V3-PURE-ADAPTER-3: state/adapter.js MUST export commitProposeAndApply for AI machinery v3-cutover in 7e-5");
+    });
+
     it("V-FLOW-V3-PURE-1 · state/sessionStore.js MUST not exist (deleted in rc.7 / 7e-8 per SPEC §S40.1) — RED until then", async () => {
       const r = await fetch("/state/sessionStore.js", { method: "HEAD" });
       assert(r.status === 404,
