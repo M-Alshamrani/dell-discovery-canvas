@@ -1286,6 +1286,159 @@ The entrypoint self-check itself isn't directly testable from the in-browser tes
 
 ---
 
+## BUG-036 · Canvas AI Assistant reports "canvas is empty" when user has entered data via v2.x UI tabs (v2-v3 sync gap)
+
+**Status**: OPEN · Reported 2026-05-06 by user · v3.0.0-rc.7-dev · Scheduled rc.7 view migration arc (HIGH — likely auto-resolves as each tab migrates to write through `state/adapter.js`)
+**Reporter**: User (post-rc.6 chat usage)
+**Severity**: High (blocks workshop usage on non-demo sessions)
+**Regression**: No — pre-existing v2-v3 architecture gap. Surfaced now because rc.6 grounding contract correctly reports the v3 engagement state, which is empty when user data lives only in v2 session.
+
+### Repro
+1. Fresh session (NOT demo): + New session → empty canvas.
+2. Tab 1 Context: enter customer name + add a strategic driver.
+3. Tab 2 Current state: add an instance (e.g. compute / Dell PowerStore in Primary DC).
+4. Open Canvas AI Assistant. Ask: *"what technologies are in the current state?"*
+5. → Response says canvas is empty (or the grounding-router fallback path produces a "metadata-only" Layer 4 with no instance data).
+
+### Expected
+The chat reports the user's just-entered current-state instances, since they ARE in the engagement.
+
+### Suspected root cause (architecture-class)
+
+`state/sessionBridge.js` (the v2-v3 lifecycle owner) ONLY shallow-merges the v2 customer fields (name/vertical/region/notes) into the v3 engagement on session-changed events. Drivers / environments / instances / gaps in the v2 session do NOT flow to v3 engagementStore. The chat surface reads from v3 engagementStore via `getActiveEngagement()`. So:
+
+- **Demo path** (writes directly to v3 via `loadDemo()`) → chat sees real data ✓
+- **User-entered path** (writes to v2 via Tab 2/3/4 actions) → v3 stays empty → chat sees empty ✗
+
+This is a known architectural gap pending the **rc.7 view migration arc** (HANDOFF rc.6 §3): once the 5 v2.x view tabs migrate to write through `state/adapter.js commitContextEdit / commitInstanceEdit / commitGapEdit / etc.`, those writes land in v3 engagementStore directly + chat sees them.
+
+### Fix plan
+1. **Verify scope**: confirm the bug reproduces on the current build. Then check whether the chat surface is correctly tied to v3 engagementStore (it is, per HANDOFF §6 file pointers).
+2. **Wait for view migration**: rc.7 main arc (5 v2 tabs migrate one-commit-each). Each migration reduces this bug's surface area; after Tab 2 Current State migrates, current-state instance queries should work.
+3. **OR interim fix**: extend `state/sessionBridge.js bridgeOnce()` to mirror v2 drivers/instances/gaps into v3 engagement. RISK: must not clobber the v3-native demo (which writes directly to v3). Bridge would need to detect "v3 empty AND v2 has data" → translate; otherwise leave v3 alone. This is essentially a runtime v2→v3 translator, which `feedback_no_patches_flag_first.md` + `project_v3_no_file_migration_burden.md` LOCKED 2026-05-02 explicitly forbid (*"never patch the v3 to work with v2 or vice versa"*). So interim-fix path is BLOCKED by locked discipline; rc.7 view migration is the only acceptable path.
+4. **Regression test**: add a V-FLOW-CHAT-V2DATA-1 that reproduces the symptom against an interim build (mid view-migration arc), assert it goes GREEN as each tab migrates.
+
+### Cross-refs
+- `state/sessionBridge.js` (v2-v3 lifecycle owner; currently customer-only merge per BUG-010 fix scope)
+- HANDOFF rc.6 §3 (rc.7 view migration arc planned)
+- `feedback_no_patches_flag_first.md` (blocks runtime translator path)
+- `project_v3_no_file_migration_burden.md` (blocks v2-shape-in-v3 path)
+
+---
+
+## BUG-037 · Canvas AI Assistant chat lacks visual differentiation between user messages and assistant responses (UX polish)
+
+**Status**: OPEN · Reported 2026-05-06 by user · v3.0.0-rc.7-dev · Scheduled rc.7-polish or v3.1 crown-jewel UI polish
+**Reporter**: User (post-rc.6 chat usage)
+**Severity**: Low (UX clarity; no functional impact)
+**Regression**: No — never had bubble styling; current chat overlay treats both sides as plain text blocks.
+
+### User words (verbatim)
+*"In the chat, i would rather to ahve my qusitons engolve in sligtly elegent bubble so I can distingish my text from the Ai response. not shure what to call this elegent UI design element. lets plan it accordingly to others"*
+
+The element is a **chat bubble** / speech-bubble container — the now-standard ChatGPT/Claude/iMessage-style pattern where:
+- User messages render in a subtle right-aligned (or distinctly-coloured) rounded container with internal padding.
+- Assistant responses render left-aligned, often with a wider, softer-coloured container OR with a small avatar/eyebrow ("CANVAS").
+
+### Suspected scope
+`ui/views/CanvasChatOverlay.js` chat-message rendering + `styles.css` `.canvas-chat-*` rules. The `BUG-022` chat-polish residuals were partly closed in rc.5 (Send button density + line-height) but bubble differentiation didn't land. Cross-ref `project_crown_jewel_design.md` — the v3.1 UI polish arc would be the natural home if rc.7-polish doesn't pick it up.
+
+### Fix plan
+1. Add a `.canvas-chat-bubble-user` class on user-message rows; subtle Dell-blue-faint background, rounded corners (≥ 12px), max-width ≤ 70%, right-aligned.
+2. Keep assistant messages full-width (current default) but add a subtle "CANVAS" eyebrow + softer paragraph treatment so the contrast reads clearly without competing.
+3. Browser smoke against demo + user-typed messages.
+4. V-CHAT-POLISH-3 (extension of rc.5 polish suite) source-grep + DOM-shape regression test.
+
+### Cross-refs
+- `project_crown_jewel_design.md` (v3.1 UI polish anchor)
+- HANDOFF rc.6 §3 mentions UX polish is a v3.1 minor item
+
+---
+
+## BUG-038 · Skill Builder UI is text-heavy / primitive; needs intuitive design aligned with AI + data architecture capabilities
+
+**Status**: OPEN · Reported 2026-05-06 by user · v3.0.0-rc.7-dev · Scheduled v3.1 crown-jewel UI polish (already in plan per `project_crown_jewel_design.md` + HANDOFF rc.6 §3)
+**Reporter**: User (running review post-rc.6)
+**Severity**: Low-Medium (workshop usability; not blocking)
+**Regression**: No — Skill Builder was rebuilt as the evolved admin in rc.4-dev Arc 4 (SPEC §S35); the form is functional but text-heavy.
+
+### User words (verbatim)
+*"at some points we need to revisit the skills builder and polish the currently primitive text heavey UI, and need to be intuative and in line with the cpabilites possiable withon our AI and data architecture ... i think it is already in the plan"*
+
+### Already planned · cross-refs
+- `project_crown_jewel_design.md` — v3.1 minor crown-jewel UI polish.
+- `project_skillbuilder_ux_concern.md` (memory) — the user flagged this in the rc.3 era; revisit between rc.3 and GA was the original commitment. Remains true; the rc.4-dev Arc 4 rebuild was a structural consolidation (parameters[] + outputTarget) but didn't address text-heaviness.
+- HANDOFF rc.6 §3 — v3.1 minor crown-jewel UI polish.
+
+### Out of scope for rc.7 main
+The view migration arc is sequential SPEC + tests + impl per locked discipline. UI polish lands as its own arc once view migration ships.
+
+---
+
+## BUG-039 · Vendor mix reporting % is misleading because counts are by record not by deployment scale
+
+**Status**: OPEN · Reported 2026-05-06 by user · v3.0.0-rc.7-dev · Scheduled v3.1+ data-model widening (DESIGN ITEM)
+**Reporter**: User (running review post-rc.6)
+**Severity**: Medium (misleading workshop output; affects executive narrative honesty)
+**Regression**: No — `selectVendorMix` has always counted instance records, not deployment scale.
+
+### User words (verbatim)
+*"the reporting pannel for the Vendors mix , doenst make sense to report % as we are not counting the number of assets , for exmaple Dell migh have all servers and storage and have 100s or assets with the client for two products, yet becuase they are reported as two , they will show lower percentage among other vendors while in reality they are dominant"*
+
+### Issue analysis
+`engagement.instances[].vendorGroup ∈ {dell, nonDell, custom}` is per-INSTANCE-RECORD. A presales might add ONE instance record like *"Dell PowerStore 5000T cluster"* representing 200 physical PowerStores at the customer. `selectVendorMix.totals.dellPercent` divides Dell records by total records — so the customer with 2 Dell records (representing 200 deployed) + 5 NetApp records (representing 5 deployed) shows Dell at 28%, when in reality Dell dominates by deployment count.
+
+### Possible fixes (design discussion needed)
+1. **Add `instance.deployedQuantity` field** (default 1; presales overrides for high-volume deployments). `selectVendorMix` computes weighted % using deployedQuantity. Schema change → migrator + V-MIG vectors.
+2. **Add a "concentration" lens**: report BOTH record-count % AND a footnote "actual deployment scale may differ — check instance notes". Cheap; doesn't address the actual misleading number.
+3. **Replace % with absolute counts + qualitative labels** ("Dominant Dell footprint" / "Mixed environment" / etc.) computed by some heuristic. Requires UX design.
+
+### Out of scope for rc.7 main
+This is a domain-modeling change touching schema + selector + report UI. Rightfully scheduled after view migration completes (rc.7 main + rc.8 GA hardening). User confirmed this is "planned somewhere" — log here so it's tracked.
+
+### Cross-refs
+- `selectors/vendorMix.js` — current implementation
+- SPEC §S5.2.4 vendor mix selector contract
+- HANDOFF rc.6 §3 — fits naturally in pre-GA hardening or v3.1 minor
+
+---
+
+## BUG-040 · Desired state allows mapping a workload to an instance whose disposition is "retire" (relationship invariant gap)
+
+**Status**: OPEN · Reported 2026-05-06 by user · v3.0.0-rc.7-dev · Scheduled rc.8 / GA hardening (RELATIONSHIP INVARIANT)
+**Reporter**: User (running review post-rc.6)
+**Severity**: Medium (logically inconsistent state; user-facing confusion + report quality)
+**Regression**: No — invariant was never authored.
+
+### User words (verbatim)
+*"The desired state , you can map a workload to a retired asset , that doenst makes sense, we need to vist these types of relationshipes and just make sure htey make sense."*
+
+### Issue analysis
+`workload.mappedAssetIds[]` (workload-layer instances) points at non-workload instances they consume. The current schema allows pointing at any non-workload instance — including a current-state instance whose `disposition: "retire"` (going away) or whose only reachable desired-state counterpart is also retired.
+
+Logical conflict: a workload that's planned to RUN in desired state can't be mapped to an asset that's planned to BE GONE in desired state. The mapping should EITHER:
+- Point at the current-state asset's desired-state replacement (originId → desired tile of `disposition: "replace"`), OR
+- Point at a current-state asset whose desired-state disposition is "keep"/"enhance" (continuing).
+
+### Possible invariants to add
+- **WL_RET1**: For every desired-state workload `w`, every entry in `w.mappedAssetIds` must reference an instance whose desired-state lineage is NOT `disposition: "retire"`. (Soft warning may be appropriate, since the user might be mid-modelling.)
+- **WL_RET2**: When a current-state asset's disposition is set to `"retire"`, surface a warning at every workload that maps to it, suggesting either re-mapping to the replacement OR removing the workload mapping.
+
+### Other relationship-quality issues to audit (per user "we need to visit these types of relationships")
+- gap.relatedCurrentInstanceIds pointing at retired instances
+- gap.relatedDesiredInstanceIds pointing at originId-less + irrelevant tiles
+- workload mappings spanning across environments without `affectedEnvironments` reflecting
+
+### Out of scope for rc.7 main
+Invariant additions touch schema + integrity sweep + UI surface (warning chips). Lands cleanly in rc.8 / GA hardening once view migration completes. The view migration arc may surface adjacent invariant gaps that should batch with this one.
+
+### Cross-refs
+- `state/integritySweep.js` — where new invariants would land
+- `schema/instance.js` — where WL_RET-style hard constraints could be expressed
+- SPEC §S10 integrity sweep contract
+
+---
+
 ## BUG-NNN · One-line headline
 
 **Status**: OPEN · Reported YYYY-MM-DD · vX.Y.Z · Scheduled <bucket>
