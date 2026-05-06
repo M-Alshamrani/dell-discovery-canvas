@@ -9,11 +9,12 @@
 //      whose tokens form the final user-visible response.
 //   4. Returns { response, provenance } and emits onComplete.
 //
-// Provider injection: opts.provider is required for v1 (the real-
-// provider streaming-over-fetch wiring lands when AI item 6 / real-LLM
-// smoke fires). Test paths inject `createMockChatProvider(...)`; the
-// chat overlay UI injects a thin wrapper around aiService that does
-// streaming + tool_use + cache_control. Both share this orchestration.
+// Provider injection: opts.provider is required. The chat overlay UI
+// injects a thin wrapper around aiService that does streaming + tool_use
+// + cache_control. Per `feedback_no_mocks.md` (LOCKED 2026-05-05) +
+// rc.7-arc-1 (this commit), there is NO mock provider. All test
+// coverage of streamChat behavior is via PREFLIGHT 5b real-LLM smoke
+// at tag time; orchestration unit tests have been retired.
 //
 // Forbidden (RULES §16 + SPEC §S20.13):
 //   - importing state/sessionState.js (CH1)
@@ -76,8 +77,6 @@ export function providerCapabilities(providerKey) {
       // Conservative defaults until the streaming + tool-use shape is
       // documented.
       return { streaming: false, toolUse: false, caching: false };
-    case "mock":
-      return { streaming: true, toolUse: true, caching: false };
     default:
       return { streaming: false, toolUse: false, caching: false };
   }
@@ -92,7 +91,8 @@ export function providerCapabilities(providerKey) {
 //   - { kind: "text",     token: string }
 //   - { kind: "done",     text:  string }
 //   - { kind: "tool_use", name:  string, input: object }
-// (See `tests/mocks/mockChatProvider.js` for the canonical shape.)
+// (Production path: `services/realChatProvider.js`. No mock providers
+// exist post-rc.7-arc-1; see feedback_no_mocks.md.)
 //
 // One tool-use round trip is supported in v1 (CH10): provider may emit
 // at most one tool_use in the first call; the dispatcher resolves it
@@ -102,7 +102,7 @@ export async function streamChat(opts) {
   const engagement     = opts && opts.engagement;
   const transcript     = (opts && opts.transcript) || [];
   const userMessage    = (opts && opts.userMessage) || "";
-  const providerConfig = (opts && opts.providerConfig) || { providerKey: "mock" };
+  const providerConfig = (opts && opts.providerConfig) || {};
   const provider       = opts && opts.provider;
   const onToken        = (opts && opts.onToken)    || function() {};
   const onComplete     = (opts && opts.onComplete) || function() {};
@@ -184,8 +184,8 @@ export async function streamChat(opts) {
     // Anthropic-shape content blocks (per SPEC §S20.18 + RULES §16 CH19).
     // Real Anthropic REQUIRES the assistant message to replay all content
     // blocks (preamble text + tool_use with id), and the user message to
-    // carry the tool_result block correlated by tool_use_id. Mock + non-
-    // Anthropic providers tolerate the array shape (rc.3 will widen).
+    // carry the tool_result block correlated by tool_use_id. Non-Anthropic
+    // providers tolerate the array shape (translated by aiService).
     const toolUseId = result.toolUse.id || ("toolu_" + Math.random().toString(36).slice(2, 12));
     const assistantBlocks = [];
     if (result.text) assistantBlocks.push({ type: "text", text: result.text });
@@ -330,7 +330,6 @@ function mapProviderKindForAssembler(providerKey) {
   switch (providerKey) {
     case "anthropic":         return "anthropic";
     case "gemini":            return "gemini";
-    case "mock":              return "mock";
     case "openai-compatible":
     case "local":
     default:                  return "openai-compatible";

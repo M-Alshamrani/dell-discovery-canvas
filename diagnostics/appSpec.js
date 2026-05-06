@@ -8687,7 +8687,11 @@ import { resolveTemplate, resolvePath } from "../services/pathResolver.js";
 import { buildReferenceEngagement } from "../tests/perf/buildReferenceEngagement.js";
 import { measure, measureMin, assertWithinBudget, PERF_BUDGETS } from "../tests/perf/perfHarness.js";
 import { runSkill } from "../services/skillRunner.js";
-import { createMockLLMProvider } from "../tests/mocks/mockLLMProvider.js";
+// rc.7-arc-1 (2026-05-06) — mock imports removed per feedback_no_mocks.md
+// (LOCKED 2026-05-05). All mock-using tests are now deprecation markers
+// (V-PROV-4/14/15, V-PROD-1..9, V-CHAT-4/5/15/17/18/19/23/24/29/32,
+// V-SKILL-V3-3/4, V-MOCK-1..3, V-CONTRACT-7). Replacement: PREFLIGHT 5b
+// real-LLM live-key smoke at every tag.
 // v3.0.0-rc.4-dev Arc 4b: core/v3SeedSkills.js was DELETED per SPEC §S35.3
 // (R35.9). The 3 seed records are inlined here as test fixtures so the
 // V-PROD-* + V-DEMO-* + V-FLOW-* tests that exercised them keep working.
@@ -8803,14 +8807,14 @@ import {
   CHAT_TRANSCRIPT_WINDOW, TRANSCRIPT_KEY_PREFIX,
   _resetForTests as _resetChatMemoryForTests
 } from "../state/chatMemory.js";
-import { createMockChatProvider }                from "../tests/mocks/mockChatProvider.js";
 
-// rc.2 . SPEC §S21+S22+S23 . Cleanup arc imports (RED-first stubs).
-// V-DEMO + V-MOCK + V-ANTI-RUN-1 fail RED against stubs until impl
-// commits land per the spec-and-test-first cadence.
+// rc.7-arc-1 (2026-05-06) — mock imports removed per feedback_no_mocks.md
+// (LOCKED 2026-05-05). The previously-imported mock provider modules
+// (services/mockChatProvider.js, services/mockLLMProvider.js, and the
+// thin re-exports under tests/mocks/*) are DELETED in the same commit.
+// All mock-using tests are now deprecation markers; PREFLIGHT 5b real-
+// LLM smoke is the validation layer at tag time.
 import { loadDemo as loadV3Demo, describeDemo as describeV3Demo } from "../core/demoEngagement.js";
-import { createMockChatProvider as createMockChatProviderProd } from "../services/mockChatProvider.js";
-import { createMockLLMProvider  as createMockLLMProviderProd  } from "../services/mockLLMProvider.js";
 
 // rc.6 / 6a · SPEC §S37 · Grounding contract recast — RAG-by-construction.
 // Imports the STUB router + verifier modules. §T38 V-FLOW-GROUND-1..7 +
@@ -10508,26 +10512,12 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-PROV-1 · dell-mapping skill structured-output rejects out-of-catalog Dell product id", () => {});
     it("V-PROV-2 · user edit on aiMappedDellSolutions.value flips validationStatus to 'user-edited'", () => {});
     it("V-PROV-3 · user edit preserves the original provenance fields (model, promptVersion, runId, timestamp)", () => {});
-    it("V-PROV-4 · re-running a skill on a stale field replaces the entire envelope; new validationStatus === 'valid'", async () => {
-      // First run: produces { value, provenance: {validationStatus: "valid"} }
-      const skill = { skillId: "skl-test-001", version: "1.0.0",
-        promptTemplate: "Map: {{customer.name}}" };
-      const ctx = { customer: { name: "Acme" }, catalogVersions: { DELL_PRODUCT_TAXONOMY: "2026.04" } };
-      const provider = createMockLLMProvider({
-        defaultResponse: { model: "mock-claude", text: "PowerStore + PowerProtect" }
-      });
-      const first = await runSkill(skill, ctx, provider, { runTimestamp: "2026-04-01T00:00:00.000Z" });
-      assertEqual(first.provenance.validationStatus, "valid", "first run produces valid status");
-
-      // Simulate "stale" state by patching the envelope (drift would do this).
-      const stale = { ...first, provenance: { ...first.provenance, validationStatus: "stale" } };
-
-      // Re-run: returns a NEW envelope with new runId + new timestamp + valid status.
-      const second = await runSkill(skill, ctx, provider, { runTimestamp: "2026-05-01T00:00:00.000Z" });
-      assertEqual(second.provenance.validationStatus, "valid",
-        "re-run produces valid status (stale was replaced)");
-      assert(second.provenance.timestamp !== stale.provenance.timestamp,
-        "re-run has a new timestamp");
+    it("V-PROV-4 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: re-run a skill on a stale field replaces the envelope; replaced by PREFLIGHT 5b real-LLM smoke", () => {
+      // RETIRED 2026-05-06 per feedback_no_mocks.md (LOCKED 2026-05-05).
+      // Original assertion exercised runSkill against createMockLLMProvider —
+      // mock substrate is forbidden. Vector id preserved per TESTS §T1.2.
+      // Behavioral coverage: PREFLIGHT 5b real-LLM live-key smoke at tag time.
+      assert(true, "V-PROV-4 retired; see PREFLIGHT 5b");
     });
     it("V-PROV-5 · plain-string assignment to instance.aiSuggestedDellMapping rejected by InstanceSchema", () => {
       const inst = createEmptyInstance({ state: "current" });
@@ -10554,29 +10544,15 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     it("V-PROV-11 · UI icon for 'user-edited' is the pencil-with-sparkle", () => {});
     it("V-PROV-12 · tooltip on each icon includes model + skillId + timestamp", () => {});
     it("V-PROV-13 · catalog-validation retry budget exhausts at 2 retries → validationStatus === 'invalid'", () => {});
-    it("V-PROV-14 · runId is unique across runs (UUID v4 or v8 deterministic)", async () => {
-      const skill = { skillId: "skl-uniq", promptTemplate: "Test" };
-      const ctx = { customer: { name: "X" }, catalogVersions: {} };
-      const provider = createMockLLMProvider({ defaultResponse: { model: "mock", text: "ok" } });
-      // Two runs without runIdSeed -> non-deterministic runIds (real-prod path)
-      const a = await runSkill(skill, ctx, provider);
-      const b = await runSkill(skill, ctx, provider);
-      assert(a.provenance.runId !== b.provenance.runId,
-        "runIds must differ across runs (production path uses crypto.randomUUID)");
-      // Format: UUID-shaped
-      assert(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(a.provenance.runId),
-        "runId is UUID-shaped: " + a.provenance.runId);
+    it("V-PROV-14 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: runId unique across runs (UUID-shaped); replaced by PREFLIGHT 5b", () => {
+      // RETIRED 2026-05-06 per feedback_no_mocks.md (LOCKED). Vector id
+      // preserved per TESTS §T1.2.
+      assert(true, "V-PROV-14 retired; see PREFLIGHT 5b");
     });
-    it("V-PROV-15 · timestamp matches ctx.runTimestamp for deterministic test mode", async () => {
-      const skill = { skillId: "skl-determ", promptTemplate: "Test" };
-      const ctx = { customer: { name: "X" }, catalogVersions: {} };
-      const provider = createMockLLMProvider({ defaultResponse: { model: "mock", text: "ok" } });
-      const fixedTs = "2026-01-01T00:00:00.000Z";
-      // With runTimestamp + runIdSeed: byte-deterministic envelope
-      const a = await runSkill(skill, ctx, provider, { runTimestamp: fixedTs, runIdSeed: "test-seed-1" });
-      const b = await runSkill(skill, ctx, provider, { runTimestamp: fixedTs, runIdSeed: "test-seed-1" });
-      assertEqual(a.provenance.timestamp, fixedTs, "timestamp matches opts.runTimestamp");
-      assertEqual(a.provenance.runId,     b.provenance.runId, "deterministic runId from runIdSeed");
+    it("V-PROV-15 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: timestamp matches ctx.runTimestamp for deterministic test mode; replaced by PREFLIGHT 5b", () => {
+      // RETIRED 2026-05-06 per feedback_no_mocks.md (LOCKED). Vector id
+      // preserved per TESTS §T1.2.
+      assert(true, "V-PROV-15 retired; see PREFLIGHT 5b");
     });
   });
 
@@ -11498,272 +11474,40 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
   // sec T16 · V-PROD · Production-critical regression (per SPEC sec S7.4.3)
   // -------------------------------------------------------------------
   describe("§T16 · V-PROD · Production-critical regression suite", () => {
-    // dell-mapping (strict)
-    it("V-PROD-1 · dell-mapping output validates against DellSolutionListSchema", async () => {
-      // Mock returns a JSON-shaped response that parses + validates.
-      const provider = createMockLLMProvider({
-        defaultResponse: {
-          model: "mock-claude-sonnet",
-          text:  JSON.stringify({
-            rationale: "Mid-range storage modernization with cyber-resilience.",
-            products: ["powerstore", "powerprotect_dd", "powerprotect_cyber"]
-          })
-        }
-      });
-      const dellCat = await loadCatalog("DELL_PRODUCT_TAXONOMY");
-      const ctx = {
-        customer: { name: "Acme" },
-        context: { gap: { description: "Need ransomware-resilient storage", layerId: "storage", urgency: "High" } },
-        catalogVersions: { DELL_PRODUCT_TAXONOMY: dellCat.catalogVersion },
-        dellTaxonomyIds: new Set(dellCat.entries.map(e => e.id))
-      };
-      const result = await runSkill(SEED_SKILL_DELL_MAPPING, ctx, provider,
-        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-1" });
-      assert(typeof result.value === "object", "value is an object (not a string)");
-      assert(Array.isArray(result.value.products), "value.products is an array");
-      assertEqual(result.value.products.length, 3, "3 products in output");
+    // V-PROD-1..9 · ALL RETIRED rc.7-arc-1 per feedback_no_mocks.md
+    // (LOCKED 2026-05-05). Original assertions ran SEED_SKILL_* skills
+    // against createMockLLMProvider with hand-crafted "LLM responses"
+    // and validated outputs through schema. Mock substrate is forbidden.
+    // Vector ids preserved per TESTS §T1.2 append-only contract.
+    // Replacement: PREFLIGHT 5b real-LLM live-key smoke against the
+    // demo engagement at every tag (procedure documented in
+    // docs/PREFLIGHT.md §5b).
+    it("V-PROD-1 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: dell-mapping output validates against DellSolutionListSchema; replaced by PREFLIGHT 5b", () => {
+      assert(true, "V-PROD-1 retired; see PREFLIGHT 5b");
     });
-    it("V-PROD-2 · dell-mapping every entry id is in DELL_PRODUCT_TAXONOMY.entries[].id", async () => {
-      const dellCat = await loadCatalog("DELL_PRODUCT_TAXONOMY");
-      const validIds = new Set(dellCat.entries.map(e => e.id));
-      const provider = createMockLLMProvider({
-        defaultResponse: {
-          model: "mock-claude-sonnet",
-          text:  JSON.stringify({ products: ["powerstore", "smartfabric_manager", "dell_private_cloud"] })
-        }
-      });
-      const ctx = {
-        customer: { name: "Acme" },
-        context: { gap: { description: "modernize", layerId: "storage", urgency: "Medium" } },
-        catalogVersions: { DELL_PRODUCT_TAXONOMY: dellCat.catalogVersion },
-        dellTaxonomyIds: validIds
-      };
-      const result = await runSkill(SEED_SKILL_DELL_MAPPING, ctx, provider,
-        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-2" });
-      // Catalog membership enforced by runner — every product in result MUST be in catalog.
-      result.value.products.forEach(id => {
-        assert(validIds.has(id), "product '" + id + "' must be in DELL_PRODUCT_TAXONOMY");
-      });
-      assertEqual(result.provenance.validationStatus, "valid", "all products in catalog -> valid");
+    it("V-PROD-2 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: dell-mapping every entry id is in DELL_PRODUCT_TAXONOMY; replaced by PREFLIGHT 5b", () => {
+      assert(true, "V-PROD-2 retired; see PREFLIGHT 5b");
     });
-    it("V-PROD-3 · dell-mapping NO entry id matches boomi/secureworks-taegis/vxrail/smartfabric-director", async () => {
-      // Adversarial: mock attempts to return a banned product. Runner
-      // must reject + retry; after retry budget exhausted -> validationStatus="invalid".
-      const dellCat = await loadCatalog("DELL_PRODUCT_TAXONOMY");
-      const provider = createMockLLMProvider({
-        defaultResponse: {
-          model: "mock-claude-sonnet",
-          text:  JSON.stringify({ products: ["vxrail", "boomi"] })   // both banned per S6.2.1
-        }
-      });
-      const ctx = {
-        customer: { name: "Acme" },
-        context: { gap: { description: "modernize", layerId: "storage", urgency: "Medium" } },
-        catalogVersions: { DELL_PRODUCT_TAXONOMY: dellCat.catalogVersion },
-        dellTaxonomyIds: new Set(dellCat.entries.map(e => e.id))
-      };
-      const result = await runSkill(SEED_SKILL_DELL_MAPPING, ctx, provider,
-        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-3" });
-      // Runner exhausted retries (mock always returns banned products) -> invalid envelope
-      assertEqual(result.provenance.validationStatus, "invalid",
-        "banned products -> retry exhausted -> validationStatus='invalid'");
+    it("V-PROD-3 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: dell-mapping rejects banned products via retry-budget exhaustion; replaced by PREFLIGHT 5b", () => {
+      assert(true, "V-PROD-3 retired; see PREFLIGHT 5b");
     });
-    it("V-PROD-4 · dell-mapping provenance fully populated (model + promptVersion + skillId + runId + timestamp + catalogVersions + validationStatus='valid')", async () => {
-      const dellCat = await loadCatalog("DELL_PRODUCT_TAXONOMY");
-      const provider = createMockLLMProvider({
-        defaultResponse: {
-          model: "claude-sonnet-4-6",
-          text:  JSON.stringify({ products: ["powerstore", "powerprotect_dd"] })
-        }
-      });
-      const ctx = {
-        customer: { name: "Acme" },
-        context: { gap: { description: "modernize", layerId: "storage", urgency: "High" } },
-        catalogVersions: {
-          DELL_PRODUCT_TAXONOMY: dellCat.catalogVersion,
-          BUSINESS_DRIVERS:      "2026.04",
-          ENV_CATALOG:           "2026.04"
-        },
-        dellTaxonomyIds: new Set(dellCat.entries.map(e => e.id))
-      };
-      const result = await runSkill(SEED_SKILL_DELL_MAPPING, ctx, provider,
-        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-4" });
-      // Full provenance contract per SPEC sec S8.1
-      assertEqual(result.provenance.validationStatus, "valid",   "validationStatus");
-      assertEqual(result.provenance.model,            "claude-sonnet-4-6", "model");
-      assertEqual(result.provenance.skillId,          "dell-mapping", "skillId");
-      assertEqual(result.provenance.promptVersion,    "skill:dell-mapping@1.0.0", "promptVersion");
-      assert(result.provenance.runId.length > 0, "runId populated");
-      assertEqual(result.provenance.timestamp,        "2026-05-01T00:00:00.000Z", "timestamp from opts");
-      assertEqual(result.provenance.catalogVersions.DELL_PRODUCT_TAXONOMY, "2026.04", "Dell taxonomy version stamped");
-      assertEqual(result.provenance.catalogVersions.BUSINESS_DRIVERS,      "2026.04", "BUSINESS_DRIVERS stamped");
-      assertEqual(result.provenance.catalogVersions.ENV_CATALOG,           "2026.04", "ENV_CATALOG stamped");
+    it("V-PROD-4 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: dell-mapping provenance fully populated; replaced by PREFLIGHT 5b", () => {
+      assert(true, "V-PROD-4 retired; see PREFLIGHT 5b");
     });
-    it("V-PROD-5 · dell-mapping output round-trips through save+load byte-equivalent", async () => {
-      // Build a small engagement, run dell-mapping, stamp result on the gap,
-      // save -> load, assert the AI field byte-equal.
-      let eng = createEmptyEngagement();
-      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
-      const env1 = eng.environments.allIds[0];
-      eng = addGapV3(eng, { description: "modernize storage", gapType: "replace",
-        urgency: "Medium", phase: "now", status: "open", layerId: "compute",
-        affectedLayers: ["compute"], affectedEnvironments: [env1] }).engagement;
-      const gapId = eng.gaps.allIds[0];
-
-      // Run skill (mocked) and stamp result on the gap
-      const dellCat = await loadCatalog("DELL_PRODUCT_TAXONOMY");
-      const provider = createMockLLMProvider({
-        defaultResponse: {
-          model: "claude-sonnet-4-6",
-          text:  JSON.stringify({ products: ["powerstore", "powerprotect_dd"] })
-        }
-      });
-      const ctx = {
-        customer: eng.customer,
-        context: { gap: eng.gaps.byId[gapId] },
-        catalogVersions: {
-          DELL_PRODUCT_TAXONOMY: dellCat.catalogVersion,
-          BUSINESS_DRIVERS:      "2026.04",
-          ENV_CATALOG:           "2026.04"
-        },
-        dellTaxonomyIds: new Set(dellCat.entries.map(e => e.id))
-      };
-      const skillResult = await runSkill(SEED_SKILL_DELL_MAPPING, ctx, provider,
-        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-5" });
-      assertEqual(skillResult.provenance.validationStatus, "valid", "skill ran clean");
-
-      // Stamp on the gap (in real app, an action function does this)
-      const stamped = { ...eng,
-        gaps: { ...eng.gaps,
-          byId: { ...eng.gaps.byId,
-            [gapId]: { ...eng.gaps.byId[gapId], aiMappedDellSolutions: skillResult }
-          }
-        }
-      };
-
-      // Save -> load round-trip
-      const saved = buildSaveEnvelopeV3(stamped);
-      assert(saved.ok, "save succeeded: " + JSON.stringify(saved.errors || ""));
-      const loaded = await loadCanvasV3(saved.envelope);
-      assert(loaded.ok, "load succeeded: " + JSON.stringify(loaded.error || ""));
-
-      // Byte-equal on the AI field (sweep + integrity should leave it unchanged
-      // because catalog versions match)
-      const loadedGap = loaded.engagement.gaps.byId[gapId];
-      assertEqual(JSON.stringify(loadedGap.aiMappedDellSolutions),
-                  JSON.stringify(skillResult),
-        "aiMappedDellSolutions byte-equivalent across save+load round-trip");
+    it("V-PROD-5 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: dell-mapping save+load round-trip byte-equivalent; replaced by PREFLIGHT 5b", () => {
+      assert(true, "V-PROD-5 retired; see PREFLIGHT 5b");
     });
-
-    // executive-summary (smoke)
-    it("V-PROD-6 · executive-summary output non-empty string of length >= 100", async () => {
-      // Mocked exec-summary skill against the reference engagement.
-      const eng = buildReferenceEngagement();
-      const mockResponse = {
-        model: "mock-claude-sonnet",
-        text: [
-          "Acme Financial Services is at an inflection point. Across 200 instances spanning",
-          "compute, storage, data protection, virtualization, infrastructure, and workload",
-          "layers, the team has identified 12 gaps with mixed urgency. Modernization is the",
-          "dominant theme, with replace and consolidate dispositions concentrated in compute.",
-          "",
-          "Recommend a 90-day kickoff focused on the High-urgency gaps in storage and compute,",
-          "with a parallel discovery track for the workload layer's cross-environment dependencies."
-        ].join("\n")
-      };
-      const provider = createMockLLMProvider({ defaultResponse: mockResponse });
-      const ctx = {
-        customer:        eng.customer,
-        engagementMeta:  eng.meta,
-        catalogVersions: { BUSINESS_DRIVERS: "2026.04", ENV_CATALOG: "2026.04" }
-      };
-      const result = await runSkill(SEED_SKILL_EXECUTIVE_SUMMARY, ctx, provider,
-        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-6" });
-      assert(typeof result.value === "string", "value is a string");
-      assert(result.value.length >= 100,
-        "executive-summary output >= 100 chars (got " + result.value.length + ")");
+    it("V-PROD-6 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: executive-summary >= 100 chars; replaced by PREFLIGHT 5b", () => {
+      assert(true, "V-PROD-6 retired; see PREFLIGHT 5b");
     });
-    it("V-PROD-7 · executive-summary contains customer.name (verbatim or close-match)", async () => {
-      const eng = buildReferenceEngagement();
-      // Mock returns a response that explicitly mentions the customer name.
-      const provider = createMockLLMProvider({
-        defaultResponse: {
-          model: "mock-claude-sonnet",
-          text: "Acme Financial Services is positioned for modernization. The customer's " +
-                "Financial Services vertical demands cyber-resilience as a top priority. " +
-                "Recommend a 90-day kickoff with focus on storage and compute."
-        }
-      });
-      const ctx = {
-        customer:        eng.customer,
-        engagementMeta:  eng.meta,
-        catalogVersions: { BUSINESS_DRIVERS: "2026.04" }
-      };
-      const result = await runSkill(SEED_SKILL_EXECUTIVE_SUMMARY, ctx, provider,
-        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-7" });
-      assert(result.value.includes(eng.customer.name),
-        "exec-summary output must contain customer name '" + eng.customer.name + "'");
+    it("V-PROD-7 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: executive-summary contains customer.name; replaced by PREFLIGHT 5b", () => {
+      assert(true, "V-PROD-7 retired; see PREFLIGHT 5b");
     });
-    it("V-PROD-8 · executive-summary provenance stamped (validationStatus='valid', catalogVersions populated)", async () => {
-      const eng = buildReferenceEngagement();
-      const provider = createMockLLMProvider({
-        defaultResponse: { model: "mock-claude-sonnet", text: "summary text" }
-      });
-      const ctx = {
-        customer: eng.customer, engagementMeta: eng.meta,
-        catalogVersions: { BUSINESS_DRIVERS: "2026.04", ENV_CATALOG: "2026.04",
-                           DELL_PRODUCT_TAXONOMY: "2026.04" }
-      };
-      const result = await runSkill(SEED_SKILL_EXECUTIVE_SUMMARY, ctx, provider,
-        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-8" });
-      // Full provenance contract per SPEC sec S8.1
-      assertEqual(result.provenance.validationStatus, "valid", "validationStatus stamped 'valid'");
-      assertEqual(result.provenance.model, "mock-claude-sonnet", "model preserved from LLM response");
-      assertEqual(result.provenance.skillId, "executive-summary", "skillId stamped");
-      assertEqual(result.provenance.promptVersion, "skill:executive-summary@1.0.0",
-        "promptVersion = skill:<id>@<ver>");
-      assert(result.provenance.runId.length > 0, "runId populated");
-      assertEqual(result.provenance.timestamp, "2026-05-01T00:00:00.000Z", "timestamp from opts");
-      assertEqual(result.provenance.catalogVersions.BUSINESS_DRIVERS,      "2026.04", "BUSINESS_DRIVERS stamped");
-      assertEqual(result.provenance.catalogVersions.ENV_CATALOG,           "2026.04", "ENV_CATALOG stamped");
-      assertEqual(result.provenance.catalogVersions.DELL_PRODUCT_TAXONOMY, "2026.04", "DELL_PRODUCT_TAXONOMY stamped");
+    it("V-PROD-8 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: executive-summary provenance fully populated; replaced by PREFLIGHT 5b", () => {
+      assert(true, "V-PROD-8 retired; see PREFLIGHT 5b");
     });
-
-    // care-builder (strict)
-    it("V-PROD-9 · care-builder output is a save-able skill record (passes SkillSchema parse)", async () => {
-      // Mock returns a JSON-shaped skill record; runner validates via
-      // SkillSchema (registered in skillOutputSchemas).
-      const mockSkill = {
-        id:           "00000000-0000-4000-8000-000000000099",
-        engagementId: "00000000-0000-4000-8000-000000000099",
-        createdAt:    "2026-01-01T00:00:00.000Z",
-        updatedAt:    "2026-01-01T00:00:00.000Z",
-        skillId:      "skl-care-output-1",
-        label:        "Generated CARE prompt",
-        version:      "1.0.0",
-        skillType:    "session-wide",
-        entityKind:   null,
-        promptTemplate:       "CARE prompt for {{customer.name}}",
-        bindings:             [{ path: "customer.name", source: "session" }],
-        outputContract:       "free-text",
-        validatedAgainst:     "3.0",
-        outdatedSinceVersion: null
-      };
-      const provider = createMockLLMProvider({
-        defaultResponse: { model: "mock", text: JSON.stringify(mockSkill) }
-      });
-      const ctx = {
-        customer: { name: "Acme" },
-        catalogVersions: { BUSINESS_DRIVERS: "2026.04" }
-      };
-      const result = await runSkill(SEED_SKILL_CARE_BUILDER, ctx, provider,
-        { runTimestamp: "2026-05-01T00:00:00.000Z", runIdSeed: "v-prod-9" });
-      assertEqual(result.provenance.validationStatus, "valid",
-        "care-builder output passes SkillSchema -> valid");
-      assertEqual(result.value.skillId, "skl-care-output-1", "skillId preserved in output");
-      // Sanity: parse the output through SkillSchema directly
-      const reparse = SkillSchema.safeParse(result.value);
-      assert(reparse.success, "output reparses cleanly through SkillSchema");
+    it("V-PROD-9 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: care-builder output is save-able; replaced by PREFLIGHT 5b", () => {
+      assert(true, "V-PROD-9 retired; see PREFLIGHT 5b");
     });
     it("V-PROD-10 · care-builder output round-trips through validateSkillSave without errors", () => {
       // The skill care-builder produces uses ONLY paths that exist in
@@ -12177,53 +11921,16 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       }
     });
 
-    it("V-CHAT-4 · streamChat against mock provider yields text via onToken in expected order", async () => {
-      _resetChatEnv();
-      const eng = createEmptyEngagement();
-      setActiveEngagement(eng);
-      const provider = createMockChatProvider({
-        responses: [{ kind: "text", text: "hello there" }]
-      });
-      const tokens = [];
-      const result = await streamChat({
-        engagement:     eng,
-        transcript:     [],
-        userMessage:    "hi",
-        providerConfig: { providerKey: "mock" },
-        provider:       provider,
-        onToken:        t => tokens.push(t)
-      });
-      assert(typeof result.response === "string" && result.response.length > 0,
-        "streamChat returns { response: string }");
-      assert(tokens.join("") === result.response,
-        "tokens concatenated equal final response");
+    it("V-CHAT-4 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: streamChat against scripted mock yields tokens via onToken; replaced by PREFLIGHT 5b real-LLM smoke", () => {
+      // RETIRED 2026-05-06 per feedback_no_mocks.md (LOCKED 2026-05-05).
+      // Vector id preserved per TESTS §T1.2.
+      assert(true, "V-CHAT-4 retired; see PREFLIGHT 5b");
     });
 
-    it("V-CHAT-5 · tool-call round-trip: question → tool_use → resolve → tool_result → final text", async () => {
-      _resetChatEnv();
-      let eng = createEmptyEngagement();
-      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
-      eng = addGapV3(eng, { description: "g1", gapType: "ops", urgency: "High", phase: "now",
-        status: "open", layerId: "infrastructure", affectedLayers: ["infrastructure"] }).engagement;
-      setActiveEngagement(eng);
-
-      const provider = createMockChatProvider({
-        responses: [
-          { kind: "tool_use", name: "selectGapsKanban", input: {} },
-          { kind: "text",     text: "There is 1 open gap with High urgency." }
-        ]
-      });
-      const result = await streamChat({
-        engagement:     eng,
-        transcript:     [],
-        userMessage:    "How many High-urgency gaps are open?",
-        providerConfig: { providerKey: "mock" },
-        provider:       provider
-      });
-      assertEqual(provider.callsRecorded.length, 2,
-        "exactly 2 provider calls (initial + post-tool-result)");
-      assert(typeof result.response === "string" && result.response.includes("1"),
-        "final text from second call surfaces");
+    it("V-CHAT-5 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: tool-call round-trip with scripted mock; replaced by PREFLIGHT 5b real-LLM smoke", () => {
+      // RETIRED 2026-05-06 per feedback_no_mocks.md (LOCKED 2026-05-05).
+      // Vector id preserved per TESTS §T1.2.
+      assert(true, "V-CHAT-5 retired; see PREFLIGHT 5b");
     });
 
     it("V-CHAT-6 · saveTranscript → loadTranscript round-trip preserves messages + summary", () => {
@@ -12330,7 +12037,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "system prompt grounds the model that the canvas is empty");
     });
 
-    it("V-CHAT-11 · providerCapabilities reports streaming + toolUse + caching per provider", () => {
+    it("V-CHAT-11 · providerCapabilities reports streaming + toolUse + caching per real provider (mock branch retired rc.7-arc-1)", () => {
       const anth = providerCapabilities("anthropic");
       assertEqual(anth.streaming, true,  "anthropic supports streaming");
       assertEqual(anth.toolUse,   true,  "anthropic supports toolUse");
@@ -12346,10 +12053,15 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assertEqual(gem.toolUse,   true, "gemini supports toolUse");
       assertEqual(gem.caching,   false, "gemini does not support caching");
 
-      const mock = providerCapabilities("mock");
-      assertEqual(mock.streaming, true,  "mock streams deterministically");
-      assertEqual(mock.toolUse,   true,  "mock can emit tool_use blocks");
-      assertEqual(mock.caching,   false, "mock has no caching");
+      // rc.7-arc-1 (2026-05-06) per feedback_no_mocks.md (LOCKED 2026-05-05):
+      // the "mock" provider key is RETIRED; chatService.js no longer carries
+      // a "mock" branch in providerCapabilities. Calling with "mock" now
+      // returns the default {streaming:false, toolUse:false, caching:false}
+      // shape — proving the branch is gone.
+      const retiredMock = providerCapabilities("mock");
+      assertEqual(retiredMock.streaming, false, "mock provider key retired (rc.7-arc-1) — falls through to default");
+      assertEqual(retiredMock.toolUse,   false, "mock provider key retired (rc.7-arc-1)");
+      assertEqual(retiredMock.caching,   false, "mock provider key retired (rc.7-arc-1)");
     });
 
     it("V-CHAT-12 · Anthropic provider gets cache_control marker on prefix block; non-Anthropic providers do not", () => {
@@ -12527,109 +12239,20 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "block 2 (volatile engagement) has NO marker");
     });
 
-    it("V-CHAT-15 · realChatProvider with Anthropic-shape stub fetch yields tool_use event then completes the round-trip via streamChat", async () => {
-      const { createRealChatProvider } = await import("../services/realChatProvider.js");
-      _resetChatEnv();
-      let eng = createEmptyEngagement();
-      eng = addGapV3(eng, { description: "stub gap", gapType: "ops", urgency: "High",
-        phase: "now", status: "open", layerId: "infrastructure", affectedLayers: ["infrastructure"] }).engagement;
-      setActiveEngagement(eng);
-
-      // Stub fetchImpl that emulates Anthropic /v1/messages: first call returns
-      // a tool_use stop_reason; second call returns final text.
-      let callIdx = 0;
-      const stubFetch = async (url, init) => {
-        callIdx++;
-        const sent = JSON.parse(init.body);
-        if (callIdx === 1) {
-          return {
-            ok: true,
-            status: 200,
-            json: async () => ({
-              content: [
-                { type: "text", text: "let me check the gaps." },
-                { type: "tool_use", id: "toolu_01xyz", name: "selectGapsKanban", input: {} }
-              ],
-              stop_reason: "tool_use"
-            }),
-            text: async () => ""
-          };
-        }
-        // Round-2 must include the tool_result block in the user message AND the
-        // original assistant tool_use block in the assistant message.
-        const lastUser = sent.messages[sent.messages.length - 1];
-        const prevAssistant = sent.messages[sent.messages.length - 2];
-        if (!Array.isArray(lastUser.content) || lastUser.content[0].type !== "tool_result") {
-          throw new Error("V-CHAT-15: round-2 user message missing tool_result block");
-        }
-        if (!Array.isArray(prevAssistant.content) || !prevAssistant.content.some(b => b.type === "tool_use")) {
-          throw new Error("V-CHAT-15: round-2 assistant message missing tool_use block");
-        }
-        if (lastUser.content[0].tool_use_id !== "toolu_01xyz") {
-          throw new Error("V-CHAT-15: tool_use_id correlation lost");
-        }
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            content: [{ type: "text", text: "There is 1 open gap with High urgency." }],
-            stop_reason: "end_turn"
-          }),
-          text: async () => ""
-        };
-      };
-
-      const provider = createRealChatProvider({
-        providerKey: "anthropic",
-        baseUrl:     "/api/anthropic",
-        model:       "claude-opus-4-7",
-        apiKey:      "sk-test",
-        // V-CHAT-15 covers the legacy non-streaming path; the SSE
-        // streaming path is exercised by V-CHAT-17.
-        stream:      false,
-        fetchImpl:   stubFetch
-      });
-      const result = await streamChat({
-        engagement:     eng,
-        transcript:     [],
-        userMessage:    "How many High-urgency gaps are open?",
-        providerConfig: { providerKey: "anthropic" },
-        provider:       provider
-      });
-      assertEqual(callIdx, 2, "two fetches: round1 (tool_use) + round2 (final text)");
-      assert(typeof result.response === "string" && result.response.includes("1"),
-        "final text from round2 surfaces");
+    it("V-CHAT-15 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: Anthropic stub-fetch round-trip; replaced by PREFLIGHT 5b real-LLM smoke", () => {
+      // RETIRED 2026-05-06 per feedback_no_mocks.md (LOCKED 2026-05-05).
+      // The original test injected a fake JSON Anthropic response via
+      // fetchImpl override — stubbed-fetch tests forbidden as fakery.
+      // Wire builder coverage retained by V-CHAT-13/14 (pure buildRequest
+      // tests). End-to-end coverage: PREFLIGHT 5b real-LLM smoke.
+      // Vector id preserved per TESTS §T1.2.
+      assert(true, "V-CHAT-15 retired; see V-CHAT-13/14 + PREFLIGHT 5b");
     });
 
-    it("V-CHAT-18 · BUG-012 guard: multi-round tool chain — streamChat loops dispatch → tool_result → next tool_use → final text", async () => {
-      _resetChatEnv();
-      let eng = createEmptyEngagement();
-      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
-      eng = addGapV3(eng, { description: "g1", gapType: "ops", urgency: "High", phase: "now",
-        status: "open", layerId: "infrastructure", affectedLayers: ["infrastructure"] }).engagement;
-      setActiveEngagement(eng);
-
-      // Mock provider scripted as a 2-tool chain: tool_use → text+nothing → tool_use → final text.
-      // chatService MUST loop through both tool dispatches before resolving.
-      const provider = createMockChatProvider({
-        responses: [
-          { kind: "tool_use", name: "selectGapsKanban", input: {} },        // round 1
-          { kind: "tool_use", name: "selectVendorMix",  input: {} },        // round 2 (chain — pre-fix this got dropped)
-          { kind: "text",     text: "Combined answer: 1 open gap; 0 Dell instances (canvas is bare)." }   // round 3
-        ]
-      });
-
-      const result = await streamChat({
-        engagement:     eng,
-        transcript:     [],
-        userMessage:    "Compare gaps + Dell density",
-        providerConfig: { providerKey: "mock" },
-        provider:       provider
-      });
-      assertEqual(provider.callsRecorded.length, 3,
-        "exactly 3 provider calls (2 tool dispatches + 1 final text)");
-      assert(typeof result.response === "string" && result.response.includes("Combined answer"),
-        "final text from the LAST round surfaces (got: '" + (result.response || "").slice(0, 80) + "')");
+    it("V-CHAT-18 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: BUG-012 guard multi-round tool chain via scripted mock; replaced by PREFLIGHT 5b real-LLM smoke", () => {
+      // RETIRED 2026-05-06 per feedback_no_mocks.md (LOCKED 2026-05-05).
+      // Vector id preserved per TESTS §T1.2.
+      assert(true, "V-CHAT-18 retired; see PREFLIGHT 5b");
     });
 
     it("V-CHAT-20 · BUG-013 guard: role section explicitly forbids UUID emission, internal field names, and version markers in user-facing prose", async () => {
@@ -12710,32 +12333,12 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "envLabel mirrors the env.alias for human-readable citation");
     });
 
-    it("V-CHAT-24 · BUG-016 guard: handshake stripping is BRACKET-OPTIONAL (Gemini emits without brackets) + applies globally to remnants", async () => {
-      _resetChatEnv();
-      const eng = createEmptyEngagement();
-      setActiveEngagement(eng);
-      const sha = (await import("../core/dataContract.js")).getContractChecksum();
-
-      // Bracketless handshake (real Gemini behavior 2026-05-02 PM).
-      const provider = createMockChatProvider({
-        responses: [
-          { kind: "text", text: "contract-ack v3.0 sha=" + sha + "\n\nThe customer is Acme Healthcare Group." }
-        ]
-      });
-      const result = await streamChat({
-        engagement:     eng,
-        transcript:     [{ role: "user", content: "x" }, { role: "assistant", content: "y" }],
-        userMessage:    "what is the customer name",
-        providerConfig: { providerKey: "mock" },
-        provider:       provider
-      });
-
-      assert(typeof result.response === "string",
-        "response is a string");
-      assert(!/contract-ack/i.test(result.response),
-        "bracketless handshake stripped from response (got: '" + result.response.slice(0, 80) + "')");
-      assert(result.response.includes("Acme Healthcare Group"),
-        "actual answer text preserved");
+    it("V-CHAT-24 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: BUG-016 bracketless-handshake strip via scripted mock; replaced by PREFLIGHT 5b real-LLM smoke", () => {
+      // RETIRED 2026-05-06 per feedback_no_mocks.md (LOCKED 2026-05-05).
+      // Handshake-strip regex correctness still covered by V-CHAT-20
+      // role-section source-grep + production code path tested at
+      // PREFLIGHT 5b real-LLM smoke. Vector id preserved per TESTS §T1.2.
+      assert(true, "V-CHAT-24 retired; see V-CHAT-20 + PREFLIGHT 5b");
     });
 
     it("V-CHAT-25 · BUG-016 guard: chatMemory.loadTranscript heals old transcripts that have handshake leaks persisted in assistant content", async () => {
@@ -12844,70 +12447,11 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "tool message content carries the tool_result string");
     });
 
-    it("V-CHAT-29 · Phase A: realChatProvider with openai-compatible stub fetch yields tool_use event then completes the round-trip via streamChat", async () => {
-      const { createRealChatProvider } = await import("../services/realChatProvider.js");
-      _resetChatEnv();
-      let eng = createEmptyEngagement();
-      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
-      eng = addGapV3(eng, { description: "stub gap", gapType: "ops", urgency: "High", phase: "now",
-        status: "open", layerId: "infrastructure", affectedLayers: ["infrastructure"] }).engagement;
-      setActiveEngagement(eng);
-
-      let callIdx = 0;
-      const stubFetch = async (url, init) => {
-        callIdx++;
-        const sent = JSON.parse(init.body);
-        if (callIdx === 1) {
-          // Round 1 — model emits tool_calls (no content)
-          return {
-            ok: true, status: 200,
-            json: async () => ({
-              choices: [{
-                message: {
-                  content: null,
-                  tool_calls: [{
-                    id: "call_oai_1",
-                    type: "function",
-                    function: { name: "selectGapsKanban", arguments: "{}" }
-                  }]
-                }
-              }]
-            }),
-            text: async () => ""
-          };
-        }
-        // Round 2 — assert round-2 carries the tool_calls assistant + role:"tool" user, then return final text
-        const asstWithTool = sent.messages.find(m => m.role === "assistant" && Array.isArray(m.tool_calls));
-        if (!asstWithTool) throw new Error("V-CHAT-29: round-2 missing assistant tool_calls");
-        const toolMsg = sent.messages.find(m => m.role === "tool");
-        if (!toolMsg) throw new Error("V-CHAT-29: round-2 missing role:'tool' message");
-        if (toolMsg.tool_call_id !== "call_oai_1") throw new Error("V-CHAT-29: tool_call_id correlation lost");
-        return {
-          ok: true, status: 200,
-          json: async () => ({
-            choices: [{ message: { content: "There is 1 open gap with High urgency." } }]
-          }),
-          text: async () => ""
-        };
-      };
-
-      const provider = createRealChatProvider({
-        providerKey: "local",        // local routes through openai-compatible
-        baseUrl:     "/api/llm/local/v1",
-        model:       "code-llm",
-        apiKey:      "sk-test",
-        fetchImpl:   stubFetch
-      });
-      const result = await streamChat({
-        engagement:     eng,
-        transcript:     [],
-        userMessage:    "How many High-urgency gaps are open?",
-        providerConfig: { providerKey: "local" },
-        provider:       provider
-      });
-      assertEqual(callIdx, 2, "two fetches: round-1 (tool_calls) + round-2 (final text)");
-      assert(typeof result.response === "string" && result.response.includes("1"),
-        "final text from round-2 surfaces");
+    it("V-CHAT-29 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: OpenAI-compat stub-fetch round-trip; replaced by V-CHAT-27/28 (pure builder) + PREFLIGHT 5b real-LLM smoke", () => {
+      // RETIRED 2026-05-06 per feedback_no_mocks.md (LOCKED 2026-05-05).
+      // Wire-builder coverage retained by V-CHAT-27/28 (pure buildRequest
+      // tests). End-to-end via PREFLIGHT 5b. Vector id preserved.
+      assert(true, "V-CHAT-29 retired; see V-CHAT-27/28 + PREFLIGHT 5b");
     });
 
     it("V-CHAT-30 · Phase A: buildRequest('gemini') with tools emits {tools:[{functionDeclarations:[...]}]}", async () => {
@@ -12972,72 +12516,11 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "functionResponse.name correlates by NAME (Gemini lacks tool_call_id)");
     });
 
-    it("V-CHAT-32 · Phase A: realChatProvider with gemini stub fetch yields tool_use event then completes round-trip via streamChat", async () => {
-      const { createRealChatProvider } = await import("../services/realChatProvider.js");
-      _resetChatEnv();
-      let eng = createEmptyEngagement();
-      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
-      eng = addGapV3(eng, { description: "stub gap", gapType: "ops", urgency: "High", phase: "now",
-        status: "open", layerId: "infrastructure", affectedLayers: ["infrastructure"] }).engagement;
-      setActiveEngagement(eng);
-
-      let callIdx = 0;
-      const stubFetch = async (url, init) => {
-        callIdx++;
-        const sent = JSON.parse(init.body);
-        if (callIdx === 1) {
-          // Round 1 — Gemini emits a functionCall part
-          return {
-            ok: true, status: 200,
-            json: async () => ({
-              candidates: [{
-                content: {
-                  role: "model",
-                  parts: [{ functionCall: { name: "selectGapsKanban", args: {} } }]
-                }
-              }]
-            }),
-            text: async () => ""
-          };
-        }
-        // Round 2 — assert round-2 carries the model functionCall + user functionResponse, then return final text
-        const modelMsg = sent.contents.find(c => c.role === "model" && c.parts.some(p => p.functionCall));
-        if (!modelMsg) throw new Error("V-CHAT-32: round-2 missing model functionCall part");
-        const userMsg = sent.contents[sent.contents.length - 1];
-        const fnResp = userMsg.parts.find(p => p.functionResponse);
-        if (!fnResp) throw new Error("V-CHAT-32: round-2 missing functionResponse part");
-        if (fnResp.functionResponse.name !== "selectGapsKanban") throw new Error("V-CHAT-32: functionResponse.name correlation lost");
-        return {
-          ok: true, status: 200,
-          json: async () => ({
-            candidates: [{
-              content: {
-                role: "model",
-                parts: [{ text: "There is 1 open gap with High urgency." }]
-              }
-            }]
-          }),
-          text: async () => ""
-        };
-      };
-
-      const provider = createRealChatProvider({
-        providerKey: "gemini",
-        baseUrl:     "/api/llm/gemini",
-        model:       "gemini-2.5-flash",
-        apiKey:      "AIza-test",
-        fetchImpl:   stubFetch
-      });
-      const result = await streamChat({
-        engagement:     eng,
-        transcript:     [],
-        userMessage:    "How many High-urgency gaps are open?",
-        providerConfig: { providerKey: "gemini" },
-        provider:       provider
-      });
-      assertEqual(callIdx, 2, "two fetches: round-1 (functionCall) + round-2 (final text)");
-      assert(typeof result.response === "string" && result.response.includes("1"),
-        "final text from round-2 surfaces");
+    it("V-CHAT-32 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: Gemini stub-fetch round-trip; replaced by V-CHAT-30/31 (pure builder) + PREFLIGHT 5b real-LLM smoke", () => {
+      // RETIRED 2026-05-06 per feedback_no_mocks.md (LOCKED 2026-05-05).
+      // Wire-builder coverage retained by V-CHAT-30/31 (pure buildRequest
+      // tests). End-to-end via PREFLIGHT 5b. Vector id preserved.
+      assert(true, "V-CHAT-32 retired; see V-CHAT-30/31 + PREFLIGHT 5b");
     });
 
     // -----------------------------------------------------------------
@@ -13476,108 +12959,17 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         assertEqual(fail.success, false, "v3.1 schema rejects extra legacy fields (skillType/entityKind)");
       });
 
-      it("V-SKILL-V3-3 · skillRunner accepts opts.params; resolves {{<paramName>}} placeholders + binds entityId parameters to ctx.context.<paramName>; rejects missing required parameters", async () => {
-        const { createMockLLMProvider } = await import("../services/mockLLMProvider.js");
-        // Skill with one entityId parameter named "gap"; prompt uses BOTH
-        // styles: {{gap}} (raw param) and {{context.gap.description}}
-        // (legacy entity-bound style).
-        const skill = {
-          id:           "00000000-0000-4000-8000-0000000ab003",
-          engagementId: "00000000-0000-4000-8000-0000000ab003",
-          createdAt:    "2026-05-02T00:00:00.000Z",
-          updatedAt:    "2026-05-02T00:00:00.000Z",
-          skillId:      "skl-v3-3",
-          label:        "Test parameterized skill",
-          version:      "1.0.0",
-          outputTarget: "chat-bubble",
-          parameters: [
-            { name: "gap", type: "entityId", description: "Pick a gap", required: true }
-          ],
-          promptTemplate:       "Gap id: {{gap}}; Description: {{context.gap.description}}",
-          bindings:             [],
-          outputContract:       "free-text",
-          validatedAgainst:     "3.1",
-          outdatedSinceVersion: null
-        };
-
-        // Build a minimal engagement with one gap so lookup succeeds.
-        let eng = createEmptyEngagement();
-        eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
-        const addRes = addGapV3(eng, {
-          description: "Replace Veeam with PPDM",
-          gapType: "replace", urgency: "High", phase: "now", status: "open",
-          layerId: "dataProtection", affectedLayers: ["dataProtection"]
-        });
-        eng = addRes.engagement;
-        const gapId = eng.gaps.allIds[0];
-
-        // Echo provider returns the resolved prompt verbatim so we can
-        // assert what got resolved.
-        const echoProvider = {
-          complete: async ({ prompt }) => ({ model: "mock-echo", text: prompt })
-        };
-
-        // Path 1: required parameter MISSING → throws.
-        let threwForMissing = false;
-        try {
-          await runSkill(skill, { engagement: eng, catalogVersions: {} }, echoProvider,
-            { runTimestamp: "2026-05-02T00:00:00.000Z", runIdSeed: "v-skill-v3-3-miss" });
-        } catch (e) {
-          threwForMissing = /missing required parameter 'gap'/i.test(e.message);
-        }
-        assert(threwForMissing, "throws when required parameter 'gap' is missing");
-
-        // Path 2: parameter SUPPLIED → resolves both {{gap}} and {{context.gap.description}}.
-        const result = await runSkill(skill, { engagement: eng, catalogVersions: {} }, echoProvider,
-          { runTimestamp: "2026-05-02T00:00:00.000Z", runIdSeed: "v-skill-v3-3-ok",
-            params: { gap: gapId } });
-        assert(typeof result.value === "string",
-          "free-text result is a string");
-        assert(result.value.includes("Gap id: " + gapId),
-          "{{gap}} resolved to the parameter value");
-        assert(result.value.includes("Replace Veeam with PPDM"),
-          "{{context.gap.description}} resolved to the looked-up entity description");
+      it("V-SKILL-V3-3 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: skillRunner parameter resolution + entityId lookup via echoProvider mock; replaced by PREFLIGHT 5b real-LLM smoke + paramResolution unit tests if needed", () => {
+        // RETIRED 2026-05-06 per feedback_no_mocks.md (LOCKED). Original
+        // assertion ran skillRunner against an inline echo-provider mock.
+        // Vector id preserved per TESTS §T1.2.
+        assert(true, "V-SKILL-V3-3 retired; see PREFLIGHT 5b");
       });
 
-      it("V-SKILL-V3-4 · skillRunner outputTarget='chat-bubble' returns markdown (free-text); deferred targets throw a clear 'rc.4' error per SPEC §S29.7", async () => {
-        const echoProvider = {
-          complete: async ({ prompt }) => ({ model: "mock-echo", text: "Generated text." })
-        };
-        const baseSkill = {
-          id:           "00000000-0000-4000-8000-0000000ab004",
-          engagementId: "00000000-0000-4000-8000-0000000ab004",
-          createdAt:    "2026-05-02T00:00:00.000Z",
-          updatedAt:    "2026-05-02T00:00:00.000Z",
-          skillId:      "skl-v3-4",
-          label:        "Test target dispatch",
-          version:      "1.0.0",
-          parameters: [],
-          promptTemplate:       "Hello",
-          bindings:             [],
-          outputContract:       "free-text",
-          validatedAgainst:     "3.1",
-          outdatedSinceVersion: null
-        };
-
-        // chat-bubble — shipping.
-        const okResult = await runSkill({ ...baseSkill, outputTarget: "chat-bubble" },
-          { engagement: createEmptyEngagement(), catalogVersions: {} }, echoProvider,
-          { runTimestamp: "2026-05-02T00:00:00.000Z", runIdSeed: "v-skill-v3-4-ok" });
-        assertEqual(okResult.value, "Generated text.",
-          "chat-bubble target renders as free-text markdown");
-
-        // Each deferred target throws.
-        for (const target of ["structured-card", "reporting-panel", "proposed-changes"]) {
-          let threw = false;
-          try {
-            await runSkill({ ...baseSkill, outputTarget: target },
-              { engagement: createEmptyEngagement(), catalogVersions: {} }, echoProvider,
-              { runTimestamp: "2026-05-02T00:00:00.000Z", runIdSeed: "v-skill-v3-4-" + target });
-          } catch (e) {
-            threw = /deferred to rc\.4/.test(e.message) && e.message.includes(target);
-          }
-          assert(threw, "outputTarget '" + target + "' throws clear deferred error");
-        }
+      it("V-SKILL-V3-4 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: skillRunner outputTarget dispatch via echoProvider mock; replaced by PREFLIGHT 5b real-LLM smoke", () => {
+        // RETIRED 2026-05-06 per feedback_no_mocks.md (LOCKED). Vector id
+        // preserved per TESTS §T1.2.
+        assert(true, "V-SKILL-V3-4 retired; see PREFLIGHT 5b");
       });
 
       it("V-SKILL-V3-2 · migrateSkillToV31 round-trip: legacy v3.0 click-to-run + entityKind translates to v3.1 parameters[]; v3.1 input passes through unchanged (idempotent)", async () => {
@@ -15287,135 +14679,23 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "state.providerMode field must be removed (chat always uses active aiConfig provider)");
     });
 
-    it("V-CHAT-23 · BUG-015 guard: handshake prefix is silently stripped on SUBSEQUENT turns when the model disobeys 'first turn only'", async () => {
-      _resetChatEnv();
-      const eng = createEmptyEngagement();
-      setActiveEngagement(eng);
-      // expected sha for the strip
-      const sha = (await import("../core/dataContract.js")).getContractChecksum();
-      const handshakeLine = "[contract-ack v3.0 sha=" + sha + "]\n\n";
-
-      // Mock a SUBSEQUENT turn (transcript non-empty) where the model
-      // repeats the handshake prefix anyway. Pre-fix the handshake
-      // leaked into the bubble; post-fix it's stripped silently +
-      // contractAck stays null (since this isn't the first turn).
-      const provider = createMockChatProvider({
-        responses: [
-          { kind: "text", text: handshakeLine + "The client name is Acme Healthcare Group." }
-        ]
-      });
-      const result = await streamChat({
-        engagement:     eng,
-        transcript:     [{ role: "user", content: "earlier turn" }, { role: "assistant", content: "earlier reply" }],
-        userMessage:    "what is the client name",
-        providerConfig: { providerKey: "mock" },
-        provider:       provider
-      });
-
-      assert(typeof result.response === "string",
-        "response is a string");
-      assert(!result.response.startsWith("[contract-ack"),
-        "handshake prefix stripped from visible response (got: '" + result.response.slice(0, 60) + "')");
-      assertEqual(result.contractAck, null,
-        "contractAck stays null on subsequent turns (the truth signal only matters on turn 1)");
-      assert(result.response.includes("Acme Healthcare Group"),
-        "actual answer text preserved");
+    it("V-CHAT-23 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: BUG-015 handshake-strip on subsequent turns via scripted mock; replaced by PREFLIGHT 5b", () => {
+      // RETIRED 2026-05-06 per feedback_no_mocks.md. Vector id preserved.
+      assert(true, "V-CHAT-23 retired; see PREFLIGHT 5b");
     });
 
-    it("V-CHAT-19 · BUG-012 guard: tool-chain cap — chatService stops at MAX_TOOL_ROUNDS and surfaces a notice", async () => {
-      _resetChatEnv();
-      let eng = createEmptyEngagement();
-      eng = addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" }).engagement;
-      eng = addGapV3(eng, { description: "g1", gapType: "ops", urgency: "High", phase: "now",
-        status: "open", layerId: "infrastructure", affectedLayers: ["infrastructure"] }).engagement;
-      setActiveEngagement(eng);
-
-      // 6 scripted tool_use responses — exceeds the cap (MAX_TOOL_ROUNDS=5).
-      const responses = [];
-      for (let i = 0; i < 6; i++) responses.push({ kind: "tool_use", name: "selectGapsKanban", input: {} });
-
-      const provider = createMockChatProvider({ responses });
-
-      const result = await streamChat({
-        engagement:     eng,
-        transcript:     [],
-        userMessage:    "Loop forever",
-        providerConfig: { providerKey: "mock" },
-        provider:       provider
-      });
-      // Cap is 5 rounds → exactly 5 provider calls. Notice surfaces in response.
-      assertEqual(provider.callsRecorded.length, 5,
-        "provider called exactly MAX_TOOL_ROUNDS=5 times (got " + provider.callsRecorded.length + ")");
-      assert(typeof result.response === "string" && /tool-call cap/i.test(result.response),
-        "user-visible response surfaces the cap notice (got: '" + (result.response || "").slice(0, 120) + "')");
+    it("V-CHAT-19 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: BUG-012 tool-chain cap notice via scripted mock; replaced by PREFLIGHT 5b", () => {
+      // RETIRED 2026-05-06 per feedback_no_mocks.md. The MAX_TOOL_ROUNDS=5
+      // cap is a chatService constant; cap-notice text covered by source-
+      // grep + real-LLM smoke at PREFLIGHT 5b. Vector id preserved.
+      assert(true, "V-CHAT-19 retired; see PREFLIGHT 5b");
     });
 
-    it("V-CHAT-17 · realChatProvider with Anthropic SSE-shape stub yields per-token text events progressively + closes with done", async () => {
-      const { createRealChatProvider } = await import("../services/realChatProvider.js");
-      _resetChatEnv();
-      let eng = createEmptyEngagement();
-      setActiveEngagement(eng);
-
-      // Build a minimal Anthropic SSE event stream: text_delta x3 then message_stop.
-      const sse =
-        'event: message_start\n' +
-        'data: {"type":"message_start","message":{"id":"msg_01","role":"assistant","content":[],"stop_reason":null}}\n\n' +
-        'event: content_block_start\n' +
-        'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n' +
-        'event: content_block_delta\n' +
-        'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}\n\n' +
-        'event: content_block_delta\n' +
-        'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" "}}\n\n' +
-        'event: content_block_delta\n' +
-        'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"world"}}\n\n' +
-        'event: content_block_stop\n' +
-        'data: {"type":"content_block_stop","index":0}\n\n' +
-        'event: message_stop\n' +
-        'data: {"type":"message_stop"}\n\n';
-
-      const stubFetch = async (url, init) => {
-        // Verify the request actually requested streaming.
-        const sentBody = JSON.parse(init.body);
-        if (sentBody.stream !== true) {
-          throw new Error("V-CHAT-17: SSE path must set body.stream=true; got " + JSON.stringify(sentBody.stream));
-        }
-        const stream = new ReadableStream({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode(sse));
-            controller.close();
-          }
-        });
-        return new Response(stream, {
-          status: 200,
-          headers: { "Content-Type": "text/event-stream" }
-        });
-      };
-
-      const provider = createRealChatProvider({
-        providerKey: "anthropic",
-        baseUrl:     "/api/anthropic",
-        model:       "claude-opus-4-7",
-        apiKey:      "sk-test",
-        stream:      true,
-        fetchImpl:   stubFetch
-      });
-
-      const tokensSeen = [];
-      const result = await streamChat({
-        engagement:     eng,
-        transcript:     [],
-        userMessage:    "Say hello",
-        providerConfig: { providerKey: "anthropic" },
-        provider:       provider,
-        onToken:        function(t) { tokensSeen.push(t); }
-      });
-
-      assert(tokensSeen.length >= 3,
-        "at least 3 text_delta tokens streamed via onToken (got " + tokensSeen.length + ")");
-      assertEqual(tokensSeen.join(""), "Hello world",
-        "concatenated tokens equal full text");
-      assert(typeof result.response === "string" && result.response.indexOf("Hello world") >= 0,
-        "final response carries full streamed text (got: '" + result.response + "')");
+    it("V-CHAT-17 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: Anthropic SSE stub-fetch streaming round-trip; replaced by PREFLIGHT 5b", () => {
+      // RETIRED 2026-05-06 per feedback_no_mocks.md. Stubbed-fetch tests
+      // forbidden as fakery. SSE behavior covered by PREFLIGHT 5b real-
+      // LLM smoke against Anthropic. Vector id preserved per TESTS §T1.2.
+      assert(true, "V-CHAT-17 retired; see PREFLIGHT 5b");
     });
 
     // -----------------------------------------------------------------
@@ -16260,53 +15540,19 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
   // -------------------------------------------------------------------
   describe("§T22 · V-MOCK · Mock providers as production services", () => {
 
-    it("V-MOCK-1 · services/mockChatProvider exports createMockChatProvider matching the V-CHAT-4 contract", async () => {
-      // Production path import already at top of file (createMockChatProviderProd).
-      assert(typeof createMockChatProviderProd === "function",
-        "services/mockChatProvider.js must export createMockChatProvider");
-      const p = createMockChatProviderProd({ responses: [{ kind: "text", text: "hi from prod path" }] });
-      const tokens = [];
-      for await (const evt of p.stream({ messages: [], tools: [] })) {
-        if (evt.kind === "text") tokens.push(evt.token);
-      }
-      assert(tokens.length > 0, "production mock chat provider yields at least one text token");
-      assert(tokens.join("").length > 0, "yielded tokens have non-empty content");
+    // V-MOCK-1..3 · ALL RETIRED rc.7-arc-1 per feedback_no_mocks.md
+    // (LOCKED 2026-05-05). The mock provider modules are DELETED; these
+    // tests can no longer assert their existence. Vector ids preserved
+    // per TESTS §T1.2 append-only contract. SPEC §S22 retired in same
+    // commit. Replacement: PREFLIGHT 5b real-LLM smoke at every tag.
+    it("V-MOCK-1 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: createMockChatProvider exists; modules DELETED", () => {
+      assert(true, "V-MOCK-1 retired; SPEC §S22 retired; mock modules deleted");
     });
-
-    it("V-MOCK-2 · services/mockLLMProvider exports createMockLLMProvider with complete({prompt})→{model,text}", async () => {
-      assert(typeof createMockLLMProviderProd === "function",
-        "services/mockLLMProvider.js must export createMockLLMProvider");
-      // Canonical contract (per existing tests/mocks/mockLLMProvider.js shape):
-      // defaultResponse is { model: string, text: string }, not a bare string.
-      const p = createMockLLMProviderProd({
-        defaultResponse: { model: "mock-prod-llm", text: "production mock LLM response" }
-      });
-      assert(typeof p.complete === "function",
-        "mock LLM provider exposes complete({prompt}) → Promise<{model,text}>");
-      const result = await p.complete({ prompt: "irrelevant" });
-      assert(typeof result.text === "string" && result.text.length > 0,
-        "complete returns non-empty text");
-      assert(typeof result.model === "string" && result.model.length > 0,
-        "complete returns model id");
+    it("V-MOCK-2 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: createMockLLMProvider exists; modules DELETED", () => {
+      assert(true, "V-MOCK-2 retired; SPEC §S22 retired; mock modules deleted");
     });
-
-    it("V-MOCK-3 · production mock providers are deterministic (same args → same outputs)", async () => {
-      const p1 = createMockChatProviderProd({ responses: [{ kind: "text", text: "deterministic" }] });
-      const p2 = createMockChatProviderProd({ responses: [{ kind: "text", text: "deterministic" }] });
-      const tokens1 = [];
-      const tokens2 = [];
-      for await (const e of p1.stream({ messages: [], tools: [] })) if (e.kind === "text") tokens1.push(e.token);
-      for await (const e of p2.stream({ messages: [], tools: [] })) if (e.kind === "text") tokens2.push(e.token);
-      assertEqual(tokens1.join("|"), tokens2.join("|"),
-        "two mock chat providers with same scripted responses yield identical token sequences");
-
-      const ABC = { model: "mock-prod-llm", text: "abc" };
-      const llm1 = createMockLLMProviderProd({ defaultResponse: ABC });
-      const llm2 = createMockLLMProviderProd({ defaultResponse: ABC });
-      const r1 = await llm1.complete({ prompt: "p" });
-      const r2 = await llm2.complete({ prompt: "p" });
-      assertEqual(r1.text, r2.text,
-        "two mock LLM providers with identical defaultResponse yield identical text");
+    it("V-MOCK-3 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: production mock providers deterministic; modules DELETED", () => {
+      assert(true, "V-MOCK-3 retired; SPEC §S22 retired; mock modules deleted");
     });
   });
 
@@ -16418,34 +15664,12 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "role section instructs LLM to emit first-turn handshake [contract-ack v3.0 sha=...]");
     });
 
-    it("V-CONTRACT-7 · streamChat onComplete carries contractAck { ok, expected, received }", async () => {
-      _resetEngagementStoreForTests();
-      const eng = createEmptyEngagement();
-      setActiveEngagement(eng);
-      const expected = getContractChecksum();
-      const provider = createMockChatProviderProd({
-        responses: [{
-          kind: "text",
-          text: "[contract-ack v3.0 sha=" + expected + "]\n\nHello, ready to chat about this empty canvas."
-        }]
-      });
-      let captured = null;
-      await streamChat({
-        engagement:     eng,
-        transcript:     [],
-        userMessage:    "hi",
-        providerConfig: { providerKey: "mock" },
-        provider:       provider,
-        onComplete:     r => { captured = r; }
-      });
-      assert(captured && captured.contractAck,
-        "onComplete result includes contractAck");
-      assertEqual(captured.contractAck.ok, true,
-        "ack ok when sha matches the expected checksum");
-      assertEqual(captured.contractAck.expected, expected,
-        "expected sha echoed in contractAck");
-      assertEqual(captured.contractAck.received, expected,
-        "received sha matches expected");
+    it("V-CONTRACT-7 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: streamChat onComplete carries contractAck via scripted mock; replaced by PREFLIGHT 5b real-LLM smoke + V-CONTRACT-1..6 (pure tests)", () => {
+      // RETIRED 2026-05-06 per feedback_no_mocks.md (LOCKED 2026-05-05).
+      // The contract-ack handshake's TRUTH SIGNAL is verified by real-LLM
+      // smoke at PREFLIGHT 5b (the chip appears on turn 1; absence is the
+      // grounding-failure indicator). Vector id preserved per TESTS §T1.2.
+      assert(true, "V-CONTRACT-7 retired; see PREFLIGHT 5b");
     });
   });
 

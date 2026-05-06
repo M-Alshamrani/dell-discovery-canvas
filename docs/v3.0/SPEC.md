@@ -2107,41 +2107,25 @@ Vectors land in TESTS.md §T21 V-DEMO-1..7. See §T21 for the full vector list.
 
 ---
 
-## §S22 · Mock providers as production services (SPEC-only annex)
+## §S22 · Mock providers as production services — RETIRED rc.7-arc-1 (2026-05-06)
 
-**Status**: NEW 2026-05-02. SPEC-only annex. Architectural fix for BUG-006 + BUG-007 (V3SkillBuilder + CanvasChatOverlay import test mocks at runtime).
+**Status**: RETIRED 2026-05-06 per `feedback_no_mocks.md` (LOCKED 2026-05-05). The annex below is preserved for historical context; the modules it described are DELETED, the V-MOCK suite (§T22) is converted to deprecation markers, and RULES §16 CH13/CH14 are RETIRED in the same rc.7-arc-1 commit.
 
-### S22.1 · Goals
+User direction (verbatim, 2026-05-05): *"i dont want any tests that are not actual usable fucntions, mock sound like a work around to avoide red real errors that an llm is not connected, exactly what i want to see, so the consept of mock is not aligned with my principales, and if it is not real, i dont want it to be mocked... we are building production thing here."*
 
-The Mock toggle in the Lab and the Chat is a legitimate production UX feature: it lets the user run the AI surface with deterministic local execution (free, fast, offline-safe) before dispatching against a real provider. The mock providers backing this feature must live in `services/`, not `tests/`.
+Replacement: PREFLIGHT 5b real-LLM live-key smoke at every tag from rc.6 onward (Anthropic + Gemini + Local A 3-turn each against the demo engagement). See `docs/PREFLIGHT.md §5b`.
 
-### S22.2 · Module shape
+The original annex content (preserved for trace):
 
-```
-services/
-  mockChatProvider.js   // exports createMockChatProvider per existing tests/mocks/mockChatProvider.js shape
-  mockLLMProvider.js    // exports createMockLLMProvider per existing tests/mocks/mockLLMProvider.js shape
-```
+> **Status (original)**: NEW 2026-05-02. SPEC-only annex. Architectural fix for BUG-006 + BUG-007 (V3SkillBuilder + CanvasChatOverlay import test mocks at runtime). The Mock toggle was once described as a "legitimate production UX feature" providing deterministic local execution. The 2026-05-05 office workshop (BUG-030) proved this was structural cover for grounding regressions: tests passed against the mock; real-LLM hallucinated. The mock-as-LLM-substrate pattern is gone.
 
-The test paths (`tests/mocks/mockChatProvider.js`, `tests/mocks/mockLLMProvider.js`) become **thin re-exports** that import from `services/` and re-export. This preserves V-CHAT-* + V-PROD-* test imports without breaking, while moving the canonical implementation into `services/`. Once all consumers are updated, the test-path shims can be deleted.
+### S22.X · Forbidden patterns (locked rc.7-arc-1)
 
-### S22.3 · R-numbered requirements
-
-| R | Requirement | Trace |
-|---|---|---|
-| R22.1 | `services/mockChatProvider.js` exists and exports `createMockChatProvider({responses}) → provider` matching the V-CHAT-4/5 contract | V-MOCK-1 |
-| R22.2 | `services/mockLLMProvider.js` exists and exports `createMockLLMProvider({defaultResponse}) → provider` matching the V-PROD contract | V-MOCK-2 |
-| R22.3 | Both providers are deterministic — no clocks, no randomness without an explicit seed param | V-MOCK-3 |
-| R22.4 | Production code (V3SkillBuilder, CanvasChatOverlay) imports from `services/mock*Provider.js`, NOT `tests/mocks/`. Tests may still import from `tests/mocks/` (which re-exports from `services/`) for backwards compatibility, OR may be migrated to import from `services/` directly | V-ANTI-RUN-1 |
-
-### S22.4 · Forbidden patterns
-
-- **F22.4.1** · Production module imports `tests/mocks/*` directly. Even via dynamic import.
-- **F22.4.2** · Mock providers carrying live network code or non-deterministic behavior.
-
-### S22.5 · Test contract for §S22
-
-Vectors land in TESTS.md §T22 V-MOCK-1..3.
+- Re-introducing ANY mock provider module (`services/mockChatProvider.js`, `services/mockLLMProvider.js`, or sibling).
+- Re-introducing scripted-response test fixtures that pretend to be an LLM.
+- Re-introducing stubbed-fetch tests where `fetchImpl` injects fake JSON.
+- Re-introducing a "Mock" toggle in production UI.
+- Adding any new LLM-equivalent fakery substrate by any name.
 
 ---
 
@@ -3775,6 +3759,7 @@ it("V-FLOW-GROUND-3 · Acme demo: Layer 4 contains all 8 gap descriptions inline
 | 2026-05-05 | rc.5-dev Hotfix #4 (post-rc.4) | Per user direction 2026-05-05 ("purge all the existing skills from old builds for now as we don't need them anymore"): v2 `core/skillStore.js` `loadSkills()` retires the first-read auto-install of the v2 seed library — fresh install + corrupt-cache + non-array storage all collapse to empty `[]` (was: dump the seed library to localStorage on every code path). The seed library records remain in `core/seedSkills.js` as reference data so DS8-DS12 in demoSpec keep working without changes. Suite 26 SB1 / SB2 / SB6 + Suite 37 QW3 / QW4 / QW6 reframed for the empty-library baseline (explicit `saveSkills(seedSkills())` setup where the test contract needed pre-populated rows). NEW V-FLOW-NO-SEEDS-1 in §T35-HOTFIX4 (source-grep + live-DOM regression guard for the auto-install retirement). APP_VERSION bumped to `3.0.0-rc.5-dev` per PREFLIGHT 1a (first commit past rc.4 tag). Banner target unchanged (1157 from rc.4 + V-FLOW-NO-SEEDS-1 = 1158 total). Companion entries: BUG-027 (test-pass DOM flash residual) + BUG-028 (chat doesn't persist when Skills clicked) logged in `docs/BUG_LOG.md` as rc.5 work. |
 | 2026-05-05 | §S37 LOCKED + §S20 amendments | NEW SPEC annex — grounding contract recast (RAG-by-construction). Authored as architectural fix for BUG-030 (real-Anthropic + real-Gemini + Local-A/B hallucinate gaps + dispositions + dates not in engagement, 2026-05-05 office workshop). LOCKED 2026-05-05 on user direction (*"yes, i like this principal architect approach, do as you recommend. I agree it is a RAG."*). Three planes (all required): (1) deterministic retrieval router `services/groundingRouter.js` — heuristic intent classifier maps user message → selector calls, results inlined into Layer 4 BEFORE LLM call; (2) runtime grounding verifier `services/groundingVerifier.js` — entity-shaped claims cross-checked against engagement; render-error replaces hallucinated visible response; (3) grounded mock `createGroundedMockProvider` reads Layer 4 + answers from prompt only. Threshold cliff (`ENGAGEMENT_INLINE_THRESHOLD_*`) REMOVED entirely — replaced by 50K input-token budget guard on router output. R37.1–R37.12 + V-FLOW-GROUND-1..7 + V-FLOW-GROUND-FAIL-1..5 + V-ANTI-THRESHOLD-1 (§T38 NEW). RULES §16 CH33 added; CH3 rewritten. §S20.4.4 + §S20.6 amended to point at §S37 for the live contract; R20.3 rewritten for router-driven retrieval. Real-LLM live-key smoke added to PREFLIGHT (item 5b) starting rc.6. Closes BUG-030 (planes 1+2 in 6b+6c) + BUG-033 (plane 1 in 6b); BUG-029 lays cleanly on the new "engagement is authoritative" architecture in 6d. |
 | 2026-05-05 | §S37 AMENDED · 6a-amend (no-mocks principle) | Per `feedback_no_mocks.md` LOCKED 2026-05-05 (*"if it is not real, i dont want it to be mocked... we are building production thing here"*): three planes → two planes + real-LLM smoke at PREFLIGHT 5b. Plane 3 (grounded mock `createGroundedMockProvider`) RETIRED before it shipped — R37.9 retired, §S37.3.3 rewritten as "validation layer = real-LLM smoke", forbidden patterns extended to ban any mock/scripted-LLM/stubbed-fetch substrate. V-FLOW-GROUND-5 + V-FLOW-GROUND-6 RETIRED (relied on grounded mock); V-FLOW-GROUND-FAIL-4 REWORKED as source-grep assertion (`services/chatService.js streamChat` MUST contain `verifyGrounding(...)` call). Comprehensive mock audit captured (10 tests + 3 modules + SPEC §S22 + RULES CH13/CH14 scheduled for retirement in post-rc.6 mock-purge arc). Banner target shifts: 1182 → 1180 with 6 RED at 6a-amend (was 8 RED at original 6a). |
+| 2026-05-06 | §S22 RETIRED + RULES CH13/CH14 RETIRED + §T22 V-MOCK retired · rc.7-arc-1 mock-purge | Per `feedback_no_mocks.md` LOCKED 2026-05-05. Deletes `services/mockChatProvider.js` + `services/mockLLMProvider.js` + `tests/mocks/mockChatProvider.js` + `tests/mocks/mockLLMProvider.js`. All mock-using V-* tests converted to deprecation markers per TESTS §T1.2 append-only contract: V-PROV-4/14/15 (3) · V-PROD-1..9 (9) · V-CHAT-4/5/15/17/18/19/23/24/29/32 (10) · V-SKILL-V3-3/4 (2) · V-MOCK-1..3 (3) · V-CONTRACT-7 (1) = 28 retirements. SPEC §S22 retired with original-content preservation block + locked-forbidden-patterns. RULES §16 CH13 + CH14 retired (mock toggle + mock import location). `core/appManifest.js` workflow text updated to remove "Mock LLM run button" mentions. `services/chatService.js` "mock" provider-key branches removed. `services/realChatProvider.js` V-CHAT-15 stub-fetch comments cleaned. `core/aiConfig.js PROVIDERS` already omitted "mock" so no UI surface change. Replacement: PREFLIGHT 5b real-LLM live-key smoke at every tag (Anthropic + Gemini + Local A 3-turn each against demo). Banner: 1187 → ~1187 same total (deprecation markers preserve count); RED count remains 0 (all markers pass trivially). |
 | 2026-05-04 | §S35 (DRAFT v2 → LOCKED) | DRAFT v2 authored at `ace293a` 2026-05-04 LATE replacing the rejected v1; user approved all 7 §S35.6 decisions ("go"). LOCKED 2026-05-04. Locked decisions: rename `SkillAdmin.js` → `SkillBuilder.js` (delete current v3.1 SkillBuilder.js) · opt-in legacy v2 migration · show all 4 outputTargets (3 disabled) · chat-rail closes-and-opens Settings · keep CARE rewrite as-is · purge `core/v3SeedSkills.js` · filename rename accepted. RULES §16 CH31 added in same arc. V-* test contract: V-SKILL-V3-8..15 + V-ANTI-V3-IN-LABEL-1 + V-ANTI-V3-SEED-1..3 + V-ANTI-OVERLAY-RETIRED-1 + V-MIGRATE-V2-V3-1..4 (Suite 50 §T36 NEW). |
 | 2026-05-03 | RELEASE v3.0.0-rc.3 | **TAGGED 2026-05-03.** Closes the rc.3 implementation arc + AI-correctness consolidation. Banner 1103/1103 GREEN ✅ (was 1048 at rc.2; +55 tests). Rolled in: Phase A1 generic LLM connector (BUG-018 closed) + Phase B concept dictionary + Phase C workflow manifest + Skill v3.1 schema + Skill Builder UI rebuild + chat right-rail saved-skill cards + UseAiButton retirement + topbar consolidation to one "AI Assist" button (Dell-blue + diamond-glint 8s breathe) + APP_VERSION discipline + PREFLIGHT.md + Group A AI-correctness fixes (BUG-019 engagement rehydrate, BUG-020 streaming-time handshake strip, BUG-013 Path B UUID scrub, BUG-023 manifest layerId, BUG-011 + BUG-018 closed). New SPEC annexes: §S26 + §S27 + §S28 + §S29 + §S30 + §S31. New RULES: §16 CH20–CH27. New tests: V-CHAT-18..38, V-CONCEPT-1..5, V-WORKFLOW-1..5, V-SKILL-V3-1..7, V-VERSION-1..2, V-FLOW-REHYDRATE-1..3, V-PATH-31/32, V-TOPBAR-1, V-LAB-VIA-CHAT-RAIL, V-AI-ASSIST-CMD-K, V-ANTI-USE-AI, V-NAME-2, V-DEMO-V2-1 + V-DEMO-8/9 + V-FLOW-CHAT-DEMO-1/2. Real-Gemini live-key smoke deferred to first user-driven workshop run (V-CHAT-32 mock-fetch round-trip covers the protocol).  |
 

@@ -35,7 +35,10 @@ import { migrateV2SkillToV31 }             from "../../schema/skill.js";
 import { generateManifest }                from "../../services/manifestGenerator.js";
 import { runSkill }                        from "../../services/skillRunner.js";
 import { resolveTemplate }                 from "../../services/pathResolver.js";
-import { createMockLLMProvider }           from "../../services/mockLLMProvider.js";
+// rc.7-arc-1 (2026-05-06) — createMockLLMProvider import removed per
+// feedback_no_mocks.md (LOCKED 2026-05-05). The Mock toggle in the
+// "Test skill now" UI is removed; the test button always invokes the
+// active real provider via createRealLLMProvider().
 import {
   createRealLLMProvider, ProviderNotConfiguredError
 }                                          from "../../services/realLLMProvider.js";
@@ -336,13 +339,11 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   form.appendChild(outputTargetWrap);
 
   // ─── Test button + result panel ────────────────────────────────
+  // rc.7-arc-1 (2026-05-06): Mock|Real provider toggle removed per
+  // feedback_no_mocks.md (LOCKED 2026-05-05). Test button always
+  // invokes the active real provider per Settings → AI Providers.
   var testRow = mk("div", "skill-form-test-row");
   var testBtn = mkt("button", "btn-secondary", "Test skill now");
-  var testProviderSel = mkSelect(testRow, "Provider for test", [
-    { value: "mock", label: "Mock (deterministic)" },
-    { value: "real", label: "Real (active provider)" }
-  ], "mock");
-  testProviderSel.classList.add("skill-test-provider-select");
   testRow.appendChild(testBtn);
   form.appendChild(testRow);
   var testOut = mk("div", "ai-skill-result skill-form-test-out");
@@ -483,11 +484,8 @@ function renderEditForm(adminRoot, list, existing, onChange) {
         outputTarget:   state.outputTarget
       };
       var params  = prefillParamValuesFor(state.parameters, ctx.engagement);
-      var provider = testProviderSel.value === "real"
-        ? createRealLLMProvider()
-        : createMockLLMProvider({
-            defaultResponse: { model: "mock-claude-sonnet", text: "(mock test response — switch to Real to invoke the active provider)" }
-          });
+      // rc.7-arc-1 (2026-05-06): always-real per feedback_no_mocks.md.
+      var provider = createRealLLMProvider();
       var envelope = await runSkill(draftSkill, ctx, provider, {
         params: params,
         runTimestamp: new Date().toISOString(),

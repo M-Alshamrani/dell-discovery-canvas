@@ -26,20 +26,27 @@
 //
 // ---
 //
-// **3.0.0-rc.6-dev** (2026-05-05) — between v3.0.0-rc.5 (TAGGED
-// 2026-05-05 at 1169/1169 GREEN) and the eventual v3.0.0-rc.6 tag.
-// In flight: rc.6 grounding contract recast per SPEC §S37 + RULES §16
-// CH33 (RAG-by-construction). Sub-arcs: 6a (SPEC §S37 + RULES CH33 +
-// §T38 V-FLOW-GROUND-* RED scaffolds + grounding-router/verifier/
-// grounded-mock STUBS — this commit), 6b (plane 1 router impl →
-// V-FLOW-GROUND-1..7 GREEN, closes BUG-030 + BUG-033), 6c (plane 2
-// verifier impl → V-FLOW-GROUND-FAIL-1..5 GREEN, closes BUG-030
-// hallucinated-deliverables class), 6d (BUG-029 engagement-id authority +
-// chat memory lifecycle), 6e..6i (BUG-035 nginx + vLLM error + BUG-034
-// settings save + BUG-031 propagate toast + BUG-032 gaps link plumbing).
+// **3.0.0-rc.7-dev** (2026-05-06) — between v3.0.0-rc.6 (TAGGED
+// 2026-05-06 at 1187/1187 GREEN) and the eventual v3.0.0-rc.7 tag.
+// In flight: rc.7-arc-1 mock-purge per `feedback_no_mocks.md` LOCKED
+// 2026-05-05. Deletes services/mockChatProvider.js +
+// services/mockLLMProvider.js + tests/mocks/* + V-MOCK suite (§T22) +
+// V-CHAT-4/5/15/29/32 + V-PROD-* + V-PATH-31/32 (all converted to
+// deprecation markers per TESTS §T1.2 append-only contract). Retires
+// SPEC §S22 + RULES §16 CH13/CH14. Updates core/appManifest.js
+// workflow text removing "Mock LLM run button" mentions.
 //
 // Per RULES §16 CH24 + PREFLIGHT.md item 1a: this is the FIRST commit
-// past the rc.5 tag, so the `-dev` suffix is added now.
+// past the rc.6 tag, so the `-dev` suffix is added now.
+//
+// ---
+//
+// **3.0.0-rc.6-dev** (2026-05-05) — between v3.0.0-rc.5 (TAGGED
+// 2026-05-05 at 1169/1169 GREEN) and the v3.0.0-rc.6 tag (2026-05-06).
+// rc.6 shipped: grounding contract recast per SPEC §S37 + RULES §16
+// CH33 (RAG-by-construction); deterministic retrieval router + runtime
+// verifier + threshold removal; BUG-029/030/031/033/034/035 closed.
+// BUG-032 deferred to rc.6.1/rc.7 pending user repro.
 //
 // ---
 //
@@ -110,4 +117,4 @@
 //   - At least one real-customer workshop run against a v3.0 engagement
 //   - Real-Anthropic streaming smoke against a live key
 
-export const APP_VERSION = "3.0.0-rc.6";
+export const APP_VERSION = "3.0.0-rc.7-dev";

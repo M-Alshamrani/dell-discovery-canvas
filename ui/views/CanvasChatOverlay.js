@@ -9,9 +9,10 @@
 //   - state/engagementStore     (active engagement is the chat context)
 //   - state/chatMemory          (per-engagement transcript persistence)
 //   - services/chatService      (streamChat orchestration)
-//   - tests/mocks/mockChatProvider  (default Mock provider)
-//   - services/realChatProvider     (Real provider via aiService)
-//   - core/aiConfig             (provider config for Real path)
+//   - services/realChatProvider (active provider via aiService; rc.7-arc-1
+//                                removed the legacy Mock provider per
+//                                feedback_no_mocks.md)
+//   - core/aiConfig             (provider config)
 //
 // Forbidden (RULES §16 CH1+CH2):
 //   - importing state/sessionState.js

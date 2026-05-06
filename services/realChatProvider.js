@@ -49,10 +49,11 @@ const PROVIDER_KIND_FOR_KEY = {
 // indices that carry the Anthropic ephemeral cache_control marker.
 //
 // `stream:true` (default for Anthropic) routes through streamCompletion
-// (SSE per-token). `stream:false` keeps the legacy non-streaming path
-// (V-CHAT-15 uses this for stub-fetch tests where building a real
-// ReadableStream is fiddly). `fetchImpl` is an optional override for
-// tests.
+// (SSE per-token). `stream:false` keeps the legacy non-streaming path.
+// `fetchImpl` is an optional override (rc.7-arc-1: stubbed-fetch tests
+// retired per feedback_no_mocks.md; the override remains in the API
+// for legitimate fetch-replacement use cases like an alternative
+// transport, but is no longer exercised by tests).
 export function createRealChatProvider(opts) {
   const providerConfig = opts || {};
   const callsRecorded = [];
@@ -63,7 +64,7 @@ export function createRealChatProvider(opts) {
   // to its native wire shape; extractToolCalls dispatches by kind.
   const supportsToolUse  = true;
   // SSE per-token streaming is Anthropic-only today (Phase A3 extends
-  // to OpenAI). Opt-out via stream:false (V-CHAT-15 stub uses this).
+  // to OpenAI). Opt-out via stream:false for legitimate use cases.
   const supportsStream   = providerConfig.providerKey === "anthropic";
   const wantsStream      = providerConfig.stream !== false && supportsStream;
   // cache_control is Anthropic-specific.
@@ -129,7 +130,7 @@ export function createRealChatProvider(opts) {
       }
 
       // Non-streaming path (default for non-Anthropic; opt-in for
-      // Anthropic via stream:false — used by V-CHAT-15 stub).
+      // Anthropic via stream:false).
       let response;
       try {
         response = await chatCompletion(wireOpts);

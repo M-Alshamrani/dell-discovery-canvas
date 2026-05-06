@@ -265,7 +265,7 @@ export const WORKFLOWS = [
       "If click-to-run: pick the entity kind (gap / instance / driver / environment / project).",
       "Author the prompt template using {{path}} bindings from the chip palette. The chips show the bindable paths the active scope provides.",
       "Click Validate. Save-time validation rejects unknown paths + structural errors.",
-      "Test with the Mock LLM run button.",
+      "Test the skill against the active real LLM provider via the run button (Anthropic / Gemini / Local A per Settings → AI Providers).",
       "Click Save. The skill appears in your saved-skills list (eventually surfaced as a card in the chat right-rail)."
     ],
     ["skill.skill", "skill.click_to_run", "skill.session_wide"],
@@ -370,7 +370,7 @@ export const RECOMMENDATIONS = [
 
   R("rec.author_skill",
     [/(?:author|create|build).*(?:skill|agent)/i, /skill builder/i, /(?:reusable|custom) (?:AI |LLM )?(?:prompt|workflow)/i],
-    "Settings → Skills builder. Pick scope (click-to-run for entity-specific, session-wide for engagement-level). Author the prompt template using {{path}} bindings from the chip palette. Validate + test with Mock LLM. Save → it shows up as a one-click shortcut in the chat right-rail. See workflow.author_a_skill.",
+    "Settings → Skills builder. Pick scope (click-to-run for entity-specific, session-wide for engagement-level). Author the prompt template using {{path}} bindings from the chip palette. Validate + test against the active real LLM provider. Save → it shows up as a one-click shortcut in the chat right-rail. See workflow.author_a_skill.",
     ["workflow.author_a_skill"],
     ["skill.skill", "skill.click_to_run", "skill.session_wide"]),
 

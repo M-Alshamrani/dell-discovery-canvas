@@ -972,37 +972,13 @@ it("V-DEMO-4 · cross-cutting workload mappedAssetIds + desired originId both pr
 
 ---
 
-## §T22 · V-MOCK — Mock providers as production services
+## §T22 · V-MOCK — RETIRED rc.7-arc-1 (2026-05-06)
 
-**Coverage**: SPEC §S22.
+**Coverage**: SPEC §S22 (also retired in rc.7-arc-1).
 
-**Approximate count**: 3 vectors.
+**Status**: RETIRED 2026-05-06 per `feedback_no_mocks.md` (LOCKED 2026-05-05). All three V-MOCK-* vector ids preserved as deprecation markers in `diagnostics/appSpec.js` per TESTS §T1.2 append-only contract; the modules they asserted (`services/mockChatProvider.js`, `services/mockLLMProvider.js`) are DELETED in the same commit. Replacement: PREFLIGHT 5b real-LLM live-key smoke at every tag.
 
-| Vector | Assertion |
-|---|---|
-| V-MOCK-1 | `services/mockChatProvider.js` is fetchable from the production path AND exports `createMockChatProvider`; the export's behavior matches the V-CHAT-4 contract (yields `{kind:"text",token}` events for scripted text responses) |
-| V-MOCK-2 | `services/mockLLMProvider.js` is fetchable AND exports `createMockLLMProvider`; behavior matches the V-PROD test contract |
-| V-MOCK-3 | Both providers are deterministic — calling stream/complete with identical args yields identical event sequences (no clocks, no randomness without explicit seed) |
-
-### T22.1 · Sample vector body (V-MOCK-1)
-
-```js
-it("V-MOCK-1 · services/mockChatProvider exports createMockChatProvider", async () => {
-  const mod = await import("/services/mockChatProvider.js");
-  assert(typeof mod.createMockChatProvider === "function",
-    "services/mockChatProvider.js must export createMockChatProvider");
-  const p = mod.createMockChatProvider({ responses: [{ kind: "text", text: "hi" }] });
-  const tokens = [];
-  for await (const evt of p.stream({ messages: [], tools: [] })) {
-    if (evt.kind === "text") tokens.push(evt.token);
-  }
-  assert(tokens.join("").length > 0, "mock provider yields at least one text token");
-});
-```
-
-### T22.2 · Forbidden test patterns
-
-- **F22T.1** · Importing the providers from `tests/mocks/...` in production-shape tests — V-MOCK probes production paths to enforce S22.
+The V-CHAT, V-PROD, V-PROV, V-SKILL-V3, V-CONTRACT-7 entries that depended on a mock substrate are also retired in this purge — see TESTS §T20, §T16, §T9, §T29, §T25 deprecation-marker notes in appSpec.js for the full retirement list (28 vector ids preserved).
 
 ---
 
