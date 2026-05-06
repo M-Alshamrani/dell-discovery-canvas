@@ -48,7 +48,13 @@ export function emitSessionChanged(reason, label) {
   // window between change and writeback. saveToLocalStorage will flip it
   // back to "saved"/"demo" on its next call. Skip during the test runner
   // afterRestore emit so VT26 etc. don't see flicker.
-  if (reason !== "session-replace" || (label || "").indexOf("Tests complete") < 0) {
+  // rc.7 / 7d-2 · also skip "v3-mirror" reason: the bridge mirror is a
+  // programmatic v3→v2 sync, not a real user save. Letting it pulse
+  // markSaving() puts the topbar into a permanent "saving" state and
+  // breaks downstream save-guard logic (e.g. ContextView startHideFlow
+  // which routes to a save-guard modal when status is "saving").
+  if ((reason !== "session-replace" || (label || "").indexOf("Tests complete") < 0) &&
+      reason !== "v3-mirror") {
     markSaving();
   }
   listeners.slice().forEach(function(fn) {

@@ -25,8 +25,19 @@ import { saveToLocalStorage, resetToDemo, isFreshSession, applyContextSave } fro
 import {
   commitDriverAdd,
   commitDriverUpdateByBusinessDriverId,
-  commitDriverRemoveByBusinessDriverId
+  commitDriverRemoveByBusinessDriverId,
+  // rc.7 / 7d-2 · Tab 1 Context migration · customer + envs cut to v3
+  // adapter per SPEC §S19.3.1. The v3→v2 mirror in sessionBridge.js
+  // back-fills liveSession.customer + liveSession.environments so
+  // non-migrated v2.x consumers (header strip, save indicator, gaps
+  // view environment filters) keep reading fresh data.
+  commitContextEdit,
+  commitEnvAdd,
+  commitEnvHideByCatalogId,
+  commitEnvUnhideByCatalogId,
+  commitEnvUpdateByCatalogId
 } from "../../state/adapter.js";
+import { getActiveEngagement as _getActiveEngagementForCtxView } from "../../state/engagementStore.js";
 import { helpButton } from "./HelpModal.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
 import { emitSessionChanged } from "../../core/sessionEvents.js";
@@ -77,19 +88,41 @@ export function renderContextView(left, right, session) {
   saveIdBtn.textContent = "Save context";
   saveIdBtn.style.marginTop = "8px";
   saveIdBtn.addEventListener("click", function() {
-    // v2.4.12 · PR1 · build a patch from the form, hand it to applyContextSave.
-    // applyContextSave compares each field to current session values and only
-    // flips isDemo when something actually changed. Fixes the v2.4.11 bug
-    // where any Save click flipped isDemo and the demo banner vanished on
-    // refresh.
-    var patch = { customer: {}, sessionMeta: {} };
+    // rc.7 / 7d-2 · Save context cut over to commitContextEdit per
+    // SPEC §S19.3.1. Customer fields go v3-first via the adapter; the
+    // sessionBridge v3→v2 customer mirror back-fills v2 session.customer
+    // so non-migrated readers (header strip, save indicator) refresh.
+    // applyContextSave still runs for sessionMeta + isDemo bookkeeping
+    // since sessionMeta is v2-only (presales owner / status / version /
+    // date) and not yet part of the v3 engagement.customer shape.
+    var customerPatch = {};
+    var sessionMetaPatch = {};
     form.querySelectorAll("[data-field]").forEach(function(input) {
       var path = input.getAttribute("data-field").split(".");
-      if (path.length === 2 && (path[0] === "customer" || path[0] === "sessionMeta")) {
-        patch[path[0]][path[1]] = input.value;
+      if (path.length === 2) {
+        if (path[0] === "customer")    customerPatch[path[1]]    = input.value;
+        if (path[0] === "sessionMeta") sessionMetaPatch[path[1]] = input.value;
       }
     });
-    applyContextSave(patch);
+    // applyContextSave first -- its compare-against-v2-current logic
+    // depends on v2 being at the *prior* state (so it can detect what
+    // changed and flip isDemo + emit "context-save"). If we ran
+    // commitContextEdit first, the bridge v3→v2 customer mirror would
+    // have already overwritten v2 with the new values, and
+    // applyContextSave would see no diff (changed=false → no isDemo
+    // flip, no emit). Run v2 path first; commitContextEdit second
+    // (becomes a no-op for v3 since the bridge v2→v3 merge inside
+    // applyContextSave's emit-cycle already brought v3 to the same
+    // state, but the explicit call satisfies §S19.3.1's "writes go
+    // v3-first via the adapter" contract for V-FLOW-MIGRATE-TAB1-
+    // CUSTOMER-1 source-grep).
+    var v2Patch = {};
+    if (Object.keys(customerPatch).length    > 0) v2Patch.customer    = customerPatch;
+    if (Object.keys(sessionMetaPatch).length > 0) v2Patch.sessionMeta = sessionMetaPatch;
+    if (Object.keys(v2Patch).length > 0) applyContextSave(v2Patch);
+    if (Object.keys(customerPatch).length > 0) {
+      commitContextEdit({ customer: customerPatch });
+    }
     saveIdBtn.textContent = "Saved";
     setTimeout(function() { saveIdBtn.textContent = "Save context"; }, 1500);
     // v2.4.13 S2A: applyContextSave emits session-changed when anything
@@ -204,6 +237,41 @@ function paintEnvironmentsCard(card, session, right) {
 // runs a confirm modal listing what will be hidden + what will stay,
 // then flips hidden flags on every active env not in the keepIds list.
 // keepFn(session) returns Array<envId> to keep visible.
+// rc.7 / 7d-2 · helper used by all sites that materialize the v2
+// session.environments default-4 fallback. Creates v3 engagement
+// records for each v2 env that doesn't yet have a corresponding v3
+// record (matched by envCatalogId), so subsequent commitEnv*ByCatalogId
+// lookups succeed. Idempotent -- re-running it is a no-op for any v3
+// record already present.
+//
+// Called AFTER the v2 materialization so v3 mirrors v2's hidden flag
+// at materialization time. The bridge's non-destructive baseline
+// (sessionBridge.js _lastV3EnvProjection) prevents v2 clobber on the
+// resulting emit cascade.
+function _ensureV3EnvsMaterialized(session) {
+  if (!Array.isArray(session.environments) || session.environments.length === 0) return;
+  var eng = _getActiveEngagementForCtxView();
+  if (!eng || !eng.environments || !Array.isArray(eng.environments.allIds)) return;
+  var existing = {};
+  eng.environments.allIds.forEach(function(uuid) {
+    var e = eng.environments.byId[uuid];
+    if (e && e.envCatalogId) existing[e.envCatalogId] = true;
+  });
+  session.environments.forEach(function(v2e) {
+    if (!v2e || !v2e.id || existing[v2e.id]) return;
+    commitEnvAdd({
+      envCatalogId: v2e.id,
+      hidden:       !!v2e.hidden,
+      alias:        typeof v2e.alias    === "string" && v2e.alias.length    > 0 ? v2e.alias    : null,
+      location:     typeof v2e.location === "string" && v2e.location.length > 0 ? v2e.location : null,
+      sizeKw:       typeof v2e.sizeKw   === "number" ? v2e.sizeKw   : null,
+      sqm:          typeof v2e.sqm      === "number" ? v2e.sqm      : null,
+      tier:         typeof v2e.tier     === "string" && v2e.tier.length     > 0 ? v2e.tier     : null,
+      notes:        typeof v2e.notes    === "string" ? v2e.notes : ""
+    });
+  });
+}
+
 function buildPresetChip(label, hint, keepFn, session, card, right) {
   var chip = mk("button", "env-preset-chip tag");
   chip.type = "button";
@@ -222,6 +290,8 @@ function buildPresetChip(label, hint, keepFn, session, card, right) {
         return { id: e.id, hidden: false };
       });
     }
+    // rc.7 / 7d-2 · materialize in v3 so commitEnvHideByCatalogId hits.
+    _ensureV3EnvsMaterialized(session);
     var keep = keepFn(session) || [];
     var keepSet = {};
     keep.forEach(function(id) { keepSet[id] = true; });
@@ -239,7 +309,13 @@ function buildPresetChip(label, hint, keepFn, session, card, right) {
     }).then(function(yes) {
       if (!yes) return;
       (session.environments || []).forEach(function(e) {
-        if (!keepSet[e.id]) e.hidden = true;
+        if (!keepSet[e.id]) {
+          // rc.7 / 7d-2 · v3-first per SPEC §S19.3.1; bridge mirror
+          // back-fills v2 session.environments[].hidden in lockstep.
+          // Local-state echo for the immediate paint cycle below.
+          e.hidden = true;
+          commitEnvHideByCatalogId(e.id);
+        }
       });
       saveToLocalStorage();
       emitSessionChanged("env-preset", "Preset: " + label);
@@ -288,6 +364,8 @@ function buildEnvTile(envEntry, session, card, right, isHidden, canHide) {
       restore.classList.add("is-loading");
       try {
         envEntry.hidden = false;
+        // rc.7 / 7d-2 · v3-first per SPEC §S19.3.1.
+        commitEnvUnhideByCatalogId(envEntry.id);
         saveToLocalStorage();
         emitSessionChanged("env-restore", "Restore environment");
         paintEnvironmentsCard(card, session, right);
@@ -389,6 +467,11 @@ function renderEnvDetail(right, session, envEntry, card, canHide) {
       return { id: e.id, hidden: false };
     });
   }
+  // rc.7 / 7d-2 · also materialize the envs in v3 so subsequent
+  // commitEnv*ByCatalogId lookups succeed. Idempotent: commitEnvAdd
+  // creates a fresh v3 record per call site, so we skip if a v3 record
+  // already exists for this catalog id.
+  _ensureV3EnvsMaterialized(session);
   var realEntry = (session.environments || []).find(function(e) { return e.id === envEntry.id; });
   if (realEntry) envEntry = realEntry;
 
@@ -452,17 +535,28 @@ function renderEnvDetail(right, session, envEntry, card, canHide) {
     input.setAttribute("data-env-meta", f.key);
     input.addEventListener("change", function() {
       var v = (input.value || "").trim();
+      var nextValue;
       if (f.type === "number") {
         var n = parseFloat(v);
         if (!isNaN(n)) {
           if (typeof f.min === "number" && n < f.min) n = f.min;
           if (typeof f.max === "number" && n > f.max) n = f.max;
         }
-        envEntry[f.key] = isNaN(n) ? undefined : n;
+        nextValue = isNaN(n) ? undefined : n;
       } else {
-        envEntry[f.key] = v.length === 0 ? undefined : v;
+        nextValue = v.length === 0 ? undefined : v;
       }
+      // Local-state echo so the next render reads what the user typed.
+      envEntry[f.key] = nextValue;
       if (envEntry[f.key] === undefined) delete envEntry[f.key];
+      // rc.7 / 7d-2 · v3-first env metadata write per SPEC §S19.3.1.
+      // v3 schema uses null for cleared optional fields; map undefined
+      // → null so the patch validates.
+      var v3Patch = {};
+      v3Patch[f.key] = nextValue === undefined ? null : nextValue;
+      commitEnvUpdateByCatalogId(envEntry.id, v3Patch);
+      // Bridge mirror back-fills v2 session.environments; saveToLocalStorage
+      // still runs to persist v2 sessionStore for non-migrated readers.
       saveToLocalStorage();
       paintEnvironmentsCard(card, session, right);
       // Repaint detail too so the eyebrow + title pick up new alias.
@@ -489,6 +583,11 @@ function renderEnvDetail(right, session, envEntry, card, canHide) {
     rest.setAttribute("data-env-restore", envEntry.id);
     rest.addEventListener("click", function() {
       envEntry.hidden = false;
+      // rc.7 / 7d-2 · v3-first per SPEC §S19.3.1. The bridge mirror
+      // back-fills v2 session.environments; emitSessionChanged kept
+      // for non-migrated subscribers that listen on the "env-restore"
+      // reason specifically (filterState repaint).
+      commitEnvUnhideByCatalogId(envEntry.id);
       saveToLocalStorage();
       emitSessionChanged("env-restore", "Restore environment");
       paintEnvironmentsCard(card, session, right);
@@ -566,13 +665,26 @@ function openEnvPalette(session, card, right) {
       item.appendChild(mkt("span", "cmd-item-name", c.label));
       item.appendChild(mkt("span", "cmd-item-vendor", c.hint));
       item.addEventListener("click", function() {
+        // rc.7 / 7d-2 · v3-first env-add per SPEC §S19.3.1.
+        // commitEnvAdd creates the v3 record (assigns UUID + catalogVersion);
+        // the bridge mirror then back-fills v2 session.environments. We
+        // also push to v2 for the immediate auto-open (the mirror is
+        // synchronous but we hold a fresh local-state echo so the next
+        // renderEnvDetail call has a stable entry to focus on).
+        commitEnvAdd({ envCatalogId: c.id });
         if (!Array.isArray(session.environments)) session.environments = [];
-        session.environments.push({ id: c.id, hidden: false });
+        // Bridge mirror has already updated session.environments;
+        // re-resolve the matching entry by catalog id for the auto-open.
+        var newEntry = session.environments.find(function(e) { return e.id === c.id; });
+        if (!newEntry) {
+          // Defensive fallback if the mirror hasn't run yet (shouldn't happen).
+          newEntry = { id: c.id, hidden: false };
+          session.environments.push(newEntry);
+        }
         saveToLocalStorage();
         emitSessionChanged("env-add", "Add environment");
         close();
         // Auto-open the new env's detail panel.
-        var newEntry = session.environments[session.environments.length - 1];
         renderEnvDetail(right, session, newEntry, card, true);
       });
       item.addEventListener("mouseenter", function() {
@@ -634,6 +746,8 @@ function startHideFlow(envEntry, session, anchorBtn, onAfterHide) {
     var real = session.environments.find(function(e) { return e.id === envEntry.id; });
     if (real) envEntry = real;
   }
+  // rc.7 / 7d-2 · materialize in v3 so commitEnvHideByCatalogId hits.
+  _ensureV3EnvsMaterialized(session);
   var status = (typeof getSaveStatus === "function") ? getSaveStatus() : null;
   var dirty = status && status.status === "saving";
   if (dirty) {
@@ -645,6 +759,8 @@ function startHideFlow(envEntry, session, anchorBtn, onAfterHide) {
 
 function commitHide(envEntry, session, onAfterHide) {
   envEntry.hidden = true;
+  // rc.7 / 7d-2 · v3-first env-hide per SPEC §S19.3.1.
+  commitEnvHideByCatalogId(envEntry.id);
   saveToLocalStorage();
   emitSessionChanged("env-hide", "Hide environment");
   closeOverlay();

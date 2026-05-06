@@ -232,59 +232,168 @@ function _projectV3DriversToV2(eng) {
   return out;
 }
 
-// _lastV3Projection · the most recent v3-derived driver projection. The
-// mirror compares the NEW v3 projection against this (NOT against the
-// current v2 state) so it only fires when v3 actually changed. Without
-// this, an emit that didn't touch drivers (e.g. customer-merge from
-// bridgeOnce) would see "v3 projection [] != v2 [...]" and clobber v2's
-// drivers — destructive cross-test interference. Tracking the prior v3
-// projection makes the mirror non-destructive: v2 entries with no v3
-// origin survive until v3 actually mutates drivers.
-let _lastV3Projection = null;
+// rc.7 / 7d-2 · v3 environments → v2 session.environments shape.
+// v3 env record: { id (UUID), envCatalogId, catalogVersion, hidden,
+//                  alias?, location?, sizeKw?, sqm?, tier?, notes? }
+// v2 env entry:  { id (= envCatalogId), hidden, alias?, location?,
+//                  sizeKw?, sqm?, tier?, notes? }
+// Optional fields are only included when populated, mirroring how
+// ContextView's renderEnvDetail deletes undefined keys (so the v2-shape
+// after a mirror matches what direct-mutation paths produced).
+function _projectV3EnvironmentsToV2(eng) {
+  if (!eng || !eng.environments || !Array.isArray(eng.environments.allIds)) return [];
+  const out = [];
+  for (const id of eng.environments.allIds) {
+    const e = eng.environments.byId[id];
+    if (!e) continue;
+    const entry = { id: e.envCatalogId, hidden: !!e.hidden };
+    if (typeof e.alias    === "string" && e.alias.length    > 0) entry.alias    = e.alias;
+    if (typeof e.location === "string" && e.location.length > 0) entry.location = e.location;
+    if (typeof e.sizeKw   === "number" && !isNaN(e.sizeKw))      entry.sizeKw   = e.sizeKw;
+    if (typeof e.sqm      === "number" && !isNaN(e.sqm))         entry.sqm      = e.sqm;
+    if (typeof e.tier     === "string" && e.tier.length     > 0) entry.tier     = e.tier;
+    if (typeof e.notes    === "string" && e.notes.length    > 0) entry.notes    = e.notes;
+    out.push(entry);
+  }
+  return out;
+}
 
-function _v3ToV2DriverMirror(eng) {
+// rc.7 / 7d-2 · v3 customer → v2 session.customer shape (name / vertical /
+// region / notes). drivers stays projected by the dedicated drivers
+// mirror above. Only the four scalar fields the Save-context form
+// edits are mirrored; the v2 customer.drivers array is owned by the
+// drivers projection.
+function _projectV3CustomerToV2(eng) {
+  if (!eng || !eng.customer) return null;
+  const c = eng.customer;
+  return {
+    name:     typeof c.name     === "string" ? c.name     : "",
+    vertical: typeof c.vertical === "string" ? c.vertical : "",
+    region:   typeof c.region   === "string" ? c.region   : "",
+    notes:    typeof c.notes    === "string" ? c.notes    : ""
+  };
+}
+
+// _lastV3*Projection · the most recent v3-derived projection per
+// collection. The mirror compares the NEW v3 projection against this
+// (NOT against the current v2 state) so it only fires when v3 actually
+// changed. Without this, an emit that didn't touch a collection (e.g.
+// a driver edit triggers an emit; the env projection is unchanged but
+// would otherwise compare against v2 and clobber v2 envs that have no
+// v3 origin yet) would be destructive. Tracking the prior v3
+// projection makes the mirror non-destructive: v2 entries with no v3
+// origin survive until v3 actually mutates that collection.
+let _lastV3DriverProjection   = null;
+let _lastV3EnvProjection      = null;
+let _lastV3CustomerProjection = null;
+
+function _arrShallowEqual(a, b, keys) {
+  if (a === null || b === null) return a === b;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = b[i];
+    if (!x || !y) return false;
+    for (const k of keys) {
+      if (x[k] !== y[k]) return false;
+    }
+  }
+  return true;
+}
+
+function _v3ToV2Mirror(eng) {
   if (_mirroring) return;
   if (!eng) return;
   if (!liveSession || !liveSession.customer) return;
 
-  const projected = _projectV3DriversToV2(eng);
-  const last      = _lastV3Projection;
+  // ── drivers ────────────────────────────────────────────────────────
+  const drvProjected = _projectV3DriversToV2(eng);
+  const drvChanged   = _lastV3DriverProjection === null ||
+                       !_arrShallowEqual(drvProjected, _lastV3DriverProjection,
+                                         ["id", "priority", "outcomes"]);
 
-  // Compare against last v3 projection (NOT v2 current state). If v3's
-  // drivers haven't changed since the last emit, do nothing — v2 may
-  // have data populated outside the v3 path (legacy tests, file-load
-  // restoring v2 session before v3 catches up) and we must not clobber it.
-  let same = last !== null && projected.length === last.length;
-  if (same) {
-    for (let i = 0; i < projected.length; i++) {
-      const p = projected[i], l = last[i];
-      if (!l || p.id !== l.id || p.priority !== l.priority || p.outcomes !== l.outcomes) {
-        same = false;
-        break;
-      }
-    }
-  }
-  if (same) return;
-  _lastV3Projection = projected;
+  // ── environments ───────────────────────────────────────────────────
+  const envProjected = _projectV3EnvironmentsToV2(eng);
+  const envChanged   = _lastV3EnvProjection === null ||
+                       !_arrShallowEqual(envProjected, _lastV3EnvProjection,
+                                         ["id", "hidden", "alias", "location",
+                                          "sizeKw", "sqm", "tier", "notes"]);
+
+  // ── customer ───────────────────────────────────────────────────────
+  const custProjected = _projectV3CustomerToV2(eng);
+  const last          = _lastV3CustomerProjection;
+  const custChanged   = last === null || !custProjected || !last
+                        ? (last === null && custProjected !== null)
+                        : (custProjected.name     !== last.name     ||
+                           custProjected.vertical !== last.vertical ||
+                           custProjected.region   !== last.region   ||
+                           custProjected.notes    !== last.notes);
+
+  if (!drvChanged && !envChanged && !custChanged) return;
+
+  // Bootstrap-empty guard (per-collection) — applies the same principle
+  // for envs + customer that drivers got in rc.7 / 7c (the
+  // _lastV3*Projection===null + v3-empty case): on the very first emit
+  // when v3 hasn't been written to yet, skip the projection so v2 data
+  // populated outside the v3 path (legacy tests, file-load before v3
+  // catches up) survives. After any first non-empty projection, the
+  // baseline records the change and subsequent v3-becoming-empty-again
+  // (e.g. T1.9 remove-driver) propagates normally.
+  const drvBootstrapEmpty = _lastV3DriverProjection === null && drvProjected.length === 0;
+  const envBootstrapEmpty = _lastV3EnvProjection    === null && envProjected.length === 0;
+  const custBootstrapEmpty = _lastV3CustomerProjection === null && custProjected !== null &&
+                             custProjected.name.length     === 0 &&
+                             custProjected.vertical.length === 0 &&
+                             custProjected.region.length   === 0 &&
+                             custProjected.notes.length    === 0;
+
+  // Drop bootstrap-empty channels from the work set; if all three are
+  // bootstrap-empty there's nothing to mirror but we still want to
+  // record the baseline so the next non-bootstrap emit is the source
+  // of the first projection.
+  let didWrite = false;
 
   _mirroring = true;
   try {
-    liveSession.customer.drivers = projected;
-    emitSessionChanged("v3-mirror");
+    if (drvChanged) {
+      if (!drvBootstrapEmpty) {
+        liveSession.customer.drivers = drvProjected;
+        didWrite = true;
+      }
+      _lastV3DriverProjection = drvProjected;
+    }
+    if (envChanged) {
+      if (!envBootstrapEmpty) {
+        liveSession.environments = envProjected;
+        didWrite = true;
+      }
+      _lastV3EnvProjection = envProjected;
+    }
+    if (custChanged && custProjected) {
+      if (!custBootstrapEmpty) {
+        liveSession.customer.name     = custProjected.name;
+        liveSession.customer.vertical = custProjected.vertical;
+        liveSession.customer.region   = custProjected.region;
+        liveSession.customer.notes    = custProjected.notes;
+        didWrite = true;
+      }
+      _lastV3CustomerProjection = custProjected;
+    }
+    if (didWrite) emitSessionChanged("v3-mirror");
   } catch (e) {
-    console.warn("[sessionBridge] v3→v2 driver mirror failed:", e && e.message);
+    console.warn("[sessionBridge] v3→v2 mirror failed:", e && e.message);
   } finally {
     _mirroring = false;
   }
 }
 
-subscribeActiveEngagement(_v3ToV2DriverMirror);
+subscribeActiveEngagement(_v3ToV2Mirror);
 
-// _rearmMirrorForTests · re-subscribe the v3→v2 driver mirror after a
+// _rearmMirrorForTests · re-subscribe the v3→v2 mirror after a
 // _resetForTests() call clears engagementStore subscriptions. Test-only;
 // production code must NEVER call this (the module-load self-subscribe
-// covers the normal lifecycle). T1.8 / T1.9 (post-rc.7/7c) call this
-// after _resetEngagementStoreForTests() so the mirror remains live.
+// covers the normal lifecycle). T1.8 / T1.9 (post-rc.7/7c) + T1.* env
+// + customer migration tests (post-rc.7/7d-2) call this after
+// _resetEngagementStoreForTests() so the mirror remains live.
 export function _rearmMirrorForTests() {
-  subscribeActiveEngagement(_v3ToV2DriverMirror);
+  subscribeActiveEngagement(_v3ToV2Mirror);
 }
