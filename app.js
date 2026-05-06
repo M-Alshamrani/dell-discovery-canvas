@@ -1,6 +1,11 @@
 // app.js -- main router
 
-import { session, resetSession, resetToDemo, saveToLocalStorage, replaceSession, migrateLegacySession } from "./state/sessionStore.js";
+// rc.7 / 7e-8a · migrateLegacySession dropped from import (unused since
+// 7e-7 retired the runtime v2 migrator). Remaining sessionStore imports
+// (session, resetSession, resetToDemo, saveToLocalStorage, replaceSession)
+// migrate to engagementStore in a subsequent v2-deletion sub-arc per
+// SPEC §S40 deletion-readiness checklist.
+import { session, resetSession, resetToDemo, saveToLocalStorage, replaceSession } from "./state/sessionStore.js";
 import { runAllTests }               from "./diagnostics/appSpec.js";
 import { openSettingsModal }         from "./ui/views/SettingsModal.js";
 import * as aiUndoStack              from "./state/aiUndoStack.js";
