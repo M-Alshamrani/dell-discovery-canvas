@@ -37,6 +37,14 @@ import {
   mapWorkloadAssets
 } from "./collections/instanceActions.js";
 import { updateGap } from "./collections/gapActions.js";
+// rc.7 / 7b · Tab 1 Context migration · driver write helpers per
+// SPEC §S19.3.1 cutover-window bidirectional sync. ContextView
+// migrates its driver writes through these helpers in rc.7 / 7c.
+import {
+  addDriver,
+  updateDriver,
+  removeDriver
+} from "./collections/driverActions.js";
 
 // ─── view-shape selectors (R19.1 read side) ──────────────────────────────────
 
@@ -130,6 +138,27 @@ export function commitContextEdit(patch) {
     return commitAction(updateCustomer, patch.customer);
   }
   return null;
+}
+
+// rc.7 / 7b · Tab 1 Context migration · driver write helpers.
+//
+// Per SPEC §S19.3.1 cutover-window bidirectional sync: writes go v3-first
+// through commitAction → engagementStore. The sessionBridge.js v3→v2
+// mirror (added in rc.7 / 7c) keeps v2 session.drivers in sync for any
+// non-migrated v2.x view that still reads it.
+//
+// Authority: SPEC §S19.1 (R19.1 write helpers) + §S19.3.1 (cutover sync).
+
+export function commitDriverAdd(input) {
+  return commitAction(addDriver, input);
+}
+
+export function commitDriverUpdate(driverId, patch) {
+  return commitAction(updateDriver, driverId, patch);
+}
+
+export function commitDriverRemove(driverId) {
+  return commitAction(removeDriver, driverId);
 }
 
 export function commitInstanceEdit(_layerId, _envId, instancePatch) {

@@ -11840,6 +11840,49 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assertEqual(ctx.customer.name, "RT Customer",
         "round-tripped customer.name surfaces through adapter");
     });
+
+    // -----------------------------------------------------------------
+    // rc.7 / 7b · Tab 1 Context migration · driver write helpers.
+    // Per SPEC §S19.3.1 cutover-window bidirectional sync (BUG-036
+    // partial close). The ADAPTER helpers exist in this commit; the
+    // CONSUMER (ContextView.js) migrates in rc.7 / 7c. RED-first
+    // scaffolds per `feedback_spec_and_test_first.md`: source-grep
+    // tests fail until ContextView replaces v2 driver actions with
+    // adapter commit*.
+    // -----------------------------------------------------------------
+
+    it("V-FLOW-MIGRATE-TAB1-DRIVERS-1 · state/adapter.js exports commitDriverAdd / commitDriverUpdate / commitDriverRemove (write helpers per SPEC §S19.3.1)", async () => {
+      const adapterMod = await import("../state/adapter.js");
+      assert(typeof adapterMod.commitDriverAdd === "function",
+        "V-FLOW-MIGRATE-TAB1-DRIVERS-1: state/adapter.js MUST export commitDriverAdd(input) → commitAction(addDriver, input)");
+      assert(typeof adapterMod.commitDriverUpdate === "function",
+        "V-FLOW-MIGRATE-TAB1-DRIVERS-1: state/adapter.js MUST export commitDriverUpdate(driverId, patch) → commitAction(updateDriver, ...)");
+      assert(typeof adapterMod.commitDriverRemove === "function",
+        "V-FLOW-MIGRATE-TAB1-DRIVERS-1: state/adapter.js MUST export commitDriverRemove(driverId) → commitAction(removeDriver, driverId)");
+    });
+
+    it("V-FLOW-MIGRATE-TAB1-DRIVERS-2 · ui/views/ContextView.js writes drivers through state/adapter.js commitDriver* (NOT through v2 session.customer.drivers direct mutation) — RED until rc.7 / 7c", async () => {
+      // Source-grep: ContextView.js must import commitDriverAdd /
+      // commitDriverUpdate / commitDriverRemove from state/adapter.js.
+      // RED until rc.7 / 7c migrates the consumer.
+      const ctxSrc = await (await fetch("/ui/views/ContextView.js")).text();
+      const ADAPTER_IMPORT_RE = /import\s*\{[^}]*commitDriver(Add|Update|Remove)[^}]*\}\s*from\s*["'][^"']*state\/adapter(?:\.js)?["']/;
+      assert(ADAPTER_IMPORT_RE.test(ctxSrc),
+        "V-FLOW-MIGRATE-TAB1-DRIVERS-2: ui/views/ContextView.js MUST import commitDriverAdd/Update/Remove from state/adapter.js (RED until rc.7 / 7c)");
+    });
+
+    it("V-FLOW-MIGRATE-TAB1-DRIVERS-3 · state/sessionBridge.js mirrors v3 engagement.drivers → v2 session.drivers per SPEC §S19.3.1 cutover sync — RED until rc.7 / 7c", async () => {
+      // Source-grep: sessionBridge.js must subscribe to engagementStore
+      // changes and back-mirror drivers to v2 session for cutover-window
+      // consistency. RED until rc.7 / 7c lands the mirror.
+      const bridgeSrc = await (await fetch("/state/sessionBridge.js")).text();
+      const HAS_ENGAGEMENT_SUB = /subscribeActiveEngagement/.test(bridgeSrc);
+      const HAS_DRIVERS_MIRROR = /drivers/.test(bridgeSrc) && /session\.drivers|liveSession\.drivers/.test(bridgeSrc);
+      assert(HAS_ENGAGEMENT_SUB,
+        "V-FLOW-MIGRATE-TAB1-DRIVERS-3: state/sessionBridge.js MUST subscribe to engagementStore (subscribeActiveEngagement) per SPEC §S19.3.1 cutover-window v3→v2 mirror (RED until rc.7 / 7c)");
+      assert(HAS_DRIVERS_MIRROR,
+        "V-FLOW-MIGRATE-TAB1-DRIVERS-3: state/sessionBridge.js MUST reference drivers in the v3→v2 mirror block (RED until rc.7 / 7c)");
+    });
   });
 
   // -------------------------------------------------------------------
