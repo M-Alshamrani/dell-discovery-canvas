@@ -6470,3 +6470,34 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
   color: var(--ink-mute);
   text-transform: uppercase;
 }
+
+/* rc.7 / 7e-8b' polish · empty-environments empty-state card.
+   Surfaces on Tab 2/3 (Matrix), Tab 4 (Gaps), Tab 5 (Reporting) when
+   the engagement has zero visible environments, pointing the presales
+   engineer back to Tab 1 to add or restore at least one. */
+.no-envs-card {
+  border-left: 4px solid var(--accent-amber, #f59e0b);
+  margin-top: 12px;
+}
+.no-envs-card .card-eyebrow {
+  font: 500 10.5px/1 "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.no-envs-card .card-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.no-envs-card .card-hint {
+  margin-bottom: 12px;
+}
+.no-envs-bullets {
+  margin: 8px 0 4px 0;
+  padding-left: 20px;
+}
+.no-envs-bullets li {
+  margin: 6px 0;
+  line-height: 1.5;
+}

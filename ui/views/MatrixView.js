@@ -72,6 +72,22 @@ export function renderMatrixView(left, right, _legacySession, opts) {
   // attribute, instance.environmentId match) or by display label.
   var activeEnvs = _getVisibleEnvs();
 
+  // rc.7 / 7e-8b' polish · empty-environments empty-state. Per user
+  // direction 2026-05-06, when the user lands on a state-tab with no
+  // visible envs (none added, or all hidden), surface a friendly card
+  // pointing them back to Tab 1. The matrix grid would otherwise be a
+  // blank single-column space, which reads as broken UX.
+  if (activeEnvs.length === 0) {
+    var empty = _renderNoEnvsCard("matrix",
+      stateFilter === "current"
+        ? "The current-state matrix needs at least one environment to render."
+        : "The desired-state matrix needs at least one environment to render."
+    );
+    left.appendChild(empty);
+    showHint(right);
+    return;
+  }
+
   // Grid
   var wrap = mk("div", "matrix-scroll-wrap");
   var grid = mk("div", "matrix-grid");
@@ -966,4 +982,29 @@ function showHint(right) {
   ph.appendChild(mkt("div","detail-ph-title","Select a technology"));
   ph.appendChild(mkt("div","detail-ph-hint","Click any tile to edit it. In Desired State, click grey dashed tiles to set a disposition for each current technology."));
   right.appendChild(ph);
+}
+
+// rc.7 / 7e-8b' polish · empty-environments empty-state card. Per
+// user direction 2026-05-06: when a downstream tab (Current state /
+// Desired state / Gaps / Reporting) is opened with no visible envs,
+// surface a friendly card pointing the presales engineer back to
+// Tab 1 to add or restore at least one environment. Also
+// communicates the soft-delete invariant (envs can be hidden but
+// not deleted) so users don't search for a delete control.
+function _renderNoEnvsCard(viewKind, ledeText) {
+  var card = mk("div", "card no-envs-card");
+  card.setAttribute("data-no-envs-state", viewKind);
+  card.appendChild(mkt("div", "card-eyebrow muted", "ENVIRONMENTS REQUIRED"));
+  card.appendChild(mkt("div", "card-title", "Add at least one environment first"));
+  card.appendChild(mkt("div", "card-hint",
+    ledeText || "This tab needs at least one environment to render its data."));
+  var bullets = mk("ul", "no-envs-bullets");
+  var b1 = mk("li"); b1.textContent = "Open Tab 1 (Context). Click \"+ Add environment\" or restore a hidden one.";
+  bullets.appendChild(b1);
+  var b2 = mk("li"); b2.textContent = "Environments can be hidden (soft-delete) but never permanently removed -- your data stays safe in the saved file.";
+  bullets.appendChild(b2);
+  var b3 = mk("li"); b3.textContent = "Once you have at least one visible environment, return here to populate the matrix / gaps / report.";
+  bullets.appendChild(b3);
+  card.appendChild(bullets);
+  return card;
 }

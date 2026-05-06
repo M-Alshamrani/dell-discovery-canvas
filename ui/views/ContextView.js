@@ -620,6 +620,11 @@ function _buildEnvTile(envEntry, card, right, isHidden, canHide) {
       size.setAttribute("data-t", "data");
       tagsRow.appendChild(size);
     }
+    if (envEntry.sqm != null) {
+      var sqm = mkt("span", "tag", envEntry.sqm + " m²");
+      sqm.setAttribute("data-t", "data");
+      tagsRow.appendChild(sqm);
+    }
     if (envEntry.tier) {
       var tier = mkt("span", "tag", envEntry.tier);
       tier.setAttribute("data-t", "biz");

@@ -182,6 +182,16 @@ export function renderGapsEditView(left, right, session) {
   // signal follows the user across the workshop.
   if (session && session.isDemo) renderDemoBanner(left);
 
+  // rc.7 / 7e-8b' polish · empty-environments empty-state. Per user
+  // direction 2026-05-06: gaps + reporting need at least one visible
+  // env to be meaningful (gaps reference affectedEnvironments; the
+  // filter bar offers env-scoped filters). Surface a friendly card
+  // pointing the user back to Tab 1.
+  if (_v3VisibleEnvs().length === 0) {
+    left.appendChild(_renderNoEnvsCardGaps());
+    return;
+  }
+
   // ---- Header ----
   var header = mk("div", "card");
   var titleRow = mk("div", "card-title-row");
@@ -1387,4 +1397,24 @@ function gapOriginCriticalityHint(gap, session) {
   var first = (_v3InstancesArray() || []).find(function(i) { return i.id === ids[0]; });
   if (!first) return "";
   return "Source: '" + first.label + "' (criticality " + (first.criticality || "not set") + ").";
+}
+
+// rc.7 / 7e-8b' polish · empty-environments empty-state for Tab 4 (Gaps).
+// Same shape as MatrixView's no-envs card; specific copy for gaps.
+function _renderNoEnvsCardGaps() {
+  var card = mk("div", "card no-envs-card");
+  card.setAttribute("data-no-envs-state", "gaps");
+  card.appendChild(mkt("div", "card-eyebrow muted", "ENVIRONMENTS REQUIRED"));
+  card.appendChild(mkt("div", "card-title", "Add at least one environment first"));
+  card.appendChild(mkt("div", "card-hint",
+    "The gaps board needs at least one environment to render -- gaps reference affected environments, and the filter bar offers env-scoped filtering."));
+  var bullets = mk("ul", "no-envs-bullets");
+  var b1 = mk("li"); b1.textContent = "Open Tab 1 (Context). Click \"+ Add environment\" or restore a hidden one.";
+  bullets.appendChild(b1);
+  var b2 = mk("li"); b2.textContent = "Environments can be hidden (soft-delete) but never permanently removed -- your data stays safe in the saved file.";
+  bullets.appendChild(b2);
+  var b3 = mk("li"); b3.textContent = "Once you have at least one visible environment, return here to see drafted gaps + add new ones.";
+  bullets.appendChild(b3);
+  card.appendChild(bullets);
+  return card;
 }

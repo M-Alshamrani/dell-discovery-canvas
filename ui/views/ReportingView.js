@@ -6,7 +6,7 @@
 // the v3 engagement to v2-shape via state/v3Projection.js. Services
 // still take session as a parameter; this projector retires at 7e-8
 // alongside the v2 sessionStore deletion.
-import { getEngagementAsSession } from "../../state/v3Projection.js";
+import { getEngagementAsSession, getVisibleEnvsFromEngagement } from "../../state/v3Projection.js";
 import { generateExecutiveSummary, generateSessionBrief, buildProjects,
          computeDiscoveryCoverage, computeRiskPosture } from "../../services/roadmapService.js";
 import { getHealthSummary } from "../../services/healthMetrics.js";
@@ -18,6 +18,15 @@ export function renderReportingOverview(left, right) {
   // v3-pure: derive session-shape from active engagement at render time.
   var session = getEngagementAsSession();
   if (session && session.isDemo) renderDemoBanner(left);
+
+  // rc.7 / 7e-8b' polish · empty-environments empty-state. The
+  // reporting overview's health summary + executive summary depend on
+  // populated envs/instances. With zero visible envs, surface a
+  // friendly card pointing the user back to Tab 1.
+  if (getVisibleEnvsFromEngagement().length === 0) {
+    left.appendChild(_renderNoEnvsCardReporting());
+    return;
+  }
 
   var coverage = computeDiscoveryCoverage(session);
   var risk     = computeRiskPosture(session);
@@ -177,4 +186,23 @@ function renderBrief(container, rows) {
     row.appendChild(mkt("div", "brief-text",  r.text));
     container.appendChild(row);
   });
+}
+
+// rc.7 / 7e-8b' polish · empty-environments empty-state for Tab 5.
+function _renderNoEnvsCardReporting() {
+  var card = mk("div", "card no-envs-card");
+  card.setAttribute("data-no-envs-state", "reporting");
+  card.appendChild(mkt("div", "card-eyebrow muted", "ENVIRONMENTS REQUIRED"));
+  card.appendChild(mkt("div", "card-title", "Add at least one environment first"));
+  card.appendChild(mkt("div", "card-hint",
+    "The reporting overview, health heatmap, gaps board, and roadmap all need at least one environment to compute summaries from."));
+  var bullets = mk("ul", "no-envs-bullets");
+  var b1 = mk("li"); b1.textContent = "Open Tab 1 (Context). Click \"+ Add environment\" or restore a hidden one.";
+  bullets.appendChild(b1);
+  var b2 = mk("li"); b2.textContent = "Environments can be hidden (soft-delete) but never permanently removed -- your data stays safe in the saved file.";
+  bullets.appendChild(b2);
+  var b3 = mk("li"); b3.textContent = "Once you have at least one visible environment, return here for the health summary, executive brief, and roadmap.";
+  bullets.appendChild(b3);
+  card.appendChild(bullets);
+  return card;
 }
