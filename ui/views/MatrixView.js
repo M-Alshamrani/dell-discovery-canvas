@@ -43,7 +43,29 @@ export function renderMatrixView(left, right, _legacySession, opts) {
   var bootEng = getActiveEngagement();
   if (bootEng && bootEng.meta && bootEng.meta.isDemo) renderDemoBanner(left);
 
-  // Header
+  // v3-pure visible-env list. Walks engagement.environments + filters
+  // by !hidden. Each entry exposes { uuid (v3 id), envCatalogId, label,
+  // alias } so downstream code can address either by UUID (data-env-id
+  // attribute, instance.environmentId match) or by display label.
+  var activeEnvs = _getVisibleEnvs();
+
+  // rc.7 / 7e-8c'-fix · empty-environments empty-state via shared
+  // NoEnvsCard component (SPEC §S41 + RULES §16 CH35). Order matters:
+  // the empty-state branch returns BEFORE building the matrix header.
+  // The 7e-8c'-impl pass put the header above the early return, so the
+  // explanatory hint ("Set a disposition for each current technology
+  // ...") rendered above the info card and was redundant. F41.6.1 also
+  // forbids per-view inline empty-state helpers; we use the shared
+  // component instead.
+  if (activeEnvs.length === 0) {
+    renderEmptyEnvsCenterCard(left,
+      stateFilter === "current" ? "matrix-current" : "matrix-desired",
+      {});
+    showHint(right);
+    return;
+  }
+
+  // Header (only built when there is at least one visible environment).
   var header = mk("div", "card");
   var titleRow = mk("div", "card-title-row");
   var titleEl = mk("div", "card-title");
@@ -66,25 +88,6 @@ export function renderMatrixView(left, right, _legacySession, opts) {
     updateUnreviewedBanner(unreviewedEl);
   } else {
     left.appendChild(header);
-  }
-
-  // v3-pure visible-env list. Walks engagement.environments + filters
-  // by !hidden. Each entry exposes { uuid (v3 id), envCatalogId, label,
-  // alias } so downstream code can address either by UUID (data-env-id
-  // attribute, instance.environmentId match) or by display label.
-  var activeEnvs = _getVisibleEnvs();
-
-  // rc.7 / 7e-8c'-impl · empty-environments empty-state via shared
-  // NoEnvsCard component (SPEC §S41 + RULES §16 CH35). Replaces the
-  // 7e-8b'-polish per-view _renderNoEnvsCard helper (the patch that
-  // F41.6.1 forbids). Center-card rendering + tab-area centering
-  // applied by the shared component.
-  if (activeEnvs.length === 0) {
-    renderEmptyEnvsCenterCard(left,
-      stateFilter === "current" ? "matrix-current" : "matrix-desired",
-      {});
-    showHint(right);
-    return;
   }
 
   // Grid. Column scaling per SPEC §S41.4: views set ONLY the

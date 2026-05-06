@@ -108,16 +108,13 @@ document.addEventListener("DOMContentLoaded", function() {
     }
     _prevVisibleEnvCount = nextCount;
   });
-  // rc.7 / 7e-8c'-impl · CTA navigation event from the shared NoEnvsCard.
-  // The center info-card's "Go to Tab 1" button dispatches this when
-  // the user clicks; we switch to the context tab + re-render.
-  document.addEventListener("dell-canvas:navigate-to-tab", function(ev) {
-    var d = ev.detail || {};
-    if (!d.tabId) return;
-    currentStep = d.tabId;
-    renderStepper();
-    renderStage();
-  });
+  // rc.7 / 7e-8c'-fix · the original 7e-8c'-impl shipped a CTA button
+  // inside the NoEnvsCard that emitted "dell-canvas:navigate-to-tab"
+  // for the app shell to consume. The button was dropped (Tab 1 is one
+  // click away in the stepper; an in-card button was redundant + the
+  // host-class mutation it depended on broke Context layout). The
+  // listener went with it.
+
   // v2.4.11 · E1 · cross-tab navigation event. GapsEditView dispatches
   // this when the user clicks a linked-instance row in a gap's detail
   // panel. We switch to the right tab (current → Tab 2, desired → Tab 3)

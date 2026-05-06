@@ -10,10 +10,14 @@
 //
 //   renderEmptyEnvsCenterCard(host, viewKind, opts)
 //     Centered informational card for Tabs 2/3 (Current state / Desired
-//     state). Host element gets a .no-envs-center-card child + flex
-//     centering applied so the card sits in the middle of the tab area
-//     vertically. opts: { lede, ctaLabel, onCta }. NOT a warning --
-//     informational tone, amber accent left-border (matches §S41.2).
+//     state). Renders a self-contained .no-envs-wrap > .no-envs-center-card
+//     subtree into the host -- NEVER mutates host classes (lesson learned
+//     from 7e-8c'-impl: host class mutation persisted across re-renders
+//     into Context tab and broke its layout, the "house of cards" bug).
+//     opts: { lede }. NOT a warning -- informational tone, amber accent
+//     left-border (matches §S41.2). No CTA button: Tab 1 is one click
+//     away in the stepper; an inline navigation button mid-card was
+//     redundant and pulled the eye away from the message.
 //
 //   surfaceFirstAddAcknowledgment()
 //     One-time toast/banner on first visibleEnvCount 0->1 transition.
@@ -56,17 +60,18 @@ export function visibleEnvCount(engagement) {
 //   "gaps"            -> "The gaps board needs at least one environment to render..."
 //   "reporting"       -> "The reporting overview needs at least one environment..."
 //
-// opts.lede overrides the default. opts.ctaLabel + opts.onCta wire a
-// "Take me to Tab 1" button (defaults present).
+// opts.lede overrides the default.
+//
+// NEVER mutates host element classes. Renders a self-contained
+// .no-envs-wrap > .no-envs-center-card subtree; CSS centering lives on
+// the wrap so subsequent re-renders that swap children for non-empty
+// content (e.g. user navigates to Context, adds an env, comes back) do
+// not leave behind any host-level styling.
 export function renderEmptyEnvsCenterCard(host, viewKind, opts) {
   if (!host) return null;
   opts = opts || {};
 
-  // Apply flex centering to the host so the card sits in the middle of
-  // the tab area both horizontally and vertically. Set on the host
-  // element directly so MatrixView's left panel becomes the center
-  // container without needing extra wrappers.
-  host.classList.add("no-envs-host");
+  const wrap = _mk("div", "no-envs-wrap");
 
   const card = _mk("div", "card no-envs-center-card");
   card.setAttribute("data-no-envs-state", viewKind || "unknown");
@@ -89,25 +94,8 @@ export function renderEmptyEnvsCenterCard(host, viewKind, opts) {
   bullets.appendChild(b3);
   card.appendChild(bullets);
 
-  // Optional CTA -- defaults to a "Go to Tab 1" link that emits a
-  // CustomEvent the app shell listens for. Callers can override with
-  // opts.onCta to dispatch their own navigation.
-  const ctaLabel = opts.ctaLabel || "Go to Tab 1 (Context)";
-  const ctaBtn = _mk("button", "btn-primary no-envs-cta");
-  ctaBtn.type = "button";
-  ctaBtn.textContent = ctaLabel;
-  ctaBtn.addEventListener("click", function() {
-    if (typeof opts.onCta === "function") {
-      opts.onCta();
-      return;
-    }
-    document.dispatchEvent(new CustomEvent("dell-canvas:navigate-to-tab", {
-      detail: { tabId: "context" }
-    }));
-  });
-  card.appendChild(ctaBtn);
-
-  host.appendChild(card);
+  wrap.appendChild(card);
+  host.appendChild(wrap);
   return card;
 }
 

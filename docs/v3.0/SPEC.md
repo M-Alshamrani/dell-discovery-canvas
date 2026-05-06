@@ -4012,6 +4012,9 @@ Vectors live in TESTS.md §T41 V-FLOW-EMPTY-ENVS-1..7. Summary:
 - **F41.6.3** · Stepper steps that ignore the `visibleEnvCount === 0` rule. Tabs 4/5 MUST visually disable + block click navigation when no visible envs exist.
 - **F41.6.4** · First-add acknowledgments shown more than once per localStorage lifetime. The `envFirstAddAck_v1` key is the dedup record.
 - **F41.6.5** · Tab 1 (Context) showing the empty-env card. Tab 1 is the authoring surface; it never blocks itself.
+- **F41.6.6** · `renderEmptyEnvsCenterCard` mutating host element classes (the host being the panel that already owns the layout). The empty-state DOM MUST live inside a self-contained `.no-envs-wrap` element so subsequent re-renders that swap children do NOT inherit centering CSS. Added 7e-8c'-fix after the 7e-8c'-impl shipped a `host.classList.add("no-envs-host")` line that bled flex centering into the Context tab whenever the user navigated back via the (now-retired) CTA.
+- **F41.6.7** · Inline navigation CTAs ("Go to Tab 1") inside the empty-state card. The stepper at the top of the page is the authoritative navigation surface; an in-card CTA was redundant + the click handler that backed it relied on the now-forbidden host class mutation. The center card is informational, not actionable. Retired in 7e-8c'-fix.
+- **F41.6.8** · Rendering the matrix header card (title + hint copy) above the empty-state card in MatrixView. The empty-state branch returns BEFORE the header is built; otherwise the user sees both the explanatory hint ("Set a disposition for each current technology...") AND the empty-state info card stacked, which is redundant. Caught + fixed in 7e-8c'-fix.
 
 ### S41.7 · Trace
 

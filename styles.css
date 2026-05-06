@@ -6484,10 +6484,12 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
    ui/components/NoEnvsCard.js component (MatrixView + GapsEditView +
    ReportingView import + use; never duplicate per F41.6.1). */
 
-/* The host element receives .no-envs-host + flex centering so the
-   center card sits in the middle of the tab area both horizontally
-   and vertically. Targets MatrixView's left panel + similar.  */
-.no-envs-host {
+/* Self-contained centering wrapper for the empty-envs card. Lives
+   inside the host (panel) but never mutates host classes -- the
+   7e-8c'-impl pass mutated host classes directly and that styling
+   leaked into Context after a CTA-driven re-render (the "house of
+   cards" bug). 7e-8c'-fix isolates everything inside .no-envs-wrap. */
+.no-envs-wrap {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -6525,9 +6527,6 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
 .no-envs-center-card .no-envs-bullets li {
   margin: 8px 0;
   line-height: 1.5;
-}
-.no-envs-center-card .no-envs-cta {
-  margin-top: 8px;
 }
 
 /* Stepper disabled state (SPEC §S41.2 -- Tabs 4/5 when visibleEnvCount===0). */
