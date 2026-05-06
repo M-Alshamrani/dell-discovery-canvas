@@ -4,7 +4,8 @@ import { LAYERS, ENVIRONMENTS } from "../../core/config.js";
 import { getFilteredGaps, getGapsByPhase } from "../../services/gapsService.js";
 import { helpButton } from "./HelpModal.js";
 import { effectiveDellSolutions } from "../../services/programsService.js";
-import { session as liveSession } from "../../state/sessionStore.js";
+// rc.7 / 7e-6 · v3-pure (per SPEC §S40 + RULES §16 CH34).
+import { getEngagementAsSession } from "../../state/v3Projection.js";
 import { serviceLabel, serviceDomain } from "../../core/services.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
 import { mountSharedFilterBar } from "../components/SharedFilterBar.js";
@@ -38,6 +39,8 @@ export function renderSummaryGapsView(left, right) {
   let showClosedGaps      = false;
   let selectedGapId  = null;
 
+  // v3-pure: derive session-shape from active engagement at render time.
+  const liveSession = getEngagementAsSession();
   if (liveSession && liveSession.isDemo) renderDemoBanner(left);
 
   // ── header card ──────────────────────────────────────────────────────────

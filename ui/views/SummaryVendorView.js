@@ -1,9 +1,10 @@
 // ui/views/SummaryVendorView.js — vendor & platform mix analytics
 
-import { LAYERS, getVisibleEnvironments, getEnvLabel } from "../../core/config.js";
+import { LAYERS, getEnvLabel } from "../../core/config.js";
 import { computeMixByLayer, computeMixByEnv, computeVendorTableData } from "../../services/vendorMixService.js";
 import { helpButton } from "./HelpModal.js";
-import { session as moduleLiveSession } from "../../state/sessionStore.js";
+// rc.7 / 7e-6 · v3-pure (per SPEC §S40 + RULES §16 CH34).
+import { getEngagementAsSession, getVisibleEnvsFromEngagement } from "../../state/v3Projection.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
 import * as fState from "../../state/filterState.js";
 
@@ -35,9 +36,8 @@ var SEGMENT_PALETTE = {
 };
 
 export function renderSummaryVendorView(left, right, sessionArg) {
-  // v2.4.15 . accept session as optional 3rd arg so tests can drive
-  // with a fixture; default to module-scoped live session.
-  var liveSession = sessionArg || moduleLiveSession;
+  // v3-pure: derive session-shape from active engagement at render time.
+  var liveSession = sessionArg || getEngagementAsSession();
   let stateFilter    = "combined";
   let activeLayerIds = new Set(LAYERS.map(l => l.id));
   let stackBy        = "vendorGroup"; // dimension the headline bar splits on
@@ -193,7 +193,7 @@ export function renderSummaryVendorView(left, right, sessionArg) {
     // chosen dimension (vendor / layer / environment). The bar segments
     // map to the dimension's palette + each segment is click-to-filter
     // so users can drill from the chart into the rest of the page.
-    var visibleEnvs = getVisibleEnvironments(liveSession);
+    var visibleEnvs = getVisibleEnvsFromEngagement();
     var stackData = computeStackData(stackBy, stateFilter, ids(), visibleEnvs);
     var stateLabel = stateFilter === "current"  ? "Current state"
                   : stateFilter === "desired"   ? "Desired state"
@@ -624,7 +624,7 @@ export function renderSummaryVendorView(left, right, sessionArg) {
     // Instance list
     const instSep = mk("div", "detail-sep"); instSep.textContent = "Instances"; panel.appendChild(instSep);
     matching.forEach(inst => {
-      const envLabel = (getVisibleEnvironments(liveSession).find(e => e.id === inst.environmentId) || {}).label || inst.environmentId;
+      const envLabel = (getVisibleEnvsFromEngagement().find(e => e.id === inst.environmentId) || {}).label || inst.environmentId;
       const row = mk("div", "detail-row");
       row.innerHTML = `<span class="vg-badge vg-${inst.vendorGroup||'custom'}">${inst.state}</span> ${inst.label} — ${envLabel}`;
       panel.appendChild(row);
@@ -675,7 +675,7 @@ export function renderSummaryVendorView(left, right, sessionArg) {
     // Instance list (top 12; expand if needed).
     const instSep = mk("div", "detail-sep"); instSep.textContent = "Instances"; panel.appendChild(instSep);
     matching.slice(0, 12).forEach(function(inst) {
-      const envLabel = (getVisibleEnvironments(liveSession).find(e => e.id === inst.environmentId) || {}).label || inst.environmentId;
+      const envLabel = (getVisibleEnvsFromEngagement().find(e => e.id === inst.environmentId) || {}).label || inst.environmentId;
       const row = mk("div", "detail-row");
       row.innerHTML = '<span class="vg-badge vg-' + (inst.vendorGroup || 'custom') +
         '">' + inst.state + '</span> ' + (inst.label || "(unnamed)") + ' . ' + envLabel;

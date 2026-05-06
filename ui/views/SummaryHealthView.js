@@ -1,21 +1,32 @@
 // ui/views/SummaryHealthView.js -- bold heatmap redesign
 
-import { LAYERS, ENVIRONMENTS, getEnvLabel, getVisibleEnvironments } from "../../core/config.js";
-import { session as moduleSession } from "../../state/sessionStore.js";
+import { LAYERS, ENVIRONMENTS, getEnvLabel } from "../../core/config.js";
+// rc.7 / 7e-6 · v3-pure (per SPEC §S40 + RULES §16 CH34).
+import { getEngagementAsSession, getVisibleEnvsFromEngagement } from "../../state/v3Projection.js";
 import { getHealthSummary, computeBucketMetrics, scoreToRiskLabel, scoreToClass } from "../../services/healthMetrics.js";
 import { helpButton } from "./HelpModal.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
 
 export function renderSummaryHealthView(left, right, sessionArg) {
-  // v2.4.15 . accept an optional session argument so tests can drive the
-  // view with a fixture session. Falls back to the module-scoped session
-  // when called by app.js with the historical 2-arg signature.
-  var session = sessionArg || moduleSession;
+  // v3-pure: derive session-shape from active engagement at render time.
+  // sessionArg honored for callers that explicitly pass a fixture (tests
+  // already install via _installSessionAsV3Engagement so the projector
+  // returns the test's data anyway).
+  var session = sessionArg || getEngagementAsSession();
   if (session && session.isDemo) renderDemoBanner(left);
   // v2.4.15 . SD8 . Tab 5 reporting renders ONLY visible (non-hidden)
   // envs. Hidden envs stay in session.environments (and the saved file)
   // but never appear in heatmap, vendor mix, gaps board or roadmap.
-  var visibleEnvs = getVisibleEnvironments(session);
+  // rc.7 / 7e-6: derive visibleEnvs from `session` (whether passed in or
+  // projected) so SD8 fixture's hidden flag is honored. ENV_CATALOG
+  // labels are looked up by id for display parity with v2.
+  var visibleEnvs = (Array.isArray(session.environments) && session.environments.length > 0)
+    ? session.environments.filter(function(e) { return !e.hidden; })
+        .map(function(e) {
+          var cat = ENVIRONMENTS.find(function(c) { return c.id === e.id; });
+          return Object.assign({}, e, { label: cat ? cat.label : e.id });
+        })
+    : getVisibleEnvsFromEngagement();
   var s = getHealthSummary(session, LAYERS, visibleEnvs);
 
   // Overview chips

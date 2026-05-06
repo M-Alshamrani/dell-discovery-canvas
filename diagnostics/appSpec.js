@@ -15014,18 +15014,18 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 
       // Live DOM: open chat, find Clear button, simulate click, assert
       // overlay stays open + confirm pill cluster appears.
-      // rc.7 / 7e-5: bumped wait from 50ms -> 250ms because Suite 13/14
-      // fixture installs registered v3->v2 test mirrors that increase
-      // engagementStore _subs notification fan-out per emit. The chat
-      // overlay's open animation + transcript rehydrate now lands a
-      // few frames later under that load. 250ms is safely under the
-      // overall test budget and matches similar overlay timing in
-      // V-OVERLAY-STACK suites.
+      // rc.7 / 7e-5: bumped wait from 50ms -> 250ms; rc.7 / 7e-6 bumped
+      // again to 400ms because Suite 13/14 + Reporting/Summary view
+      // fixture installs registered more v3->v2 test mirror subs
+      // (engagementStore _subs notification fan-out grew per sub-arc).
+      // 400ms safely under the per-test budget while accommodating the
+      // chat overlay's open animation + transcript rehydrate at full
+      // late-suite load.
       _resetOverlayForTests();
       closeOverlay();
       const mod = await import("../ui/views/CanvasChatOverlay.js");
       mod.openCanvasChat();
-      await new Promise(r => setTimeout(r, 250));
+      await new Promise(r => setTimeout(r, 400));
       const clearBtn = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-clear-btn");
       assert(clearBtn, "V-CLEAR-CHAT-PERSISTS: Clear button must exist in chat header");
       clearBtn.click();

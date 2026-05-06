@@ -9,7 +9,8 @@
 // (driverId, phase). Unassigned projects land in a subdued row at the bottom.
 
 import { LAYERS, ENVIRONMENTS, BUSINESS_DRIVERS } from "../../core/config.js";
-import { session as liveSession } from "../../state/sessionStore.js";
+// rc.7 / 7e-6 · v3-pure (per SPEC §S40 + RULES §16 CH34).
+import { getEngagementAsSession } from "../../state/v3Projection.js";
 import { buildProjects } from "../../services/roadmapService.js";
 import { groupProjectsByProgram, driverLabel as driverLabelFor } from "../../services/programsService.js";
 import { helpButton } from "./HelpModal.js";
@@ -23,7 +24,8 @@ var PHASES = [
 ];
 
 export function renderSummaryRoadmapView(left, right, sess) {
-  var session = sess || liveSession;
+  // v3-pure: derive session-shape from active engagement at render time.
+  var session = sess || getEngagementAsSession();
   if (session && session.isDemo) renderDemoBanner(left);
   // Do NOT clear left/right here , the Reporting tab bar (#summary-tabs) lives in `left`
   // and the caller has already appended it before calling us. Sibling sub-tab views

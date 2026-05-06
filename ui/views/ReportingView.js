@@ -2,7 +2,11 @@
 // Top-level reporting overview shown when the "5 - Reporting" step is first entered.
 // Shows: account health score, executive summary, and navigates to sub-tabs.
 
-import { session } from "../../state/sessionStore.js";
+// rc.7 / 7e-6 · v3-pure (per SPEC §S40 + RULES §16 CH34). Reads project
+// the v3 engagement to v2-shape via state/v3Projection.js. Services
+// still take session as a parameter; this projector retires at 7e-8
+// alongside the v2 sessionStore deletion.
+import { getEngagementAsSession } from "../../state/v3Projection.js";
 import { generateExecutiveSummary, generateSessionBrief, buildProjects,
          computeDiscoveryCoverage, computeRiskPosture } from "../../services/roadmapService.js";
 import { getHealthSummary } from "../../services/healthMetrics.js";
@@ -11,8 +15,8 @@ import { helpButton } from "./HelpModal.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
 
 export function renderReportingOverview(left, right) {
-  // v2.4.13 S5 . demo banner on every Reporting sub-tab including
-  // Overview. Same shared helper, same colorful styling.
+  // v3-pure: derive session-shape from active engagement at render time.
+  var session = getEngagementAsSession();
   if (session && session.isDemo) renderDemoBanner(left);
 
   var coverage = computeDiscoveryCoverage(session);
