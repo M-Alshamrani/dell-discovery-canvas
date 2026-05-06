@@ -11928,6 +11928,71 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assert(/v3-mirror/.test(bridgeSrc),
         "V-FLOW-MIGRATE-TAB1-DRIVERS-3: state/sessionBridge.js MUST use the 'v3-mirror' reason to emit + skip the v2→v3 customer merge (loop guard per SPEC §S19.3.1)");
     });
+
+    // -----------------------------------------------------------------
+    // rc.7 / 7d-1 · Tab 1 Context envs + customer migration scaffolds.
+    // Per SPEC §S19.3.1 cutover-window bidirectional sync amendment.
+    // ENVS-1 + CUSTOMER-1a (adapter helpers) GREEN at 7d-1.
+    // ENVS-2/3 + CUSTOMER-1b/2 (ContextView consumer + bridge mirror)
+    // RED at 7d-1; flip GREEN at 7d-2.
+    // -----------------------------------------------------------------
+
+    it("V-FLOW-MIGRATE-TAB1-ENVS-1 · state/adapter.js exports commitEnvAdd / commitEnvUpdate / commitEnvHide / commitEnvUnhide / commitEnvRemove (write helpers per SPEC §S19.3.1)", async () => {
+      const adapterMod = await import("../state/adapter.js");
+      assert(typeof adapterMod.commitEnvAdd === "function",
+        "V-FLOW-MIGRATE-TAB1-ENVS-1: state/adapter.js MUST export commitEnvAdd(input) → commitAction(addEnvironment, input)");
+      assert(typeof adapterMod.commitEnvUpdate === "function",
+        "V-FLOW-MIGRATE-TAB1-ENVS-1: state/adapter.js MUST export commitEnvUpdate(envId, patch) → commitAction(updateEnvironment, ...)");
+      assert(typeof adapterMod.commitEnvHide === "function",
+        "V-FLOW-MIGRATE-TAB1-ENVS-1: state/adapter.js MUST export commitEnvHide(envId) → commitAction(hideEnvironment, envId)");
+      assert(typeof adapterMod.commitEnvUnhide === "function",
+        "V-FLOW-MIGRATE-TAB1-ENVS-1: state/adapter.js MUST export commitEnvUnhide(envId) → commitAction(unhideEnvironment, envId)");
+      assert(typeof adapterMod.commitEnvRemove === "function",
+        "V-FLOW-MIGRATE-TAB1-ENVS-1: state/adapter.js MUST export commitEnvRemove(envId) → commitAction(removeEnvironment, envId)");
+      // Cutover-window catalog-id-keyed helpers (parallel to driver
+      // *ByBusinessDriverId pattern) — let ContextView keep its
+      // catalog-ref `e.id` references during migration.
+      assert(typeof adapterMod.commitEnvUpdateByCatalogId === "function",
+        "V-FLOW-MIGRATE-TAB1-ENVS-1: state/adapter.js MUST export commitEnvUpdateByCatalogId(envCatalogId, patch) cutover-window helper");
+      assert(typeof adapterMod.commitEnvHideByCatalogId === "function",
+        "V-FLOW-MIGRATE-TAB1-ENVS-1: state/adapter.js MUST export commitEnvHideByCatalogId(envCatalogId) cutover-window helper");
+      assert(typeof adapterMod.commitEnvUnhideByCatalogId === "function",
+        "V-FLOW-MIGRATE-TAB1-ENVS-1: state/adapter.js MUST export commitEnvUnhideByCatalogId(envCatalogId) cutover-window helper");
+    });
+
+    it("V-FLOW-MIGRATE-TAB1-ENVS-2 · ui/views/ContextView.js writes envs through state/adapter.js commitEnv* (NOT direct session.environments mutation) — RED until rc.7 / 7d-2", async () => {
+      const ctxSrc = await (await fetch("/ui/views/ContextView.js")).text();
+      const ADAPTER_IMPORT_RE = /import\s*\{[^}]*commitEnv(Add|Update|Hide|Unhide|Remove|UpdateByCatalogId|HideByCatalogId|UnhideByCatalogId)[^}]*\}\s*from\s*["'][^"']*state\/adapter(?:\.js)?["']/;
+      assert(ADAPTER_IMPORT_RE.test(ctxSrc),
+        "V-FLOW-MIGRATE-TAB1-ENVS-2: ui/views/ContextView.js MUST import commitEnv* helpers from state/adapter.js (RED until rc.7 / 7d-2)");
+    });
+
+    it("V-FLOW-MIGRATE-TAB1-ENVS-3 · state/sessionBridge.js mirrors v3 engagement.environments → v2 session.environments per SPEC §S19.3.1 cutover sync — RED until rc.7 / 7d-2", async () => {
+      // Source-grep: bridge must project v3 environments back to v2
+      // session.environments, parallel to the drivers mirror. RED until
+      // rc.7 / 7d-2 lands the mirror.
+      const bridgeSrc = await (await fetch("/state/sessionBridge.js")).text();
+      assert(/_projectV3EnvironmentsToV2|liveSession\.environments\s*=/.test(bridgeSrc),
+        "V-FLOW-MIGRATE-TAB1-ENVS-3: state/sessionBridge.js v3→v2 mirror MUST project environments to liveSession.environments (RED until rc.7 / 7d-2)");
+    });
+
+    it("V-FLOW-MIGRATE-TAB1-CUSTOMER-1 · ui/views/ContextView.js Save-context button calls commitContextEdit({customer:...}) (NOT applyContextSave) — RED until rc.7 / 7d-2", async () => {
+      const ctxSrc = await (await fetch("/ui/views/ContextView.js")).text();
+      const ADAPTER_IMPORT_RE = /import\s*\{[^}]*commitContextEdit[^}]*\}\s*from\s*["'][^"']*state\/adapter(?:\.js)?["']/;
+      assert(ADAPTER_IMPORT_RE.test(ctxSrc),
+        "V-FLOW-MIGRATE-TAB1-CUSTOMER-1: ui/views/ContextView.js MUST import commitContextEdit from state/adapter.js (RED until rc.7 / 7d-2)");
+      assert(/commitContextEdit\s*\(/.test(ctxSrc),
+        "V-FLOW-MIGRATE-TAB1-CUSTOMER-1: ui/views/ContextView.js Save-context handler MUST call commitContextEdit({customer:...}) (RED until rc.7 / 7d-2)");
+    });
+
+    it("V-FLOW-MIGRATE-TAB1-CUSTOMER-2 · state/sessionBridge.js mirrors v3 engagement.customer → v2 session.customer per SPEC §S19.3.1 cutover sync — RED until rc.7 / 7d-2", async () => {
+      // Source-grep: bridge must back-mirror customer fields v3→v2 so
+      // non-migrated views (header strip, save indicator) refresh after
+      // a Save context that goes via the adapter.
+      const bridgeSrc = await (await fetch("/state/sessionBridge.js")).text();
+      assert(/_projectV3CustomerToV2|liveSession\.customer\.name\s*=|liveSession\.customer\.vertical\s*=/.test(bridgeSrc),
+        "V-FLOW-MIGRATE-TAB1-CUSTOMER-2: state/sessionBridge.js v3→v2 mirror MUST project customer fields to liveSession.customer (RED until rc.7 / 7d-2)");
+    });
   });
 
   // -------------------------------------------------------------------

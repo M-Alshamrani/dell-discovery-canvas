@@ -45,6 +45,16 @@ import {
   updateDriver,
   removeDriver
 } from "./collections/driverActions.js";
+// rc.7 / 7d · Tab 1 Context migration · environment write helpers per
+// SPEC §S19.3.1 cutover-window bidirectional sync. ContextView
+// consumes these helpers in rc.7 / 7d-2.
+import {
+  addEnvironment,
+  updateEnvironment,
+  hideEnvironment,
+  unhideEnvironment,
+  removeEnvironment
+} from "./collections/environmentActions.js";
 
 // ─── view-shape selectors (R19.1 read side) ──────────────────────────────────
 
@@ -210,4 +220,83 @@ export function commitWorkloadMapping(workloadId, mappedAssetIds) {
 
 export function commitGapEdit(gapId, patch) {
   return commitAction(updateGap, gapId, patch);
+}
+
+// rc.7 / 7d · Tab 1 Context migration · environment write helpers.
+//
+// Per SPEC §S19.3.1 cutover-window bidirectional sync: writes go v3-first
+// through commitAction → engagementStore. The sessionBridge.js v3→v2
+// environment mirror (added in rc.7 / 7d-2) keeps v2 session.environments
+// in sync for any non-migrated v2.x view that still reads it.
+//
+// Authority: SPEC §S19.1 (R19.1 write helpers) + §S19.3.1 (cutover sync).
+
+export function commitEnvAdd(input) {
+  return commitAction(addEnvironment, input);
+}
+
+export function commitEnvUpdate(envId, patch) {
+  return commitAction(updateEnvironment, envId, patch);
+}
+
+export function commitEnvHide(envId) {
+  return commitAction(hideEnvironment, envId);
+}
+
+export function commitEnvUnhide(envId) {
+  return commitAction(unhideEnvironment, envId);
+}
+
+export function commitEnvRemove(envId) {
+  return commitAction(removeEnvironment, envId);
+}
+
+// rc.7 / 7d · cutover-window helpers — v2 ContextView holds environments
+// in an array keyed by `id = envCatalogId` (the catalog reference, e.g.
+// "coreDc"). v3 environment records key by UUID. These "*ByCatalogId"
+// helpers do the catalog-ref → UUID lookup internally so the ContextView
+// call site can stay readable + keep its existing `e.id` references
+// during migration. They retire once ContextView reads from the v3
+// adaptContextView shape natively (post-rc.7 / 7d).
+
+function _findEnvByCatalogId(envCatalogId) {
+  const eng = getActiveEngagement();
+  if (!eng || !eng.environments || !Array.isArray(eng.environments.allIds)) return null;
+  for (const id of eng.environments.allIds) {
+    const e = eng.environments.byId[id];
+    if (e && e.envCatalogId === envCatalogId) return e;
+  }
+  return null;
+}
+
+export function commitEnvUpdateByCatalogId(envCatalogId, patch) {
+  const e = _findEnvByCatalogId(envCatalogId);
+  if (!e) {
+    return { ok: false, error: "no v3 environment with envCatalogId='" + envCatalogId + "'" };
+  }
+  return commitAction(updateEnvironment, e.id, patch);
+}
+
+export function commitEnvHideByCatalogId(envCatalogId) {
+  const e = _findEnvByCatalogId(envCatalogId);
+  if (!e) {
+    return { ok: false, error: "no v3 environment with envCatalogId='" + envCatalogId + "'" };
+  }
+  return commitAction(hideEnvironment, e.id);
+}
+
+export function commitEnvUnhideByCatalogId(envCatalogId) {
+  const e = _findEnvByCatalogId(envCatalogId);
+  if (!e) {
+    return { ok: false, error: "no v3 environment with envCatalogId='" + envCatalogId + "'" };
+  }
+  return commitAction(unhideEnvironment, e.id);
+}
+
+export function commitEnvRemoveByCatalogId(envCatalogId) {
+  const e = _findEnvByCatalogId(envCatalogId);
+  if (!e) {
+    return { ok: false, error: "no v3 environment with envCatalogId='" + envCatalogId + "'" };
+  }
+  return commitAction(removeEnvironment, e.id);
 }
