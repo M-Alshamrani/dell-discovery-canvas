@@ -1,24 +1,25 @@
-// services/canvasFile.js — v3.0 · SPEC sec S4.2.4
+// services/canvasFile.js -- v3-pure save/load (rc.7 / 7e-7).
 //
-// Save/load envelope for the v3.0 engagement shape. Coexists with v2.x
-// services/sessionFile.js until the cutover lands; v3.0 callers route
-// through this module.
+// Per SPEC §S40 (v3-pure architecture). Canvas .canvas files save +
+// load through the v3 EngagementSchema directly. The v2->v3 migrator
+// is RETIRED from runtime: per user direction 2026-05-06, v2 file
+// migration burden is dropped from v3 GA gates. v2 .canvas files
+// surface a friendly "this file is from a previous version" error
+// at load; users start fresh.
 //
 // Two boundaries (SPEC sec S2.2.2):
 //   1. Save: validate engagement against EngagementSchema, strip
 //      transient fields + secondary indexes, attach save header.
-//   2. Load: parse envelope header, run migrator if needed (TBD —
-//      stub today), validate v3.0 result, run integrity sweep
-//      (TBD — stub today), hydrate secondary indexes.
+//   2. Load: parse envelope header, validate v3.0 result against
+//      EngagementSchema (no migrator; older versions reject), run
+//      §S10 integrity sweep, hydrate secondary indexes.
 //
-// Stubs for migrator + integrity sweep are explicit "not yet" markers
-// so a later commit can drop in the real implementation without
-// changing this module's interface.
+// app.js currently routes file I/O through services/sessionFile.js (v2
+// envelope with skills + provider config + API keys); migrating app.js
+// to canvasFile.js is 7e-8 scope, alongside sessionFile.js retirement.
 
 import { APP_VERSION } from "../core/version.js";
 import { EngagementSchema, CURRENT_SCHEMA_VERSION } from "../schema/engagement.js";
-import { migrateToVersion, MigrationError, MigrationStepError } from "../migrations/index.js";
-import { makePipelineContext } from "../migrations/helpers/pipelineContext.js";
 import { loadAllCatalogs } from "./catalogLoader.js";
 import { runIntegritySweep } from "../state/integritySweep.js";
 
@@ -84,15 +85,17 @@ function stripForPersist(eng) {
 }
 
 // ---------------------------------------------------------------------
-// loadCanvas — v3.0 load boundary
+// loadCanvas -- v3-pure load boundary (rc.7 / 7e-7)
 // ---------------------------------------------------------------------
 //
-// Parses the envelope, dispatches via the migrator when the file's
-// schemaVersion is older than CURRENT_SCHEMA_VERSION (per
-// migrations/index.js migrateToVersion), validates the v3.0 result
-// against EngagementSchema strict, runs the §S10 integrity sweep,
-// hydrates secondary indexes (instances.byState rebuilt from byId.state),
-// and re-attaches transient fields (activeEntity, integrityLog).
+// Parses the envelope, accepts ONLY current schema version, validates
+// against EngagementSchema, runs the §S10 integrity sweep, hydrates
+// secondary indexes (instances.byState rebuilt from byId.state), and
+// re-attaches transient fields (activeEntity, integrityLog).
+//
+// The runtime v2->v3 migrator is RETIRED. Older-version envelopes
+// surface FILE_FROM_PREVIOUS_VERSION; users start fresh per the
+// v3-pure direction.
 //
 // Returns { ok: true, engagement } | { ok: false, error, recoveryHint }.
 
@@ -105,35 +108,25 @@ export async function loadCanvas(envelope) {
     };
   }
 
-  // Schema version dispatch. v3.0 path is direct; older versions route
-  // through the migrator (now wired per MIGRATION sec M1.2).
+  // Schema version dispatch (v3-pure post-7e-7). Only the current
+  // CURRENT_SCHEMA_VERSION is accepted at load time. Older versions
+  // (v2.x .canvas files) surface a friendly error per the v3-pure
+  // direction "i could not care less for any data from before"
+  // (user 2026-05-06). The runtime migrator is retired.
   const schemaVersion = envelope.schemaVersion ?? envelope.engagement?.meta?.schemaVersion ?? "2.0";
-  let v3Engagement;
-  if (schemaVersion === CURRENT_SCHEMA_VERSION) {
-    v3Engagement = envelope.engagement;
-  } else if (schemaVersion < CURRENT_SCHEMA_VERSION) {
-    // Migrator path. Bundle a frozen catalog snapshot for the pipeline
-    // context per MIGRATION sec M13.
-    try {
-      const catalogSnapshot = await loadAllCatalogs();
-      const ctx = makePipelineContext({ catalogSnapshot });
-      const migrated = migrateToVersion(envelope.engagement, CURRENT_SCHEMA_VERSION, ctx);
-      v3Engagement = migrated;
-    } catch (e) {
+  if (schemaVersion !== CURRENT_SCHEMA_VERSION) {
+    if (schemaVersion < CURRENT_SCHEMA_VERSION) {
       return {
-        ok: false,
+        ok:    false,
         error: {
-          code:             (e instanceof MigrationStepError) ? "MIGRATION_STEP_FAILED" : "MIGRATION_FAILED",
-          message:          e.message,
-          step:             e.step,
-          migratorVersion:  "v2-0_to_v3-0",
+          code:           "FILE_FROM_PREVIOUS_VERSION",
+          message:        `This .canvas file is from a previous version of Canvas (schema ${schemaVersion}). v3-pure builds (post-rc.7) only load schema ${CURRENT_SCHEMA_VERSION}.`,
           schemaVersion,
-          originalEnvelope: envelope
+          buildSchema:    CURRENT_SCHEMA_VERSION
         },
-        recoveryHint: "Migration failed. You can download the original .canvas file or try again."
+        recoveryHint: "Start a fresh session. v2.x file migration is no longer supported."
       };
     }
-  } else {
     return {
       ok:    false,
       error: {
@@ -144,6 +137,7 @@ export async function loadCanvas(envelope) {
       recoveryHint: "Open this file in a newer Canvas build."
     };
   }
+  const v3Engagement = envelope.engagement;
 
   // Hydrate secondary indexes (the persisted shape doesn't carry them).
   const hydrated = hydrate(v3Engagement);
