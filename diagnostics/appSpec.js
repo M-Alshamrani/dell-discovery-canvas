@@ -12632,17 +12632,20 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     // patch shipped at 4d70dff (rc.7 / 7e-8b'-polish).
     // -----------------------------------------------------------------
 
-    it("V-FLOW-EMPTY-ENVS-1 · ui/components/NoEnvsCard.js exists + exports renderEmptyEnvsCenterCard, surfaceFirstAddAcknowledgment, visibleEnvCount per SPEC §S41 — RED until rc.7 / 7e-8c'-impl", async () => {
+    it("V-FLOW-EMPTY-ENVS-1 · ui/components/NoEnvsCard.js exists + exports renderEmptyEnvsCenterCard + visibleEnvCount per SPEC §S41 (surfaceFirstAddAcknowledgment retired in 7e-8c'-fix2)", async () => {
       const r = await fetch("/ui/components/NoEnvsCard.js", { method: "HEAD" });
       assert(r.status === 200,
-        "V-FLOW-EMPTY-ENVS-1: ui/components/NoEnvsCard.js MUST exist (RED until rc.7 / 7e-8c'-impl)");
+        "V-FLOW-EMPTY-ENVS-1: ui/components/NoEnvsCard.js MUST exist");
       const m = await import("../ui/components/NoEnvsCard.js");
       assert(typeof m.renderEmptyEnvsCenterCard === "function",
         "V-FLOW-EMPTY-ENVS-1: NoEnvsCard MUST export renderEmptyEnvsCenterCard(host, viewKind, opts)");
-      assert(typeof m.surfaceFirstAddAcknowledgment === "function",
-        "V-FLOW-EMPTY-ENVS-1: NoEnvsCard MUST export surfaceFirstAddAcknowledgment()");
       assert(typeof m.visibleEnvCount === "function",
         "V-FLOW-EMPTY-ENVS-1: NoEnvsCard MUST export visibleEnvCount(engagement)");
+      // surfaceFirstAddAcknowledgment was retired in rc.7 / 7e-8c'-fix2 -- the
+      // empty-state card's bullet list already states the soft-delete invariant,
+      // so a fixed-position toast on first env add was redundant noise.
+      assert(typeof m.surfaceFirstAddAcknowledgment === "undefined",
+        "V-FLOW-EMPTY-ENVS-1: surfaceFirstAddAcknowledgment MUST be retired (no longer exported)");
     });
 
     it("V-FLOW-EMPTY-ENVS-2 · MatrixView + GapsEditView + ReportingView import the shared component + ZERO duplicated _renderNoEnvsCard* helpers per SPEC §S41.6 F41.6.1 — RED until rc.7 / 7e-8c'-impl", async () => {
@@ -12653,7 +12656,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       ];
       for (const url of views) {
         const src = await (await fetch(url)).text();
-        const IMPORT_RE = /import\s*\{[^}]*\b(renderEmptyEnvsCenterCard|surfaceFirstAddAcknowledgment|visibleEnvCount)\b[^}]*\}\s*from\s*["'][^"']*NoEnvsCard(?:\.js)?["']/;
+        const IMPORT_RE = /import\s*\{[^}]*\b(renderEmptyEnvsCenterCard|visibleEnvCount)\b[^}]*\}\s*from\s*["'][^"']*NoEnvsCard(?:\.js)?["']/;
         assert(IMPORT_RE.test(src),
           "V-FLOW-EMPTY-ENVS-2: " + url + " MUST import from ui/components/NoEnvsCard.js");
         // Forbidden: per-view duplicated empty-state helpers (F41.6.1).
@@ -12716,22 +12719,21 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-FLOW-EMPTY-ENVS-5: app.js stepper MUST apply .step-disabled class to disabled steps");
     });
 
-    it("V-FLOW-EMPTY-ENVS-6 · surfaceFirstAddAcknowledgment persists envFirstAddAck_v1 to localStorage on first 0→1 transition per SPEC §S41.3 — RED until rc.7 / 7e-8c'-impl", async () => {
-      try { localStorage.removeItem("envFirstAddAck_v1"); } catch (_e) {}
+    it("V-FLOW-EMPTY-ENVS-6 · first-add acknowledgment toast RETIRED in rc.7 / 7e-8c'-fix2: NoEnvsCard MUST NOT export surfaceFirstAddAcknowledgment, app.js MUST NOT import it, styles.css MUST NOT define .env-first-add-ack-banner", async () => {
       const m = await import("../ui/components/NoEnvsCard.js");
-      // Pre-condition: localStorage key absent.
-      assert(localStorage.getItem("envFirstAddAck_v1") === null,
-        "V-FLOW-EMPTY-ENVS-6 setup: envFirstAddAck_v1 should not be set");
-      // Trigger acknowledgment.
-      m.surfaceFirstAddAcknowledgment();
-      assertEqual(localStorage.getItem("envFirstAddAck_v1"), "true",
-        "V-FLOW-EMPTY-ENVS-6: first call MUST set envFirstAddAck_v1='true' in localStorage");
-      // Subsequent call is a no-op (idempotent dedup).
-      const dom = document.querySelectorAll("[data-env-first-add-ack]").length;
-      m.surfaceFirstAddAcknowledgment();
-      assertEqual(document.querySelectorAll("[data-env-first-add-ack]").length, dom,
-        "V-FLOW-EMPTY-ENVS-6: second call MUST be a no-op (key already set)");
-      try { localStorage.removeItem("envFirstAddAck_v1"); } catch (_e) {}
+      assert(typeof m.surfaceFirstAddAcknowledgment === "undefined",
+        "V-FLOW-EMPTY-ENVS-6: NoEnvsCard MUST NOT export surfaceFirstAddAcknowledgment after 7e-8c'-fix2");
+      const appSrc = await (await fetch("/app.js")).text();
+      assert(!/surfaceFirstAddAcknowledgment/.test(appSrc),
+        "V-FLOW-EMPTY-ENVS-6: app.js MUST NOT import or call surfaceFirstAddAcknowledgment");
+      const css = await (await fetch("/styles.css")).text();
+      assert(!/\.env-first-add-ack-banner\s*\{/.test(css),
+        "V-FLOW-EMPTY-ENVS-6: styles.css MUST NOT define .env-first-add-ack-banner rule");
+      // Source-grep negation: the localStorage dedup key SHOULD NOT appear in
+      // any production setItem/getItem (comments are fine for documenting the
+      // retirement; live code is not).
+      assert(!/localStorage\.(setItem|getItem)\(\s*["']envFirstAddAck_v1["']/.test(appSrc),
+        "V-FLOW-EMPTY-ENVS-6: app.js MUST NOT touch localStorage.envFirstAddAck_v1");
     });
 
     it("V-FLOW-EMPTY-ENVS-7 · styles.css enforces matrix column scaling via --env-count + max-width:min(100%, calc(...)) per SPEC §S41.4 — RED until rc.7 / 7e-8c'-impl", async () => {

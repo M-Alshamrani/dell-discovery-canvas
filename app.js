@@ -12,7 +12,7 @@ import * as aiUndoStack              from "./state/aiUndoStack.js";
 import { onSessionChanged, emitSessionChanged } from "./core/sessionEvents.js";
 // rc.7 / 7e-8c'-impl · stepper greys Tabs 4/5 when visibleEnvCount===0 per SPEC §S41.2.
 import { getActiveEngagement } from "./state/engagementStore.js";
-import { visibleEnvCount, surfaceFirstAddAcknowledgment } from "./ui/components/NoEnvsCard.js";
+import { visibleEnvCount } from "./ui/components/NoEnvsCard.js";
 import { APP_VERSION }               from "./core/version.js";
 import { loadAiConfig, saveAiConfig } from "./core/aiConfig.js";
 import { loadSkills, saveSkills }    from "./core/skillStore.js";
@@ -93,20 +93,16 @@ document.addEventListener("DOMContentLoaded", function() {
   // session-changed bus. The app shell re-renders header + current
   // tab so views pick up the live data (fixes the v2.4.4
   // "driver tile vanishes" + "tab blanks after undo" bugs).
-  // rc.7 / 7e-8c'-impl · track visibleEnvCount across emits so we can
-  // detect the 0->1 transition and surface the first-add acknowledgment
-  // per SPEC §S41.3. Also re-render the stepper on every emit so Tab
-  // 4/5 disabled state stays in sync with engagement changes.
-  var _prevVisibleEnvCount = visibleEnvCount(getActiveEngagement());
+  // rc.7 / 7e-8c'-impl · also re-render the stepper on every emit so
+  // Tab 4/5 disabled state stays in sync with visibleEnvCount changes.
+  // rc.7 / 7e-8c'-fix2 · the 0->1 first-add acknowledgment toast was
+  // dropped per user direction; the empty-state card already conveys
+  // the soft-delete invariant in its bullet list, so a second one-time
+  // toast on first env add was redundant noise.
   onSessionChanged(function() {
     renderHeaderMeta();
     renderStepper();
     renderStage();
-    var nextCount = visibleEnvCount(getActiveEngagement());
-    if (_prevVisibleEnvCount === 0 && nextCount > 0) {
-      surfaceFirstAddAcknowledgment();
-    }
-    _prevVisibleEnvCount = nextCount;
   });
   // rc.7 / 7e-8c'-fix · the original 7e-8c'-impl shipped a CTA button
   // inside the NoEnvsCard that emitted "dell-canvas:navigate-to-tab"

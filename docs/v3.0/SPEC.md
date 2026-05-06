@@ -3950,15 +3950,22 @@ The trigger is monitored continuously via `state/engagementStore.subscribeActive
 
 **Why Tabs 2/3 stay accessible but Tabs 4/5 disable**: Current/Desired state tabs are contextually adjacent to "where envs are added" -- the user lands here while still building the model and benefits from a friendly "go back to Tab 1" hint. Tabs 4/5 are downstream-only -- gaps + reporting are *consequences* of architecture, not authoring surfaces; the user has no business arriving there before envs exist.
 
-### S41.3 · First-add acknowledgment
+### S41.3 · First-add acknowledgment · RETIRED (rc.7 / 7e-8c'-fix2)
 
-When the user adds their FIRST environment (i.e. `visibleEnvCount` transitions from 0 to 1), surface a one-time acknowledgment that communicates the soft-delete invariant. Implementation MUST use the shared `ui/components/NoEnvsCard.js` `surfaceFirstAddAcknowledgment()` helper which:
+The original §S41.3 contract called for a one-time fixed-position toast on the `visibleEnvCount` 0→1 transition (dedup'd via `localStorage.envFirstAddAck_v1`) communicating the soft-delete invariant ("environments can be hidden but never permanently deleted"). The toast was retired per user direction immediately after 7e-8c'-fix shipped.
 
-- Persists "acknowledgment shown" to `localStorage.envFirstAddAck_v1` (boolean).
-- On the first transition only: opens a dismissible info banner / toast with copy:
-  > **First environment added.** Environments can be **hidden** to drop them from reports without losing data. They can't be permanently deleted -- your saved file always preserves the full set.
-- Subsequent first-add transitions (e.g., after a localStorage clear) show the acknowledgment again.
-- The acknowledgment is purely informational; user dismisses with a single click.
+**Why retired**: the empty-state card's bullet list (rendered on Tabs 2/3 when `visibleEnvCount === 0`) already states the soft-delete invariant in plain terms ("Environments can be hidden (soft-delete) but never permanently removed -- your data stays safe in the saved file"). A second surfacing of the same information one click later was redundant noise.
+
+**What was deleted**:
+- `surfaceFirstAddAcknowledgment` export + its companion `_resetForTests` from `ui/components/NoEnvsCard.js`.
+- The `localStorage.envFirstAddAck_v1` dedup key.
+- The `_prevVisibleEnvCount` tracking + 0→1 conditional in `app.js onSessionChanged`.
+- The `.env-first-add-ack-banner` CSS rule block in `styles.css`.
+- `V-FLOW-EMPTY-ENVS-6` test (the dedup-persistence assertion).
+- `RULES §16 CH35` clause (e) (first-add acknowledgment requirement) and the matching anti-pattern entry.
+- `F41.6.4` (forbidden pattern about showing the ack twice -- moot once the surface is retired).
+
+The 0→1 transition still triggers a stepper re-render via `onSessionChanged`, so Tabs 4/5 un-disable the moment the first env is added. Only the toast goes away.
 
 ### S41.4 · Matrix column scaling contract
 
@@ -3995,12 +4002,12 @@ With small visible-env counts (1 or 2), the matrix grid columns must NOT stretch
 
 Vectors live in TESTS.md §T41 V-FLOW-EMPTY-ENVS-1..7. Summary:
 
-- **V-FLOW-EMPTY-ENVS-1** · `ui/components/NoEnvsCard.js` exists + exports `renderEmptyEnvsCenterCard`, `surfaceFirstAddAcknowledgment`, `visibleEnvCount`.
+- **V-FLOW-EMPTY-ENVS-1** · `ui/components/NoEnvsCard.js` exists + exports `renderEmptyEnvsCenterCard` + `visibleEnvCount`. (Originally also asserted `surfaceFirstAddAcknowledgment`; that export retired in 7e-8c'-fix2.)
 - **V-FLOW-EMPTY-ENVS-2** · MatrixView + GapsEditView + ReportingView import the shared component (no duplicated `_renderNoEnvsCard*` helpers in any view file -- source-grep negation).
 - **V-FLOW-EMPTY-ENVS-3** · MatrixView with empty engagement renders a `.no-envs-center-card` element in the left panel (DOM contract, both `stateFilter: "current"` + `"desired"`).
 - **V-FLOW-EMPTY-ENVS-4** · MatrixView with ≥1 visible env renders the matrix grid (NOT the center card) + the grid carries `--env-count` custom property matching the visible env count.
 - **V-FLOW-EMPTY-ENVS-5** · `app.js` stepper renders Tab 4 + Tab 5 with `aria-disabled="true"` + a `.step-disabled` class when `visibleEnvCount === 0`. Click on a disabled step is a no-op (test asserts no tab change).
-- **V-FLOW-EMPTY-ENVS-6** · After first env add, the localStorage key `envFirstAddAck_v1` is set to `"true"`; subsequent adds don't re-show the acknowledgment unless the key is cleared.
+- **V-FLOW-EMPTY-ENVS-6** · RETIRED in rc.7 / 7e-8c'-fix2 alongside the first-add acknowledgment surface itself. (Originally asserted `localStorage.envFirstAddAck_v1` dedup; the surface is gone, so the test is gone.)
 - **V-FLOW-EMPTY-ENVS-7** · `styles.css` defines `.matrix-grid { grid-template-columns: 160px repeat(var(--env-count...) ... }` AND a max-width rule with `min(100%, calc(...))` so column scaling is enforced via stylesheet, not view logic.
 
 **RED-first**: V-FLOW-EMPTY-ENVS-1..7 are authored in 7e-8c'-spec (this annex commit) BEFORE the implementation lands at 7e-8c'-impl. Per `feedback_spec_and_test_first.md` the spec + RULES + tests precede code.
@@ -4010,7 +4017,7 @@ Vectors live in TESTS.md §T41 V-FLOW-EMPTY-ENVS-1..7. Summary:
 - **F41.6.1** · Per-view inline empty-state helpers (`_renderNoEnvsCard`, `_renderNoEnvsCardGaps`, `_renderNoEnvsCardReporting`, etc.). Use the shared `ui/components/NoEnvsCard.js` exports.
 - **F41.6.2** · Matrix column-width inline overrides (`grid.style.gridTemplateColumns = "160px repeat(N, 1fr)"`). The CSS rule from §S41.4 is authoritative; views set only the `--env-count` custom prop.
 - **F41.6.3** · Stepper steps that ignore the `visibleEnvCount === 0` rule. Tabs 4/5 MUST visually disable + block click navigation when no visible envs exist.
-- **F41.6.4** · First-add acknowledgments shown more than once per localStorage lifetime. The `envFirstAddAck_v1` key is the dedup record.
+- **F41.6.4** · RETIRED in rc.7 / 7e-8c'-fix2. (Originally forbade first-add acknowledgments showing more than once per localStorage lifetime; the surface is now retired wholesale.)
 - **F41.6.5** · Tab 1 (Context) showing the empty-env card. Tab 1 is the authoring surface; it never blocks itself.
 - **F41.6.6** · `renderEmptyEnvsCenterCard` mutating host element classes (the host being the panel that already owns the layout). The empty-state DOM MUST live inside a self-contained `.no-envs-wrap` element so subsequent re-renders that swap children do NOT inherit centering CSS. Added 7e-8c'-fix after the 7e-8c'-impl shipped a `host.classList.add("no-envs-host")` line that bled flex centering into the Context tab whenever the user navigated back via the (now-retired) CTA.
 - **F41.6.7** · Inline navigation CTAs ("Go to Tab 1") inside the empty-state card. The stepper at the top of the page is the authoritative navigation surface; an in-card CTA was redundant + the click handler that backed it relied on the now-forbidden host class mutation. The center card is informational, not actionable. Retired in 7e-8c'-fix.

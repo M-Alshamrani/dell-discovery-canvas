@@ -6539,51 +6539,8 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
   background: transparent; /* suppress the v2.4.13 hover affordance. */
 }
 
-/* First-add acknowledgment banner (SPEC §S41.3 -- one-time on
-   visibleEnvCount 0->1 transition, dedup'd via localStorage envFirstAddAck_v1). */
-.env-first-add-ack-banner {
-  position: fixed;
-  top: 16px;
-  right: 16px;
-  max-width: 480px;
-  padding: 12px 14px 12px 16px;
-  background: var(--surface-1, #fff);
-  border: 1px solid var(--rule, #e5e7eb);
-  border-left: 4px solid var(--dell-blue, #0076ce);
-  border-radius: var(--radius-md, 6px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
-  z-index: 9999;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  transition: opacity 400ms ease-out;
-}
-.env-first-add-ack-eyebrow {
-  font: 500 10.5px/1 "JetBrains Mono", ui-monospace, monospace;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-}
-.env-first-add-ack-body {
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--ink, #0f172a);
-}
-.env-first-add-ack-close {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-  width: 24px;
-  height: 24px;
-  border: 0;
-  background: transparent;
-  font-size: 22px;
-  line-height: 1;
-  color: var(--ink-mute);
-  cursor: pointer;
-  border-radius: 4px;
-}
-.env-first-add-ack-close:hover {
-  background: var(--canvas-alt, #f3f4f6);
-  color: var(--ink, #0f172a);
-}
+/* rc.7 / 7e-8c'-fix2 · .env-first-add-ack-banner rules RETIRED with the
+   first-add acknowledgment toast itself. The empty-state card's bullet
+   list already conveys the soft-delete invariant, so a fixed-position
+   toast on first env add was redundant noise. SPEC §S41.3 retired in
+   the same arc; RULES §16 CH35 clause (e) deleted. */

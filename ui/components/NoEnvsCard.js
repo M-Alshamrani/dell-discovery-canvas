@@ -1,7 +1,7 @@
 // ui/components/NoEnvsCard.js -- empty-environments UX surface
 // (rc.7 / 7e-8c'-impl). Per SPEC §S41 + RULES §16 CH35.
 //
-// Single source of truth for the "no visible environments" UX. Three
+// Single source of truth for the "no visible environments" UX. Two
 // public exports drive the contract:
 //
 //   visibleEnvCount(engagement) -> number
@@ -19,12 +19,16 @@
 //     away in the stepper; an inline navigation button mid-card was
 //     redundant and pulled the eye away from the message.
 //
-//   surfaceFirstAddAcknowledgment()
-//     One-time toast/banner on first visibleEnvCount 0->1 transition.
-//     Idempotent: persists envFirstAddAck_v1='true' in localStorage so
-//     subsequent calls (subsequent first-env-add events within the same
-//     localStorage lifetime) are no-ops. Communicates the soft-delete
-//     invariant: envs can be hidden but never permanently deleted.
+// rc.7 / 7e-8c'-fix2 · the first-add acknowledgment toast (SPEC §S41.3
+// in 7e-8c'-impl) is RETIRED. The information it surfaced (soft-delete
+// vs. hard-delete invariant) was unnecessary noise on the user's first
+// successful environment add. The bullet copy in the empty-state card
+// already mentions "Environments can be hidden ... but never permanently
+// removed -- your data stays safe in the saved file" so the dedicated
+// toast was redundant. surfaceFirstAddAcknowledgment + the
+// envFirstAddAck_v1 localStorage key + the .env-first-add-ack-banner
+// CSS rule + V-FLOW-EMPTY-ENVS-6 + RULES §16 CH35 clause (e) are all
+// dropped together.
 //
 // Authority: SPEC §S41 (LOCKED 2026-05-06) + RULES §16 CH35 + V-FLOW-
 // EMPTY-ENVS-1..7 in §T41.
@@ -32,8 +36,6 @@
 // Per F41.6.1 ("per-view inline empty-state helpers FORBIDDEN") all
 // three views (MatrixView, GapsEditView, ReportingView) MUST import +
 // use this module rather than ship their own helpers.
-
-const ACK_STORAGE_KEY = "envFirstAddAck_v1";
 
 // ─── pure read helper ──────────────────────────────────────────────
 //
@@ -114,67 +116,6 @@ function _defaultLede(viewKind) {
   }
 }
 
-// ─── first-add acknowledgment (Tab 1) ──────────────────────────────
-//
-// surfaceFirstAddAcknowledgment() — paints a one-time dismissible info
-// banner near the top of the document body. Idempotent: localStorage
-// envFirstAddAck_v1 is set to "true" on first call; subsequent calls
-// short-circuit. Per F41.6.4: NEVER more than once per localStorage
-// lifetime.
-//
-// Communicates the soft-delete invariant per SPEC §S41.3.
-export function surfaceFirstAddAcknowledgment() {
-  // Idempotency guard: localStorage dedup. Already shown once -> skip.
-  let alreadyAcked = false;
-  try { alreadyAcked = localStorage.getItem(ACK_STORAGE_KEY) === "true"; }
-  catch (_e) { /* localStorage disabled / quota -- best-effort */ }
-  if (alreadyAcked) return null;
-
-  // Set the dedup key BEFORE rendering so a re-entrancy under fast
-  // double-fire (rare but possible if a commit event triggers a
-  // second emit before the DOM render completes) still respects the
-  // once-per-lifetime invariant.
-  try { localStorage.setItem(ACK_STORAGE_KEY, "true"); }
-  catch (_e) { /* best-effort */ }
-
-  // Build banner. Sits at top of body; user dismisses with a single
-  // click on the close button.
-  const banner = _mk("div", "env-first-add-ack-banner");
-  banner.setAttribute("data-env-first-add-ack", "true");
-  banner.setAttribute("role", "status");
-
-  const eyebrow = _mkt("span", "env-first-add-ack-eyebrow", "FIRST ENVIRONMENT ADDED");
-  banner.appendChild(eyebrow);
-
-  const body = _mkt("span", "env-first-add-ack-body",
-    "Environments can be hidden to drop them from reports without losing data. " +
-    "They can't be permanently deleted -- your saved file always preserves the full set.");
-  banner.appendChild(body);
-
-  const close = _mk("button", "env-first-add-ack-close");
-  close.type = "button";
-  close.setAttribute("aria-label", "Dismiss acknowledgment");
-  close.textContent = "×";
-  close.addEventListener("click", function() {
-    if (banner.parentNode) banner.parentNode.removeChild(banner);
-  });
-  banner.appendChild(close);
-
-  // Auto-dismiss after 12s as a backstop so the banner doesn't linger
-  // forever for users who don't click the close button.
-  setTimeout(function() {
-    if (banner.parentNode) {
-      banner.style.opacity = "0";
-      setTimeout(function() {
-        if (banner.parentNode) banner.parentNode.removeChild(banner);
-      }, 400);
-    }
-  }, 12000);
-
-  document.body.appendChild(banner);
-  return banner;
-}
-
 // ─── private helpers ───────────────────────────────────────────────
 function _mk(tag, cls) {
   const e = document.createElement(tag);
@@ -187,8 +128,3 @@ function _mkt(tag, cls, text) {
   return e;
 }
 
-// Test-only reset for V-FLOW-EMPTY-ENVS-6 idempotency check + future
-// tests that want a clean slate.
-export function _resetForTests() {
-  try { localStorage.removeItem(ACK_STORAGE_KEY); } catch (_e) { /* ignore */ }
-}
