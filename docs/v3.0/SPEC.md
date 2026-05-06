@@ -3902,4 +3902,121 @@ V-FLOW-V3-PURE-* + V-ANTI-V2-IMPORT-* in TESTS.md §T19. Summary:
 - **Sections**: §S3 (entity schemas — the canonical truth) + §S4 (action functions — the only mutators) + §S5 (selectors — the only readers) + §S8 (AI provenance — preserved end-to-end through `commitAction`) + §S31 (v3 engagement persistence — the sole storage path post-deletion) + §S37 (RAG-by-construction grounding — chat reads v3 directly, no translator).
 - **Memory anchors**: `feedback_spec_and_test_first.md` (this very section is the spec-first artifact; sub-arcs author RED scaffolds before code) + `feedback_browser_smoke_required.md` (per-commit smoke between sub-arcs) + `feedback_no_patches_flag_first.md` (this is a flag-first decision the user approved as architectural commitment, not a patch) + the user's 2026-05-06 direction quoted in §S40 status header.
 
+## §S41 · Empty-environments UX contract + matrix column scaling (rc.7 / 7e-8c'; LOCKED 2026-05-06)
+
+**Status**: LOCKED 2026-05-06 in rc.7 / 7e-8c'-spec. Authored to replace the patch shipped at `4d70dff` (rc.7 / 7e-8b'-polish) which violated `feedback_spec_and_test_first.md` -- three duplicated empty-state helpers across MatrixView / GapsEditView / ReportingView with no SPEC, no RULES, no V-FLOW test contract. User direction 2026-05-06 (*"was that just a patch or thoughout out deisng follwing the impelentaitons preicnipels"* + *"go as per the protocol"*) requires the redo.
+
+The empty-environments state is a structural UX invariant: the v3 engagement model permits `engagement.environments.allIds.length === 0` (a fresh engagement starts there per rc.7 / 7e-8b' ContextView rewrite that retired the auto-materialize-default-4 behaviour). Multiple downstream tabs (Current state, Desired state, Gaps, Reporting) consume `engagement.environments` to render meaningful content; without ≥1 visible env, those tabs would render broken-looking empty grids / filter bars / health summaries. SPEC §S41 codifies a single, tested response across every affected surface.
+
+### S41.1 · Trigger + scope
+
+The "no visible environments" trigger fires when:
+
+```
+visibleEnvCount(engagement) === 0
+  where visibleEnvCount(eng) = eng.environments.allIds
+    .map(id => eng.environments.byId[id])
+    .filter(e => !e.hidden)
+    .length
+```
+
+Equivalent forms (`engagement.environments.allIds.length === 0`, "all envs hidden") all collapse to the same trigger -- if the user can't see any env in Tab 1's visible-tile row, downstream tabs can't render env-bound content.
+
+The trigger is monitored continuously via `state/engagementStore.subscribeActiveEngagement`; views re-evaluate on every commit. Once a visible env exists (user adds one in Tab 1, or restores a hidden one), the empty-state dismisses on the next render.
+
+**In scope** (must comply with §S41.2 + §S41.3):
+- `ui/views/MatrixView.js` (Tab 2 Current state + Tab 3 Desired state)
+- `ui/views/GapsEditView.js` (Tab 4 Gaps)
+- `ui/views/ReportingView.js` (Tab 5 Reporting overview)
+- `ui/views/SummaryHealthView.js` (Tab 5 sub-tab)
+- `ui/views/SummaryGapsView.js` (Tab 5 sub-tab)
+- `ui/views/SummaryRoadmapView.js` (Tab 5 sub-tab)
+- `ui/views/SummaryVendorView.js` (Tab 5 sub-tab)
+- `app.js` stepper rendering (Tab 4/5 step appearance + click handler)
+
+**Out of scope**:
+- `ui/views/ContextView.js` (Tab 1) -- this is where envs are added; never blocks itself.
+- AI chat overlay -- chat is grounded by retrieval router (§S37); empty-engagement responses are handled by the router's `isEmptyEngagement` guard.
+
+### S41.2 · Tab access matrix
+
+| Tab | When `visibleEnvCount === 0` | When `visibleEnvCount ≥ 1` |
+|---|---|---|
+| **Tab 1** Context | Always accessible. Adding an env exits the empty state. | Normal. |
+| **Tab 2** Current state | Stepper step **active + clickable**. Body renders a **centered informational card** (NOT a warning), centered both horizontally + vertically in the left-panel content area. Right panel shows the standard "Select a technology" hint. The matrix grid is NOT rendered. | Normal -- matrix renders. |
+| **Tab 3** Desired state | Same as Tab 2 (centered info card). State-filter-aware lede ("desired-state matrix needs at least one environment"). | Normal -- matrix renders. |
+| **Tab 4** Gaps | Stepper step **disabled**: visually greyed-out (≤ 50% opacity), pointer cursor disabled, click is a no-op. ARIA `aria-disabled="true"` on the step element. If the user reaches the tab via deep-link or routing, the body renders an empty placeholder (no filter bar, no kanban, no header; canvas is empty). | Normal -- gaps board renders. |
+| **Tab 5** Reporting | Stepper step **disabled** (same treatment as Tab 4). If reached, body is empty. All 4 sub-tabs (Health, Gaps, Roadmap, Vendor) inherit the disabled state. | Normal -- reporting overview renders. |
+
+**Why Tabs 2/3 stay accessible but Tabs 4/5 disable**: Current/Desired state tabs are contextually adjacent to "where envs are added" -- the user lands here while still building the model and benefits from a friendly "go back to Tab 1" hint. Tabs 4/5 are downstream-only -- gaps + reporting are *consequences* of architecture, not authoring surfaces; the user has no business arriving there before envs exist.
+
+### S41.3 · First-add acknowledgment
+
+When the user adds their FIRST environment (i.e. `visibleEnvCount` transitions from 0 to 1), surface a one-time acknowledgment that communicates the soft-delete invariant. Implementation MUST use the shared `ui/components/NoEnvsCard.js` `surfaceFirstAddAcknowledgment()` helper which:
+
+- Persists "acknowledgment shown" to `localStorage.envFirstAddAck_v1` (boolean).
+- On the first transition only: opens a dismissible info banner / toast with copy:
+  > **First environment added.** Environments can be **hidden** to drop them from reports without losing data. They can't be permanently deleted -- your saved file always preserves the full set.
+- Subsequent first-add transitions (e.g., after a localStorage clear) show the acknowledgment again.
+- The acknowledgment is purely informational; user dismisses with a single click.
+
+### S41.4 · Matrix column scaling contract
+
+With small visible-env counts (1 or 2), the matrix grid columns must NOT stretch absurdly wide. With larger counts (≥3), columns scale to fill the available space (the original `1fr` behaviour).
+
+**CSS contract** (`styles.css`):
+
+```css
+.matrix-grid {
+  /* Layer-label column + N env columns. Column count exposed via
+     --env-count custom prop (set inline by MatrixView). */
+  grid-template-columns: 160px repeat(var(--env-count, 1), 1fr);
+  /* Cap grid width when N is small so columns don't balloon. The
+     calc target is the natural width (160 + N * 320 + gap allowance);
+     min(...) clamps to the container width when N is large enough. */
+  max-width: min(100%, calc(160px + var(--env-count, 1) * 320px + 24px));
+  /* Left-align so the capped grid sits at the start of the panel. */
+  margin-right: auto;
+}
+```
+
+**MatrixView contract** (`ui/views/MatrixView.js`):
+- BEFORE the `grid` element is built, set `grid.style.setProperty("--env-count", String(activeEnvs.length))`.
+- The legacy inline `grid.style.gridTemplateColumns = "160px repeat(N, 1fr)"` is RETIRED -- the CSS rule above takes over.
+
+**Result by visible-env count**:
+- N=1: grid width ≤ 504px (160 + 320 + 24). Column ~320px. Doesn't take full panel width.
+- N=2: grid width ≤ 824px. Each env column ~320px.
+- N=3: grid width ≤ 1144px. Each ~320px until container shrinks below.
+- N=4: grid width ≤ 1464px. Past most laptop screens; max-width clamps to 100% → 1fr scaling kicks in.
+- N≥5: grid fills container; 1fr columns share space.
+
+### S41.5 · Test contract
+
+Vectors live in TESTS.md §T41 V-FLOW-EMPTY-ENVS-1..7. Summary:
+
+- **V-FLOW-EMPTY-ENVS-1** · `ui/components/NoEnvsCard.js` exists + exports `renderEmptyEnvsCenterCard`, `surfaceFirstAddAcknowledgment`, `visibleEnvCount`.
+- **V-FLOW-EMPTY-ENVS-2** · MatrixView + GapsEditView + ReportingView import the shared component (no duplicated `_renderNoEnvsCard*` helpers in any view file -- source-grep negation).
+- **V-FLOW-EMPTY-ENVS-3** · MatrixView with empty engagement renders a `.no-envs-center-card` element in the left panel (DOM contract, both `stateFilter: "current"` + `"desired"`).
+- **V-FLOW-EMPTY-ENVS-4** · MatrixView with ≥1 visible env renders the matrix grid (NOT the center card) + the grid carries `--env-count` custom property matching the visible env count.
+- **V-FLOW-EMPTY-ENVS-5** · `app.js` stepper renders Tab 4 + Tab 5 with `aria-disabled="true"` + a `.step-disabled` class when `visibleEnvCount === 0`. Click on a disabled step is a no-op (test asserts no tab change).
+- **V-FLOW-EMPTY-ENVS-6** · After first env add, the localStorage key `envFirstAddAck_v1` is set to `"true"`; subsequent adds don't re-show the acknowledgment unless the key is cleared.
+- **V-FLOW-EMPTY-ENVS-7** · `styles.css` defines `.matrix-grid { grid-template-columns: 160px repeat(var(--env-count...) ... }` AND a max-width rule with `min(100%, calc(...))` so column scaling is enforced via stylesheet, not view logic.
+
+**RED-first**: V-FLOW-EMPTY-ENVS-1..7 are authored in 7e-8c'-spec (this annex commit) BEFORE the implementation lands at 7e-8c'-impl. Per `feedback_spec_and_test_first.md` the spec + RULES + tests precede code.
+
+### S41.6 · Forbidden patterns
+
+- **F41.6.1** · Per-view inline empty-state helpers (`_renderNoEnvsCard`, `_renderNoEnvsCardGaps`, `_renderNoEnvsCardReporting`, etc.). Use the shared `ui/components/NoEnvsCard.js` exports.
+- **F41.6.2** · Matrix column-width inline overrides (`grid.style.gridTemplateColumns = "160px repeat(N, 1fr)"`). The CSS rule from §S41.4 is authoritative; views set only the `--env-count` custom prop.
+- **F41.6.3** · Stepper steps that ignore the `visibleEnvCount === 0` rule. Tabs 4/5 MUST visually disable + block click navigation when no visible envs exist.
+- **F41.6.4** · First-add acknowledgments shown more than once per localStorage lifetime. The `envFirstAddAck_v1` key is the dedup record.
+- **F41.6.5** · Tab 1 (Context) showing the empty-env card. Tab 1 is the authoring surface; it never blocks itself.
+
+### S41.7 · Trace
+
+- **Principles**: P3 (presentation derived) -- the empty-state surface IS a derivation of `engagement.environments`, not a separate subsystem. P9 (performance budget) -- stepper greying logic runs once per session-changed emit; cheap.
+- **Sections**: §S40 (v3-pure architecture; the auto-materialize-default-4 retirement enables the empty-env state) · §S19 (read-side adapter; views consume engagement via memoized selectors) · §S31 (engagement persistence; the localStorage `envFirstAddAck_v1` key follows the same pattern as `v3_engagement_v1` for boot-survivability).
+- **Memory anchors**: `feedback_spec_and_test_first.md` (this annex IS the redo of a violation), `feedback_no_patches_flag_first.md` (the patch was caught + flagged by the user; this redo is the proper response), `project_v3_pure_arc.md` (rc.7 / 7e overall arc).
+
 End of SPEC.

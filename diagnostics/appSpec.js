@@ -12623,6 +12623,126 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
           "V-ANTI-V2-IMPORT-3: " + url + " MUST NOT import from state/sessionBridge (RED until rc.7 / 7e-8)");
       }
     });
+
+    // -----------------------------------------------------------------
+    // §T41 · V-FLOW-EMPTY-ENVS · empty-environments UX contract
+    // (per SPEC §S41 + RULES §16 CH35, rc.7 / 7e-8c'). RED-first
+    // scaffolds authored in 7e-8c'-spec; flip GREEN at 7e-8c'-impl
+    // when the shared component + view migrations land. Replaces the
+    // patch shipped at 4d70dff (rc.7 / 7e-8b'-polish).
+    // -----------------------------------------------------------------
+
+    it("V-FLOW-EMPTY-ENVS-1 · ui/components/NoEnvsCard.js exists + exports renderEmptyEnvsCenterCard, surfaceFirstAddAcknowledgment, visibleEnvCount per SPEC §S41 — RED until rc.7 / 7e-8c'-impl", async () => {
+      const r = await fetch("/ui/components/NoEnvsCard.js", { method: "HEAD" });
+      assert(r.status === 200,
+        "V-FLOW-EMPTY-ENVS-1: ui/components/NoEnvsCard.js MUST exist (RED until rc.7 / 7e-8c'-impl)");
+      const m = await import("../ui/components/NoEnvsCard.js");
+      assert(typeof m.renderEmptyEnvsCenterCard === "function",
+        "V-FLOW-EMPTY-ENVS-1: NoEnvsCard MUST export renderEmptyEnvsCenterCard(host, viewKind, opts)");
+      assert(typeof m.surfaceFirstAddAcknowledgment === "function",
+        "V-FLOW-EMPTY-ENVS-1: NoEnvsCard MUST export surfaceFirstAddAcknowledgment()");
+      assert(typeof m.visibleEnvCount === "function",
+        "V-FLOW-EMPTY-ENVS-1: NoEnvsCard MUST export visibleEnvCount(engagement)");
+    });
+
+    it("V-FLOW-EMPTY-ENVS-2 · MatrixView + GapsEditView + ReportingView import the shared component + ZERO duplicated _renderNoEnvsCard* helpers per SPEC §S41.6 F41.6.1 — RED until rc.7 / 7e-8c'-impl", async () => {
+      const views = [
+        "/ui/views/MatrixView.js",
+        "/ui/views/GapsEditView.js",
+        "/ui/views/ReportingView.js"
+      ];
+      for (const url of views) {
+        const src = await (await fetch(url)).text();
+        const IMPORT_RE = /import\s*\{[^}]*\b(renderEmptyEnvsCenterCard|surfaceFirstAddAcknowledgment|visibleEnvCount)\b[^}]*\}\s*from\s*["'][^"']*NoEnvsCard(?:\.js)?["']/;
+        assert(IMPORT_RE.test(src),
+          "V-FLOW-EMPTY-ENVS-2: " + url + " MUST import from ui/components/NoEnvsCard.js");
+        // Forbidden: per-view duplicated empty-state helpers (F41.6.1).
+        assert(!/function\s+_renderNoEnvsCard\b/.test(src),
+          "V-FLOW-EMPTY-ENVS-2: " + url + " MUST NOT define _renderNoEnvsCard helper (forbidden per SPEC §S41.6 F41.6.1)");
+        assert(!/function\s+_renderNoEnvsCardGaps\b/.test(src),
+          "V-FLOW-EMPTY-ENVS-2: " + url + " MUST NOT define _renderNoEnvsCardGaps helper");
+        assert(!/function\s+_renderNoEnvsCardReporting\b/.test(src),
+          "V-FLOW-EMPTY-ENVS-2: " + url + " MUST NOT define _renderNoEnvsCardReporting helper");
+      }
+    });
+
+    it("V-FLOW-EMPTY-ENVS-3 · MatrixView with empty engagement renders .no-envs-center-card in left panel (both stateFilter values) per SPEC §S41.2 — RED until rc.7 / 7e-8c'-impl", async () => {
+      _resetEngagementStoreForTests();
+      setActiveEngagement(createEmptyEngagement());
+      const mv = await import("../ui/views/MatrixView.js");
+      ["current", "desired"].forEach(function(state) {
+        const l = document.createElement("div");
+        const r = document.createElement("div");
+        mv.renderMatrixView(l, r, null, { stateFilter: state });
+        const card = l.querySelector(".no-envs-center-card");
+        assert(card !== null,
+          "V-FLOW-EMPTY-ENVS-3: MatrixView (stateFilter=" + state + ") MUST render .no-envs-center-card on empty engagement");
+        const grid = l.querySelector(".matrix-grid");
+        assert(grid === null,
+          "V-FLOW-EMPTY-ENVS-3: MatrixView MUST NOT render .matrix-grid when no visible envs");
+      });
+    });
+
+    it("V-FLOW-EMPTY-ENVS-4 · MatrixView with ≥1 visible env renders the matrix grid carrying --env-count CSS custom property matching visible env count per SPEC §S41.4 — RED until rc.7 / 7e-8c'-impl", async () => {
+      _resetEngagementStoreForTests();
+      setActiveEngagement(createEmptyEngagement());
+      const adapterMod = await import("../state/adapter.js");
+      adapterMod.commitEnvAdd({ envCatalogId: "coreDc" });
+      adapterMod.commitEnvAdd({ envCatalogId: "drDc" });
+      const mv = await import("../ui/views/MatrixView.js");
+      const l = document.createElement("div"); const r = document.createElement("div");
+      mv.renderMatrixView(l, r, null, { stateFilter: "current" });
+      const grid = l.querySelector(".matrix-grid");
+      assert(grid !== null, "V-FLOW-EMPTY-ENVS-4: matrix grid must render with visible envs");
+      const envCount = grid.style.getPropertyValue("--env-count");
+      assertEqual(envCount, "2",
+        "V-FLOW-EMPTY-ENVS-4: matrix grid --env-count MUST equal visible env count (got '" + envCount + "')");
+      // No-envs card must NOT render alongside.
+      assert(l.querySelector(".no-envs-center-card") === null,
+        "V-FLOW-EMPTY-ENVS-4: no-envs card MUST NOT render when grid renders");
+    });
+
+    it("V-FLOW-EMPTY-ENVS-5 · app.js stepper renders Tab 4 + Tab 5 with aria-disabled='true' + .step-disabled class when visibleEnvCount===0 per SPEC §S41.2 — RED until rc.7 / 7e-8c'-impl", async () => {
+      _resetEngagementStoreForTests();
+      setActiveEngagement(createEmptyEngagement());
+      const stepperSrc = await (await fetch("/app.js")).text();
+      // Source-grep: app.js's stepper renderer must call out to
+      // visibleEnvCount + apply aria-disabled / step-disabled when zero.
+      assert(/visibleEnvCount\b/.test(stepperSrc),
+        "V-FLOW-EMPTY-ENVS-5: app.js stepper MUST consult visibleEnvCount() per SPEC §S41.2 (RED until rc.7 / 7e-8c'-impl)");
+      assert(/aria-disabled.*true|setAttribute\(\s*["']aria-disabled["']/.test(stepperSrc),
+        "V-FLOW-EMPTY-ENVS-5: app.js stepper MUST set aria-disabled=true on Tab 4 / Tab 5 when no visible envs");
+      assert(/step-disabled\b/.test(stepperSrc),
+        "V-FLOW-EMPTY-ENVS-5: app.js stepper MUST apply .step-disabled class to disabled steps");
+    });
+
+    it("V-FLOW-EMPTY-ENVS-6 · surfaceFirstAddAcknowledgment persists envFirstAddAck_v1 to localStorage on first 0→1 transition per SPEC §S41.3 — RED until rc.7 / 7e-8c'-impl", async () => {
+      try { localStorage.removeItem("envFirstAddAck_v1"); } catch (_e) {}
+      const m = await import("../ui/components/NoEnvsCard.js");
+      // Pre-condition: localStorage key absent.
+      assert(localStorage.getItem("envFirstAddAck_v1") === null,
+        "V-FLOW-EMPTY-ENVS-6 setup: envFirstAddAck_v1 should not be set");
+      // Trigger acknowledgment.
+      m.surfaceFirstAddAcknowledgment();
+      assertEqual(localStorage.getItem("envFirstAddAck_v1"), "true",
+        "V-FLOW-EMPTY-ENVS-6: first call MUST set envFirstAddAck_v1='true' in localStorage");
+      // Subsequent call is a no-op (idempotent dedup).
+      const dom = document.querySelectorAll("[data-env-first-add-ack]").length;
+      m.surfaceFirstAddAcknowledgment();
+      assertEqual(document.querySelectorAll("[data-env-first-add-ack]").length, dom,
+        "V-FLOW-EMPTY-ENVS-6: second call MUST be a no-op (key already set)");
+      try { localStorage.removeItem("envFirstAddAck_v1"); } catch (_e) {}
+    });
+
+    it("V-FLOW-EMPTY-ENVS-7 · styles.css enforces matrix column scaling via --env-count + max-width:min(100%, calc(...)) per SPEC §S41.4 — RED until rc.7 / 7e-8c'-impl", async () => {
+      const css = await (await fetch("/styles.css")).text();
+      // The grid-template-columns rule must use repeat with var(--env-count).
+      assert(/\.matrix-grid\s*\{[^}]*grid-template-columns\s*:\s*160px\s+repeat\(\s*var\(\s*--env-count/.test(css),
+        "V-FLOW-EMPTY-ENVS-7: styles.css .matrix-grid MUST set grid-template-columns: 160px repeat(var(--env-count), 1fr) per SPEC §S41.4");
+      // The max-width clamp must use min(100%, calc(...)).
+      assert(/\.matrix-grid\s*\{[^}]*max-width\s*:\s*min\(\s*100%,\s*calc\(/.test(css),
+        "V-FLOW-EMPTY-ENVS-7: styles.css .matrix-grid MUST cap max-width via min(100%, calc(...)) per SPEC §S41.4");
+    });
   });
 
   // -------------------------------------------------------------------

@@ -984,7 +984,7 @@ function _isFreshEngagement(eng) {
   var c = eng.customer;
   // v3 createEmptyCustomer ships the schema-required defaults
   // ("New customer", "Financial Services", "EMEA"). Treat those
-  // placeholders as "fresh" — the user hasn't touched anything yet.
+  // placeholders as "fresh" -- the user hasn't touched anything yet.
   // Real-name or non-default values mean the user has authored data.
   var nameIsDefault = !c || !c.name || c.name === "" || c.name === "New customer";
   if (!nameIsDefault) return false;
