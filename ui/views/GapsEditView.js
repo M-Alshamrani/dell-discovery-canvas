@@ -30,6 +30,8 @@ import { getActiveValue as getFilter, getActiveValues as getFilterValues,
 import { renderFilterBar, applyMatchClasses as applyFilterMatchClasses } from "../components/FilterBar.js";
 import { getSnapshot as getFilterSnapshot } from "../../state/filterState.js";
 import { confirmAction, notifyError } from "../components/Notify.js";
+// rc.7 / 7e-8c'-impl · shared empty-environments UX per SPEC §S41 + RULES §16 CH35.
+import { renderEmptyEnvsCenterCard, visibleEnvCount } from "../components/NoEnvsCard.js";
 
 // v2.4.14 F1 . apply the active services filter to a gap card. Sets
 // .filter-match-services when the card's services include the active
@@ -182,13 +184,13 @@ export function renderGapsEditView(left, right, session) {
   // signal follows the user across the workshop.
   if (session && session.isDemo) renderDemoBanner(left);
 
-  // rc.7 / 7e-8b' polish · empty-environments empty-state. Per user
-  // direction 2026-05-06: gaps + reporting need at least one visible
-  // env to be meaningful (gaps reference affectedEnvironments; the
-  // filter bar offers env-scoped filters). Surface a friendly card
-  // pointing the user back to Tab 1.
+  // rc.7 / 7e-8c'-impl · empty-environments empty-state via shared
+  // NoEnvsCard component (SPEC §S41 + RULES §16 CH35). Per §S41.2 Tab 4
+  // should be stepper-disabled when visibleEnvCount===0, so this body
+  // code path is reached only on direct deep-link / programmatic mount.
+  // Defensive empty-state retained.
   if (_v3VisibleEnvs().length === 0) {
-    left.appendChild(_renderNoEnvsCardGaps());
+    renderEmptyEnvsCenterCard(left, "gaps", {});
     return;
   }
 
@@ -1399,22 +1401,8 @@ function gapOriginCriticalityHint(gap, session) {
   return "Source: '" + first.label + "' (criticality " + (first.criticality || "not set") + ").";
 }
 
-// rc.7 / 7e-8b' polish · empty-environments empty-state for Tab 4 (Gaps).
-// Same shape as MatrixView's no-envs card; specific copy for gaps.
-function _renderNoEnvsCardGaps() {
-  var card = mk("div", "card no-envs-card");
-  card.setAttribute("data-no-envs-state", "gaps");
-  card.appendChild(mkt("div", "card-eyebrow muted", "ENVIRONMENTS REQUIRED"));
-  card.appendChild(mkt("div", "card-title", "Add at least one environment first"));
-  card.appendChild(mkt("div", "card-hint",
-    "The gaps board needs at least one environment to render -- gaps reference affected environments, and the filter bar offers env-scoped filtering."));
-  var bullets = mk("ul", "no-envs-bullets");
-  var b1 = mk("li"); b1.textContent = "Open Tab 1 (Context). Click \"+ Add environment\" or restore a hidden one.";
-  bullets.appendChild(b1);
-  var b2 = mk("li"); b2.textContent = "Environments can be hidden (soft-delete) but never permanently removed -- your data stays safe in the saved file.";
-  bullets.appendChild(b2);
-  var b3 = mk("li"); b3.textContent = "Once you have at least one visible environment, return here to see drafted gaps + add new ones.";
-  bullets.appendChild(b3);
-  card.appendChild(bullets);
-  return card;
-}
+// rc.7 / 7e-8c'-impl · per-view _renderNoEnvsCardGaps helper RETIRED.
+// Empty-environments UX surface lives in ui/components/NoEnvsCard.js
+// (shared) per SPEC §S41 + RULES §16 CH35. F41.6.1 forbids per-view
+// duplicates. See the renderEmptyEnvsCenterCard call inside
+// renderGapsEditView above for the migration.

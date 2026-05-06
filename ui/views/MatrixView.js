@@ -19,6 +19,8 @@ import {
   commitGapAdd
 } from "../../state/adapter.js";
 import { getActiveEngagement } from "../../state/engagementStore.js";
+// rc.7 / 7e-8c'-impl · shared empty-environments UX per SPEC §S41 + RULES §16 CH35.
+import { renderEmptyEnvsCenterCard, visibleEnvCount } from "../components/NoEnvsCard.js";
 import {
   DISPOSITION_ACTIONS, ACTION_TO_GAP_TYPE,
   getDesiredCounterpart, getCurrentSource, buildGapFromDisposition,
@@ -72,26 +74,27 @@ export function renderMatrixView(left, right, _legacySession, opts) {
   // attribute, instance.environmentId match) or by display label.
   var activeEnvs = _getVisibleEnvs();
 
-  // rc.7 / 7e-8b' polish · empty-environments empty-state. Per user
-  // direction 2026-05-06, when the user lands on a state-tab with no
-  // visible envs (none added, or all hidden), surface a friendly card
-  // pointing them back to Tab 1. The matrix grid would otherwise be a
-  // blank single-column space, which reads as broken UX.
+  // rc.7 / 7e-8c'-impl · empty-environments empty-state via shared
+  // NoEnvsCard component (SPEC §S41 + RULES §16 CH35). Replaces the
+  // 7e-8b'-polish per-view _renderNoEnvsCard helper (the patch that
+  // F41.6.1 forbids). Center-card rendering + tab-area centering
+  // applied by the shared component.
   if (activeEnvs.length === 0) {
-    var empty = _renderNoEnvsCard("matrix",
-      stateFilter === "current"
-        ? "The current-state matrix needs at least one environment to render."
-        : "The desired-state matrix needs at least one environment to render."
-    );
-    left.appendChild(empty);
+    renderEmptyEnvsCenterCard(left,
+      stateFilter === "current" ? "matrix-current" : "matrix-desired",
+      {});
     showHint(right);
     return;
   }
 
-  // Grid
+  // Grid. Column scaling per SPEC §S41.4: views set ONLY the
+  // --env-count CSS custom property; styles.css owns the
+  // grid-template-columns + max-width clamp (1-2 envs cap at ~320px
+  // each; 3+ envs scale to fill). Per F41.6.2, NO inline
+  // grid-template-columns override.
   var wrap = mk("div", "matrix-scroll-wrap");
   var grid = mk("div", "matrix-grid");
-  grid.style.gridTemplateColumns = "160px repeat(" + activeEnvs.length + ", 1fr)";
+  grid.style.setProperty("--env-count", String(activeEnvs.length));
 
   // Header row.
   grid.appendChild(mk("div", "matrix-corner"));
@@ -984,27 +987,8 @@ function showHint(right) {
   right.appendChild(ph);
 }
 
-// rc.7 / 7e-8b' polish · empty-environments empty-state card. Per
-// user direction 2026-05-06: when a downstream tab (Current state /
-// Desired state / Gaps / Reporting) is opened with no visible envs,
-// surface a friendly card pointing the presales engineer back to
-// Tab 1 to add or restore at least one environment. Also
-// communicates the soft-delete invariant (envs can be hidden but
-// not deleted) so users don't search for a delete control.
-function _renderNoEnvsCard(viewKind, ledeText) {
-  var card = mk("div", "card no-envs-card");
-  card.setAttribute("data-no-envs-state", viewKind);
-  card.appendChild(mkt("div", "card-eyebrow muted", "ENVIRONMENTS REQUIRED"));
-  card.appendChild(mkt("div", "card-title", "Add at least one environment first"));
-  card.appendChild(mkt("div", "card-hint",
-    ledeText || "This tab needs at least one environment to render its data."));
-  var bullets = mk("ul", "no-envs-bullets");
-  var b1 = mk("li"); b1.textContent = "Open Tab 1 (Context). Click \"+ Add environment\" or restore a hidden one.";
-  bullets.appendChild(b1);
-  var b2 = mk("li"); b2.textContent = "Environments can be hidden (soft-delete) but never permanently removed -- your data stays safe in the saved file.";
-  bullets.appendChild(b2);
-  var b3 = mk("li"); b3.textContent = "Once you have at least one visible environment, return here to populate the matrix / gaps / report.";
-  bullets.appendChild(b3);
-  card.appendChild(bullets);
-  return card;
-}
+// rc.7 / 7e-8c'-impl · per-view _renderNoEnvsCard helper RETIRED.
+// The empty-environments UX surface lives in ui/components/NoEnvsCard.js
+// (shared) per SPEC §S41 + RULES §16 CH35. F41.6.1 forbids per-view
+// duplicates. See the renderEmptyEnvsCenterCard call inside
+// renderMatrixView above for the migration.

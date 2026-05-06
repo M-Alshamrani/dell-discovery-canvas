@@ -7,6 +7,8 @@
 // still take session as a parameter; this projector retires at 7e-8
 // alongside the v2 sessionStore deletion.
 import { getEngagementAsSession, getVisibleEnvsFromEngagement } from "../../state/v3Projection.js";
+// rc.7 / 7e-8c'-impl · shared empty-environments UX per SPEC §S41 + RULES §16 CH35.
+import { renderEmptyEnvsCenterCard, visibleEnvCount } from "../components/NoEnvsCard.js";
 import { generateExecutiveSummary, generateSessionBrief, buildProjects,
          computeDiscoveryCoverage, computeRiskPosture } from "../../services/roadmapService.js";
 import { getHealthSummary } from "../../services/healthMetrics.js";
@@ -19,12 +21,13 @@ export function renderReportingOverview(left, right) {
   var session = getEngagementAsSession();
   if (session && session.isDemo) renderDemoBanner(left);
 
-  // rc.7 / 7e-8b' polish · empty-environments empty-state. The
-  // reporting overview's health summary + executive summary depend on
-  // populated envs/instances. With zero visible envs, surface a
-  // friendly card pointing the user back to Tab 1.
+  // rc.7 / 7e-8c'-impl · empty-environments empty-state via shared
+  // NoEnvsCard (SPEC §S41 + RULES §16 CH35). Per §S41.2 Tab 5 should
+  // be stepper-disabled when visibleEnvCount===0; this body code path
+  // is reached only on direct deep-link / programmatic mount.
+  // Defensive empty-state retained.
   if (getVisibleEnvsFromEngagement().length === 0) {
-    left.appendChild(_renderNoEnvsCardReporting());
+    renderEmptyEnvsCenterCard(left, "reporting", {});
     return;
   }
 
@@ -188,21 +191,7 @@ function renderBrief(container, rows) {
   });
 }
 
-// rc.7 / 7e-8b' polish · empty-environments empty-state for Tab 5.
-function _renderNoEnvsCardReporting() {
-  var card = mk("div", "card no-envs-card");
-  card.setAttribute("data-no-envs-state", "reporting");
-  card.appendChild(mkt("div", "card-eyebrow muted", "ENVIRONMENTS REQUIRED"));
-  card.appendChild(mkt("div", "card-title", "Add at least one environment first"));
-  card.appendChild(mkt("div", "card-hint",
-    "The reporting overview, health heatmap, gaps board, and roadmap all need at least one environment to compute summaries from."));
-  var bullets = mk("ul", "no-envs-bullets");
-  var b1 = mk("li"); b1.textContent = "Open Tab 1 (Context). Click \"+ Add environment\" or restore a hidden one.";
-  bullets.appendChild(b1);
-  var b2 = mk("li"); b2.textContent = "Environments can be hidden (soft-delete) but never permanently removed -- your data stays safe in the saved file.";
-  bullets.appendChild(b2);
-  var b3 = mk("li"); b3.textContent = "Once you have at least one visible environment, return here for the health summary, executive brief, and roadmap.";
-  bullets.appendChild(b3);
-  card.appendChild(bullets);
-  return card;
-}
+// rc.7 / 7e-8c'-impl · per-view _renderNoEnvsCardReporting helper RETIRED.
+// Empty-environments UX surface lives in ui/components/NoEnvsCard.js
+// (shared) per SPEC §S41 + RULES §16 CH35. F41.6.1 forbids per-view
+// duplicates.

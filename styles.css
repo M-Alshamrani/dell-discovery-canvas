@@ -1238,13 +1238,21 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
    Premium without bloat; works identically on the heatmap above. */
 .matrix-grid {
   display: grid;
+  /* rc.7 / 7e-8c'-impl per SPEC §S41.4: column scaling driven by
+     --env-count CSS custom property set inline by MatrixView. With
+     1-2 visible envs the max-width clamp keeps columns at ~320px each
+     (so the table doesn't balloon to fill panel width with one column);
+     with 3+ envs the calc target exceeds 100% so 1fr scaling fills the
+     container. F41.6.2 forbids inline grid-template-columns overrides. */
+  grid-template-columns: 160px repeat(var(--env-count, 1), 1fr);
+  max-width: min(100%, calc(160px + var(--env-count, 1) * 320px + 24px));
+  margin-right: auto;
   column-gap: 1px;
   row-gap: 6px;
   background: var(--canvas-alt);
   padding: 1px;
   border: 1px solid var(--rule);
   border-radius: var(--radius-sm);
-  min-width: 600px;
 }
 .matrix-corner   { background: var(--surface-2); }
 
@@ -6471,33 +6479,112 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
   text-transform: uppercase;
 }
 
-/* rc.7 / 7e-8b' polish · empty-environments empty-state card.
-   Surfaces on Tab 2/3 (Matrix), Tab 4 (Gaps), Tab 5 (Reporting) when
-   the engagement has zero visible environments, pointing the presales
-   engineer back to Tab 1 to add or restore at least one. */
-.no-envs-card {
-  border-left: 4px solid var(--accent-amber, #f59e0b);
-  margin-top: 12px;
+/* rc.7 / 7e-8c'-impl · empty-environments UX surface (SPEC §S41).
+   Single source of truth for the no-envs-card; rendered by the shared
+   ui/components/NoEnvsCard.js component (MatrixView + GapsEditView +
+   ReportingView import + use; never duplicate per F41.6.1). */
+
+/* The host element receives .no-envs-host + flex centering so the
+   center card sits in the middle of the tab area both horizontally
+   and vertically. Targets MatrixView's left panel + similar.  */
+.no-envs-host {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 280px);
 }
-.no-envs-card .card-eyebrow {
+
+.no-envs-center-card {
+  border-left: 4px solid var(--accent-amber, #f59e0b);
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
+  /* card class already provides padding/bg/radius; we just polish. */
+}
+.no-envs-center-card .card-eyebrow {
   font: 500 10.5px/1 "JetBrains Mono", ui-monospace, monospace;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  color: var(--ink-mute);
 }
-.no-envs-card .card-title {
-  font-size: 18px;
+.no-envs-center-card .card-title {
+  font-size: 20px;
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
-.no-envs-card .card-hint {
-  margin-bottom: 12px;
+.no-envs-center-card .card-hint {
+  margin-bottom: 14px;
+  line-height: 1.5;
 }
-.no-envs-bullets {
-  margin: 8px 0 4px 0;
+.no-envs-center-card .no-envs-bullets {
+  margin: 8px 0 16px 0;
   padding-left: 20px;
 }
-.no-envs-bullets li {
-  margin: 6px 0;
+.no-envs-center-card .no-envs-bullets li {
+  margin: 8px 0;
   line-height: 1.5;
+}
+.no-envs-center-card .no-envs-cta {
+  margin-top: 8px;
+}
+
+/* Stepper disabled state (SPEC §S41.2 -- Tabs 4/5 when visibleEnvCount===0). */
+#stepper .step.step-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none; /* belt-and-brace; the JS click handler also no-ops. */
+}
+#stepper .step.step-disabled:hover {
+  background: transparent; /* suppress the v2.4.13 hover affordance. */
+}
+
+/* First-add acknowledgment banner (SPEC §S41.3 -- one-time on
+   visibleEnvCount 0->1 transition, dedup'd via localStorage envFirstAddAck_v1). */
+.env-first-add-ack-banner {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  max-width: 480px;
+  padding: 12px 14px 12px 16px;
+  background: var(--surface-1, #fff);
+  border: 1px solid var(--rule, #e5e7eb);
+  border-left: 4px solid var(--dell-blue, #0076ce);
+  border-radius: var(--radius-md, 6px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: opacity 400ms ease-out;
+}
+.env-first-add-ack-eyebrow {
+  font: 500 10.5px/1 "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+.env-first-add-ack-body {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink, #0f172a);
+}
+.env-first-add-ack-close {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--ink-mute);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.env-first-add-ack-close:hover {
+  background: var(--canvas-alt, #f3f4f6);
+  color: var(--ink, #0f172a);
 }

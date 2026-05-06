@@ -10,6 +10,9 @@ import { runAllTests }               from "./diagnostics/appSpec.js";
 import { openSettingsModal }         from "./ui/views/SettingsModal.js";
 import * as aiUndoStack              from "./state/aiUndoStack.js";
 import { onSessionChanged, emitSessionChanged } from "./core/sessionEvents.js";
+// rc.7 / 7e-8c'-impl · stepper greys Tabs 4/5 when visibleEnvCount===0 per SPEC §S41.2.
+import { getActiveEngagement } from "./state/engagementStore.js";
+import { visibleEnvCount, surfaceFirstAddAcknowledgment } from "./ui/components/NoEnvsCard.js";
 import { APP_VERSION }               from "./core/version.js";
 import { loadAiConfig, saveAiConfig } from "./core/aiConfig.js";
 import { loadSkills, saveSkills }    from "./core/skillStore.js";
@@ -90,8 +93,29 @@ document.addEventListener("DOMContentLoaded", function() {
   // session-changed bus. The app shell re-renders header + current
   // tab so views pick up the live data (fixes the v2.4.4
   // "driver tile vanishes" + "tab blanks after undo" bugs).
+  // rc.7 / 7e-8c'-impl · track visibleEnvCount across emits so we can
+  // detect the 0->1 transition and surface the first-add acknowledgment
+  // per SPEC §S41.3. Also re-render the stepper on every emit so Tab
+  // 4/5 disabled state stays in sync with engagement changes.
+  var _prevVisibleEnvCount = visibleEnvCount(getActiveEngagement());
   onSessionChanged(function() {
     renderHeaderMeta();
+    renderStepper();
+    renderStage();
+    var nextCount = visibleEnvCount(getActiveEngagement());
+    if (_prevVisibleEnvCount === 0 && nextCount > 0) {
+      surfaceFirstAddAcknowledgment();
+    }
+    _prevVisibleEnvCount = nextCount;
+  });
+  // rc.7 / 7e-8c'-impl · CTA navigation event from the shared NoEnvsCard.
+  // The center info-card's "Go to Tab 1" button dispatches this when
+  // the user clicks; we switch to the context tab + re-render.
+  document.addEventListener("dell-canvas:navigate-to-tab", function(ev) {
+    var d = ev.detail || {};
+    if (!d.tabId) return;
+    currentStep = d.tabId;
+    renderStepper();
     renderStage();
   });
   // v2.4.11 · E1 · cross-tab navigation event. GapsEditView dispatches
@@ -495,9 +519,23 @@ function renderStepper() {
   var stepper = document.getElementById("stepper");
   if (!stepper) return;
   stepper.innerHTML = "";
+  // rc.7 / 7e-8c'-impl · per SPEC §S41.2 + RULES §16 CH35:
+  // Tabs 4 (gaps) + 5 (reporting) are DISABLED when the engagement
+  // has zero visible environments. Tabs 2 + 3 (current/desired) stay
+  // active because they show a friendly center info-card pointing
+  // back to Tab 1 (per §S41.2 access matrix).
+  var visibleEnvs = visibleEnvCount(getActiveEngagement());
+  var DISABLED_WHEN_NO_ENVS = { gaps: true, reporting: true };
   STEPS.forEach(function(step) {
     var div = document.createElement("div");
-    div.className = "step" + (step.id === currentStep ? " active" : "");
+    var isDisabled = visibleEnvs === 0 && DISABLED_WHEN_NO_ENVS[step.id] === true;
+    div.className = "step"
+      + (step.id === currentStep ? " active" : "")
+      + (isDisabled ? " step-disabled" : "");
+    if (isDisabled) {
+      div.setAttribute("aria-disabled", "true");
+      div.setAttribute("title", "Add at least one environment in Tab 1 (Context) first.");
+    }
     // v2.5.0 TB6: mono leading-zero number + sans sentence-case label.
     var num = document.createElement("span");
     num.className = "step-num";
@@ -508,6 +546,8 @@ function renderStepper() {
     div.appendChild(num);
     div.appendChild(lbl);
     div.addEventListener("click", function() {
+      // Disabled steps are non-interactive (per §S41.2).
+      if (isDisabled) return;
       saveToLocalStorage();
       currentStep = step.id;
       renderStepper();
