@@ -247,6 +247,97 @@ function _installSessionAsV3Engagement(s) {
   (s.instances || []).filter(function(i) { return i.state !== "desired"; }).forEach(_addOne);
   (s.instances || []).filter(function(i) { return i.state === "desired"; }).forEach(_addOne);
 
+  // Materialize gaps. v2 gap shape: { id, description, layerId,
+  // affectedLayers (catalog refs), affectedEnvironments (catalog refs),
+  // relatedCurrentInstanceIds (v2 ids), relatedDesiredInstanceIds (v2 ids),
+  // driverId (businessDriverId), gapType, urgency, phase, status, ...}.
+  // v3: same shape but UUID-keyed. Translate refs through envUuidMap +
+  // instUuidMap + driverIdMap.
+  var driverBusIdToV3Uuid = {};
+  var engForDrivers = getActiveEngagement();
+  if (engForDrivers && engForDrivers.drivers && Array.isArray(engForDrivers.drivers.allIds)) {
+    engForDrivers.drivers.allIds.forEach(function(uuid) {
+      var d = engForDrivers.drivers.byId[uuid];
+      if (d && d.businessDriverId) driverBusIdToV3Uuid[d.businessDriverId] = d.id;
+    });
+  }
+  var gapUuidMap = {};   // v2 id -> v3 uuid
+
+  (s.gaps || []).forEach(function(v2gap) {
+    if (!v2gap || !v2gap.layerId) return;
+    var v3GapInput = {
+      description:               (typeof v2gap.description === "string" && v2gap.description.length > 0)
+                                   ? v2gap.description : "Gap",
+      gapType:                   v2gap.gapType || "replace",
+      urgency:                   v2gap.urgency || "Medium",
+      urgencyOverride:           !!v2gap.urgencyOverride,
+      phase:                     v2gap.phase || "now",
+      status:                    v2gap.status || "open",
+      reviewed:                  !!v2gap.reviewed,
+      notes:                     v2gap.notes || "",
+      driverId:                  v2gap.driverId ? (driverBusIdToV3Uuid[v2gap.driverId] || null) : null,
+      layerId:                   v2gap.layerId,
+      affectedLayers:            (Array.isArray(v2gap.affectedLayers) && v2gap.affectedLayers.length > 0)
+                                   ? v2gap.affectedLayers
+                                   : [v2gap.layerId],
+      // Translate env refs. Drop any catalog ref that didn't map (test
+      // session may reference an env that wasn't materialized).
+      affectedEnvironments:      Array.isArray(v2gap.affectedEnvironments)
+                                   ? v2gap.affectedEnvironments
+                                       .map(function(cid) { return envUuidMap[cid] || cid; })
+                                       .filter(function(uuid) {
+                                         // v3 schema requires UUIDs; drop bare catalog refs that didn't map.
+                                         return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid);
+                                       })
+                                   : [],
+      relatedCurrentInstanceIds: Array.isArray(v2gap.relatedCurrentInstanceIds)
+                                   ? v2gap.relatedCurrentInstanceIds.map(function(vid) { return instUuidMap[vid] || vid; })
+                                       .filter(function(uuid) {
+                                         return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid);
+                                       })
+                                   : [],
+      relatedDesiredInstanceIds: Array.isArray(v2gap.relatedDesiredInstanceIds)
+                                   ? v2gap.relatedDesiredInstanceIds.map(function(vid) { return instUuidMap[vid] || vid; })
+                                       .filter(function(uuid) {
+                                         return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid);
+                                       })
+                                   : [],
+      services:                  Array.isArray(v2gap.services) ? v2gap.services.slice() : []
+    };
+    // v3 GapSchema requires affectedEnvironments.min(1). If translation
+    // dropped all UUIDs, default to the first materialized env so the
+    // commit doesn't fail validation. Tests that DON'T pre-populate
+    // envs hit this — accept the fallback as test-fixture pragmatism.
+    if (v3GapInput.affectedEnvironments.length === 0) {
+      var firstEnvUuid = Object.values(envUuidMap)[0] || null;
+      if (firstEnvUuid) v3GapInput.affectedEnvironments = [firstEnvUuid];
+    }
+    var r = commitGapAdd(v3GapInput);
+    if (r && r.engagement) {
+      var eng = r.engagement;
+      // Find the just-added gap by description match (should be unique
+      // enough at fixture time).
+      var found = null;
+      for (var i = eng.gaps.allIds.length - 1; i >= 0; i--) {
+        var g = eng.gaps.byId[eng.gaps.allIds[i]];
+        if (g && g.description === v3GapInput.description && g.layerId === v3GapInput.layerId) {
+          found = g;
+          break;
+        }
+      }
+      if (found) {
+        gapUuidMap[v2gap.id] = found.id;
+        v2gap.id = found.id;
+        // Also rewrite v2 gap's env / instance refs to UUIDs in place
+        // so test assertions on s.gaps[i] see consistent v3 shape.
+        v2gap.affectedEnvironments      = found.affectedEnvironments.slice();
+        v2gap.relatedCurrentInstanceIds = found.relatedCurrentInstanceIds.slice();
+        v2gap.relatedDesiredInstanceIds = found.relatedDesiredInstanceIds.slice();
+        if (found.driverId) v2gap.driverId = found.driverId;
+      }
+    }
+  });
+
   // Propagate v2 isDemo to v3 engagement.meta (the v3-native carrier).
   // v3-pure views (MatrixView, etc.) read engagement.meta.isDemo for
   // demo-banner rendering. The install helper writes through directly
@@ -2240,7 +2331,12 @@ describe("14 · ui/views/GapsEditView — DOM contract", () => {
     filterState._resetForTests();
     const l = document.createElement("div");
     const r = document.createElement("div");
-    renderGapsEditView(l, r, sess || freshSession());
+    const s = sess || freshSession();
+    // rc.7 / 7e-4 · v3-pure: translate the v2 session into a v3
+    // engagement so the v3-native GapsEditView reads gap/instance
+    // data from getActiveEngagement().
+    _installSessionAsV3Engagement(s);
+    renderGapsEditView(l, r, s);
     return { l, r };
   }
 
@@ -2327,6 +2423,7 @@ describe("14 · ui/views/GapsEditView — DOM contract", () => {
     doesNotThrow(() => {
       const l = document.createElement("div");
       const r = document.createElement("div");
+      _installSessionAsV3Engagement(s);
       renderGapsEditView(l, r, s);
     }, "must handle multiple gaps without throwing");
   });
@@ -2338,6 +2435,7 @@ describe("14 · ui/views/GapsEditView — DOM contract", () => {
     createGap(s, { description:"Urg read-only", layerId:LayerIds[0], urgency:"High" });
     const l = document.createElement("div");
     const r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderGapsEditView(l, r, s);
     const card = l.querySelector(".gap-card");
     card.click();
@@ -2353,6 +2451,7 @@ describe("14 · ui/views/GapsEditView — DOM contract", () => {
     createGap(s, { description:"High-urg gap", layerId:LayerIds[0], urgency:"High" });
     const l = document.createElement("div");
     const r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderGapsEditView(l, r, s);
     const card = l.querySelector(".gap-card");
     assert(card.classList.contains("crit-high"), "gap card must carry .crit-high when urgency=High");
@@ -2385,6 +2484,7 @@ describe("14 · ui/views/GapsEditView — DOM contract", () => {
     createGap(s, { description:"Needs-review", layerId:LayerIds[0], reviewed: false });
     const l = document.createElement("div");
     const r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderGapsEditView(l, r, s);
     assertEqual(l.querySelectorAll(".gap-card").length, 2, "both cards visible before filter");
     const toggleRow = l.querySelector("[data-filter-toggle='needsReviewOnly']");
@@ -2404,6 +2504,7 @@ describe("14 · ui/views/GapsEditView — DOM contract", () => {
     const s = freshSession();
     const l = document.createElement("div");
     const r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderGapsEditView(l, r, s);
     const addBtn = [...l.querySelectorAll("button")].find(b => b.textContent.indexOf("Add gap") >= 0);
     addBtn.click();
@@ -2579,6 +2680,7 @@ describe("22 · services/programsService", () => {
     createGap(s, { description:"Unreviewed draft", layerId:LayerIds[0], reviewed:false });
     const l = document.createElement("div");
     const r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderGapsEditView(l, r, s);
     const card = l.querySelector(".gap-card");
     assert(card.classList.contains("gap-needs-review"), "card must carry .gap-needs-review");
@@ -3832,6 +3934,7 @@ describe("23 · Phase 18 · gap links — always-visible + warn-but-allow + casc
   function gapsViewFor(sess) {
     const l = document.createElement("div");
     const r = document.createElement("div");
+    _installSessionAsV3Engagement(sess);
     renderGapsEditView(l, r, sess);
     return { l, r };
   }
@@ -6558,6 +6661,7 @@ describe("43 · Phase 19l · v2.4.12 services scope + pre-flight regression fixe
       services: []
     });
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderGapsEditView(l, r, s);
     // Click the gap card to open the right-panel detail.
     var card = l.querySelector(".gap-card");
@@ -6880,6 +6984,7 @@ describe("44 · Phase 19m · v2.5.0 crown-jewel UI rework", () => {
     createGap(s, { description: "VT17 unmatch", layerId: "compute", gapType: "replace",
       relatedCurrentInstanceIds: ["i-z"], relatedDesiredInstanceIds: ["d-z"], services: ["deployment"] });
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderGapsEditView(l, r, s);
     document.body.appendChild(l);
     try {
@@ -6907,6 +7012,7 @@ describe("44 · Phase 19m · v2.5.0 crown-jewel UI rework", () => {
     document.body.removeAttribute("data-filter-services");
     var s = fixtureSession();
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderGapsEditView(l, r, s);
     var chip = l.querySelector("[data-filter-chip][data-filter-dim='services'], .filter-chip[data-service-id]");
     assert(chip, "VT18 filter chip row must include at least one services chip");
@@ -8199,6 +8305,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
       layerId: "storage", gapType: "ops", notes: "FB7a storage gap context that exceeds ten chars",
       services: [] });
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderGapsEditView(l, r, s);
     document.body.appendChild(l);
     try {
@@ -8236,6 +8343,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     createGap(s, { description: "FB7b enhance gap", layerId: "compute", gapType: "enhance",
       relatedCurrentInstanceIds: [cur2.id], services: ["training"] });
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderGapsEditView(l, r, s);
     document.body.appendChild(l);
     try {
@@ -8269,6 +8377,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     createGap(s, { description: "FB7c low gap",  layerId: "compute", gapType: "ops",
       relatedCurrentInstanceIds: [cur2.id], urgency: "Low" });
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderGapsEditView(l, r, s);
     document.body.appendChild(l);
     try {
@@ -8309,6 +8418,7 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
     createGap(s, { description: "FB7d partial2", layerId: "storage", gapType: "ops",
       relatedCurrentInstanceIds: [cur3.id], urgency: "High" });
     var l = document.createElement("div"); var r = document.createElement("div");
+    _installSessionAsV3Engagement(s);
     renderGapsEditView(l, r, s);
     document.body.appendChild(l);
     try {
@@ -9062,7 +9172,9 @@ import {
   commitGapEdit,
   // rc.7 / 7e-2 · v3-pure write surface used by Suite 13 v3 fixture below.
   commitInstanceAdd,
-  commitEnvAdd
+  commitEnvAdd,
+  // rc.7 / 7e-4 · v3-pure gap fixture surface.
+  commitGapAdd
 } from "../state/adapter.js";
 import {
   getActiveEngagement,

@@ -1,14 +1,25 @@
 // ui/views/GapsEditView.js -- fully wired gaps & initiatives board
 
-import { LAYERS, ENVIRONMENTS, BUSINESS_DRIVERS, getEnvLabel, getVisibleEnvironments } from "../../core/config.js";
+import { LAYERS, ENV_CATALOG, BUSINESS_DRIVERS, getEnvLabel } from "../../core/config.js";
 import { LayerIds, EnvironmentIds } from "../../core/models.js";
-import { createGap, updateGap, deleteGap, setGapDriverId, approveGap,
-         linkCurrentInstance, linkDesiredInstance,
-         unlinkCurrentInstance, unlinkDesiredInstance } from "../../interactions/gapsCommands.js";
-import { syncDesiredFromGap, confirmPhaseOnLink } from "../../interactions/desiredStateSync.js";
+// rc.7 / 7e-4 - v3-pure write surface per SPEC S40.
+import {
+  commitGapAdd,
+  commitGapUpdate,
+  commitGapRemove,
+  commitGapLinkCurrentInstance,
+  commitGapLinkDesiredInstance,
+  commitGapUnlinkCurrentInstance,
+  commitGapUnlinkDesiredInstance,
+  commitGapSetDriverByBusinessDriverId
+} from "../../state/adapter.js";
+import {
+  commitSyncDesiredFromGap,
+  confirmPhaseOnLink
+} from "../../state/dispositionLogic.js";
+import { getActiveEngagement } from "../../state/engagementStore.js";
 import { suggestDriverId, effectiveDriverId, effectiveDriverReason, driverLabel as driverLabelFor,
          effectiveDellSolutions } from "../../services/programsService.js";
-import { saveToLocalStorage } from "../../state/sessionStore.js";
 import { helpButton } from "./HelpModal.js";
 import { validateActionLinks, actionById } from "../../core/taxonomy.js";
 import { SERVICE_TYPES, SUGGESTED_SERVICES_BY_GAP_TYPE, suggestedFor, serviceLabel, serviceDomain } from "../../core/services.js";
@@ -68,7 +79,7 @@ function pickGapDomain(gap) {
 // list). Used for the "linked to N gaps" multi-link chip and for the
 // link-picker warning row.
 function countGapsLinking(session, instanceId) {
-  return ((session && session.gaps) || []).filter(function(g) {
+  return ((session && _v3GapsArray()) || []).filter(function(g) {
     return (g.relatedCurrentInstanceIds || []).indexOf(instanceId) >= 0
         || (g.relatedDesiredInstanceIds || []).indexOf(instanceId) >= 0;
   }).length;
@@ -77,12 +88,77 @@ function countGapsLinking(session, instanceId) {
 // Phase 18: return the FIRST other gap (excluding `excludeGapId`) that
 // already links the given instanceId. null if none. Used by the picker.
 function findOtherGapLinking(session, instanceId, excludeGapId) {
-  var hits = ((session && session.gaps) || []).filter(function(g) {
+  var hits = ((session && _v3GapsArray()) || []).filter(function(g) {
     if (g.id === excludeGapId) return false;
     return (g.relatedCurrentInstanceIds || []).indexOf(instanceId) >= 0
         || (g.relatedDesiredInstanceIds || []).indexOf(instanceId) >= 0;
   });
   return hits.length ? hits[0] : null;
+}
+
+
+// rc.7 / 7e-4 - v3-pure helper module-scope. Walk getActiveEngagement
+// + project to v2 shape so existing iteration patterns in
+// renderGapsEditView keep working without rewriting every loop.
+// These helpers are read-only; writes go via adapter commit* helpers
+// imported above.
+function _v3GapsArray() {
+  var eng = getActiveEngagement();
+  if (!eng || !eng.gaps || !Array.isArray(eng.gaps.allIds)) return [];
+  return eng.gaps.allIds.map(function(id) { return eng.gaps.byId[id]; }).filter(Boolean);
+}
+function _v3InstancesArray() {
+  var eng = getActiveEngagement();
+  if (!eng || !eng.instances || !Array.isArray(eng.instances.allIds)) return [];
+  return eng.instances.allIds.map(function(id) { return eng.instances.byId[id]; }).filter(Boolean);
+}
+function _v3EnvsAll() {
+  var eng = getActiveEngagement();
+  if (!eng || !eng.environments || !Array.isArray(eng.environments.allIds)) return [];
+  return eng.environments.allIds.map(function(id) {
+    var e = eng.environments.byId[id];
+    if (!e) return null;
+    var cat = ENV_CATALOG.find(function(c) { return c.id === e.envCatalogId; });
+    // env.id stays as the catalog ref so existing iteration code that
+    // calls getEnvLabel(env.id, ...) and similar legacy helpers keeps
+    // working. env.uuid is the v3 UUID -- used for gap.affectedEnvironments
+    // membership + commit-time references (since v3 stores UUIDs).
+    return {
+      id:           e.envCatalogId,
+      uuid:         e.id,
+      envCatalogId: e.envCatalogId,
+      label:        (e.alias && e.alias.length > 0) ? e.alias : (cat ? cat.label : e.envCatalogId),
+      hint:         cat ? cat.hint : "",
+      hidden:       !!e.hidden,
+      alias:        e.alias || null,
+      location:     e.location || null,
+      sizeKw:       (typeof e.sizeKw === "number") ? e.sizeKw : null,
+      sqm:          (typeof e.sqm === "number") ? e.sqm : null,
+      tier:         e.tier || null,
+      notes:        e.notes || ""
+    };
+  }).filter(Boolean);
+}
+function _v3VisibleEnvs() {
+  return _v3EnvsAll().filter(function(e) { return !e.hidden; });
+}
+function _v3DriversV2Shape() {
+  var eng = getActiveEngagement();
+  if (!eng || !eng.drivers || !Array.isArray(eng.drivers.allIds)) return [];
+  return eng.drivers.allIds.map(function(id) {
+    var d = eng.drivers.byId[id];
+    if (!d) return null;
+    return {
+      id:       d.businessDriverId,
+      priority: d.priority || "Medium",
+      outcomes: typeof d.outcomes === "string" ? d.outcomes : ""
+    };
+  }).filter(Boolean);
+}
+function _v3Customer() {
+  var eng = getActiveEngagement();
+  if (!eng || !eng.customer) return { name: "", vertical: "", region: "", drivers: [] };
+  return Object.assign({}, eng.customer, { drivers: _v3DriversV2Shape() });
 }
 
 export function renderGapsEditView(left, right, session) {
@@ -132,10 +208,8 @@ export function renderGapsEditView(left, right, session) {
   // ("Needs review only" / "Show closed gaps"). + Add gap rides as
   // the trailing CTA on the same line as the filter pill.
   if (left._unsubFilter) try { left._unsubFilter(); } catch (e) {}
-  var visibleEnvsForFilter = (typeof getVisibleEnvironments === "function")
-    ? getVisibleEnvironments(session)
-    : ENVIRONMENTS;
-  var closedCountForBadge = (session.gaps || []).filter(function(g) {
+  var visibleEnvsForFilter = _v3VisibleEnvs();
+  var closedCountForBadge = (_v3GapsArray() || []).filter(function(g) {
     return g && g.status === "closed";
   }).length;
   renderFilterBar(filterBarHost, {
@@ -146,7 +220,10 @@ export function renderGapsEditView(left, right, session) {
         options: LAYERS.map(function(l) { return { id: l.id, label: l.label }; }) },
       { id: "environment", label: "Environment",
         options: visibleEnvsForFilter.map(function(e) {
-          return { id: e.id, label: getEnvLabel(e.id, session) };
+          // Filter id == v3 UUID so it matches gap.affectedEnvironments
+          // (v3-pure: UUIDs throughout). Display uses the env's
+          // catalog/alias label.
+          return { id: e.uuid, label: e.label };
         }) },
       { id: "gapType",  label: "Gap type",
         options: [
@@ -217,7 +294,7 @@ export function renderGapsEditView(left, right, session) {
       // button each time advances to the next; when none remain, it
       // auto-disables. Lightweight first cut , doesn't need a full
       // wizard chrome to be useful.
-      var nextUnreviewed = (session.gaps || []).find(function(g) {
+      var nextUnreviewed = (_v3GapsArray() || []).find(function(g) {
         return g.reviewed === false && g.status !== "closed";
       });
       if (nextUnreviewed) {
@@ -269,7 +346,7 @@ export function renderGapsEditView(left, right, session) {
   }
 
   function getAutoGaps() {
-    return (session.gaps || []).filter(function(g) {
+    return (_v3GapsArray() || []).filter(function(g) {
       return g.relatedDesiredInstanceIds && g.relatedDesiredInstanceIds.length > 0
           && g.status === "open" && !g.notes;
     });
@@ -285,7 +362,7 @@ export function renderGapsEditView(left, right, session) {
     var gapTypes   = Array.from(activeGapTypes);
     var urgencies  = Array.from(activeUrgencies);
     var allLayers  = activeLayerIds.size === LAYERS.length;
-    return (session.gaps || []).filter(function(g) {
+    return (_v3GapsArray() || []).filter(function(g) {
       var layers = (g.affectedLayers && g.affectedLayers.length) ? g.affectedLayers : [g.layerId];
       var envs   = g.affectedEnvironments || [];
       // Layer dim: when every layer is active (empty user filter), all
@@ -359,10 +436,9 @@ export function renderGapsEditView(left, right, session) {
         body.classList.remove("drop-hover");
         if (dragGapId) {
           try {
-            updateGap(session, dragGapId, { phase: phId });
+            commitGapUpdate(dragGapId, { phase: phId });
             // Bidirectional phase sync: propagate gap.phase → linked desired instance(s) (T4.5).
-            syncDesiredFromGap(session, dragGapId);
-            saveToLocalStorage();
+            commitSyncDesiredFromGap(dragGapId);
             renderAll();
           } catch(err) { notifyError({ title: "Couldn't move the gap", body: err.message || String(err) }); }
         }
@@ -499,7 +575,7 @@ export function renderGapsEditView(left, right, session) {
   // ---- Detail / edit panel ----
   function renderDetail() {
     right.innerHTML = "";
-    var gap = (session.gaps || []).find(function(g) { return g.id === selectedGapId; });
+    var gap = (_v3GapsArray() || []).find(function(g) { return g.id === selectedGapId; });
     if (!gap) { showPlaceholder(right); return; }
 
     var panel = mk("div", "detail-panel");
@@ -540,8 +616,7 @@ export function renderGapsEditView(left, right, session) {
       reopenBtn.title = "Reopen this gap. Status returns to 'open'.";
       reopenBtn.addEventListener("click", function() {
         try {
-          updateGap(session, gap.id, { status: "open", closeReason: undefined, closedAt: undefined });
-          saveToLocalStorage();
+          commitGapUpdate(gap.id, { status: "open", closeReason: undefined, closedAt: undefined });
           renderAll();
         } catch(e) { showErr(panel, e.message); }
       });
@@ -605,15 +680,14 @@ export function renderGapsEditView(left, right, session) {
       autoBtn.title = "Release urgency back to auto-derive (urgency follows the linked current's criticality).";
       autoBtn.addEventListener("click", function() {
         try {
-          updateGap(session, gap.id, { urgencyOverride: false });
+          commitGapUpdate(gap.id, { urgencyOverride: false });
           // Re-derive urgency immediately from any linked current.
           var firstCur = (gap.relatedCurrentInstanceIds || []).map(function(id) {
-            return (session.instances || []).find(function(i) { return i.id === id; });
+            return (_v3InstancesArray() || []).find(function(i) { return i.id === id; });
           }).find(Boolean);
           if (firstCur && firstCur.criticality) {
-            updateGap(session, gap.id, { urgency: firstCur.criticality });
+            commitGapUpdate(gap.id, { urgency: firstCur.criticality });
           }
-          saveToLocalStorage();
           renderAll();
         } catch(e) { showErr(panel, e.message); }
       });
@@ -627,8 +701,7 @@ export function renderGapsEditView(left, right, session) {
       lockBtn.title = "Pin this urgency. Future propagation from criticality changes will not overwrite it.";
       lockBtn.addEventListener("click", function() {
         try {
-          updateGap(session, gap.id, { urgencyOverride: true });
-          saveToLocalStorage();
+          commitGapUpdate(gap.id, { urgencyOverride: true });
           renderAll();
         } catch(e) { showErr(panel, e.message); }
       });
@@ -644,9 +717,9 @@ export function renderGapsEditView(left, right, session) {
 
     // Program (driver) dropdown , session drivers + Unassigned. Auto-suggested
     // if no explicit driverId is set.
-    var programOpts = [""].concat((session.customer.drivers || []).map(function(d) { return d.id; }));
+    var programOpts = [""].concat((_v3DriversV2Shape() || []).map(function(d) { return d.id; }));
     var programLabels = { "": "Unassigned" };
-    (session.customer.drivers || []).forEach(function(d) {
+    (_v3DriversV2Shape() || []).forEach(function(d) {
       var meta = BUSINESS_DRIVERS.find(function(bd) { return bd.id === d.id; });
       programLabels[d.id] = (meta ? meta.label : d.id) + (gap.driverId === d.id ? "" : "");
     });
@@ -670,8 +743,7 @@ export function renderGapsEditView(left, right, session) {
       acceptBtn.title = "Set this gap's driver explicitly to '" + label + "' so future heuristic changes don't reassign it.";
       acceptBtn.addEventListener("click", function() {
         try {
-          setGapDriverId(session, gap.id, driverReason.driverId);
-          saveToLocalStorage();
+          commitGapSetDriverByBusinessDriverId(gap.id, driverReason.driverId);
           renderAll();
         } catch(e) { showErr(panel, e.message); }
       });
@@ -688,14 +760,18 @@ export function renderGapsEditView(left, right, session) {
     var envGroup = mk("div", "form-group");
     envGroup.appendChild(mkt("label", "form-label", "Affected environments"));
     var envCheckRow = mk("div", "env-check-row");
-    ENVIRONMENTS.forEach(function(env) {
+    // rc.7 / 7e-4 - v3-pure: walk the active engagement's visible envs
+    // (env.uuid is the v3 UUID stored in gap.affectedEnvironments).
+    // Checkbox value is env.uuid so the on-save patch carries v3
+    // UUIDs that pass GapSchema validation.
+    _v3VisibleEnvs().forEach(function(env) {
       var lbl = mk("label", "env-check-label");
       var cb  = document.createElement("input");
-      cb.type = "checkbox"; cb.value = env.id;
+      cb.type = "checkbox"; cb.value = env.uuid;
       cb.className = "env-checkbox";
-      cb.checked = (gap.affectedEnvironments || []).indexOf(env.id) >= 0;
+      cb.checked = (gap.affectedEnvironments || []).indexOf(env.uuid) >= 0;
       lbl.appendChild(cb);
-      lbl.appendChild(document.createTextNode(" " + getEnvLabel(env.id, session)));
+      lbl.appendChild(document.createTextNode(" " + env.label));
       envCheckRow.appendChild(lbl);
     });
     envGroup.appendChild(envCheckRow);
@@ -822,7 +898,7 @@ export function renderGapsEditView(left, right, session) {
       var approveBtn = mkt("button", "btn-secondary approve-draft-btn", "✓ Approve draft");
       approveBtn.title = "Accept this auto-drafted gap as-is without further changes.";
       approveBtn.addEventListener("click", function() {
-        try { approveGap(session, gap.id); saveToLocalStorage(); renderAll(); }
+        try { commitGapUpdate(gap.id, { reviewed: true }); renderAll(); }
         catch(e) { showErr(panel, e.message); }
       });
       actions.appendChild(approveBtn);
@@ -887,11 +963,10 @@ export function renderGapsEditView(left, right, session) {
       var driverIdChoice = patch.driverId;
       delete patch.driverId;
       try {
-        updateGap(session, gap.id, patch);
-        setGapDriverId(session, gap.id, driverIdChoice || null);
+        commitGapUpdate(gap.id, patch);
+        commitGapSetDriverByBusinessDriverId(gap.id, driverIdChoice || null);
         // Bidirectional phase sync after manual phase edit (T4.5).
-        syncDesiredFromGap(session, gap.id);
-        saveToLocalStorage();
+        commitSyncDesiredFromGap(gap.id);
         saveBtn.textContent = "Saved ✓";
         saveBtn.classList.add("save-ok");
         setTimeout(function() {
@@ -926,8 +1001,7 @@ export function renderGapsEditView(left, right, session) {
         if (!yes) return;
         delBtn.classList.add("is-loading");
         try {
-          deleteGap(session, gap.id);
-          saveToLocalStorage();
+          commitGapRemove(gap.id);
           selectedGapId = null;
           renderAll();
         } catch (e) {
@@ -947,7 +1021,7 @@ export function renderGapsEditView(left, right, session) {
     curSection.appendChild(mkt("div", "link-section-title", "Current state"));
     var curList = mk("div", "link-list");
     var currentLinked = (gap.relatedCurrentInstanceIds || []).map(function(id) {
-      return (session.instances || []).find(function(i) { return i.id === id; });
+      return (_v3InstancesArray() || []).find(function(i) { return i.id === id; });
     }).filter(Boolean);
 
     if (currentLinked.length === 0) {
@@ -955,7 +1029,7 @@ export function renderGapsEditView(left, right, session) {
     } else {
       currentLinked.forEach(function(inst) {
         curList.appendChild(buildLinkRow(inst, function() {
-          try { unlinkCurrentInstance(session, gap.id, inst.id); saveToLocalStorage(); renderAll(); }
+          try { commitGapUnlinkCurrentInstance(gap.id, inst.id); renderAll(); }
           catch(e) { notifyError({ title: "Couldn't apply change", body: (e && e.message) || String(e) }); }
         }));
       });
@@ -965,7 +1039,7 @@ export function renderGapsEditView(left, right, session) {
     var addCurBtn = mkt("button", "btn-ghost-sm", "+ Link current instance");
     addCurBtn.addEventListener("click", function() {
       openLinkPicker("current", gap, function(instId) {
-        try { linkCurrentInstance(session, gap.id, instId); saveToLocalStorage(); renderAll(); }
+        try { commitGapLinkCurrentInstance(gap.id, instId); renderAll(); }
         catch(e) { notifyError({ title: "Couldn't apply change", body: (e && e.message) || String(e) }); }
       });
     });
@@ -977,7 +1051,7 @@ export function renderGapsEditView(left, right, session) {
     desSection.appendChild(mkt("div", "link-section-title", "Desired state"));
     var desList = mk("div", "link-list");
     var desiredLinked = (gap.relatedDesiredInstanceIds || []).map(function(id) {
-      return (session.instances || []).find(function(i) { return i.id === id; });
+      return (_v3InstancesArray() || []).find(function(i) { return i.id === id; });
     }).filter(Boolean);
 
     if (desiredLinked.length === 0) {
@@ -985,7 +1059,7 @@ export function renderGapsEditView(left, right, session) {
     } else {
       desiredLinked.forEach(function(inst) {
         desList.appendChild(buildLinkRow(inst, function() {
-          try { unlinkDesiredInstance(session, gap.id, inst.id); saveToLocalStorage(); renderAll(); }
+          try { commitGapUnlinkDesiredInstance(gap.id, inst.id); renderAll(); }
           catch(e) { notifyError({ title: "Couldn't apply change", body: (e && e.message) || String(e) }); }
         }));
       });
@@ -1000,12 +1074,11 @@ export function renderGapsEditView(left, right, session) {
         // v2.4.11 · A4 · the function now refuses without { acknowledged: true }
         // when there's a conflict , make the confirm + acknowledged opt-in
         // explicit so no caller can accidentally bypass.
-        var check = confirmPhaseOnLink(session, gap.id, instId);
+        var check = confirmPhaseOnLink(getActiveEngagement(), gap.id, instId);
         function doLink(acknowledged) {
           try {
-            linkDesiredInstance(session, gap.id, instId, { acknowledged: acknowledged });
-            syncDesiredFromGap(session, gap.id);     // gap wins → desired tile picks up gap.phase
-            saveToLocalStorage();
+            commitGapLinkDesiredInstance(gap.id, instId, { acknowledged: acknowledged });
+            commitSyncDesiredFromGap(gap.id);     // gap wins → desired tile picks up gap.phase
             renderAll();
           } catch(e) {
             notifyError({ title: "Couldn't apply change", body: (e && e.message) || String(e) });
@@ -1085,7 +1158,7 @@ export function renderGapsEditView(left, right, session) {
       ? (gap.relatedCurrentInstanceIds || [])
       : (gap.relatedDesiredInstanceIds  || []);
 
-    var candidates = (session.instances || []).filter(function(i) {
+    var candidates = (_v3InstancesArray() || []).filter(function(i) {
       return i.state === stateFilter && alreadyLinked.indexOf(i.id) < 0;
     });
 
@@ -1219,7 +1292,7 @@ export function renderGapsEditView(left, right, session) {
         // Primary is always at index 0; setPrimaryLayer in createGap
         // reasserts that even if we forgot.
         var alsoLayers = Array.from(alsoSelected);
-        var newGap = createGap(session, {
+        var newGap = commitGapAdd({
           description:    vals.description,
           layerId:        vals.layerId,
           affectedLayers: [vals.layerId].concat(alsoLayers.filter(function(l) { return l !== vals.layerId; })),
@@ -1229,7 +1302,6 @@ export function renderGapsEditView(left, right, session) {
           status:         "open"
           // reviewed defaults to true for manual creation per createGap.
         });
-        saveToLocalStorage();
         selectedGapId = newGap.id;
         overlay.remove();
         renderAll();
@@ -1279,7 +1351,20 @@ function showPlaceholder(right) {
   right.appendChild(ph);
 }
 function layerName(id) { var l = (typeof LAYERS !== "undefined") ? LAYERS.find(function(x){return x.id===id;}) : null; return l ? l.label : id; }
-function envName(id)   { var e = (typeof ENVIRONMENTS !== "undefined") ? ENVIRONMENTS.find(function(x){return x.id===id;}) : null; return e ? e.label : id; }
+// rc.7 / 7e-4 - v3-pure: envName takes a v3 env UUID (the v3-canonical
+// identifier used in gap.affectedEnvironments + instance.environmentId).
+// Falls back to catalog-ref lookup for any straggling v2-shape data.
+function envName(uuidOrCatalogId) {
+  var eng = getActiveEngagement();
+  if (eng && eng.environments && eng.environments.byId[uuidOrCatalogId]) {
+    var e = eng.environments.byId[uuidOrCatalogId];
+    if (e.alias && e.alias.length > 0) return e.alias;
+    var cat = ENV_CATALOG.find(function(c) { return c.id === e.envCatalogId; });
+    return cat ? cat.label : e.envCatalogId;
+  }
+  var cat2 = ENV_CATALOG.find(function(c) { return c.id === uuidOrCatalogId; });
+  return cat2 ? cat2.label : uuidOrCatalogId;
+}
 function phaseLabel(p) { return p==="now" ? "Now (0-12 months)" : p==="next" ? "Next (12-24 months)" : "Later (>24 months)"; }
 
 // A gap is "auto-drafted" when it came from a Desired-State disposition, i.e.
@@ -1299,7 +1384,7 @@ function readOnlyField(text, titleText) {
 function gapOriginCriticalityHint(gap, session) {
   var ids = (gap && gap.relatedCurrentInstanceIds) || [];
   if (!ids.length || !session) return "No linked current instance , defaults to Medium for introduce gaps.";
-  var first = (session.instances || []).find(function(i) { return i.id === ids[0]; });
+  var first = (_v3InstancesArray() || []).find(function(i) { return i.id === ids[0]; });
   if (!first) return "";
   return "Source: '" + first.label + "' (criticality " + (first.criticality || "not set") + ").";
 }
