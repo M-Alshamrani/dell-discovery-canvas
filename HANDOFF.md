@@ -1,6 +1,24 @@
 # Dell Discovery Canvas — Session Handoff
 
-**Last session end**: 2026-05-06 · **`v3.0.0-rc.6` TAGGED locally** (`v3.0-data-architecture` HEAD = this commit). APP_VERSION = `"3.0.0-rc.6"`. **Banner 1187/1187 GREEN at tag**.
+**Last session end**: 2026-05-06 (late-evening) · **`v3.0.0-rc.7-dev`** in progress on `v3.0-data-architecture` · HEAD = `324b37a` · **Banner 1210/1218 GREEN** (8 fails are all known: 6 RED scaffolds for the v2 deletion sub-arc + OH5 + FS3 deferred fixtures).
+
+**rc.7 dev log (full arc since rc.6 tag, in order)**:
+
+| Sub-arc | Commit | Theme | Banner |
+|---|---|---|---|
+| 7b..7d-2 | (multi) | Tab 1 Context migration · v3-pure | 1195/1195 ✅ |
+| 7e-1..7 | (multi) | Full v3-pure migration · adapter selectors + commit* helpers · AI undo via v3 snapshot · canvasFile v3-native · runtime v2→v3 migrator retired | 1205/1211 |
+| 7e-8a | `8fac398` | v2 deletion prep · drop dead `migrateLegacySession` import · SPEC §S40 staging plan | 1205/1211 |
+| 7e-8b' | `773f81d` | ContextView v3-native rewrite (right-panel persistence + env tags from v3 direct) | 1200/1211 |
+| 7e-8b'-polish | `4d70dff` | sqm tag in env tile + empty-environments empty-state in MatrixView/GapsEditView/ReportingView · **patch (3 duplicated helpers)** retired by 7e-8c' | 1202/1211 |
+| 7e-8c'-spec | `0347a1f` | SPEC §S41 + RULES §16 CH35 + V-FLOW-EMPTY-ENVS-1..7 RED scaffolds + VT20 em-dash regression fix | 1203/1218 (7 RED by design) |
+| 7e-8c'-impl | `8a147f4` | Shared `ui/components/NoEnvsCard.js` + stepper greying Tabs 4/5 + matrix `--env-count` column scaling + first-add ack | 1210/1218 |
+| **7e-8c'-fix** | `5a77d6a` | **Drop NoEnvsCard host-class mutation** (the "house of cards" bug — class polluted Context tab on re-render) **+ drop CTA button + drop nav listener + move empty-state check before MatrixView header** · SPEC F41.6.6/7/8 added | 1209/1218 |
+| **7e-8c'-fix2** | `324b37a` | **Retire first-add acknowledgment toast** wholesale per user direction ("no need for it"). Drop `surfaceFirstAddAcknowledgment` + `envFirstAddAck_v1` localStorage key + `.env-first-add-ack-banner` CSS + V-FLOW-EMPTY-ENVS-6 (reworked into negative assertion) + RULES CH35 clause (e). SPEC §S41.3 marked RETIRED | **1210/1218** ✅ |
+
+**Smoke (Chrome MCP, fix2 verification on user's actual browser)**: fresh-start session → "+ Add environment" → Primary Data Center → 0→1 transition complete → NO banner appears anywhere · localStorage `envFirstAddAck_v1` = null · all 5 stepper tabs un-disabled (Tabs 4/5 properly un-grey when first env arrives).
+
+**rc.6 frozen state** (still authoritative for the rc.6 release; last tag on origin = `v3.0.0-rc.6`):
 
 **STATE**: rc.6 closes the workshop-bug arc surfaced 2026-05-05. Six of seven workshop bugs (BUG-029, 030, 031, 033, 034, 035) closed with regression tests; BUG-032 deferred to rc.6.1/rc.7 pending user-side repro. Centerpiece is the **grounding contract recast** (SPEC §S37): RAG-by-construction architecture replaces the count-based threshold + LLM-decides-to-ground hope. Two locked memories ratified this release — `feedback_no_mocks.md` (NEW · tier-1) + `project_grounding_recast.md` (NEW).
 
