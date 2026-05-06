@@ -30,7 +30,7 @@
 import { memoizeOne } from "../services/memoizeOne.js";
 import { selectMatrixView }    from "../selectors/matrix.js";
 import { selectHealthSummary } from "../selectors/healthSummary.js";
-import { commitAction }        from "./engagementStore.js";
+import { commitAction, getActiveEngagement } from "./engagementStore.js";
 import { updateCustomer }      from "./collections/customerActions.js";
 import {
   updateInstance,
@@ -39,7 +39,7 @@ import {
 import { updateGap } from "./collections/gapActions.js";
 // rc.7 / 7b · Tab 1 Context migration · driver write helpers per
 // SPEC §S19.3.1 cutover-window bidirectional sync. ContextView
-// migrates its driver writes through these helpers in rc.7 / 7c.
+// consumes these helpers in rc.7 / 7c.
 import {
   addDriver,
   updateDriver,
@@ -159,6 +159,41 @@ export function commitDriverUpdate(driverId, patch) {
 
 export function commitDriverRemove(driverId) {
   return commitAction(removeDriver, driverId);
+}
+
+// rc.7 / 7c · cutover-window helpers — v2 ContextView holds drivers in
+// an array keyed by `id = businessDriverId` (the catalog reference,
+// e.g. "cyber_resilience"). v3 driver records key by UUID. These
+// "*ByBusinessDriverId" helpers do the catalog-ref → UUID lookup
+// internally so the ContextView call site can stay readable + keep its
+// existing `d.id` references during migration. They retire once
+// ContextView reads from `adaptContextView(...)` and consumes the v3
+// driver shape natively (likely rc.7 / 7d or later).
+
+function _findDriverByBusinessDriverId(businessDriverId) {
+  const eng = getActiveEngagement();
+  if (!eng || !eng.drivers || !Array.isArray(eng.drivers.allIds)) return null;
+  for (const id of eng.drivers.allIds) {
+    const d = eng.drivers.byId[id];
+    if (d && d.businessDriverId === businessDriverId) return d;
+  }
+  return null;
+}
+
+export function commitDriverUpdateByBusinessDriverId(businessDriverId, patch) {
+  const d = _findDriverByBusinessDriverId(businessDriverId);
+  if (!d) {
+    return { ok: false, error: "no v3 driver with businessDriverId='" + businessDriverId + "'" };
+  }
+  return commitAction(updateDriver, d.id, patch);
+}
+
+export function commitDriverRemoveByBusinessDriverId(businessDriverId) {
+  const d = _findDriverByBusinessDriverId(businessDriverId);
+  if (!d) {
+    return { ok: false, error: "no v3 driver with businessDriverId='" + businessDriverId + "'" };
+  }
+  return commitAction(removeDriver, d.id);
 }
 
 export function commitInstanceEdit(_layerId, _envId, instancePatch) {

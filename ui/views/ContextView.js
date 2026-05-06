@@ -18,6 +18,15 @@ import {
   getEnvLabel
 } from "../../core/config.js";
 import { saveToLocalStorage, resetToDemo, isFreshSession, applyContextSave } from "../../state/sessionStore.js";
+// rc.7 / 7c · Tab 1 Context migration · driver writes go v3-first per
+// SPEC §S19.3.1. The v3→v2 mirror in state/sessionBridge.js back-fills
+// liveSession.customer.drivers so this view's existing reads (which
+// stay on the v2 shape this commit) keep working.
+import {
+  commitDriverAdd,
+  commitDriverUpdateByBusinessDriverId,
+  commitDriverRemoveByBusinessDriverId
+} from "../../state/adapter.js";
 import { helpButton } from "./HelpModal.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
 import { emitSessionChanged } from "../../core/sessionEvents.js";
@@ -784,8 +793,13 @@ function buildDriverTile(d, idx, session, row, right) {
   del.addEventListener("click", function(e) {
     e.stopPropagation();
     function doDelete() {
-      var driverIdx = (session.customer.drivers || []).indexOf(d);
-      if (driverIdx >= 0) session.customer.drivers.splice(driverIdx, 1);
+      // rc.7 / 7c · v3-first remove per SPEC §S19.3.1.
+      // d.id is the businessDriverId catalog ref (v2 shape); the
+      // adapter helper does the catalog-ref → v3-UUID lookup.
+      // The sessionBridge v3→v2 mirror back-fills session.customer.drivers
+      // so the subsequent paintDriverTiles + renderWelcomePanel reads
+      // pick up the new v2 shape automatically.
+      commitDriverRemoveByBusinessDriverId(d.id);
       saveToLocalStorage();
       paintDriverTiles(row, session, right);
       renderWelcomePanel(right);
@@ -898,9 +912,16 @@ function openDriverPalette(session, row, right) {
 }
 
 function addDriver(session, driverId) {
+  // rc.7 / 7c · v3-first write per SPEC §S19.3.1. driverId is the
+  // catalog reference (e.g. "cyber_resilience"); v3 addDriver action
+  // assigns a fresh UUID + stamps engagementId + timestamps. The
+  // sessionBridge v3→v2 mirror back-fills session.customer.drivers,
+  // so the existing v2-shape reads in this view continue to work.
   if (!Array.isArray(session.customer.drivers)) session.customer.drivers = [];
+  // Idempotency guard against the v2 array (matches v3 addDriver's own
+  // uniqueness invariant per businessDriverId).
   if (session.customer.drivers.some(function(d) { return d.id === driverId; })) return;
-  session.customer.drivers.push({ id: driverId, priority: "Medium", outcomes: "" });
+  commitDriverAdd({ businessDriverId: driverId, priority: "Medium", outcomes: "" });
   saveToLocalStorage();
 }
 
@@ -934,7 +955,12 @@ function renderDriverDetail(right, session, driver, onPriorityChange) {
     prioSel.appendChild(opt);
   });
   prioSel.addEventListener("change", function() {
-    driver.priority = prioSel.value;
+    // rc.7 / 7c · v3-first update per SPEC §S19.3.1. driver.id is the
+    // businessDriverId catalog ref (v2 shape); the adapter does the
+    // catalog-ref → v3-UUID lookup. The mirror back-fills v2 so the
+    // local driver object also reflects the new priority next render.
+    commitDriverUpdateByBusinessDriverId(driver.id, { priority: prioSel.value });
+    driver.priority = prioSel.value;   // local-state echo for immediate re-render
     saveToLocalStorage();
     if (onPriorityChange) onPriorityChange();
   });
@@ -955,7 +981,10 @@ function renderDriverDetail(right, session, driver, onPriorityChange) {
   out.placeholder = "• Example: recover from ransomware within 4 hours, proven quarterly.";
   attachAutoBullet(out);
   out.addEventListener("input", function() {
-    driver.outcomes = out.value;
+    // rc.7 / 7c · v3-first update per SPEC §S19.3.1. (See priority
+    // change above for the same id-translation note.)
+    commitDriverUpdateByBusinessDriverId(driver.id, { outcomes: out.value });
+    driver.outcomes = out.value;   // local-state echo
     saveToLocalStorage();
   });
   outGroup.appendChild(out);

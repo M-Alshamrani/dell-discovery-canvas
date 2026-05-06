@@ -1577,8 +1577,16 @@ describe("12 · ui/views/ContextView — DOM contract", () => {
     overlay.remove();
   });
 
-  it("Selecting a driver pushes it into session.customer.drivers with defaults (T1.8)", () => {
+  it("Selecting a driver writes through adapter to v3 engagement.drivers; bridge mirrors back to v2 (T1.8 · post-rc.7/7c migration per SPEC §S19.3.1)", () => {
+    // Post-rc.7/7c: ContextView's addDriver path goes v3-first via
+    // adapter.commitDriverAdd → engagementStore. The sessionBridge
+    // v3→v2 mirror back-fills liveSession.customer.drivers. This test
+    // sets up the v3 singleton + asserts both surfaces (v3 + v2 mirror).
     document.querySelectorAll(".cmd-overlay").forEach(o => o.remove());
+    _resetEngagementStoreForTests();
+    _rearmBridgeMirrorForTests();
+    setActiveEngagement(createEmptyEngagement());
+
     const s = createEmptySession();
     const { l } = mountContext(s);
     const addBtn = [...l.querySelectorAll("button")].find(b => b.textContent.indexOf("Add driver") >= 0);
@@ -1586,23 +1594,53 @@ describe("12 · ui/views/ContextView — DOM contract", () => {
     const overlay = document.querySelector(".cmd-overlay");
     const first = overlay.querySelector(".cmd-item");
     first.click();
-    assertEqual(s.customer.drivers.length, 1, "one driver added");
-    assert(typeof s.customer.drivers[0].id === "string" && s.customer.drivers[0].id.length > 0, "driver id set");
-    assertEqual(s.customer.drivers[0].outcomes, "", "default outcomes are empty");
-    assertEqual(s.customer.drivers[0].priority, "Medium", "default priority is Medium");
+
+    // v3-first surface
+    const eng = getActiveEngagement();
+    assertEqual(eng.drivers.allIds.length, 1, "one driver added to v3 engagement.drivers");
+    const v3Driver = eng.drivers.byId[eng.drivers.allIds[0]];
+    assert(typeof v3Driver.businessDriverId === "string" && v3Driver.businessDriverId.length > 0,
+      "v3 driver businessDriverId set (catalog ref)");
+    assertEqual(v3Driver.priority, "Medium", "default priority is Medium");
+    assertEqual(v3Driver.outcomes, "", "default outcomes are empty");
+
+    // v2 mirror surface (bridge back-filled session.customer.drivers)
+    // Note: assert against the v2 `session` singleton (imported at top of file),
+    // not local `s` — the migrated path writes to the v3 engagementStore
+    // singleton; the bridge mirrors back to the v2 sessionStore singleton.
+    assertEqual(session.customer.drivers.length, 1, "v2 mirror back-filled session.customer.drivers");
+    assertEqual(session.customer.drivers[0].id, v3Driver.businessDriverId,
+      "v2 mirror id == v3 businessDriverId (catalog ref)");
+
     document.querySelectorAll(".cmd-overlay").forEach(o => o.remove());
   });
 
-  it("Driver tile has a remove control that deletes the driver (T1.9)", () => {
+  it("Driver tile remove deletes from v3 engagement; bridge mirror back-fills (T1.9 · post-rc.7/7c migration)", async () => {
+    _resetEngagementStoreForTests();
+    _rearmBridgeMirrorForTests();
+    setActiveEngagement(createEmptyEngagement());
+    // Add a driver via the adapter (mirrors V3 add path).
+    const adapterMod = await import("../state/adapter.js");
+    adapterMod.commitDriverAdd({ businessDriverId: "ai_data", priority: "Medium", outcomes: "" });
+
     const s = createEmptySession();
-    s.customer.drivers = [{ id: "ai_data", priority: "Medium", outcomes: "" }];
+    // The bridge v3→v2 mirror back-fills session.customer.drivers; copy
+    // it onto the local `s` so mountContext renders the tile (the view
+    // reads from its `session` parameter, which is `s` here).
+    s.customer.drivers = session.customer.drivers.slice();
+
     const { l } = mountContext(s);
     const tile = l.querySelector(".driver-tile");
     assert(tile !== null, "driver tile must render");
     const del = tile.querySelector(".driver-tile-del");
     assert(del !== null, ".driver-tile-del must exist");
     del.click();
-    assertEqual(s.customer.drivers.length, 0, "driver removed from session");
+
+    // v3 surface
+    const eng = getActiveEngagement();
+    assertEqual(eng.drivers.allIds.length, 0, "driver removed from v3 engagement.drivers");
+    // v2 mirror surface
+    assertEqual(session.customer.drivers.length, 0, "v2 mirror back-fill: session.customer.drivers empty");
   });
 
   it("Adding the same driver twice is a no-op (T1.10)", () => {
@@ -8795,6 +8833,10 @@ import {
   commitAction,
   _resetForTests as _resetEngagementStoreForTests
 } from "../state/engagementStore.js";
+// rc.7 / 7c · _resetEngagementStoreForTests clears _subs (incl. the bridge
+// v3→v2 driver mirror). T1.8 / T1.9 re-arm the mirror after the reset so
+// the cutover-window mirror behavior under SPEC §S19.3.1 stays observable.
+import { _rearmMirrorForTests as _rearmBridgeMirrorForTests } from "../state/sessionBridge.js";
 
 // rc.2 . SPEC §S20 V-CHAT . Canvas Chat (context-aware AI assistant).
 // Imports the STUB modules — Suite 49 §T20 V-CHAT-1..12 fails RED
@@ -11871,17 +11913,20 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-FLOW-MIGRATE-TAB1-DRIVERS-2: ui/views/ContextView.js MUST import commitDriverAdd/Update/Remove from state/adapter.js (RED until rc.7 / 7c)");
     });
 
-    it("V-FLOW-MIGRATE-TAB1-DRIVERS-3 · state/sessionBridge.js mirrors v3 engagement.drivers → v2 session.drivers per SPEC §S19.3.1 cutover sync — RED until rc.7 / 7c", async () => {
+    it("V-FLOW-MIGRATE-TAB1-DRIVERS-3 · state/sessionBridge.js mirrors v3 engagement.drivers → v2 session.customer.drivers per SPEC §S19.3.1 cutover sync", async () => {
       // Source-grep: sessionBridge.js must subscribe to engagementStore
-      // changes and back-mirror drivers to v2 session for cutover-window
-      // consistency. RED until rc.7 / 7c lands the mirror.
+      // changes and back-mirror drivers to v2 session.customer.drivers
+      // for cutover-window consistency. The v3→v2 mirror block writes
+      // liveSession.customer.drivers and emits session-changed("v3-mirror");
+      // bridgeOnce skips the v2→v3 merge for that reason to break the
+      // v2↔v3 ping-pong.
       const bridgeSrc = await (await fetch("/state/sessionBridge.js")).text();
-      const HAS_ENGAGEMENT_SUB = /subscribeActiveEngagement/.test(bridgeSrc);
-      const HAS_DRIVERS_MIRROR = /drivers/.test(bridgeSrc) && /session\.drivers|liveSession\.drivers/.test(bridgeSrc);
-      assert(HAS_ENGAGEMENT_SUB,
-        "V-FLOW-MIGRATE-TAB1-DRIVERS-3: state/sessionBridge.js MUST subscribe to engagementStore (subscribeActiveEngagement) per SPEC §S19.3.1 cutover-window v3→v2 mirror (RED until rc.7 / 7c)");
-      assert(HAS_DRIVERS_MIRROR,
-        "V-FLOW-MIGRATE-TAB1-DRIVERS-3: state/sessionBridge.js MUST reference drivers in the v3→v2 mirror block (RED until rc.7 / 7c)");
+      assert(/subscribeActiveEngagement/.test(bridgeSrc),
+        "V-FLOW-MIGRATE-TAB1-DRIVERS-3: state/sessionBridge.js MUST import + subscribe to subscribeActiveEngagement per SPEC §S19.3.1 cutover-window v3→v2 mirror");
+      assert(/liveSession\.customer\.drivers\s*=/.test(bridgeSrc),
+        "V-FLOW-MIGRATE-TAB1-DRIVERS-3: state/sessionBridge.js v3→v2 mirror MUST write liveSession.customer.drivers (the v2-shape projection target)");
+      assert(/v3-mirror/.test(bridgeSrc),
+        "V-FLOW-MIGRATE-TAB1-DRIVERS-3: state/sessionBridge.js MUST use the 'v3-mirror' reason to emit + skip the v2→v3 customer merge (loop guard per SPEC §S19.3.1)");
     });
   });
 
