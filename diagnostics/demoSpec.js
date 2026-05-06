@@ -46,6 +46,12 @@ export function registerDemoSuite(api) {
   var it          = api.it;
   var assert      = api.assert;
   var assertEqual = api.assertEqual;
+  // rc.7 / 7e-5 · v3 fixture helpers shared from appSpec for DS13/14/16/17
+  // (apply + undo round-trip tests against the v3-pure resolver dispatch).
+  var _installSessionAsV3Engagement = api._installSessionAsV3Engagement || function(_s) {};
+  var _resetEngagementStoreForTests = api._resetEngagementStoreForTests || function() {};
+  var getActiveEngagement = api.getActiveEngagement || function() { return null; };
+  var setActiveEngagement = api.setActiveEngagement || function(_e) {};
 
   // ──────────────────────────────────────────────────────────────
   // Suite 31 · demo session shape
@@ -219,65 +225,65 @@ export function registerDemoSuite(api) {
   // ──────────────────────────────────────────────────────────────
   describe("33 · Phase 19e · apply + undo · byte-identical round-trip", function() {
 
-    it("DS13 · applyProposal → undoLast returns the session to JSON-identical state", function() {
+    it("DS13 · applyProposal → undoLast returns v3 engagement to JSON-identical state (post-7e-5)", function() {
       aiUndoStack._resetForTests();
-      // Build a minimal session so the test doesn't depend on live UI state.
-      replaceSession({
-        sessionId: "sess-ds13",
-        isDemo: false,
-        customer: { name: "Round-trip Co", vertical: "Enterprise", region: "EMEA",
-                    drivers: [{ id: "cyber_resilience", priority: "Medium", outcomes: "prev" }] },
-        sessionMeta: { date: "2026-04-24", presalesOwner: "", status: "Draft", version: "2.0" },
-        instances: [],
-        gaps: [{ id: "g-ds13", description: "seed gap", layerId: "compute",
-                 affectedLayers: [], affectedEnvironments: [],
-                 urgency: "Low", phase: "later", gapType: "ops",
-                 relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
-                 status: "open", reviewed: true }]
-      });
-      var before = JSON.stringify(liveSession);
+      var s = createDemoSession();
+      // Override a minimal subset for deterministic apply target.
+      s.customer = { name: "Round-trip Co", vertical: "Enterprise", region: "EMEA",
+                     drivers: [{ id: "cyber_resilience", priority: "Medium", outcomes: "prev" }] };
+      s.environments = [{ id: "coreDc", hidden: false }];
+      s.instances = [];
+      s.gaps = [{ id: "g-ds13", description: "seed gap", layerId: "compute",
+                  affectedLayers: ["compute"], affectedEnvironments: ["coreDc"],
+                  urgency: "Low", phase: "later", gapType: "ops",
+                  relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
+                  status: "open", reviewed: true }];
+      _installSessionAsV3Engagement(s);
+      var v3GapId = s.gaps[0].id;
+      var beforeEng = JSON.stringify(getActiveEngagement());
       applyProposal(
         { path: "context.selectedGap.urgency", label: "Gap urgency", kind: "scalar",
           before: "Low", after: "High" },
-        { label: "apply for DS13", context: { selectedGap: { id: "g-ds13" } } }
+        { label: "apply for DS13", context: { selectedGap: { id: v3GapId } } }
       );
-      assertEqual(liveSession.gaps[0].urgency, "High", "apply mutated the gap");
+      assertEqual(getActiveEngagement().gaps.byId[v3GapId].urgency, "High",
+        "apply mutated the v3 gap");
       aiUndoStack.undoLast();
-      var after = JSON.stringify(liveSession);
-      assertEqual(after, before,
-        "apply + undoLast must return session to byte-identical JSON — data-integrity regression gate");
+      var afterEng = JSON.stringify(getActiveEngagement());
+      assertEqual(afterEng, beforeEng,
+        "apply + undoLast must return v3 engagement to byte-identical JSON -- data-integrity regression gate");
       aiUndoStack._resetForTests();
     });
 
-    it("DS14 · applyAllProposals → undoLast returns the session to JSON-identical state", function() {
+    it("DS14 · applyAllProposals → undoLast returns v3 engagement to JSON-identical state (post-7e-5)", function() {
       aiUndoStack._resetForTests();
-      replaceSession({
-        sessionId: "sess-ds14",
-        isDemo: false,
-        customer: { name: "Bulk Apply Co", vertical: "Enterprise", region: "APJ",
-                    drivers: [{ id: "cost_optimization", priority: "High", outcomes: "prev" }] },
-        sessionMeta: { date: "2026-04-24", presalesOwner: "", status: "Draft", version: "2.0" },
-        instances: [],
-        gaps: [{ id: "g-ds14", description: "bulk seed", layerId: "storage",
-                 affectedLayers: [], affectedEnvironments: [],
-                 urgency: "Low", phase: "later", gapType: "enhance",
-                 notes: "before-notes",
-                 relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
-                 status: "open", reviewed: true }]
-      });
-      var before = JSON.stringify(liveSession);
+      var s = createDemoSession();
+      s.customer = { name: "Bulk Apply Co", vertical: "Enterprise", region: "APJ",
+                     drivers: [{ id: "cost_optimization", priority: "High", outcomes: "prev" }] };
+      s.environments = [{ id: "coreDc", hidden: false }];
+      s.instances = [];
+      s.gaps = [{ id: "g-ds14", description: "bulk seed", layerId: "storage",
+                  affectedLayers: ["storage"], affectedEnvironments: ["coreDc"],
+                  urgency: "Low", phase: "later", gapType: "enhance",
+                  notes: "before-notes",
+                  relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
+                  status: "open", reviewed: true }];
+      _installSessionAsV3Engagement(s);
+      var v3GapId = s.gaps[0].id;
+      var beforeEng = JSON.stringify(getActiveEngagement());
       applyAllProposals([
         { path: "context.selectedGap.urgency", label: "Gap urgency", kind: "scalar",
           before: "Low", after: "High" },
         { path: "context.selectedGap.notes",   label: "Gap notes",   kind: "scalar",
           before: "before-notes", after: "after-notes" }
-      ], { label: "bulk apply for DS14", context: { selectedGap: { id: "g-ds14" } } });
-      assertEqual(liveSession.gaps[0].urgency, "High", "bulk apply mutated urgency");
-      assertEqual(liveSession.gaps[0].notes, "after-notes", "bulk apply mutated notes");
+      ], { label: "bulk apply for DS14", context: { selectedGap: { id: v3GapId } } });
+      var midEng = getActiveEngagement();
+      assertEqual(midEng.gaps.byId[v3GapId].urgency, "High", "bulk apply mutated urgency");
+      assertEqual(midEng.gaps.byId[v3GapId].notes, "after-notes", "bulk apply mutated notes");
       aiUndoStack.undoLast();
-      var after = JSON.stringify(liveSession);
-      assertEqual(after, before,
-        "applyAll + undoLast must return session to byte-identical JSON");
+      var afterEng = JSON.stringify(getActiveEngagement());
+      assertEqual(afterEng, beforeEng,
+        "applyAll + undoLast must return v3 engagement to byte-identical JSON");
       aiUndoStack._resetForTests();
     });
   });
@@ -438,51 +444,49 @@ export function registerDemoSuite(api) {
   // ──────────────────────────────────────────────────────────────
   describe("35 · Phase 19e · session-changed bus · apply & undo emit", function() {
 
-    it("DS16 · applyProposal emits reason='ai-apply'", function() {
+    it("DS16 · applyProposal emits reason='ai-apply' (post-7e-5 v3-pure)", function() {
       aiUndoStack._resetForTests();
-      replaceSession({
-        sessionId: "sess-ds16",
-        isDemo: false,
-        customer: { name: "Bus Co", vertical: "Enterprise", region: "EMEA", drivers: [] },
-        sessionMeta: { date: "2026-04-24", presalesOwner: "", status: "Draft", version: "2.0" },
-        instances: [],
-        gaps: [{ id: "g-ds16", description: "bus", layerId: "compute",
-                 affectedLayers: [], affectedEnvironments: [],
-                 urgency: "Low", phase: "later",
-                 relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
-                 status: "open", reviewed: true }]
-      });
+      var s = createDemoSession();
+      s.customer = { name: "Bus Co", vertical: "Enterprise", region: "EMEA", drivers: [] };
+      s.environments = [{ id: "coreDc", hidden: false }];
+      s.instances = [];
+      s.gaps = [{ id: "g-ds16", description: "bus", layerId: "compute",
+                  affectedLayers: ["compute"], affectedEnvironments: ["coreDc"],
+                  urgency: "Low", phase: "later", gapType: "replace",
+                  relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
+                  status: "open", reviewed: true }];
+      _installSessionAsV3Engagement(s);
+      var v3GapId = s.gaps[0].id;
       var seen = [];
       var off = onSessionChanged(function(evt) { seen.push(evt.reason); });
       try {
         applyProposal(
           { path: "context.selectedGap.urgency", label: "u", kind: "scalar",
             before: "Low", after: "High" },
-          { context: { selectedGap: { id: "g-ds16" } } }
+          { context: { selectedGap: { id: v3GapId } } }
         );
         assert(seen.indexOf("ai-apply") >= 0,
           "applyProposal must emit a session-changed event with reason='ai-apply'");
       } finally { off(); aiUndoStack._resetForTests(); }
     });
 
-    it("DS17 · undoLast emits reason='ai-undo'", function() {
+    it("DS17 · undoLast emits reason='ai-undo' (post-7e-5 v3-pure)", function() {
       aiUndoStack._resetForTests();
-      replaceSession({
-        sessionId: "sess-ds17",
-        isDemo: false,
-        customer: { name: "Bus Co", vertical: "Enterprise", region: "EMEA", drivers: [] },
-        sessionMeta: { date: "2026-04-24", presalesOwner: "", status: "Draft", version: "2.0" },
-        instances: [],
-        gaps: [{ id: "g-ds17", description: "bus", layerId: "compute",
-                 affectedLayers: [], affectedEnvironments: [],
-                 urgency: "Low", phase: "later",
-                 relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
-                 status: "open", reviewed: true }]
-      });
+      var s = createDemoSession();
+      s.customer = { name: "Bus Co", vertical: "Enterprise", region: "EMEA", drivers: [] };
+      s.environments = [{ id: "coreDc", hidden: false }];
+      s.instances = [];
+      s.gaps = [{ id: "g-ds17", description: "bus", layerId: "compute",
+                  affectedLayers: ["compute"], affectedEnvironments: ["coreDc"],
+                  urgency: "Low", phase: "later", gapType: "replace",
+                  relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
+                  status: "open", reviewed: true }];
+      _installSessionAsV3Engagement(s);
+      var v3GapId = s.gaps[0].id;
       applyProposal(
         { path: "context.selectedGap.urgency", label: "u", kind: "scalar",
           before: "Low", after: "High" },
-        { context: { selectedGap: { id: "g-ds17" } } }
+        { context: { selectedGap: { id: v3GapId } } }
       );
       var seen = [];
       var off = onSessionChanged(function(evt) { seen.push(evt.reason); });

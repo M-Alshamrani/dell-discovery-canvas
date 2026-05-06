@@ -1,148 +1,170 @@
-// core/bindingResolvers.js — Phase 19d / v2.4.4
+// core/bindingResolvers.js -- v3-pure write-resolver dispatch (rc.7 / 7e-5).
 //
-// Write resolvers for `context.*` paths. Every writable `context.*` entry
-// in `FIELD_MANIFEST` MUST have a matching resolver here. `applyProposal`
-// calls the resolver with (session, context, value) at apply time —
-// the resolver finds the target entity in session state (by id, taken
-// from the runtime context) and mutates it in place.
+// Per SPEC §S40 + RULES §16 CH34. Every writable `context.*` path in
+// `FIELD_MANIFEST` MUST have a matching action function here. The
+// action takes (engagement, context, value) and returns a §S4-shaped
+// { ok, engagement, errors? } result. `applyProposal` (interactions/
+// aiCommands.js) routes the action through commitAction so AI writes
+// land via the v3 engagement store with provenance preserved
+// end-to-end.
 //
-// Safety invariants:
-// - Never mutate anything outside `session.*`. Resolvers may only reach
-//   into session.customer.drivers / session.instances / session.gaps.
-// - If the target entity cannot be found (e.g. user deselected or
-//   deleted it mid-run), throw — applyProposal converts to a UI error.
-// - Keep each resolver narrow and predictable. Business-logic cascades
-//   (e.g. "changing a gap's phase syncs linked desired tiles") belong
-//   in v2.4.5+ action-commands via the existing interactions/* modules,
-//   NOT here. This keeps scalar writes cheap and undoable as single
-//   snapshot boundaries.
+// Doctrinal shift from the v2 (pre-7e-5) implementation:
+//   - Resolvers no longer take `session` and mutate in place. They
+//     take the immutable engagement and return the next engagement.
+//   - context.selectedX.id values are interpreted as v3 IDs:
+//       drivers : context.selectedDriver.id == businessDriverId (catalog
+//                 ref like "cyber_resilience"); resolved to v3 driver
+//                 UUID via _findDriverByBusinessDriverId.
+//       gaps    : context.selectedGap.id == v3 gap UUID.
+//       insts   : context.selectedInstance.id == v3 instance UUID.
+//   - The v2 `session.*` direct-write path is RETIRED. AI writes
+//     against v3-canonical paths only; any session.* proposal is
+//     rejected at applyProposal-time per F40.4.6.
 //
-// See SPEC §12.2 for the contract. Adding a new writable field =
-// one FIELD_MANIFEST entry + one resolver here.
+// Adding a new writable field = one FIELD_MANIFEST entry + one action
+// function here.
 
 import { normalizeServices } from "./services.js";
+import { commitAction } from "../state/engagementStore.js";
+import { updateDriver }   from "../state/collections/driverActions.js";
+import { updateInstance } from "../state/collections/instanceActions.js";
+import { updateGap }      from "../state/collections/gapActions.js";
 
-function findDriverById(session, id) {
-  var drivers = (session && session.customer && session.customer.drivers) || [];
-  return drivers.find(function(d) { return d && d.id === id; });
+// ── helpers ──────────────────────────────────────────────────────────
+function _findDriverByBusinessDriverId(engagement, businessDriverId) {
+  if (!engagement || !engagement.drivers || !Array.isArray(engagement.drivers.allIds)) return null;
+  for (const id of engagement.drivers.allIds) {
+    const d = engagement.drivers.byId[id];
+    if (d && d.businessDriverId === businessDriverId) return d;
+  }
+  return null;
 }
-function findGapById(session, id) {
-  return ((session && session.gaps) || []).find(function(g) { return g && g.id === id; });
+
+function _notFound(path, id) {
+  return { ok: false, errors: [{ path, message: "'" + id + "' not found in v3 engagement", code: "not_found" }] };
 }
-function findInstanceById(session, id) {
-  return ((session && session.instances) || []).find(function(i) { return i && i.id === id; });
-}
+
+// ── action functions per writable path ─────────────────────────────
+//
+// Each entry is a §S4 action function: (engagement, context, value)
+// -> { ok, engagement, errors? }. applyProposal wraps the call in
+// commitAction so the engagementStore commits + emits atomically.
 
 export var WRITE_RESOLVERS = {
-  // ── Context tab — writable driver fields ──
-  "context.selectedDriver.priority": function(session, context, value) {
-    var id = context && context.selectedDriver && context.selectedDriver.id;
-    var driver = findDriverById(session, id);
-    if (!driver) throw new Error("Driver '" + id + "' not found in session");
-    driver.priority = value;
+  // Drivers ----------------------------------------------------------
+  "context.selectedDriver.priority": function(engagement, context, value) {
+    const id = context && context.selectedDriver && context.selectedDriver.id;
+    const d = _findDriverByBusinessDriverId(engagement, id);
+    if (!d) return _notFound("selectedDriver.id", id);
+    return updateDriver(engagement, d.id, { priority: value });
   },
-  "context.selectedDriver.outcomes": function(session, context, value) {
-    var id = context && context.selectedDriver && context.selectedDriver.id;
-    var driver = findDriverById(session, id);
-    if (!driver) throw new Error("Driver '" + id + "' not found in session");
-    driver.outcomes = value;
-  },
-
-  // ── Current/Desired tabs — writable instance fields ──
-  "context.selectedInstance.criticality": function(session, context, value) {
-    var id = context && context.selectedInstance && context.selectedInstance.id;
-    var inst = findInstanceById(session, id);
-    if (!inst) throw new Error("Instance '" + id + "' not found in session");
-    inst.criticality = value;
-  },
-  "context.selectedInstance.notes": function(session, context, value) {
-    var id = context && context.selectedInstance && context.selectedInstance.id;
-    var inst = findInstanceById(session, id);
-    if (!inst) throw new Error("Instance '" + id + "' not found in session");
-    inst.notes = value;
-  },
-  "context.selectedInstance.disposition": function(session, context, value) {
-    var id = context && context.selectedInstance && context.selectedInstance.id;
-    var inst = findInstanceById(session, id);
-    if (!inst) throw new Error("Instance '" + id + "' not found in session");
-    inst.disposition = value;
-  },
-  "context.selectedInstance.priority": function(session, context, value) {
-    var id = context && context.selectedInstance && context.selectedInstance.id;
-    var inst = findInstanceById(session, id);
-    if (!inst) throw new Error("Instance '" + id + "' not found in session");
-    inst.priority = value;
+  "context.selectedDriver.outcomes": function(engagement, context, value) {
+    const id = context && context.selectedDriver && context.selectedDriver.id;
+    const d = _findDriverByBusinessDriverId(engagement, id);
+    if (!d) return _notFound("selectedDriver.id", id);
+    return updateDriver(engagement, d.id, { outcomes: typeof value === "string" ? value : "" });
   },
 
-  // ── Gaps tab — writable gap fields ──
-  "context.selectedGap.description": function(session, context, value) {
-    var id = context && context.selectedGap && context.selectedGap.id;
-    var gap = findGapById(session, id);
-    if (!gap) throw new Error("Gap '" + id + "' not found in session");
-    gap.description = value;
+  // Instances --------------------------------------------------------
+  "context.selectedInstance.criticality": function(engagement, context, value) {
+    const id = context && context.selectedInstance && context.selectedInstance.id;
+    if (!engagement.instances || !engagement.instances.byId[id]) return _notFound("selectedInstance.id", id);
+    return updateInstance(engagement, id, { criticality: value });
   },
-  "context.selectedGap.gapType": function(session, context, value) {
-    var id = context && context.selectedGap && context.selectedGap.id;
-    var gap = findGapById(session, id);
-    if (!gap) throw new Error("Gap '" + id + "' not found in session");
-    gap.gapType = value;
+  "context.selectedInstance.notes": function(engagement, context, value) {
+    const id = context && context.selectedInstance && context.selectedInstance.id;
+    if (!engagement.instances || !engagement.instances.byId[id]) return _notFound("selectedInstance.id", id);
+    return updateInstance(engagement, id, { notes: typeof value === "string" ? value : "" });
   },
-  "context.selectedGap.urgency": function(session, context, value) {
-    var id = context && context.selectedGap && context.selectedGap.id;
-    var gap = findGapById(session, id);
-    if (!gap) throw new Error("Gap '" + id + "' not found in session");
-    gap.urgency = value;
+  "context.selectedInstance.disposition": function(engagement, context, value) {
+    const id = context && context.selectedInstance && context.selectedInstance.id;
+    if (!engagement.instances || !engagement.instances.byId[id]) return _notFound("selectedInstance.id", id);
+    return updateInstance(engagement, id, { disposition: value });
   },
-  "context.selectedGap.phase": function(session, context, value) {
-    var id = context && context.selectedGap && context.selectedGap.id;
-    var gap = findGapById(session, id);
-    if (!gap) throw new Error("Gap '" + id + "' not found in session");
-    gap.phase = value;
+  "context.selectedInstance.priority": function(engagement, context, value) {
+    const id = context && context.selectedInstance && context.selectedInstance.id;
+    if (!engagement.instances || !engagement.instances.byId[id]) return _notFound("selectedInstance.id", id);
+    // v3 schema: priority is desired-only, nullable. Empty/null clears.
+    return updateInstance(engagement, id, { priority: value || null });
   },
-  "context.selectedGap.status": function(session, context, value) {
-    var id = context && context.selectedGap && context.selectedGap.id;
-    var gap = findGapById(session, id);
-    if (!gap) throw new Error("Gap '" + id + "' not found in session");
-    gap.status = value;
+
+  // Gaps -------------------------------------------------------------
+  "context.selectedGap.description": function(engagement, context, value) {
+    const id = context && context.selectedGap && context.selectedGap.id;
+    if (!engagement.gaps || !engagement.gaps.byId[id]) return _notFound("selectedGap.id", id);
+    return updateGap(engagement, id, { description: value });
   },
-  "context.selectedGap.notes": function(session, context, value) {
-    var id = context && context.selectedGap && context.selectedGap.id;
-    var gap = findGapById(session, id);
-    if (!gap) throw new Error("Gap '" + id + "' not found in session");
-    gap.notes = value;
+  "context.selectedGap.gapType": function(engagement, context, value) {
+    const id = context && context.selectedGap && context.selectedGap.id;
+    if (!engagement.gaps || !engagement.gaps.byId[id]) return _notFound("selectedGap.id", id);
+    return updateGap(engagement, id, { gapType: value });
   },
-  // v2.4.12 · gap.services multi-select. AI skills may emit either a
-  // JSON array of ids OR a comma-separated string; we normalize both
-  // shapes through normalizeServices (drops unknowns, dedupes).
-  "context.selectedGap.services": function(session, context, value) {
-    var id = context && context.selectedGap && context.selectedGap.id;
-    var gap = findGapById(session, id);
-    if (!gap) throw new Error("Gap '" + id + "' not found in session");
-    var arr;
+  "context.selectedGap.urgency": function(engagement, context, value) {
+    const id = context && context.selectedGap && context.selectedGap.id;
+    if (!engagement.gaps || !engagement.gaps.byId[id]) return _notFound("selectedGap.id", id);
+    return updateGap(engagement, id, { urgency: value });
+  },
+  "context.selectedGap.phase": function(engagement, context, value) {
+    const id = context && context.selectedGap && context.selectedGap.id;
+    if (!engagement.gaps || !engagement.gaps.byId[id]) return _notFound("selectedGap.id", id);
+    return updateGap(engagement, id, { phase: value });
+  },
+  "context.selectedGap.status": function(engagement, context, value) {
+    const id = context && context.selectedGap && context.selectedGap.id;
+    if (!engagement.gaps || !engagement.gaps.byId[id]) return _notFound("selectedGap.id", id);
+    return updateGap(engagement, id, { status: value });
+  },
+  "context.selectedGap.notes": function(engagement, context, value) {
+    const id = context && context.selectedGap && context.selectedGap.id;
+    if (!engagement.gaps || !engagement.gaps.byId[id]) return _notFound("selectedGap.id", id);
+    return updateGap(engagement, id, { notes: typeof value === "string" ? value : "" });
+  },
+  "context.selectedGap.services": function(engagement, context, value) {
+    const id = context && context.selectedGap && context.selectedGap.id;
+    if (!engagement.gaps || !engagement.gaps.byId[id]) return _notFound("selectedGap.id", id);
+    let arr;
     if (Array.isArray(value)) {
       arr = value;
     } else if (typeof value === "string") {
-      // accept "migration, deployment, training" or "migration deployment training"
-      arr = value.split(/[\s,]+/).map(function(s) { return s.trim(); }).filter(Boolean);
+      arr = value.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
     } else {
       arr = [];
     }
-    gap.services = normalizeServices(arr);
+    return updateGap(engagement, id, { services: normalizeServices(arr) });
   },
-  "context.selectedGap.driverId": function(session, context, value) {
-    var id = context && context.selectedGap && context.selectedGap.id;
-    var gap = findGapById(session, id);
-    if (!gap) throw new Error("Gap '" + id + "' not found in session");
-    if (value === null || value === "" || value === undefined) delete gap.driverId;
-    else gap.driverId = value;
+  "context.selectedGap.driverId": function(engagement, context, value) {
+    const id = context && context.selectedGap && context.selectedGap.id;
+    if (!engagement.gaps || !engagement.gaps.byId[id]) return _notFound("selectedGap.id", id);
+    // v3 gap.driverId is a v3 driver UUID (or null). Skills typically
+    // emit businessDriverId (catalog ref); resolve here.
+    let v3DriverId = null;
+    if (value && typeof value === "string") {
+      const d = _findDriverByBusinessDriverId(engagement, value);
+      if (d) v3DriverId = d.id;
+      // If the value already looks like a UUID and resolves to an
+      // existing driver, accept it directly.
+      else if (engagement.drivers && engagement.drivers.byId[value]) v3DriverId = value;
+    }
+    return updateGap(engagement, id, { driverId: v3DriverId });
   }
 };
 
-// Is a path eligible for AI write? True iff:
-//   - rooted at 'session.*' (applyProposal does direct setPath), OR
-//   - rooted at 'context.*' AND we have a resolver for it.
+// Path eligibility for AI write. v3-pure mode rejects v2 session.*
+// paths entirely (per SPEC §S40.4 F40.4.6). Only context.* paths with
+// a registered resolver are writable.
 export function isWritablePath(path) {
   if (typeof path !== "string") return false;
-  if (path.indexOf("session.") === 0) return true;
   return Object.prototype.hasOwnProperty.call(WRITE_RESOLVERS, path);
+}
+
+// applyResolver(path, context, value) -- helper for the AI dispatch
+// path. Looks up the resolver, runs it through commitAction so the
+// write goes via the v3 engagementStore. Returns the commitAction
+// result ({ ok, engagement, errors? }).
+export function applyResolver(path, context, value) {
+  const resolver = WRITE_RESOLVERS[path];
+  if (typeof resolver !== "function") {
+    return { ok: false, errors: [{ path, message: "no resolver registered for path", code: "no_resolver" }] };
+  }
+  return commitAction(resolver, context, value);
 }

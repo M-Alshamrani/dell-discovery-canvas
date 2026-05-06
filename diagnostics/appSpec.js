@@ -4900,16 +4900,24 @@ describe("30 · Phase 19d · Output handling + undo stack + per-skill provider",
     assertEqual(root.session.customer.region, "EMEA", "creates missing keys");
   });
 
-  it("OH5 · aiUndoStack: push + undoLast restores prior session state", () => {
+  it("OH5 · aiUndoStack: push + undoLast restores prior v3 engagement (post-7e-5)", () => {
     aiUndoStack._resetForTests();
-    const originalName = liveSession.customer ? liveSession.customer.name : "";
-    // Push a snapshot of the current state, then mutate, then undo.
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement());
+    // Apply a known starting state via commitContextEdit so the engagement
+    // has a name to compare against.
+    commitContextEdit({ customer: { name: "Original Name" } });
+    const startEng = getActiveEngagement();
+    const startName = startEng.customer.name;
+    // Snapshot, mutate, undo, expect restore.
     aiUndoStack.push("test snapshot");
     assertEqual(aiUndoStack.canUndo(), true, "canUndo true after push");
-    liveSession.customer.name = "Temporarily changed";
+    commitContextEdit({ customer: { name: "Temporarily changed" } });
+    assertEqual(getActiveEngagement().customer.name, "Temporarily changed",
+      "name mutated post-commit");
     aiUndoStack.undoLast();
-    assertEqual(liveSession.customer.name, originalName,
-      "undoLast must restore prior state");
+    assertEqual(getActiveEngagement().customer.name, startName,
+      "undoLast must restore prior v3 engagement");
     assertEqual(aiUndoStack.canUndo(), false, "stack empty after undo");
   });
 
@@ -5004,14 +5012,15 @@ describe("30 · Phase 19d · Output handling + undo stack + per-skill provider",
       "Gaps tab must expose ≥ 5 writable fields (description, urgency, phase, notes, ...)");
   });
 
-  it("OH12 · applyProposal via resolver mutates the target gap found by context id", () => {
-    // Set up a clean session with one gap, then apply a context.* proposal.
+  it("OH12 · applyProposal via resolver mutates the target gap found by context id (v3-pure post-7e-5)", () => {
     aiUndoStack._resetForTests();
-    replaceSession({
-      customer: { name: "Acme", vertical: "Financial Services", drivers: [] },
-      instances: [],
-      gaps: [{ id: "g-ai1", description: "old desc", urgency: "Low", phase: "later" }]
-    });
+    // v3-pure: install a session with one gap so the engagement has a
+    // matching gap UUID. The fixture rewrites the v2 gap.id in place
+    // to the v3 UUID; the test passes that UUID as selectedGap.id.
+    const s = createEmptySession();
+    s.gaps = [{ id: "g-ai1", description: "old desc", layerId: "compute", urgency: "Low", phase: "later", gapType: "replace", status: "open", reviewed: true }];
+    _installSessionAsV3Engagement(s);
+    const v3GapId = s.gaps[0].id;   // post-install: v3 UUID
     const proposal = {
       path:  "context.selectedGap.urgency",
       label: "Selected gap urgency",
@@ -5019,23 +5028,23 @@ describe("30 · Phase 19d · Output handling + undo stack + per-skill provider",
       before: "Low",
       after:  "High"
     };
-    applyProposal(proposal, { context: { selectedGap: { id: "g-ai1" } } });
-    assertEqual(liveSession.gaps[0].urgency, "High", "resolver mutated the gap by id");
+    applyProposal(proposal, { context: { selectedGap: { id: v3GapId } } });
+    const eng = getActiveEngagement();
+    assertEqual(eng.gaps.byId[v3GapId].urgency, "High", "resolver mutated the v3 gap by id");
     assertEqual(aiUndoStack.canUndo(), true, "apply pushed an undo snapshot");
     aiUndoStack._resetForTests();
   });
 
-  it("OH13 · applyProposal rejects unknown-writable paths (no resolver, not session.*)", () => {
+  it("OH13 · applyProposal rejects session.* writes (v3-pure SPEC §S40 F40.4.6) and unknown context.* paths", () => {
     throws(() => applyProposal({
       path: "context.selectedSomething.foo",
       after: "x"
     }), "unknown context path without a resolver must throw");
-    // session.* is always allowed (direct write).
-    replaceSession({ customer: { name: "X", drivers: [] }, instances: [], gaps: [] });
-    doesNotThrow(() => applyProposal({
+    // v3-pure: session.* paths are RETIRED. applyProposal MUST throw.
+    throws(() => applyProposal({
       path: "session.customer.region",
       after: "EMEA"
-    }), "session.* writes always permitted");
+    }), "session.* paths are retired in v3-pure mode and MUST throw");
   });
 
   it("OH14 · Legacy outputMode migrates to applyPolicy on load (back-compat)", () => {
@@ -6746,32 +6755,32 @@ describe("43 · Phase 19l · v2.4.12 services scope + pre-flight regression fixe
       "P2 — closed gap's services must NOT bleed into project rollup");
   });
 
-  it("SVC14 · P2 · applyProposal + undoLast preserves services byte-identically", () => {
+  it("SVC14 · P2 · applyProposal + undoLast preserves v3 engagement byte-identically (post-7e-5)", () => {
     aiUndoStack._resetForTests();
-    replaceSession({
-      sessionId: "sess-svc14", isDemo: false,
-      customer: { name: "Svc14 Co", vertical: "Enterprise", region: "EMEA",
-                  drivers: [{ id: "cyber_resilience", priority: "High", outcomes: "" }] },
-      sessionMeta: { date: "2026-04-26", presalesOwner: "", status: "Draft", version: "2.0" },
-      instances: [],
-      gaps: [{ id: "g-svc14", description: "round-trip probe", layerId: "compute",
-               affectedLayers: ["compute"], affectedEnvironments: [],
-               urgency: "Medium", phase: "now", gapType: "replace",
-               relatedCurrentInstanceIds: ["c-x"], relatedDesiredInstanceIds: ["d-x"],
-               services: ["migration"],
-               status: "open", reviewed: true }]
-    });
-    var before = JSON.stringify(session);
+    var s = createEmptySession();
+    s.customer = { name: "Svc14 Co", vertical: "Enterprise", region: "EMEA",
+                   drivers: [{ id: "cyber_resilience", priority: "High", outcomes: "" }] };
+    s.environments = [{ id: "coreDc", hidden: false }];
+    s.gaps = [{ id: "g-svc14", description: "round-trip probe", layerId: "compute",
+                affectedLayers: ["compute"], affectedEnvironments: ["coreDc"],
+                urgency: "Medium", phase: "now", gapType: "replace",
+                relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
+                services: ["migration"],
+                status: "open", reviewed: true }];
+    _installSessionAsV3Engagement(s);
+    var v3GapId = s.gaps[0].id;
+    var beforeEng = JSON.stringify(getActiveEngagement());
     applyProposal(
       { path: "context.selectedGap.services", label: "Gap services", kind: "array",
         before: ["migration"], after: ["migration", "deployment", "training"] },
-      { label: "apply for SVC14", context: { selectedGap: { id: "g-svc14" } } }
+      { label: "apply for SVC14", context: { selectedGap: { id: v3GapId } } }
     );
-    assertEqual(session.gaps[0].services.length, 3, "apply mutated services array");
+    var engMid = getActiveEngagement();
+    assertEqual(engMid.gaps.byId[v3GapId].services.length, 3, "apply mutated v3 services array");
     aiUndoStack.undoLast();
-    var after = JSON.stringify(session);
-    assertEqual(after, before,
-      "P2 — apply + undoLast on services must return session to byte-identical JSON");
+    var afterEng = JSON.stringify(getActiveEngagement());
+    assertEqual(afterEng, beforeEng,
+      "P2 -- apply + undoLast on services must return v3 engagement to byte-identical JSON");
     aiUndoStack._resetForTests();
   });
 
@@ -15005,11 +15014,18 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 
       // Live DOM: open chat, find Clear button, simulate click, assert
       // overlay stays open + confirm pill cluster appears.
+      // rc.7 / 7e-5: bumped wait from 50ms -> 250ms because Suite 13/14
+      // fixture installs registered v3->v2 test mirrors that increase
+      // engagementStore _subs notification fan-out per emit. The chat
+      // overlay's open animation + transcript rehydrate now lands a
+      // few frames later under that load. 250ms is safely under the
+      // overall test budget and matches similar overlay timing in
+      // V-OVERLAY-STACK suites.
       _resetOverlayForTests();
       closeOverlay();
       const mod = await import("../ui/views/CanvasChatOverlay.js");
       mod.openCanvasChat();
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise(r => setTimeout(r, 250));
       const clearBtn = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-clear-btn");
       assert(clearBtn, "V-CLEAR-CHAT-PERSISTS: Clear button must exist in chat header");
       clearBtn.click();
@@ -16901,7 +16917,16 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 // release. Import at bottom to avoid circular-dependency risk with the
 // many modules demoSpec touches.
 import { registerDemoSuite } from "./demoSpec.js";
-registerDemoSuite({ describe: describe, it: it, assert: assert, assertEqual: assertEqual });
+registerDemoSuite({
+  describe: describe, it: it, assert: assert, assertEqual: assertEqual,
+  // rc.7 / 7e-5 - share the v3 fixture helper so demoSpec DS13/14/16/17
+  // can install v2-shape sessions into the v3 engagement before
+  // applyProposal lookups (the v3 resolvers walk eng.gaps.byId by UUID).
+  _installSessionAsV3Engagement: _installSessionAsV3Engagement,
+  _resetEngagementStoreForTests: _resetEngagementStoreForTests,
+  getActiveEngagement: getActiveEngagement,
+  setActiveEngagement: setActiveEngagement
+});
 
 // v2.4.10.1 · isolation guard. Wrap the test pass in runIsolated so
 // any test that mutates localStorage (replaceSession + applyProposal,

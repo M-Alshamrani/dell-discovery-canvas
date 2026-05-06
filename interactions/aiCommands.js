@@ -1,12 +1,18 @@
-// interactions/aiCommands.js — Phase 19d / v2.4.4
+// interactions/aiCommands.js -- v3-pure (rc.7 / 7e-5).
 //
-// Apply AI proposals to session state. Every mutation MUST go through
-// here so the undo stack gets a snapshot and the outputSchema allowlist
-// is enforced. Direct session.* writes from UI code are out of bounds.
+// Per SPEC §S40 (v3-pure architecture). AI proposals dispatch through
+// state/adapter.js + core/bindingResolvers.js applyResolver, which
+// routes the write through commitAction so the v3 engagementStore
+// commits + emits + persists atomically. The undo stack snapshots the
+// v3 engagement object before each write; undoLast restores via
+// setActiveEngagement.
+//
+// v2 paths (session.*) are RETIRED — bindingResolvers.isWritablePath
+// rejects them per F40.4.6. Only context.* paths are writable.
 
-import { session, saveToLocalStorage } from "../state/sessionStore.js";
 import * as undoStack from "../state/aiUndoStack.js";
-import { WRITE_RESOLVERS, isWritablePath } from "../core/bindingResolvers.js";
+import { applyResolver, isWritablePath } from "../core/bindingResolvers.js";
+import { getActiveEngagement } from "../state/engagementStore.js";
 import { emitSessionChanged } from "../core/sessionEvents.js";
 
 // Parse the AI response for a json-scalars skill. Tolerates code-fences
@@ -38,7 +44,11 @@ export function parseProposals(responseText, outputSchema, context) {
   var allowedPaths = {};
   (outputSchema || []).forEach(function(e) { allowedPaths[e.path] = e; });
 
-  var scope = { session: session, context: context || {} };
+  // v3-pure: scope no longer carries `session`; `context.*` is the
+  // canonical AI write namespace. session.* before-value lookups
+  // resolve to undefined (acceptable: those paths are non-writable
+  // post-7e-5 per F40.4.6).
+  var scope = { context: context || {} };
   var proposals = [];
   Object.keys(parsed).forEach(function(key) {
     var schemaEntry = allowedPaths[key];
@@ -54,40 +64,45 @@ export function parseProposals(responseText, outputSchema, context) {
   return { ok: true, proposals: proposals };
 }
 
-// Apply a single proposal to session state. Pushes an undo snapshot
-// BEFORE mutation so a single "↶ Undo" button rolls back one click.
+// Apply a single proposal to v3 engagement state (rc.7 / 7e-5 +).
+// Pushes a v3 engagement snapshot BEFORE the commit so a single
+// "↶ Undo" button rolls back one click. The dispatch routes through
+// core/bindingResolvers.applyResolver which wraps the action in
+// commitAction -- engagementStore commits + emits + persists in one
+// step. emitSessionChanged is fired explicitly with reason "ai-apply"
+// AFTER the commit so v2-shape listeners (those that care about the
+// reason label, not the underlying mechanism) keep observing AI work
+// distinctly from user work.
 //
-// Dispatch:
-//   - `session.*` paths → direct setPathFromRoot write
-//   - `context.*` paths → lookup resolver in WRITE_RESOLVERS, call with
-//     (session, context, value). Resolver finds the target by id and
-//     mutates session state in place.
-//   - Anything else → reject (path not declared writable).
+// Path eligibility: only context.* paths registered in WRITE_RESOLVERS
+// are writable. session.* paths are RETIRED (F40.4.6). Anything else
+// throws.
 export function applyProposal(proposal, opts) {
   opts = opts || {};
   var label = opts.label || ("AI: " + (proposal.label || proposal.path));
   if (!isWritablePath(proposal.path)) {
     throw new Error("applyProposal: path '" + proposal.path + "' is not writable (missing WRITE_RESOLVERS entry)");
   }
+  // Snapshot the pre-commit engagement so undoLast restores cleanly.
   undoStack.push(label);
-  try {
-    if (proposal.path.indexOf("session.") === 0) {
-      setPathFromRoot({ session: session }, proposal.path, proposal.after);
-    } else {
-      var resolver = WRITE_RESOLVERS[proposal.path];
-      resolver(session, (opts && opts.context) || {}, proposal.after);
-    }
-    saveToLocalStorage();
-    emitSessionChanged("ai-apply", label);
-  } catch (e) {
-    // Roll back the snapshot we just pushed since nothing actually
-    // changed. Leaving it would create a no-op undo entry.
+  var ctx = (opts && opts.context) || {};
+  var result = applyResolver(proposal.path, ctx, proposal.after);
+  if (result && result.ok === false) {
+    // No state change actually landed; pop the no-op snapshot to keep
+    // the undo stack honest.
     undoStack.undoLast();
-    throw e;
+    var msg = "applyProposal: resolver rejected: ";
+    if (result.errors && result.errors[0]) msg += result.errors[0].message;
+    else if (result.error) msg += result.error;
+    throw new Error(msg);
   }
+  emitSessionChanged("ai-apply", label);
 }
 
-// Apply every proposal in a list under one undo entry.
+// Apply every proposal in a list under one undo entry. Each proposal
+// runs through applyResolver -> commitAction so each is its own atomic
+// engagement update; the bookend snapshot covers the pre-batch state
+// so undoLast restores the entire batch in one click.
 export function applyAllProposals(proposals, opts) {
   opts = opts || {};
   var context = (opts && opts.context) || {};
@@ -96,14 +111,16 @@ export function applyAllProposals(proposals, opts) {
   try {
     proposals.forEach(function(p) {
       if (!isWritablePath(p.path)) return;
-      if (p.path.indexOf("session.") === 0) {
-        setPathFromRoot({ session: session }, p.path, p.after);
-      } else {
-        var resolver = WRITE_RESOLVERS[p.path];
-        if (resolver) resolver(session, context, p.after);
+      var r = applyResolver(p.path, context, p.after);
+      if (r && r.ok === false) {
+        // Surface validation errors but don't throw -- batch apply
+        // tolerates per-proposal failures (the batch-bookend snapshot
+        // still covers any partial commits the rest of the loop made).
+        if (typeof console !== "undefined" && console.warn) {
+          console.warn("[applyAllProposals] resolver rejected proposal", p.path, r.errors);
+        }
       }
     });
-    saveToLocalStorage();
     emitSessionChanged("ai-apply", label);
   } catch (e) {
     undoStack.undoLast();

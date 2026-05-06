@@ -1,18 +1,23 @@
-// state/aiUndoStack.js — Phase 19e / v2.4.5
+// state/aiUndoStack.js -- v3-pure undo stack (rc.7 / 7e-5).
 //
-// Persistent undo stack for AI-applied mutations. Every apply-on-confirm
-// flow pushes a labelled snapshot BEFORE mutating the session. The
-// header's "↶ Undo last AI change" chip calls undoLast() to roll back.
+// Per SPEC §S40 (v3-pure architecture). Snapshots the v3 engagement
+// object before every AI mutation; undo restores by setActiveEngagement.
+// The engagement is immutable per commit (every commitAction returns a
+// new reference per §S4 action contract), so a snapshot is just a
+// retained reference + JSON round-trip for safety against external
+// mutation.
 //
-// v2.4.5 changes vs v2.4.4:
-//   - Persisted to localStorage under `ai_undo_v1` (survives page reload).
-//   - Bounded to MAX_DEPTH=10 entries; oldest dropped on overflow.
-//   - Cleared on resetSession / resetToDemo (sessionStore calls clear()).
-//   - Emits `session-changed` on undoLast so views re-render cleanly.
-//   - undoAll() reverses every stacked entry and leaves the session at
-//     the oldest snapshot (one-click "undo-all" for the header tooltip).
+// The "↶ Undo last AI change" header chip calls undoLast() to roll
+// back. Stack persists to localStorage under `ai_undo_v1` (carried
+// over from v2 storage key for continuity; no migration concern since
+// stale snapshots from v2 fail v3 EngagementSchema validation on
+// restore and are silently dropped).
+//
+// Bounded to MAX_DEPTH=10 entries; oldest dropped on overflow.
+// Cleared on resetSession / engagement reset.
 
-import { session, replaceSession, saveToLocalStorage } from "./sessionStore.js";
+import { getActiveEngagement, setActiveEngagement } from "./engagementStore.js";
+import { EngagementSchema } from "../schema/engagement.js";
 import { emitSessionChanged } from "../core/sessionEvents.js";
 
 var MAX_DEPTH   = 10;
@@ -21,7 +26,6 @@ var STORAGE_KEY = "ai_undo_v1";
 var stack = loadFromStorage();   // [{ label, snapshot, timestamp }]
 var listeners = [];
 
-// Subscribe — called after every push/undo. UI re-renders the chip.
 export function onUndoChange(fn) {
   listeners.push(fn);
   return function unsubscribe() { listeners = listeners.filter(function(l) { return l !== fn; }); };
@@ -29,14 +33,18 @@ export function onUndoChange(fn) {
 
 function notify() { listeners.forEach(function(fn) { try { fn(); } catch (e) { /* don't let UI errors break the stack */ } }); }
 
+// push(label, optionalSnapshot) -- captures the CURRENT engagement
+// (immutable reference) before an AI commit. Caller MUST push BEFORE
+// the commit, so undo restores the pre-commit state. The optional
+// argument lets tests inject a specific snapshot for deterministic
+// rollback (mirrors v2 contract).
 export function push(label, optionalSnapshot) {
-  var snap = optionalSnapshot || cloneSession();
+  var snap = optionalSnapshot || cloneEngagement();
   stack.push({
     label:     typeof label === "string" ? label : "AI change",
     snapshot:  snap,
     timestamp: Date.now()
   });
-  // Drop oldest when over cap.
   while (stack.length > MAX_DEPTH) stack.shift();
   persistToStorage();
   notify();
@@ -46,29 +54,41 @@ export function undoLast() {
   if (stack.length === 0) return null;
   var entry = stack.pop();
   try {
-    replaceSession(entry.snapshot);
-    saveToLocalStorage();
+    if (entry.snapshot) {
+      // Validate snapshot before installing — guards against legacy v2
+      // snapshots in localStorage from a pre-7e-5 session.
+      var validation = EngagementSchema.safeParse(entry.snapshot);
+      if (validation.success) {
+        setActiveEngagement(validation.data);
+      } else {
+        console.warn("[aiUndoStack] undoLast: snapshot schema-invalid; skipping restore");
+      }
+    }
     persistToStorage();
     emitSessionChanged("ai-undo", entry.label || "");
   } catch (e) {
-    // If replaceSession isn't available, fall back to a shallow merge.
-    // Better to leave a trace than silently no-op.
     console.error("[aiUndoStack] undoLast failed:", e);
   }
   notify();
   return entry;
 }
 
-// v2.4.5 — reverse every stacked entry in one shot. Restores the
-// snapshot at the *bottom* of the stack (the oldest = state before any
-// AI changes tracked so far), then clears.
+// Reverse every stacked entry in one shot. Restores the snapshot at
+// the *bottom* of the stack (the oldest = state before any AI changes
+// tracked so far), then clears.
 export function undoAll() {
   if (stack.length === 0) return 0;
   var count = stack.length;
   var oldest = stack[0];
   try {
-    replaceSession(oldest.snapshot);
-    saveToLocalStorage();
+    if (oldest.snapshot) {
+      var validation = EngagementSchema.safeParse(oldest.snapshot);
+      if (validation.success) {
+        setActiveEngagement(validation.data);
+      } else {
+        console.warn("[aiUndoStack] undoAll: oldest snapshot schema-invalid; skipping restore");
+      }
+    }
     stack = [];
     persistToStorage();
     emitSessionChanged("ai-undo", "Undo all (" + count + ")");
@@ -88,17 +108,11 @@ export function peekLabel() {
 
 export function depth() { return stack.length; }
 
-// v2.4.5 — label list, newest first. Used by the header tooltip to show
-// "what will be rolled back" in order.
 export function recentLabels(maxCount) {
   var limit = typeof maxCount === "number" ? maxCount : stack.length;
   return stack.slice(-limit).reverse().map(function(e) { return e.label || "AI change"; });
 }
 
-// v2.4.5 — drop the entire stack. Called from sessionStore.resetSession
-// and sessionStore.resetToDemo so the undo history doesn't survive a
-// deliberate "start over" action (those reset flows themselves are
-// undoable via Load demo / Export before reset — not via this chip).
 export function clear() {
   if (stack.length === 0) return;
   stack = [];
@@ -106,25 +120,28 @@ export function clear() {
   notify();
 }
 
-// Exposed for tests.
 export function _resetForTests() { stack = []; persistToStorage(); notify(); }
 
-function cloneSession() {
-  // Session is pure JSON per the project's architecture invariant, so
-  // structured-clone-equivalent via JSON round-trip is safe.
-  try { return JSON.parse(JSON.stringify(session)); }
-  catch (e) { return {}; }
+function cloneEngagement() {
+  // The engagement object is immutable per §S4 (every commitAction
+  // returns a new reference), so we COULD retain the reference
+  // directly. We JSON round-trip for two reasons:
+  //   (a) defensive against any external code that mutates a returned
+  //       engagement (forbidden by F19.5.5 but cheap to harden);
+  //   (b) the snapshot persists to localStorage as JSON anyway —
+  //       round-tripping at push time matches the persistence shape.
+  try {
+    var eng = getActiveEngagement();
+    return eng ? JSON.parse(JSON.stringify(eng)) : null;
+  } catch (e) { return null; }
 }
 
 function persistToStorage() {
   try {
-    // Guard against non-browser contexts (tests may run headless in the
-    // future). Typeof check avoids hard failure.
     if (typeof localStorage === "undefined") return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stack));
   } catch (e) {
-    // Quota exceeded or disabled — best-effort; undo still works
-    // in-memory until reload.
+    /* quota exceeded / disabled — best-effort; in-memory still works */
   }
 }
 
@@ -135,7 +152,6 @@ function loadFromStorage() {
     if (!raw) return [];
     var parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    // Trim to MAX_DEPTH in case a prior version wrote more.
     while (parsed.length > MAX_DEPTH) parsed.shift();
     return parsed.filter(function(e) {
       return e && typeof e === "object" && e.snapshot && typeof e.snapshot === "object";
