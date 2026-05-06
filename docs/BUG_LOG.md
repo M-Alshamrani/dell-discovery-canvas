@@ -1439,6 +1439,61 @@ Invariant additions touch schema + integrity sweep + UI surface (warning chips).
 
 ---
 
+## BUG-041 · AI Assist provider popover renders against stale config snapshot — every click opens Settings even after the user added the key (CLOSED — rc.7 / 7e-8c'-fix3)
+
+**Status**: CLOSED · Reported 2026-05-06 late-evening · v3.0.0-rc.7-dev · Closed in commit (this arc)
+**Reporter**: User ("why the ai assest is fucked now, everytime i select an llm provider it takes me to the configurations page")
+**Severity**: High (made provider switching unusable)
+**Regression**: No — the closure-capture pattern was already there in `paintProviderPills` since rc.4-dev / Arc 2 (commit 68b98c4); only became visible after the rc.5 BUG-028 fix (`36a87fe`) routed the "needs key" branch through `sidePanel: true` Settings (the previous full-replace `closeOverlay()` call destroyed the chat overlay entirely on each Settings open, which masked the staleness because the overlay was rebuilt fresh next time).
+
+### Repro
+1. Open AI Assist (chat overlay paints provider pill + popover with config snapshot).
+2. Click an unconfigured provider in the popover (e.g. Anthropic with empty `apiKey`). Side-panel Settings opens for key entry per R33.3.
+3. Enter the API key. Save.
+4. Close the side-panel Settings (chat stays open, only the right-pane Settings collapses per BUG-028 / R36.7).
+5. Click the provider pill again. Popover re-shows.
+6. Click the now-configured provider expecting it to switch.
+
+### Expected
+- Popover shows Anthropic as "Ready" (the key is now saved).
+- Click switches `activeProvider` to Anthropic; pill repaints; no Settings re-open.
+
+### Actual
+- Popover still shows Anthropic as "Needs key" (stale).
+- Click re-opens side-panel Settings instead of switching. User is stuck in a loop where every click on the not-yet-active provider opens Settings, even after the key is saved.
+
+### Suspected root cause
+`ui/views/CanvasChatOverlay.js paintProviderPills(slot)` builds the popover ONCE when the chat overlay opens. The per-row `isActive` + `ready` values + the `is-active`/`is-ready`/`is-warn` classes + the meta text ("Ready"/"Needs key"/"Active") are all snapshotted from `aiCfg = loadAiConfig()` at the time of build. The row's click handler **closes over that snapshot**:
+
+```js
+const ready = isProviderReady(aiCfg, providerKey);
+row.addEventListener("click", function() {
+  if (!isActive && ready) { /* switch */ }
+  else { openSettingsModal({ section: "providers", focusProvider: providerKey, sidePanel: true }); }
+});
+```
+
+When the user saves a key in side-panel Settings, `saveAiConfig` updates localStorage but does NOT trigger any repaint of the popover. The next click handler still sees the old `ready=false` from the build-time closure → routes to Settings every time.
+
+### Fix plan
+Two halves, both required:
+
+1. **Click-time freshness** — re-read config inside the click handler and re-evaluate `isActive` + `ready` against the fresh state before deciding whether to switch or open Settings. Closes the loop bug directly.
+
+2. **Open-time visual refresh** — in `showPopover()`, walk `popover.querySelectorAll('.canvas-chat-provider-row')` and refresh each row's class + meta text against fresh config. Without this, the user sees "Needs key" on the just-configured provider until they close + reopen the chat overlay (cosmetic but confusing).
+
+Both implemented via a shared `refreshRow(row, freshCfg)` helper inside `paintProviderPills`.
+
+### Regression test (V-FLOW-PROVIDER-POPOVER-FRESH-1..3 in §T33)
+- **-1**: Source-grep — `paintProviderPills` MUST contain `refreshRow` definition. (Negative-assert that the build-time-only snapshot pattern doesn't return.)
+- **-2**: Source-grep — the row click handler MUST call `loadAiConfig()` inside the listener, not rely on the outer closure. (Catches reintroduction of the stale-`ready` capture.)
+- **-3**: Source-grep — `showPopover` MUST call something that walks `.canvas-chat-provider-row` elements and updates them. (Catches a future regression where someone removes the open-time refresh "for performance" without fixing the click-time path first.)
+
+### Memory anchor
+This is the third "rc.7 / 7e-8c'" follow-up bug surfaced by the user catching real-time behavior the test suite missed. Per `feedback_test_what_to_test.md`: "element exists" tests don't catch UX regressions — we need to assert that clickable-looking elements actually do something. The new V-FLOW-PROVIDER-POPOVER tests assert the freshness contract at the source level since DOM-level interaction tests would need to drive a saveAiConfig event mid-test, which is fragile.
+
+---
+
 ## BUG-NNN · One-line headline
 
 **Status**: OPEN · Reported YYYY-MM-DD · vX.Y.Z · Scheduled <bucket>

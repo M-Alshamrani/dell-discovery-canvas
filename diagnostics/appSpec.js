@@ -14784,6 +14784,57 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         _resetOverlayForTests();
       });
 
+      // -----------------------------------------------------------------
+      // BUG-041 regression tests (rc.7 / 7e-8c'-fix3 · 2026-05-06).
+      // The provider popover used to snapshot ready/active state at
+      // chat-overlay-open time, capturing stale `ready` in the row's
+      // click closure. After the user added a key in side-panel Settings,
+      // the popover still showed "Needs key" + the click still routed
+      // to Settings. Fix: refresh row state at popover-open time + at
+      // click-decide time, both reading fresh loadAiConfig().
+      // -----------------------------------------------------------------
+
+      it("V-PILLS-5 · BUG-041 regression: paintProviderPills defines a refreshRow helper that re-evaluates row state from a fresh config (catches reintroduction of build-time-only snapshot)", async () => {
+        const overlaySrc = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
+        // Source-grep: refreshRow function defined inside paintProviderPills.
+        assert(/function\s+refreshRow\s*\(/.test(overlaySrc),
+          "V-PILLS-5: paintProviderPills MUST define a refreshRow helper that re-evaluates is-active / is-ready / meta text from a fresh config (build-time-only snapshot was the BUG-041 root cause)");
+        // refreshRow MUST update both the row class AND the meta text.
+        assert(/refreshRow\([^)]*\)[\s\S]{0,800}row\.className\s*=/.test(overlaySrc) ||
+               /function\s+refreshRow[\s\S]{0,800}row\.className\s*=/.test(overlaySrc),
+          "V-PILLS-5: refreshRow MUST set row.className from the fresh isActive/ready computation");
+        assert(/function\s+refreshRow[\s\S]{0,800}canvas-chat-provider-row-meta/.test(overlaySrc),
+          "V-PILLS-5: refreshRow MUST update the .canvas-chat-provider-row-meta text from the fresh state");
+      });
+
+      it("V-PILLS-6 · BUG-041 regression: row click handler re-reads loadAiConfig() before deciding switch-vs-Settings (catches stale-`ready` capture in the row closure)", async () => {
+        const overlaySrc = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
+        // Inside the click handler, locate the segment that runs the
+        // switch-vs-Settings decision. It MUST call loadAiConfig() inside
+        // the listener body, not rely on the outer-scope aiCfg/ready.
+        const clickHandlerMatch = overlaySrc.match(/row\.addEventListener\(\s*["']click["']\s*,\s*function\s*\([^)]*\)\s*\{([\s\S]+?)\}\s*\)\s*;/);
+        assert(clickHandlerMatch,
+          "V-PILLS-6: row click handler must be present in CanvasChatOverlay source");
+        const clickBody = clickHandlerMatch[1];
+        assert(/loadAiConfig\(\)/.test(clickBody),
+          "V-PILLS-6: row click handler MUST call loadAiConfig() inside the listener body so the switch-vs-Settings decision sees fresh state (BUG-041 root cause was the closure-captured stale `ready`)");
+        assert(/isProviderReady\s*\(/.test(clickBody),
+          "V-PILLS-6: row click handler MUST re-call isProviderReady against the fresh config inside the listener body");
+      });
+
+      it("V-PILLS-7 · BUG-041 regression: showPopover refreshes every row's state from fresh config when the popover opens (catches a future drop of the open-time refresh)", async () => {
+        const overlaySrc = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
+        // showPopover() body must walk the row collection + call refreshRow.
+        const showPopoverMatch = overlaySrc.match(/function\s+showPopover\s*\(\s*\)\s*\{([\s\S]+?)\n\s{2}\}/);
+        assert(showPopoverMatch,
+          "V-PILLS-7: showPopover function must be defined in paintProviderPills");
+        const body = showPopoverMatch[1];
+        assert(/canvas-chat-provider-row/.test(body) && /refreshRow\s*\(/.test(body),
+          "V-PILLS-7: showPopover MUST walk .canvas-chat-provider-row elements and call refreshRow on each so the popover reflects the latest saved state every time it opens (BUG-041: visual stayed stuck on 'Needs key' after user saved a key in side-panel Settings)");
+        assert(/loadAiConfig\(\)/.test(body),
+          "V-PILLS-7: showPopover MUST call loadAiConfig() to obtain fresh config before refreshing rows");
+      });
+
       it("V-FOOTER-CRUMB-1 · Footer breadcrumb updates on chat onComplete to display latest-turn provenance in the form '<provider> · <model> · <N> tokens · <ms>ms' (per R33.6)", async () => {
         _resetOverlayForTests();
         closeOverlay();

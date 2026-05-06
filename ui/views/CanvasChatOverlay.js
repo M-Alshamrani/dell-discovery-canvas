@@ -742,14 +742,38 @@ function paintProviderPills(slot) {
   popover.setAttribute("role", "menu");
   popover.style.display = "none";
 
-  for (const providerKey of PROVIDERS) {
-    const isActive = providerKey === activeKey;
-    const ready    = isProviderReady(aiCfg, providerKey);
-    const row = document.createElement("button");
-    row.type = "button";
+  // BUG-036 fix (rc.7 / 7e-8c'-fix3): the popover's row classes + meta
+  // text + click handler USED to snapshot `isActive` + `ready` at row-
+  // BUILD time (i.e. once when the chat overlay opens). When the user
+  // entered a key for a provider in side-panel Settings and came back
+  // to chat, the popover still showed "Needs key" + the click still
+  // routed to Settings (because the stale snapshot said ready=false),
+  // creating an infinite loop where every click on an unlit provider
+  // opened Settings even after the key was saved. Fix: rebuild row
+  // state at popover-OPEN time + re-read fresh config at click-DECIDE
+  // time. Both halves matter: the open-time refresh updates the visual
+  // (so the user sees "Ready" once the key lands), and the click-time
+  // refresh ensures the routing decision uses the same fresh state.
+
+  // Refresh one row's class + meta text against a fresh config.
+  function refreshRow(row, freshCfg) {
+    const providerKey = row.getAttribute("data-provider-key");
+    const isActive    = providerKey === ((freshCfg && freshCfg.activeProvider) || "local");
+    const ready       = isProviderReady(freshCfg, providerKey);
     row.className = "canvas-chat-provider-row" +
       (isActive ? " is-active" : "") +
       (ready ? " is-ready" : " is-warn");
+    const meta = row.querySelector(".canvas-chat-provider-row-meta");
+    if (meta) {
+      meta.textContent = isActive
+        ? "Active"
+        : (ready ? "Ready" : "Needs key");
+    }
+  }
+
+  for (const providerKey of PROVIDERS) {
+    const row = document.createElement("button");
+    row.type = "button";
     row.setAttribute("data-provider-key", providerKey);
     row.setAttribute("role", "menuitem");
 
@@ -764,21 +788,26 @@ function paintProviderPills(slot) {
 
     const rowMeta = document.createElement("span");
     rowMeta.className = "canvas-chat-provider-row-meta";
-    rowMeta.textContent = isActive
-      ? "Active"
-      : (ready ? "Ready" : "Needs key");
     row.appendChild(rowMeta);
+
+    // Initial paint with the snapshot config; refreshed on popover open.
+    refreshRow(row, aiCfg);
 
     row.addEventListener("click", function() {
       // Per R33.3:
       //   inactive + ready -> switch active provider, repaint
       //   inactive + warn  -> open Settings (key entry)
       //   active           -> open Settings (key management)
+      // BUG-036 fix: re-read fresh config NOW so the decision uses the
+      // latest saved state, not whatever was true when the row was built.
       hidePopover();
-      if (!isActive && ready) {
-        const nextCfg = loadAiConfig();
-        nextCfg.activeProvider = providerKey;
-        saveAiConfig(nextCfg);
+      const freshCfg     = loadAiConfig();
+      const freshActive  = (freshCfg && freshCfg.activeProvider) || "local";
+      const freshIsActive = providerKey === freshActive;
+      const freshReady    = isProviderReady(freshCfg, providerKey);
+      if (!freshIsActive && freshReady) {
+        freshCfg.activeProvider = providerKey;
+        saveAiConfig(freshCfg);
         const headSlot = document.querySelector(".overlay[data-kind='canvas-chat'] .overlay-head-extras");
         if (headSlot) injectHeaderExtras();
         return;
@@ -796,6 +825,14 @@ function paintProviderPills(slot) {
   wrap.appendChild(popover);
 
   function showPopover() {
+    // BUG-036 fix: refresh every row's ready/active state from fresh
+    // config so the user sees the latest "Ready"/"Needs key" labels
+    // each time they open the popover (covers the "added a key in
+    // side-panel Settings, came back to chat" flow).
+    const freshCfg = loadAiConfig();
+    popover.querySelectorAll(".canvas-chat-provider-row").forEach(function(r) {
+      refreshRow(r, freshCfg);
+    });
     popover.style.display = "";
     pill.setAttribute("aria-expanded", "true");
     document.addEventListener("click", outsideClickHandler, true);
