@@ -1036,6 +1036,40 @@ Identify the toast call site; bind the message to the actual level applied. Add 
 
 ## BUG-032 · Gaps tab desired-state asset linking button grayed out / not clickable (regression of an older fix)
 
+**Status**: DEFERRED to rc.6.1 / rc.7 · Investigated 2026-05-05 / 6i; could not reproduce against the v3 demo session on this dev machine. Code path inspected end-to-end; no conditional disable predicate found. Needs user hands-on repro to identify the specific greyed-out element + the workshop preconditions that triggered it. · v3.0.0-rc.5 → rc.6 (deferred)
+
+### Investigation note (2026-05-05 · 6i)
+
+**What I checked**:
+
+- `ui/views/GapsEditView.js` lines 942-1010: the "Linked instances section" renders both Current and Desired sub-sections symmetrically. The desired-state add button is created at line 995 as `mkt("button", "btn-ghost-sm", "+ Link desired instance")` with a click handler that calls `openLinkPicker("desired", gap, ...)`. NO conditional disable predicate, NO conditional class application.
+- `ui/views/GapsEditView.js openLinkPicker(stateFilter, ...)` at line 1077: the picker filters `session.instances` by `i.state === stateFilter`. If there are no unlinked desired instances, the picker shows the "No unlinked desired instances available" message instead of the candidate list — but the button itself still opens the picker (not grayed).
+- `styles.css` `.btn-ghost-sm` (line 2239): standard dashed-border ghost button with Dell-blue color + hover. NO greyed-out state.
+- `.link-picker-item` (line 2235): cursor pointer, hover background. NO greyed-out state.
+- Source-grep for any `addDesBtn.disabled` / `link.*disabled` / `btn-ghost-sm.*disabled` pattern: NO matches.
+
+**Why I couldn't reproduce on this machine**:
+
+The v3-native demo (`core/demoEngagement.js loadDemo()`) populates the v3 `engagementStore` but NOT the v2 `session` object. The Gaps view reads from v2 `session.instances` and `session.gaps`. On a fresh `docker compose up` + "Load demo" click, the v2 session has 0 gaps + 0 instances — so the gap-edit panel never renders the linked-instances section to begin with. The bug's preconditions (≥1 gap selected + the link-button render) require a populated v2 session, which the workshop user's machine had (presumably from earlier .canvas open or manual entry).
+
+**Possible root causes (per BUG_LOG hypotheses + investigation)**:
+
+1. (most likely) A workshop-specific session state where the desired-state instance candidate list is empty AFTER filtering by `state === "desired"` — the user perceives the picker (which shows "No unlinked desired instances available" empty-state text) as "the button is grayed out" because nothing happens visibly when clicking. Code is functioning correctly; the UX is just confusing in this case.
+2. A CSS specificity collision in a layout the dev demo doesn't reach (e.g. nested overlay-body context).
+3. A non-source-grep-detectable behavior (e.g. event-listener-not-attached due to a render-order race specific to a workshop session shape).
+
+**Locked direction (per feedback_no_patches_flag_first.md)**:
+
+Don't ship a guess-fix. The button code is honest; the picker code is honest; CSS is honest. If the user's repro is on a specific session shape, we need that session to confirm the root cause + write a regression test that catches it. Without repro, any "fix" would be speculative.
+
+**Recommendation**:
+
+- Tag rc.6 with BUG-032 DEFERRED (this commit). The other 6 workshop bugs (BUG-029 through BUG-031, BUG-033 through BUG-035) closed with regression tests.
+- BUG-032 revisits in rc.6.1 or rc.7 once the user can supply a session that reproduces the symptom.
+- If hypothesis (1) is correct, the rc.6.1 fix is a UX clarification: when the picker has zero candidates, render an explicit empty-state callout instead of showing what looks like a non-functional button.
+
+---
+
 **Status**: OPEN · Reported 2026-05-05 by user · v3.0.0-rc.5 · Scheduled rc.6 (MEDIUM)
 **Reporter**: User
 **Severity**: Medium

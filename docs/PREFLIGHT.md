@@ -60,6 +60,31 @@ This is the durable, checkable artifact gating every tag commit. Every tag's com
   - Ask one procedural question (workflow manifest path).
   - Ask one multi-tool question (selectors + multi-round chaining).
 
+### 5b. Real-LLM live-key smoke (NEW rc.6 per SPEC §S37 R37.12 + `feedback_no_mocks.md`)
+
+Mandated starting rc.6 because BUG-030 + BUG-033 only surfaced at workshop time — mock-fetch smoke (item 5 above) was structurally incapable of catching grounding regressions.
+
+For every tag from rc.6 onward, run a real-LLM 3-turn workshop-style smoke against the Acme Healthcare demo for **each provider**:
+
+- **Anthropic** (claude-sonnet-4 or claude-opus-4 with valid `x-api-key`)
+- **Gemini** (gemini-2.5-flash with valid API key)
+- **Local A** (vLLM Code-LLM at port 8000 with `--enable-auto-tool-choice --tool-call-parser hermes`)
+
+Per provider, run 3 turns covering:
+1. **Fact-retrieval** ("summarize the gaps") — verifier-side check that no fabricated gap descriptions appear.
+2. **Vendor query** ("find the dell assets in current state") — router classifies → selectVendorMix + selectMatrixView; response paraphrases the engagement's real vendor mix.
+3. **Multi-cut question** ("what dispositions does the customer have?") — router calls multiple selectors; response cites real engagement entities only.
+
+For each turn, inspect the wire body via Chrome DevTools Network panel:
+- Layer 4 of the system prompt MUST contain selector results from the router's `rationale` (not raw engagement dump, not threshold-based summary).
+- Response paraphrases real engagement data; no fabricated gaps / vendors / project-phase dates.
+- Zero `groundingViolations` recorded on the assistant message envelope.
+- `[contract-ack v3.0 sha=<8>]` chip appears on turn 1.
+
+If any provider produces a violation: tag is BLOCKED until the verifier patterns are tightened or the underlying grounding flow is fixed. Real-LLM smoke is the validation layer; nothing replaces it.
+
+**No mocks acceptable here** (per `feedback_no_mocks.md`). The mock provider toggle is scheduled for retirement in the post-rc.6 mock-purge arc; until then it must NOT be the path used for tag-time smoke.
+
 ### 6. RELEASE_NOTES authored
 
 - File: `docs/RELEASE_NOTES_<tag>.md` (e.g. `RELEASE_NOTES_rc.3.md`).

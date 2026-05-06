@@ -110,4 +110,4 @@
 //   - At least one real-customer workshop run against a v3.0 engagement
 //   - Real-Anthropic streaming smoke against a live key
 
-export const APP_VERSION = "3.0.0-rc.6-dev";
+export const APP_VERSION = "3.0.0-rc.6";
