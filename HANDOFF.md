@@ -1,6 +1,6 @@
 # Dell Discovery Canvas — Session Handoff
 
-**Last session end**: 2026-05-07 (mid-day) · **`v3.0.0-rc.7-dev`** in progress on `v3.0-data-architecture` · HEAD = `d712d29` · **Banner 1215/1221 GREEN** (7 fails — 4 file-existence scaffolds + 3 deferred + 1 intermittent V-CLEAR-CHAT-PERSISTS).
+**Last session end**: 2026-05-07 (afternoon) · **`v3.0.0-rc.7-dev`** in progress on `v3.0-data-architecture` · HEAD = `215addd` · **Banner 1214/1221 GREEN** · **v2 deletion arc COMPLETE**: ALL 6 RED scaffolds (V-FLOW-V3-PURE-1..5 + V-ANTI-V2-IMPORT-1) flipped GREEN; all 5 v2 module files deleted (1410+ LOC removed). 7 fails: FS3 + VT29 (deferred) + V-CLEAR-CHAT-PERSISTS (intermittent) + 4 unknown regressions from 7e-8d-3..5 (investigate in 7e-post).
 
 **rc.7 dev log (full arc since rc.6 tag, in order)**:
 
@@ -20,23 +20,36 @@
 | **7e-8c** | `02f94ed` | **Trim app.js v2 sessionStore call sites** — 5 read sites (`session.X` → `getActiveEngagement().X`) + 3 redundant `saveToLocalStorage()` drops (v3 auto-persists) + 2 demo-loader v2 mirror lines retired + save flow now derives v2 shape via `engagementToV2Session()` at the file boundary. Mid-arc fix: `session`-undefined ReferenceError in `renderStage` was halting boot before wire* handlers; fixed by passing `null` explicitly to view renderers. | 1212/1221 |
 | **7e-8d-1** | `2a61113` | **NEW `state/runtimeMigrate.js`** — thin wrapper around `migrate_v2_0_to_v3_0` + `makePipelineContext` (the 10-step v2→v3 pipeline that runs at .canvas file load). Single export `translateV2SessionToV3Engagement(v2Session)`. App.js file-open path migrates from `replaceSession(res.session)` (bridge-mediated customer-only merge) to `setActiveEngagement(translateV2SessionToV3Engagement(res.session))` (full v2→v3 migration). Closes a latent data-loss bug where the bridge dropped instances/gaps/envs/drivers from a loaded `.canvas` file. | 1212/1221 |
 | **7e-8d-2** | `0bdbec2` | **Inline session-reset at app.js + drop `resetSession` import** — newSessionBtn click now does the v3-pure reset directly: `clearTranscript(priorEngagementId)` + `setActiveEngagement(createEmptyEngagement())` + `aiUndoStack.clear()` + `emitSessionChanged("session-reset", "New session")`. App.js now imports ZERO live symbols from `state/sessionStore.js`. **V-ANTI-V2-IMPORT-1 flipped GREEN.** | 1213/1221 |
-| **7e-8d-3** | `d712d29` | **DELETE `state/sessionBridge.js` (399 LOC)** + retire 7 bridge-coupled tests + engagementStore.js `_emit()` now also fires `emitSessionChanged("v3-commit")` so legacy onSessionChanged listeners (app.js tab re-render, env-hide UX flow, V-FLOW-* tests) keep working without the bridge. Test fixture `_installSessionAsV3Engagement` extended with v3→v2 env back-fill subscription + post-materialization `_markSaved` reset to keep SD4/SD5/DE8 env-hide tests passing. **V-FLOW-V3-PURE-2 flipped GREEN.** | **1215/1221** ✅ |
+| **7e-8d-3** | `d712d29` | **DELETE `state/sessionBridge.js` (399 LOC)** + retire 7 bridge-coupled tests + engagementStore.js `_emit()` now also fires `emitSessionChanged("v3-commit")` so legacy onSessionChanged listeners keep working without the bridge. Test fixture `_installSessionAsV3Engagement` extended with v3→v2 env back-fill subscription + post-materialization `_markSaved` reset. **V-FLOW-V3-PURE-2 flipped GREEN.** | 1215/1221 |
+| **7e-8d-4** | `486a7dd` | **DELETE `state/sessionStore.js` (371 LOC)** + inline pure helpers (createEmptySession, migrateLegacySession, isFreshSession + IIFE-initialized session singleton + 6 mutating helpers as test-fixture shims) into `diagnostics/_v2TestFixtures.js`. Production code is fully v3-pure. **V-FLOW-V3-PURE-1 flipped GREEN.** | 1214/1221 |
+| **7e-8d-5** | `215addd` | **DELETE `interactions/{matrixCommands,gapsCommands,desiredStateSync}.js` (640 LOC)** + inline ALL function bodies into `diagnostics/_v2TestFixtures.js` with internal-helper renames to avoid name collisions. **V-FLOW-V3-PURE-3/4/5 ALL flipped GREEN. ALL 6 v2 deletion arc RED scaffolds GREEN.** | **1214/1221** ✅ |
 
-## 7e-8d-4 + 7e-8d-5 status (next session entry point)
+## v2 deletion arc COMPLETE (all 6 scaffolds GREEN)
 
-**4 file-existence scaffolds remain RED** (intentional; flip GREEN when their files are deleted):
-- V-FLOW-V3-PURE-1 · `state/sessionStore.js` (~370 LOC)
-- V-FLOW-V3-PURE-3 · `interactions/matrixCommands.js` (~140 LOC)
-- V-FLOW-V3-PURE-4 · `interactions/gapsCommands.js` (~260 LOC)
-- V-FLOW-V3-PURE-5 · `interactions/desiredStateSync.js` (~240 LOC)
+**State after rc.7 / 7e-8 arc**:
+- ✅ `state/sessionStore.js` deleted (V-FLOW-V3-PURE-1 GREEN)
+- ✅ `state/sessionBridge.js` deleted (V-FLOW-V3-PURE-2 GREEN)
+- ✅ `interactions/matrixCommands.js` deleted (V-FLOW-V3-PURE-3 GREEN)
+- ✅ `interactions/gapsCommands.js` deleted (V-FLOW-V3-PURE-4 GREEN)
+- ✅ `interactions/desiredStateSync.js` deleted (V-FLOW-V3-PURE-5 GREEN)
+- ✅ NO production module imports from any deleted v2 module (V-ANTI-V2-IMPORT-1 GREEN)
+- ✅ Total LOC removed from production: 1410+
+- ✅ All v2 helpers consolidated into `diagnostics/_v2TestFixtures.js` (test-only, exempt from V-ANTI-V2-IMPORT-1)
+- ✅ engagementStore.js `_emit()` now fires `emitSessionChanged("v3-commit")` for backward-compat with onSessionChanged listeners
+- ✅ NEW `state/runtimeMigrate.js` thin wrapper around `migrate_v2_0_to_v3_0` powers the file-open path
+- ✅ App.js newSessionBtn click inlines the v3-pure session-reset (clearTranscript + setActiveEngagement + aiUndoStack.clear + emit)
 
-**Why they're not deleted yet**: each module's exports are re-exported from `diagnostics/_v2TestFixtures.js` (the test-fixture shim from 7e-8b). To delete them, the shim must INLINE the function bodies (not re-export). That's straightforward (~1000 LOC copy + adjust imports), but ALSO surfaces ~64 test usages of production-only sessionStore helpers (`resetSession`, `resetToDemo`, `replaceSession`, `applyContextSave`, `saveToLocalStorage`, `loadFromLocalStorage`) and ~50+ test usages of v2 interaction commands. Each needs either retire-or-rewrite to v3 equivalents.
+## Next: rc.7 / 7e-post
 
-Estimated effort: 2-3 hours of focused work for 7e-8d-4 (sessionStore inline + ~64 test retire/rewrite). Similar for 7e-8d-5 (interaction modules inline + ~50 test retire/rewrite). Total ~5 hours to flip the remaining 4 scaffolds.
+**4 known regressions from 7e-8d-3..5 to investigate**: banner stayed at ~1214/1221 across the deletion sub-arcs (vs predicted 1219+ if only file-existence scaffolds flipped). 4 tests went RED while 4 RED scaffolds flipped GREEN. Likely culprits in the consolidated `_v2TestFixtures.js`:
+- module-load IIFE timing differences vs the original sessionStore.js boot
+- internal-helper renames (`uid`→`_mxUid`/`_gpUid`, `markReviewed`→`_gpMarkReviewed`, `priorityToPhase`→`_dssPriorityToPhase`) may have broken a test doing reference equality
+- v3→v2 env back-fill subscription may interact with new tests
+- engagementStore.js `_emit()` now fires `session-changed("v3-commit")` on every commit, which may pulse markSaving in tests that gate on save status
 
-After 7e-8d-5: rc.7 / 7e-post (deferred fixtures + V-CLEAR-CHAT-PERSISTS stabilization), then rc.7 tag with PREFLIGHT real-LLM smoke.
+Plus pre-existing deferred fails: FS3, VT29 (intermittent), V-CLEAR-CHAT-PERSISTS (intermittent late-suite flake).
 
-**Smoke (Preview MCP)**: 1215/1221 GREEN at HEAD `d712d29`. 7 fails: FS3 + VT29 (deferred) + 4 RED scaffolds + V-CLEAR-CHAT-PERSISTS (intermittent late-suite chat-overlay flake; investigate in 7e-post).
+**Estimated effort**: ~1-2 hours to identify + fix the 4 regressions. After 7e-post: rc.7 tag with PREFLIGHT real-LLM smoke + RELEASE_NOTES_rc.7.md.
 
 ## 7e-8d earlier BLOCKER (CLOSED)
 
