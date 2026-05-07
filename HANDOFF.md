@@ -1,6 +1,6 @@
 # Dell Discovery Canvas — Session Handoff
 
-**Last session end**: 2026-05-07 (morning) · **`v3.0.0-rc.7-dev`** in progress on `v3.0-data-architecture` · HEAD = `02f94ed` · **Banner 1212/1221 GREEN** (9 fails — same 8 known + intermittent VT29 page-overflow flake).
+**Last session end**: 2026-05-07 (mid-day) · **`v3.0.0-rc.7-dev`** in progress on `v3.0-data-architecture` · HEAD = `d712d29` · **Banner 1215/1221 GREEN** (7 fails — 4 file-existence scaffolds + 3 deferred + 1 intermittent V-CLEAR-CHAT-PERSISTS).
 
 **rc.7 dev log (full arc since rc.6 tag, in order)**:
 
@@ -17,9 +17,28 @@
 | **7e-8c'-fix2** | `324b37a` | **Retire first-add acknowledgment toast** wholesale per user direction ("no need for it"). Drop `surfaceFirstAddAcknowledgment` + `envFirstAddAck_v1` localStorage key + `.env-first-add-ack-banner` CSS + V-FLOW-EMPTY-ENVS-6 (reworked into negative assertion) + RULES CH35 clause (e). SPEC §S41.3 marked RETIRED | 1210/1218 |
 | **BUG-041** | `709e778` | **AI Assist provider-popover stale-snapshot fix** (catches user-reported "every provider click opens Settings" bug). Extracts `refreshRow` helper; popover refreshes class+meta on open; click handler re-reads `loadAiConfig()` before deciding switch-vs-Settings. 3 new V-PILLS-5/6/7 source-grep regression tests. | 1213/1221 |
 | **7e-8b** | `1c55b95` | **Test-fixture shim** — NEW `diagnostics/_v2TestFixtures.js` re-exports v2 symbols; 10 appSpec.js import statements retargeted from `state/sessionStore` + `interactions/{matrix,gaps,desired}*` to the shim. Decouples test-suite coupling to v2 modules in one place. No production-code change. | 1213/1221 |
-| **7e-8c** | `02f94ed` | **Trim app.js v2 sessionStore call sites** — 5 read sites (`session.X` → `getActiveEngagement().X`) + 3 redundant `saveToLocalStorage()` drops (v3 auto-persists) + 2 demo-loader v2 mirror lines retired + save flow now derives v2 shape via `engagementToV2Session()` at the file boundary. Imports trimmed to `{ resetSession, replaceSession }`. **`resetSession` + `replaceSession`-in-file-open retained** (need v3-native canvasFile or v2→v3 runtime translator first — see 7e-8d blocker below). Mid-arc fix: `session`-undefined ReferenceError in `renderStage` was halting boot before wire* handlers; fixed by passing `null` explicitly to view renderers. | **1212/1221** ✅ |
+| **7e-8c** | `02f94ed` | **Trim app.js v2 sessionStore call sites** — 5 read sites (`session.X` → `getActiveEngagement().X`) + 3 redundant `saveToLocalStorage()` drops (v3 auto-persists) + 2 demo-loader v2 mirror lines retired + save flow now derives v2 shape via `engagementToV2Session()` at the file boundary. Mid-arc fix: `session`-undefined ReferenceError in `renderStage` was halting boot before wire* handlers; fixed by passing `null` explicitly to view renderers. | 1212/1221 |
+| **7e-8d-1** | `2a61113` | **NEW `state/runtimeMigrate.js`** — thin wrapper around `migrate_v2_0_to_v3_0` + `makePipelineContext` (the 10-step v2→v3 pipeline that runs at .canvas file load). Single export `translateV2SessionToV3Engagement(v2Session)`. App.js file-open path migrates from `replaceSession(res.session)` (bridge-mediated customer-only merge) to `setActiveEngagement(translateV2SessionToV3Engagement(res.session))` (full v2→v3 migration). Closes a latent data-loss bug where the bridge dropped instances/gaps/envs/drivers from a loaded `.canvas` file. | 1212/1221 |
+| **7e-8d-2** | `0bdbec2` | **Inline session-reset at app.js + drop `resetSession` import** — newSessionBtn click now does the v3-pure reset directly: `clearTranscript(priorEngagementId)` + `setActiveEngagement(createEmptyEngagement())` + `aiUndoStack.clear()` + `emitSessionChanged("session-reset", "New session")`. App.js now imports ZERO live symbols from `state/sessionStore.js`. **V-ANTI-V2-IMPORT-1 flipped GREEN.** | 1213/1221 |
+| **7e-8d-3** | `d712d29` | **DELETE `state/sessionBridge.js` (399 LOC)** + retire 7 bridge-coupled tests + engagementStore.js `_emit()` now also fires `emitSessionChanged("v3-commit")` so legacy onSessionChanged listeners (app.js tab re-render, env-hide UX flow, V-FLOW-* tests) keep working without the bridge. Test fixture `_installSessionAsV3Engagement` extended with v3→v2 env back-fill subscription + post-materialization `_markSaved` reset to keep SD4/SD5/DE8 env-hide tests passing. **V-FLOW-V3-PURE-2 flipped GREEN.** | **1215/1221** ✅ |
 
-## 7e-8d BLOCKER (next session entry point)
+## 7e-8d-4 + 7e-8d-5 status (next session entry point)
+
+**4 file-existence scaffolds remain RED** (intentional; flip GREEN when their files are deleted):
+- V-FLOW-V3-PURE-1 · `state/sessionStore.js` (~370 LOC)
+- V-FLOW-V3-PURE-3 · `interactions/matrixCommands.js` (~140 LOC)
+- V-FLOW-V3-PURE-4 · `interactions/gapsCommands.js` (~260 LOC)
+- V-FLOW-V3-PURE-5 · `interactions/desiredStateSync.js` (~240 LOC)
+
+**Why they're not deleted yet**: each module's exports are re-exported from `diagnostics/_v2TestFixtures.js` (the test-fixture shim from 7e-8b). To delete them, the shim must INLINE the function bodies (not re-export). That's straightforward (~1000 LOC copy + adjust imports), but ALSO surfaces ~64 test usages of production-only sessionStore helpers (`resetSession`, `resetToDemo`, `replaceSession`, `applyContextSave`, `saveToLocalStorage`, `loadFromLocalStorage`) and ~50+ test usages of v2 interaction commands. Each needs either retire-or-rewrite to v3 equivalents.
+
+Estimated effort: 2-3 hours of focused work for 7e-8d-4 (sessionStore inline + ~64 test retire/rewrite). Similar for 7e-8d-5 (interaction modules inline + ~50 test retire/rewrite). Total ~5 hours to flip the remaining 4 scaffolds.
+
+After 7e-8d-5: rc.7 / 7e-post (deferred fixtures + V-CLEAR-CHAT-PERSISTS stabilization), then rc.7 tag with PREFLIGHT real-LLM smoke.
+
+**Smoke (Preview MCP)**: 1215/1221 GREEN at HEAD `d712d29`. 7 fails: FS3 + VT29 (deferred) + 4 RED scaffolds + V-CLEAR-CHAT-PERSISTS (intermittent late-suite chat-overlay flake; investigate in 7e-post).
+
+## 7e-8d earlier BLOCKER (CLOSED)
 
 `state/sessionStore.js` + `state/sessionBridge.js` cannot be deleted yet because two production callers in `app.js` still need them:
 
