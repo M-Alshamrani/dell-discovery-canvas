@@ -4192,7 +4192,11 @@ describe("29 · Phase 19d.1 · Prompt guards + Refine-to-CARE button + test-befo
 import { parseProposals, applyProposal, applyAllProposals, setPathFromRoot, resolvePathFromRoot }
   from "../interactions/aiCommands.js";
 import * as aiUndoStack from "../state/aiUndoStack.js";
-import { session as liveSession, replaceSession } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · via test-fixture shim
+// rc.7 / 7e-8 redo Step I Phase I-B-4 · `session as liveSession` dead alias dropped
+// (zero call sites in *.js; the only line mentioning "liveSession" is a doc string
+// in a retired test). `replaceSession` retained -- it has 3 real test call sites
+// (PR1.a + PR1.b + VT26) that need per-test v3-direct rewrites in Phase I-B-5+.
+import { replaceSession } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · via test-fixture shim
 import { WRITE_RESOLVERS, isWritablePath } from "../core/bindingResolvers.js";
 import { FIELD_MANIFEST as FM, writableFieldsForTab } from "../core/fieldManifest.js";
 import { RESPONSE_FORMATS, APPLY_POLICIES } from "../core/skillStore.js";
