@@ -1,6 +1,8 @@
 # Dell Discovery Canvas — Session Handoff
 
-**Last session end**: 2026-05-07 (morning) · **`v3.0.0-rc.7-dev`** in progress on `v3.0-data-architecture` · HEAD = `02f94ed` · **Banner 1212/1221 GREEN** (9 fails — same 8 known + intermittent VT29 page-overflow flake).
+**🔴 READ FIRST · Principal-architect discipline (LOCKED 2026-05-08)**: every session, every commit, every handover. Full text in [`docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md`](docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md) (R0..R10) + tier-1 memory anchor `feedback_principal_architect_discipline.md`. Core rules: **R0** acknowledge "what would a principal architect do?" before non-trivial action · **R1** own-grep before delete (no closed-list test scopes) · **R2** migrate consumers FIRST, delete LAST · **R3** Chrome MCP browser smoke at every commit boundary (test banner alone is NOT sufficient) · **R4** no v3-store backward-compat hacks · **R5** no fig-leaf test fixtures hiding v2 logic · **R6** rewrite tests to assert v3 contracts (never retire-with-negative) · **R7** per-commit revertibility (smoke fail = revert, not pile-fix) · **R8** surface scope balloons · **R9** every handover references this · **R10** acknowledge in every action out loud.
+
+**Last session end**: 2026-05-08 (morning) · **`v3.0.0-rc.7-dev`** in progress on `v3.0-data-architecture` · HEAD pending after Step A · **Banner 1212/1221 GREEN** · v2 deletion arc REDO under way after the 7e-8d-3..5 attempt was reverted (`977bf68`); plan in [`docs/V2_DELETION_ARCHITECTURE.md`](docs/V2_DELETION_ARCHITECTURE.md). Steps A done; Steps B..K pending.
 
 **rc.7 dev log (full arc since rc.6 tag, in order)**:
 
