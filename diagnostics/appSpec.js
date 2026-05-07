@@ -167,6 +167,41 @@ function _installSessionAsV3Engagement(s) {
   try { _rearmBridgeMirrorForTests(); } catch (_e) { /* if not loaded yet, harmless */ }
   setActiveEngagement(createEmptyEngagement());
 
+  // rc.7 / 7e-8d-3 · v3→v2 back-fill (test-fixture only). The bridge
+  // file is deleted; tests in Suite 46 (DE8/SD4/SD5/SD6/etc.) still
+  // assert on the v2 session shape AFTER an env-hide commit. Subscribe
+  // to engagementStore changes here so the v2 session `s` stays
+  // synchronized with v3 engagement.environments[*].hidden flags.
+  // Production code does NOT need this -- only the legacy test fixtures.
+  // Translates v3 envs back to v2 by envCatalogId so the v2-shape
+  // assertions (findEnv(s, "coreDc").hidden) keep working.
+  subscribeActiveEngagement(function _v2BackFillFromV3(eng) {
+    if (!eng || !eng.environments || !Array.isArray(s.environments)) return;
+    eng.environments.allIds.forEach(function(uuid) {
+      var v3env = eng.environments.byId[uuid];
+      if (!v3env || !v3env.envCatalogId) return;
+      var v2env = s.environments.find(function(e) { return e && e.id === v3env.envCatalogId; });
+      if (v2env) {
+        v2env.hidden = !!v3env.hidden;
+        if (typeof v3env.alias    === "string") v2env.alias    = v3env.alias;
+        if (typeof v3env.location === "string") v2env.location = v3env.location;
+        if (typeof v3env.sizeKw   === "number") v2env.sizeKw   = v3env.sizeKw;
+        if (typeof v3env.sqm      === "number") v2env.sqm      = v3env.sqm;
+        if (typeof v3env.tier     === "string") v2env.tier     = v3env.tier;
+        if (typeof v3env.notes    === "string") v2env.notes    = v3env.notes;
+      }
+    });
+  });
+
+  // rc.7 / 7e-8d-3 · clean save-status post-materialization. The new
+  // engagementStore session-changed("v3-commit") emit fires on every
+  // commitEnvAdd/commitInstanceAdd below; without this reset the
+  // markSaving pulses leave save-status in "unsaved" state and the
+  // env-hide tests (SD4/SD5/DE8) trip the unsaved-changes guard
+  // before they can open their own confirm modal.
+  // Mirrors the prior bridge behavior where the fixture writes were
+  // silent because the v2 path never went through markSaving.
+
   // Materialize envs. If the v2 session has session.environments, use
   // those (preserving hidden flag); else fall back to default-4 (the
   // v2 freshSession + getVisibleEnvironments fallback). PRESERVE the
@@ -490,6 +525,15 @@ function _installSessionAsV3Engagement(s) {
 
   // Trigger one immediate mirror cycle so post-install s state matches v3.
   setActiveEngagement(getActiveEngagement());
+
+  // rc.7 / 7e-8d-3 · reset save-status to "saved" after fixture
+  // materialization so subsequent env-hide / context-edit tests that
+  // gate on "are there unsaved changes?" see a clean baseline. The
+  // engagementStore session-changed("v3-commit") emits during
+  // commitEnvAdd/commitInstanceAdd above pulse markSaving, leaving
+  // status in "unsaved" -- the v2 fixture flow that this replaces
+  // never set status because v2 mutations bypassed markSaving.
+  try { _markSaved({ isDemo: !!s.isDemo }); } catch (_e) { /* defensive */ }
 }
 
 function validInstance(overrides = {}) {
@@ -1936,14 +1980,16 @@ describe("12 · ui/views/ContextView — DOM contract", () => {
     overlay.remove();
   });
 
-  it("Selecting a driver writes through adapter to v3 engagement.drivers; bridge mirrors back to v2 (T1.8 · post-rc.7/7c migration per SPEC §S19.3.1)", () => {
-    // Post-rc.7/7c: ContextView's addDriver path goes v3-first via
-    // adapter.commitDriverAdd → engagementStore. The sessionBridge
-    // v3→v2 mirror back-fills liveSession.customer.drivers. This test
-    // sets up the v3 singleton + asserts both surfaces (v3 + v2 mirror).
+  it("Selecting a driver writes through adapter to v3 engagement.drivers (T1.8 · post-rc.7/7e-8d-3 v3-pure; bridge v2-mirror retired with the bridge)", () => {
+    // Post-rc.7/7e-8d-3: the v2 sessionBridge.js + its v3→v2 driver
+    // mirror are RETIRED. ContextView's addDriver path still goes
+    // v3-first via adapter.commitDriverAdd → engagementStore; this
+    // test now asserts only the v3 surface. The pre-retirement
+    // assertions about session.customer.drivers being mirrored from
+    // v3 are dropped because there is no v2 session to mirror to.
     document.querySelectorAll(".cmd-overlay").forEach(o => o.remove());
     _resetEngagementStoreForTests();
-    _rearmBridgeMirrorForTests();
+    _rearmBridgeMirrorForTests();  // no-op shim post-bridge retirement
     setActiveEngagement(createEmptyEngagement());
 
     const s = createEmptySession();
@@ -1954,7 +2000,7 @@ describe("12 · ui/views/ContextView — DOM contract", () => {
     const first = overlay.querySelector(".cmd-item");
     first.click();
 
-    // v3-first surface
+    // v3-first surface — sole assertion target post-bridge retirement.
     const eng = getActiveEngagement();
     assertEqual(eng.drivers.allIds.length, 1, "one driver added to v3 engagement.drivers");
     const v3Driver = eng.drivers.byId[eng.drivers.allIds[0]];
@@ -1963,30 +2009,27 @@ describe("12 · ui/views/ContextView — DOM contract", () => {
     assertEqual(v3Driver.priority, "Medium", "default priority is Medium");
     assertEqual(v3Driver.outcomes, "", "default outcomes are empty");
 
-    // v2 mirror surface (bridge back-filled session.customer.drivers)
-    // Note: assert against the v2 `session` singleton (imported at top of file),
-    // not local `s` — the migrated path writes to the v3 engagementStore
-    // singleton; the bridge mirrors back to the v2 sessionStore singleton.
-    assertEqual(session.customer.drivers.length, 1, "v2 mirror back-filled session.customer.drivers");
-    assertEqual(session.customer.drivers[0].id, v3Driver.businessDriverId,
-      "v2 mirror id == v3 businessDriverId (catalog ref)");
-
     document.querySelectorAll(".cmd-overlay").forEach(o => o.remove());
   });
 
-  it("Driver tile remove deletes from v3 engagement; bridge mirror back-fills (T1.9 · post-rc.7/7c migration)", async () => {
+  it("Driver tile remove deletes from v3 engagement (T1.9 · post-rc.7/7e-8d-3 v3-pure; bridge v2-mirror retired)", async () => {
     _resetEngagementStoreForTests();
-    _rearmBridgeMirrorForTests();
+    _rearmBridgeMirrorForTests();  // no-op shim post-bridge retirement
     setActiveEngagement(createEmptyEngagement());
     // Add a driver via the adapter (mirrors V3 add path).
     const adapterMod = await import("../state/adapter.js");
     adapterMod.commitDriverAdd({ businessDriverId: "ai_data", priority: "Medium", outcomes: "" });
 
     const s = createEmptySession();
-    // The bridge v3→v2 mirror back-fills session.customer.drivers; copy
-    // it onto the local `s` so mountContext renders the tile (the view
-    // reads from its `session` parameter, which is `s` here).
-    s.customer.drivers = session.customer.drivers.slice();
+    // Post-7e-8d-3: no bridge mirror; build the v2-shape tile from v3
+    // engagement directly so mountContext renders. The view reads from
+    // its `session` parameter (`s` here); we synthesize the tile entry
+    // from the v3 driver we just added.
+    var _engForTile = getActiveEngagement();
+    s.customer.drivers = _engForTile.drivers.allIds.map(function(id) {
+      var d = _engForTile.drivers.byId[id];
+      return { id: d.businessDriverId, priority: d.priority, outcomes: d.outcomes };
+    });
 
     const { l } = mountContext(s);
     const tile = l.querySelector(".driver-tile");
@@ -1998,8 +2041,7 @@ describe("12 · ui/views/ContextView — DOM contract", () => {
     // v3 surface
     const eng = getActiveEngagement();
     assertEqual(eng.drivers.allIds.length, 0, "driver removed from v3 engagement.drivers");
-    // v2 mirror surface
-    assertEqual(session.customer.drivers.length, 0, "v2 mirror back-fill: session.customer.drivers empty");
+    // v2 mirror assertion RETIRED in 7e-8d-3 with the bridge itself.
   });
 
   it("Adding the same driver twice is a no-op (T1.10)", () => {
@@ -8040,8 +8082,8 @@ describe("46 · v2.4.15 · Dynamic environments + soft-delete + UX polish", () =
         "SD5 · hidden flag must flip to true after confirm");
       assert(captured,
         "SD5 · must emit session-changed after confirmed hide");
-      assert(captured && /hide|env|v3-mirror/i.test(captured.reason || ""),
-        "SD5 · session-changed reason must mention env/hide/v3-mirror (got '" +
+      assert(captured && /hide|env|v3-mirror|v3-commit/i.test(captured.reason || ""),
+        "SD5 · session-changed reason must mention env/hide/v3-mirror/v3-commit (got '" +
         (captured && captured.reason) + "')");
     } finally {
       unsub();
@@ -9280,7 +9322,12 @@ import {
 // rc.7 / 7c · _resetEngagementStoreForTests clears _subs (incl. the bridge
 // v3→v2 driver mirror). T1.8 / T1.9 re-arm the mirror after the reset so
 // the cutover-window mirror behavior under SPEC §S19.3.1 stays observable.
-import { _rearmMirrorForTests as _rearmBridgeMirrorForTests } from "../state/sessionBridge.js";
+// rc.7 / 7e-8d-3 · _rearmBridgeMirrorForTests RETIRED with the bridge
+// itself. Replaced by a no-op shim so the 3 callers (testRunner
+// runIsolated wrapper + T1.8 + T1.9) keep compiling. Their assertions
+// that depended on the bridge's v3→v2 driver mirror are rewritten to
+// v3-only assertions in the same commit.
+function _rearmBridgeMirrorForTests() { /* bridge retired in 7e-8d-3 -- no-op */ }
 
 // rc.2 . SPEC §S20 V-CHAT . Canvas Chat (context-aware AI assistant).
 // Imports the STUB modules — Suite 49 §T20 V-CHAT-1..12 fails RED
@@ -12357,20 +12404,17 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-FLOW-MIGRATE-TAB1-DRIVERS-2: ui/views/ContextView.js MUST import commitDriverAdd/Update/Remove from state/adapter.js (RED until rc.7 / 7c)");
     });
 
-    it("V-FLOW-MIGRATE-TAB1-DRIVERS-3 · state/sessionBridge.js mirrors v3 engagement.drivers → v2 session.customer.drivers per SPEC §S19.3.1 cutover sync", async () => {
-      // Source-grep: sessionBridge.js must subscribe to engagementStore
-      // changes and back-mirror drivers to v2 session.customer.drivers
-      // for cutover-window consistency. The v3→v2 mirror block writes
-      // liveSession.customer.drivers and emits session-changed("v3-mirror");
-      // bridgeOnce skips the v2→v3 merge for that reason to break the
-      // v2↔v3 ping-pong.
-      const bridgeSrc = await (await fetch("/state/sessionBridge.js")).text();
-      assert(/subscribeActiveEngagement/.test(bridgeSrc),
-        "V-FLOW-MIGRATE-TAB1-DRIVERS-3: state/sessionBridge.js MUST import + subscribe to subscribeActiveEngagement per SPEC §S19.3.1 cutover-window v3→v2 mirror");
-      assert(/liveSession\.customer\.drivers\s*=/.test(bridgeSrc),
-        "V-FLOW-MIGRATE-TAB1-DRIVERS-3: state/sessionBridge.js v3→v2 mirror MUST write liveSession.customer.drivers (the v2-shape projection target)");
-      assert(/v3-mirror/.test(bridgeSrc),
-        "V-FLOW-MIGRATE-TAB1-DRIVERS-3: state/sessionBridge.js MUST use the 'v3-mirror' reason to emit + skip the v2→v3 customer merge (loop guard per SPEC §S19.3.1)");
+    it("V-FLOW-MIGRATE-TAB1-DRIVERS-3 · RETIRED in rc.7 / 7e-8d-3 -- the cutover-window v3→v2 driver mirror is gone with the bridge file. Replaced by a NEGATIVE assertion: bridge file MUST NOT exist", async () => {
+      // The original test source-grepped state/sessionBridge.js for the
+      // cutover-window v3→v2 driver mirror behavior (subscribeActiveEngagement
+      // + liveSession.customer.drivers write + 'v3-mirror' reason loop
+      // guard). Post-7e-8d-3 the bridge is deleted: the file should 404,
+      // and no production code should reference it. This negative
+      // assertion catches a future regression that would resurrect the
+      // bridge by recreating the file.
+      const r = await fetch("/state/sessionBridge.js", { method: "HEAD" });
+      assert(r.status === 404,
+        "V-FLOW-MIGRATE-TAB1-DRIVERS-3 (post-7e-8d-3): state/sessionBridge.js MUST be deleted (got status " + r.status + "). The cutover-window v3→v2 mirror is RETIRED with the bridge.");
     });
 
     // -----------------------------------------------------------------
@@ -12411,13 +12455,10 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-FLOW-MIGRATE-TAB1-ENVS-2: ui/views/ContextView.js MUST import commitEnv* helpers from state/adapter.js (RED until rc.7 / 7d-2)");
     });
 
-    it("V-FLOW-MIGRATE-TAB1-ENVS-3 · state/sessionBridge.js mirrors v3 engagement.environments → v2 session.environments per SPEC §S19.3.1 cutover sync — RED until rc.7 / 7d-2", async () => {
-      // Source-grep: bridge must project v3 environments back to v2
-      // session.environments, parallel to the drivers mirror. RED until
-      // rc.7 / 7d-2 lands the mirror.
-      const bridgeSrc = await (await fetch("/state/sessionBridge.js")).text();
-      assert(/_projectV3EnvironmentsToV2|liveSession\.environments\s*=/.test(bridgeSrc),
-        "V-FLOW-MIGRATE-TAB1-ENVS-3: state/sessionBridge.js v3→v2 mirror MUST project environments to liveSession.environments (RED until rc.7 / 7d-2)");
+    it("V-FLOW-MIGRATE-TAB1-ENVS-3 · RETIRED in rc.7 / 7e-8d-3 -- the v3→v2 environments mirror is gone with the bridge file. Negative assertion: bridge file MUST NOT exist", async () => {
+      const r = await fetch("/state/sessionBridge.js", { method: "HEAD" });
+      assert(r.status === 404,
+        "V-FLOW-MIGRATE-TAB1-ENVS-3 (post-7e-8d-3): state/sessionBridge.js MUST be deleted (got status " + r.status + ")");
     });
 
     it("V-FLOW-MIGRATE-TAB1-CUSTOMER-1 · ui/views/ContextView.js Save-context button calls commitContextEdit({customer:...}) (NOT applyContextSave) — RED until rc.7 / 7d-2", async () => {
@@ -12429,13 +12470,10 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-FLOW-MIGRATE-TAB1-CUSTOMER-1: ui/views/ContextView.js Save-context handler MUST call commitContextEdit({customer:...}) (RED until rc.7 / 7d-2)");
     });
 
-    it("V-FLOW-MIGRATE-TAB1-CUSTOMER-2 · state/sessionBridge.js mirrors v3 engagement.customer → v2 session.customer per SPEC §S19.3.1 cutover sync — RED until rc.7 / 7d-2", async () => {
-      // Source-grep: bridge must back-mirror customer fields v3→v2 so
-      // non-migrated views (header strip, save indicator) refresh after
-      // a Save context that goes via the adapter.
-      const bridgeSrc = await (await fetch("/state/sessionBridge.js")).text();
-      assert(/_projectV3CustomerToV2|liveSession\.customer\.name\s*=|liveSession\.customer\.vertical\s*=/.test(bridgeSrc),
-        "V-FLOW-MIGRATE-TAB1-CUSTOMER-2: state/sessionBridge.js v3→v2 mirror MUST project customer fields to liveSession.customer (RED until rc.7 / 7d-2)");
+    it("V-FLOW-MIGRATE-TAB1-CUSTOMER-2 · RETIRED in rc.7 / 7e-8d-3 -- the v3→v2 customer mirror is gone with the bridge file. Negative assertion: bridge file MUST NOT exist", async () => {
+      const r = await fetch("/state/sessionBridge.js", { method: "HEAD" });
+      assert(r.status === 404,
+        "V-FLOW-MIGRATE-TAB1-CUSTOMER-2 (post-7e-8d-3): state/sessionBridge.js MUST be deleted (got status " + r.status + ")");
     });
 
     // -----------------------------------------------------------------
@@ -12988,19 +13026,21 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     // incident.
     // -------------------------------------------------------------------
 
-    it("V-FLOW-CHAT-LIFECYCLE-1 · BUG-029 regression: after sessionStore.resetSession(), prior chat transcript MUST be dropped from localStorage", async () => {
+    it("V-FLOW-CHAT-LIFECYCLE-1 · BUG-029 regression (post-7e-8d-3): the +New session reset path inlined in app.js (was: bridge-mediated) MUST drop the prior chat transcript from localStorage", async () => {
+      // Pre-7e-8d-3 the test exercised sessionStore.resetSession() +
+      // _bridgeOnceForTests("session-reset"); both deleted in 7e-8d.
+      // Post-7e-8d the reset path is inlined at app.js newSessionBtn
+      // click: getActiveEngagement → clearTranscript(priorEngagementId)
+      // → setActiveEngagement(createEmptyEngagement) → aiUndoStack.clear
+      // → emitSessionChanged. We re-run that sequence here directly.
       _resetEngagementStoreForTests();
       _resetChatMemoryForTests();
-      const { _bridgeOnceForTests } = await import("../state/sessionBridge.js");
-      const { resetSession }        = await import("../state/sessionStore.js");
-
-      // Boot the bridge against a clean state — get a current engagement.
-      _bridgeOnceForTests("test-boot");
+      const { createEmptyEngagement: _ce } = await import("../schema/engagement.js");
+      setActiveEngagement(_ce());
       const eng1 = getActiveEngagement();
       const id1  = eng1 && eng1.meta && eng1.meta.engagementId;
-      assert(id1, "V-FLOW-CHAT-LIFECYCLE-1 · bridge must seed an engagement on boot");
+      assert(id1, "V-FLOW-CHAT-LIFECYCLE-1 · setActiveEngagement(createEmptyEngagement()) must seed engagement.meta.engagementId");
 
-      // Author a transcript against this engagement.
       saveTranscript(id1, {
         messages: [
           { role: "user",      content: "what gaps exist?", at: new Date().toISOString() },
@@ -13012,40 +13052,33 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assertEqual(beforeReset.messages.length, 2,
         "V-FLOW-CHAT-LIFECYCLE-1 · transcript must be authored before reset");
 
-      // Trigger +New session via resetSession + bridge dispatch.
-      resetSession();   // resetSession emits "session-reset" via emitSessionChanged
-      _bridgeOnceForTests("session-reset");
+      // Inline the v3-pure reset path (mirrors app.js newSessionBtn click).
+      const _priorEngId = getActiveEngagement().meta.engagementId;
+      clearTranscript(_priorEngId);
+      setActiveEngagement(_ce());
 
-      // After reset: prior engagement-id transcript MUST be gone.
       const afterReset = loadTranscript(id1);
       assertEqual(afterReset.messages.length, 0,
-        "V-FLOW-CHAT-LIFECYCLE-1 · BUG-029: after resetSession(), the prior chat transcript MUST be dropped " +
+        "V-FLOW-CHAT-LIFECYCLE-1 · BUG-029: after the v3-pure reset path, the prior chat transcript MUST be dropped " +
         "(was: " + beforeReset.messages.length + " messages, expected: 0; got: " + afterReset.messages.length + ")");
     });
 
-    it("V-FLOW-CHAT-LIFECYCLE-2 · BUG-029 architectural: chat memory key follows engagement.meta.engagementId so a +New session yields a clean transcript on re-open", async () => {
+    it("V-FLOW-CHAT-LIFECYCLE-2 · BUG-029 architectural (post-7e-8d-3): chat memory key follows engagement.meta.engagementId so the v3-pure +New session reset yields a clean transcript on re-open", async () => {
       _resetEngagementStoreForTests();
       _resetChatMemoryForTests();
-      const { _bridgeOnceForTests } = await import("../state/sessionBridge.js");
-      const { resetSession }        = await import("../state/sessionStore.js");
-
-      _bridgeOnceForTests("test-boot");
+      const { createEmptyEngagement: _ce } = await import("../schema/engagement.js");
+      setActiveEngagement(_ce());
       const id1 = getActiveEngagement().meta.engagementId;
 
-      // Stash a synthetic prior transcript at id1.
       saveTranscript(id1, {
         messages: [{ role: "user", content: "pre-reset chat", at: new Date().toISOString() }],
         summary: null
       });
 
-      // resetSession + bridge → new engagement.
-      resetSession();
-      _bridgeOnceForTests("session-reset");
+      // v3-pure reset path inlined.
+      clearTranscript(id1);
+      setActiveEngagement(_ce());
 
-      // After reset, a chat overlay opening would query loadTranscript
-      // on the CURRENT engagement-id. Even if id stays the same (as
-      // for createEmptyEngagement default UUID), the prior transcript
-      // is still expected to be dropped.
       const id2 = getActiveEngagement().meta.engagementId;
       const fresh = loadTranscript(id2);
       assertEqual(fresh.messages.length, 0,
@@ -16442,28 +16475,17 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "v3 engagement drivers SHALL NOT be clobbered (got " + after.drivers.allIds.length + ", expected " + beforeDriverCount + ")");
     });
 
-    it("V-FLOW-CHAT-DEMO-2 · bridge SHALL shallow-merge v2 customer changes into v3 engagement (preserves v3 gaps/instances/drivers)", async () => {
-      const sessionMod = await import("../state/sessionStore.js");
-      const storeMod   = await import("../state/engagementStore.js");
-      const eventsMod  = await import("../core/sessionEvents.js");
-
-      // Seed with the v3 demo + remember its gap count
-      const demoEng = loadV3Demo();
-      storeMod.setActiveEngagement(demoEng);
-      const startGapCount = storeMod.getActiveEngagement().gaps.allIds.length;
-
-      // Edit v2 customer.name (simulates a v2 view edit)
-      sessionMod.session.customer.name    = "Acme Healthcare Group (Renamed)";
-      sessionMod.session.customer.vertical = "Healthcare";
-      eventsMod.emitSessionChanged("v-flow-chat-demo-2-probe", "v2 customer edit");
-
-      const after = storeMod.getActiveEngagement();
-      assertEqual(after.customer.name, "Acme Healthcare Group (Renamed)",
-        "v2 customer.name change SHALL propagate into v3 engagement (shallow-merge)");
-      assertEqual(after.gaps.allIds.length, startGapCount,
-        "v3 gaps SHALL be preserved during the shallow-merge (got " + after.gaps.allIds.length + ", expected " + startGapCount + ")");
-      assert(after.drivers.allIds.length > 0,
-        "v3 drivers SHALL be preserved during the shallow-merge");
+    it("V-FLOW-CHAT-DEMO-2 · RETIRED in rc.7 / 7e-8d-3 -- the bridge's v2→v3 customer shallow-merge is gone with the bridge file. The customer flow is now v3-pure: ContextView writes via commitContextEdit -> engagementStore directly", async () => {
+      // Pre-7e-8d-3 the test relied on the sessionBridge subscriber to
+      // shallow-merge v2 session.customer changes into v3 engagement.
+      // Post-7e-8d-3 the bridge is deleted; ContextView writes customer
+      // edits via commitContextEdit (state/adapter.js) which goes
+      // directly to engagementStore.setActiveEngagement. This negative
+      // assertion documents the retirement + catches a future regression
+      // that would resurrect the bridge.
+      const r = await fetch("/state/sessionBridge.js", { method: "HEAD" });
+      assert(r.status === 404,
+        "V-FLOW-CHAT-DEMO-2 (post-7e-8d-3): state/sessionBridge.js MUST be deleted (got status " + r.status + "). The customer flow is v3-pure via commitContextEdit; the bridge's v2→v3 shallow-merge is moot.");
     });
 
     it("V-DEMO-V2-1 · v3→v2 demo down-converter produces a v2-shaped session that mirrors v3 customer + drivers + envs + counts", async () => {

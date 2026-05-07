@@ -48,12 +48,16 @@ import { getStatus as getSaveStatus, onStatusChange as onSaveStatusChange } from
 // restores the user's saved body[data-filter-<dim>] attributes on app
 // boot, before the user navigates to a tab that uses FilterBar.
 import "./state/filterState.js";
-// v3.0.0-rc.1 . SPEC §S19.3 co-existence bridge. Side-effect import
-// subscribes to session-changed and runs the v2->v3 migrator into
-// the v3EngagementStore on every emission (and once at boot). v2.x
-// views keep reading sessionState today; per-view migration in
-// later commits flips reads over to state/adapter.js.
-import "./state/sessionBridge.js";
+// rc.7 / 7e-8d-3 · sessionBridge.js side-effect import RETIRED.
+// The bridge's two production purposes (v2 customer shallow-merge
+// into v3 engagement on session-changed, AND v3→v2 cutover-window
+// mirror for the now-retired v2 view tabs) are both moot post-7e-8d:
+//   - file-open writes v3 directly via translateV2SessionToV3Engagement
+//   - demo loader writes v3 directly via setActiveEngagement
+//   - newSessionBtn click inlines the bridge's session-reset handler
+//   - All views read v3 via state/adapter.js (rc.7 / 7e-3..7)
+// state/sessionBridge.js is deleted in this commit.
+// (Was: import "./state/sessionBridge.js";)
 import { confirmAction, notifyError, notifyInfo, notifySuccess } from "./ui/components/Notify.js";
 import { buildSaveEnvelope, parseFileEnvelope, applyEnvelope, suggestFilename, FILE_MIME } from "./services/sessionFile.js";
 import { renderContextView }         from "./ui/views/ContextView.js";

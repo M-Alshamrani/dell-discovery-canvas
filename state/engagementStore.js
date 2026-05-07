@@ -31,6 +31,16 @@
 // Authority: docs/v3.0/SPEC.md §S19.3 + §S31 · docs/RULES.md §15 + §16 CH27.
 
 import { EngagementSchema } from "../schema/engagement.js";
+// rc.7 / 7e-8d-3 · the v2 sessionBridge is RETIRED. Pre-deletion the
+// bridge subscribed to subscribeActiveEngagement and re-emitted
+// session-changed("v3-mirror") so legacy onSessionChanged listeners
+// (app.js's tab re-render handler, the V-FLOW-* tests, env-hide UX
+// flows) saw the change. With the bridge gone, engagementStore must
+// emit session-changed itself on every commit so those listeners
+// continue to fire. Single source of truth for "engagement changed":
+// engagementStore._emit() pulses BOTH local subscribers AND the
+// session-changed bus.
+import { emitSessionChanged } from "../core/sessionEvents.js";
 
 const STORAGE_KEY = "v3_engagement_v1";
 
@@ -61,6 +71,15 @@ function _emit() {
     try { fn(_active); }
     catch (e) { console.error("[engagementStore] subscriber threw:", e); }
   });
+  // rc.7 / 7e-8d-3 · also fire the legacy session-changed bus for
+  // backward-compat with onSessionChanged listeners (app.js tab re-
+  // render, env-hide test SD5 + V-FLOW-* listeners). The "v3-commit"
+  // reason is the v3-pure successor to the bridge's "v3-mirror"
+  // reason; the regex SD5/SD6/etc. use (/hide|env|v3-mirror|v3-commit/)
+  // covers both. Wrapped in try/catch so a failing subscriber never
+  // breaks the engagementStore commit pipeline.
+  try { emitSessionChanged("v3-commit", "engagement updated"); }
+  catch (e) { console.error("[engagementStore] emitSessionChanged threw:", e); }
 }
 
 // _persist · write the active engagement to localStorage. Wrapped in
