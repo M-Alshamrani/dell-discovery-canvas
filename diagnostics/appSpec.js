@@ -16173,40 +16173,38 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-FLOW-CHAT-PERSIST-3: needs-key provider click MUST pass sidePanel:true to openSettingsModal");
     });
 
-    it("V-AI-ASSIST-DORMANT-1 · ui/views/AiAssistOverlay.js exists on disk but no production .js file imports it (rc.5 retirement; SPEC §S36.2)", async () => {
-      // File still served (preserved as dormant per project_v2x_admin_deferred.md).
+    it("V-AI-ASSIST-DORMANT-1 · ui/views/AiAssistOverlay.js DELETED in rc.7 / 7e-8 redo Step E (was: dormant per rc.4 Arc 2 + project_v2x_admin_deferred.md; superseded by project_v3_pure_arc.md). File MUST 404; no production .js imports it.", async () => {
+      // rc.7 / 7e-8 redo Step E · the rc.5 "preserve as dormant"
+      // contract (V-AI-ASSIST-DORMANT-1 v1) is RETIRED. The file was
+      // a V-ANTI-V2-IMPORT-1 violator (imported `session` from the
+      // deleted v2 sessionStore); the v3-pure architecture has no
+      // place for dormant v2 placeholders. Negative file-existence
+      // is the regression guard: any future commit that re-creates
+      // this file fails this test.
       const r = await fetch("/ui/views/AiAssistOverlay.js");
-      assertEqual(r.status, 200,
-        "V-AI-ASSIST-DORMANT-1: file must remain on disk (status 200 expected)");
-      // No production module imports it.
-      const productionFiles = [
-        "/app.js",
-        "/ui/views/CanvasChatOverlay.js",
-        "/ui/views/SettingsModal.js",
-        "/ui/views/SkillBuilder.js",
-        "/ui/skillBuilderOpener.js",
-        "/services/chatService.js",
-        "/services/aiService.js"
-      ];
+      assertEqual(r.status, 404,
+        "V-AI-ASSIST-DORMANT-1 (post-Step E): file MUST be deleted (status 404 expected; got " + r.status + ")");
+      // Belt-and-brace: scan ALL production files for any lingering
+      // import of the now-deleted module.
+      const { PRODUCTION_FILES } = await import("./_productionFileManifest.js");
       const offenders = [];
-      for (const path of productionFiles) {
+      for (const path of PRODUCTION_FILES) {
         try {
-          const src = await (await fetch(path)).text();
-          // Strip line + block comments so historical references in
-          // module-archaeology comments don't count as live imports.
+          const resp = await fetch(path);
+          if (!resp.ok) continue;
+          const src = await resp.text();
           const codeOnly = src
             .split(/\r?\n/)
             .filter(ln => !ln.trim().startsWith("//") && !ln.trim().startsWith("*"))
             .join("\n")
             .replace(/\/\*[\s\S]*?\*\//g, "");
-          // Only flag actual `import ... from ".../AiAssistOverlay.js"`.
           if (/import[\s\S]*?from\s*["'][^"']*AiAssistOverlay\.js["']/.test(codeOnly)) {
             offenders.push(path);
           }
         } catch (_e) { /* file missing → ok */ }
       }
       assertEqual(offenders.length, 0,
-        "V-AI-ASSIST-DORMANT-1: AiAssistOverlay must not be imported by any production module (offenders: " + offenders.join(", ") + ")");
+        "V-AI-ASSIST-DORMANT-1: no production module imports AiAssistOverlay (offenders: " + offenders.join(", ") + ")");
     });
 
     it("V-NO-VISIBLE-TEST-FLASH-1 · cloak extends to body-level rogue test probes (closes BUG-027 residual)", async () => {
