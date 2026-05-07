@@ -1570,10 +1570,19 @@ describe("09 · services/gapsService", () => {
     assert(Array.isArray(getAllGaps()), "getAllGaps must return an array");
   });
 
-  it("getAllGaps reflects current session.gaps", () => {
-    const before = getAllGaps().length;
+  it("getAllGaps reflects current engagement gaps (Step C v3-rewrite: gapsService reads engagementStore)", () => {
+    // rc.7 / 7e-8 redo Step C · gapsService is v3-native; mutating
+    // v2 `session.gaps` no longer affects gapsService reads. To
+    // exercise the contract, install the v2 session into the v3
+    // engagementStore via _installSessionAsV3Engagement BEFORE
+    // querying. Per discipline R6: the test asserts the v3 contract
+    // (engagementStore as source of truth), not the v2 surface.
     createGap(session, { description:"Service test gap", layerId:LayerIds[0] });
-    assertEqual(getAllGaps().length, before + 1, "must reflect added gap");
+    delete session._v3Installed; // re-install to pick up the new gap
+    _installSessionAsV3Engagement(session);
+    const allGaps = getAllGaps();
+    const target = allGaps.find(g => g.description === "Service test gap");
+    assert(target, "Step C: getAllGaps MUST reflect a gap added then installed into v3 engagement (engagementStore is source of truth)");
   });
 
   it("getFilteredGaps with no filters returns all gaps", () => {
@@ -1617,11 +1626,18 @@ describe("09 · services/gapsService", () => {
     );
   });
 
-  it("getGapsByPhase assigns gaps to correct phase bucket", () => {
+  it("getGapsByPhase assigns gaps to correct phase bucket (Step C v3-rewrite: install session into v3 engagement before querying)", () => {
+    // rc.7 / 7e-8 redo Step C · v3-native; install v2 session into
+    // v3 engagementStore so gapsService (which reads v3) sees the
+    // added gap. Discipline R6 rewrite.
+    delete session._v3Installed;
+    _installSessionAsV3Engagement(session);
     const nowCount   = getGapsByPhase({}).now.length;
-    createGap(session, { description:"Now gap", layerId:LayerIds[0], phase:"now" });
+    createGap(session, { description:"Now gap STEP-C", layerId:LayerIds[0], phase:"now" });
+    delete session._v3Installed;
+    _installSessionAsV3Engagement(session);
     const afterCount = getGapsByPhase({}).now.length;
-    assertEqual(afterCount, nowCount + 1, "now gap must appear in now bucket");
+    assertEqual(afterCount, nowCount + 1, "now gap must appear in now bucket after v3 install");
   });
 
   it("getGapsByPhase handles gaps with no affectedLayers (uses layerId)", () => {
@@ -2988,21 +3004,21 @@ describe("22 · services/programsService", () => {
     assert(exec.textContent.length > 10, "executive summary text must be populated");
   });
 
-  it("Gaps Board clicking a gap card populates the right detail panel (T7.2)", () => {
+  it("Gaps Board clicking a gap card populates the right detail panel (T7.2) (Step C v3-rewrite: install v3 engagement before render)", () => {
+    // rc.7 / 7e-8 redo Step C · SummaryGapsView reads v3 via gapsService;
+    // install the test session into v3 engagementStore before render so
+    // the kanban populates from v3. Discipline R6 rewrite.
     const s = freshSession();
     createGap(s, { description:"GB detail test", layerId:LayerIds[0] });
     const l = document.createElement("div"); const r = document.createElement("div");
-    // Assign session to live singleton-facing view: mount expects live session, but
-    // SummaryGapsView reads from the imported singleton. For the test we mutate live:
-    const origGaps = session.gaps.slice();
-    session.gaps.push(s.gaps[0]);
+    delete s._v3Installed;
+    _installSessionAsV3Engagement(s);
     renderSummaryGapsView(l, r);
     const card = l.querySelector(".gap-card");
+    assert(card, "T7.2: SummaryGapsView must render at least one .gap-card after v3 install");
     card.click();
     const detail = r.querySelector(".detail-panel");
-    // cleanup
-    session.gaps = origGaps;
-    assert(detail !== null, "clicking a gap card populates .detail-panel on the right");
+    assert(detail !== null, "T7.2: clicking a gap card populates .detail-panel on the right");
   });
 
   it("Vendor Mix clicking a vendor row populates vendor detail on the right (T7.3)", () => {
@@ -6880,7 +6896,10 @@ describe("43 · Phase 19l · v2.4.12 services scope + pre-flight regression fixe
     aiUndoStack._resetForTests();
   });
 
-  it("SVC15 · P3 · SummaryGapsView right-panel detail surfaces selected gap's services as a chip row", () => {
+  it("SVC15 · P3 · SummaryGapsView right-panel detail surfaces selected gap's services as a chip row (Step C v3-rewrite: install v3 engagement before render)", () => {
+    // rc.7 / 7e-8 redo Step C · SummaryGapsView reads v3 via gapsService;
+    // install the test session into v3 engagementStore before render.
+    // Discipline R6 rewrite.
     var s = createEmptySession();
     var cur = addInstance(s, { state: "current", layerId: "compute", environmentId: "coreDc",
       label: "Old", vendorGroup: "dell", criticality: "Medium" });
@@ -6889,27 +6908,23 @@ describe("43 · Phase 19l · v2.4.12 services scope + pre-flight regression fixe
     createGap(s, { description: "Replace probe", layerId: "compute", gapType: "replace",
       relatedCurrentInstanceIds: [cur.id], relatedDesiredInstanceIds: [des.id],
       services: ["migration", "training"] });
-    // SummaryGapsView reads from the live session singleton (per Phase 14 t7.2 pattern),
-    // so swap the gap into liveSession then re-render.
-    var origGaps = session.gaps.slice();
-    session.gaps = s.gaps.slice();
+    delete s._v3Installed;
+    _installSessionAsV3Engagement(s);
     var l = document.createElement("div"); var r = document.createElement("div");
     renderSummaryGapsView(l, r);
     var card = l.querySelector(".gap-card");
-    assert(card, "Reporting Gaps Board must render at least one card with our gap");
+    assert(card, "SVC15: SummaryGapsView must render at least one card with our gap");
     card.click();
     var detail = r.querySelector(".detail-panel");
-    assert(detail, "right panel must contain .detail-panel after clicking a gap card");
+    assert(detail, "SVC15: right panel must contain .detail-panel after clicking a gap card");
     var detailText = (detail.innerText || "").toLowerCase();
     var hasServicesLabel = /services needed|services/i.test(detailText);
     var migrationChipPresent = /migration/i.test(detailText);
     var trainingChipPresent  = /training/i.test(detailText);
-    // restore live session before asserting
-    session.gaps = origGaps;
     assert(hasServicesLabel,
-      "P3 — Reporting Gaps Board detail panel must label the services section");
+      "SVC15: detail panel must label the services section");
     assert(migrationChipPresent && trainingChipPresent,
-      "P3 — detail panel must surface BOTH services from the selected gap (migration + training)");
+      "SVC15: detail panel must surface BOTH services from the selected gap (migration + training)");
   });
 
 });
@@ -8895,17 +8910,29 @@ describe("47 · v2.4.16 · Foundations: Taxonomy + Reporting + PillEditor", () =
       "RA1.h · closed gap STILL counted in totalGaps (got " + sumExclusion.totalGaps + ", expected 2)");
   });
 
-  it("RA2 · getAllGaps returns all session.gaps regardless of status (raw access)", () => {
-    var demo = txCreateDemoSession();
-    var prev = session.gaps.slice();
-    session.gaps = demo.gaps.slice();
-    try {
-      var allGaps = getAllGaps();
-      assertEqual(allGaps.length, demo.gaps.length,
-        "RA2 · getAllGaps returns all " + demo.gaps.length + " demo gaps (got " + allGaps.length + ")");
-    } finally {
-      session.gaps = prev;
-    }
+  it("RA2 · getAllGaps returns all engagement gaps regardless of status (Step C v3-rewrite: build v3 engagement directly via commitGapAdd)", async () => {
+    // rc.7 / 7e-8 redo Step C · gapsService reads v3 engagementStore.
+    // Build a clean v3 engagement directly via commitGapAdd (avoids the
+    // _installSessionAsV3Engagement multi-pass instance UUID translation
+    // path -- that path has a pre-existing mappedAssetIds-resolution bug
+    // that's out of Step C scope; the test contract here is "gapsService
+    // reflects engagementStore.gaps content" and doesn't need instances).
+    // Discipline R8: scope held tight.
+    const { setActiveEngagement: _setEng, _resetForTests: _resetEng } = await import("../state/engagementStore.js");
+    const { createEmptyEngagement } = await import("../schema/engagement.js");
+    const { commitGapAdd } = await import("../state/adapter.js");
+    _resetEng();
+    _setEng(createEmptyEngagement());
+    // Add 3 gaps with mixed status to mirror what the demo exercises.
+    commitGapAdd({ description: "RA2 open A",   layerId: "compute", gapType: "replace",  urgency: "High",   phase: "now",  status: "open" });
+    commitGapAdd({ description: "RA2 open B",   layerId: "storage", gapType: "modernize", urgency: "Medium", phase: "next", status: "open" });
+    commitGapAdd({ description: "RA2 closed C", layerId: "network", gapType: "ops",      urgency: "Low",    phase: "later", status: "closed", closeReason: "test fixture", closedAt: new Date().toISOString() });
+    var allGaps = getAllGaps();
+    assertEqual(allGaps.length, 3,
+      "RA2 · getAllGaps returns all 3 added gaps via v3 engagementStore (got " + allGaps.length + ")");
+    var statuses = allGaps.map(g => g.status).sort();
+    assertEqual(statuses.join(","), "closed,open,open",
+      "RA2 · getAllGaps returns gaps regardless of status (mix of open + closed; got " + statuses.join(",") + ")");
   });
 
   it("RA3 · computeMixByLayer on demo returns an entry for every layer", () => {
@@ -8956,35 +8983,29 @@ describe("47 · v2.4.16 · Foundations: Taxonomy + Reporting + PillEditor", () =
     }
   });
 
-  it("RA5 · getFilteredGaps default opts INCLUDES closed gaps (caller-side filter contract per TAXONOMY §6.2 / §9 KD3)", () => {
-    // Audited 2026-04-29 · §6.2 + §9 KD3 · getFilteredGaps does NOT filter
-    // by gap.status by design. Closed-gap exclusion happens caller-side
-    // (Tab 4 + Tab 5 SharedFilterBar `showClosedGaps` toggle + body data
-    // attribute + CSS dim rule). This test pins the documented behavior
-    // so a future refactor that silently changes it gets caught.
-    var demo = txCreateDemoSession();
-    var closedFound = demo.gaps.some(function(g) { return g.status === "closed"; });
-    if (!closedFound && demo.gaps.length > 0) {
-      demo.gaps[demo.gaps.length - 1] = Object.assign({}, demo.gaps[demo.gaps.length - 1], {
-        status: "closed", closeReason: "test fixture", closedAt: new Date().toISOString()
-      });
-    }
-    var prev = session.gaps.slice();
-    session.gaps = demo.gaps.slice();
-    try {
-      var filtered = getFilteredGaps({});
-      // Per audited contract: closed gaps DO appear in default result.
-      var closedInResult = filtered.filter(function(g) { return g.status === "closed"; });
-      assert(closedInResult.length >= 1,
-        "RA5.a · getFilteredGaps default opts INCLUDES closed gaps (audited contract; got " +
-        closedInResult.length + " closed in result of " + filtered.length + ")");
-      // Caller-side exclusion works as expected when chained.
-      var openOnly = filtered.filter(function(g) { return g.status !== "closed"; });
-      assert(openOnly.length === filtered.length - closedInResult.length,
-        "RA5.b · caller-side `.filter(g => g.status !== \"closed\")` removes exactly the closed entries");
-    } finally {
-      session.gaps = prev;
-    }
+  it("RA5 · getFilteredGaps default opts INCLUDES closed gaps (caller-side filter contract per TAXONOMY §6.2 / §9 KD3) (Step C v3-rewrite: build v3 engagement directly via commitGapAdd)", async () => {
+    // rc.7 / 7e-8 redo Step C · gapsService reads v3 engagementStore.
+    // Build clean v3 engagement directly via commitGapAdd (skip
+    // _installSessionAsV3Engagement multi-pass instance UUID path
+    // for the same reason as RA2). The audited contract is unchanged:
+    // getFilteredGaps DOES NOT filter by status; closed-gap exclusion
+    // is caller-side. Discipline R8: scope held tight.
+    const { setActiveEngagement: _setEng, _resetForTests: _resetEng } = await import("../state/engagementStore.js");
+    const { createEmptyEngagement } = await import("../schema/engagement.js");
+    const { commitGapAdd } = await import("../state/adapter.js");
+    _resetEng();
+    _setEng(createEmptyEngagement());
+    commitGapAdd({ description: "RA5 open A",   layerId: "compute", gapType: "replace", urgency: "High", phase: "now",  status: "open" });
+    commitGapAdd({ description: "RA5 closed B", layerId: "storage", gapType: "ops",     urgency: "Low",  phase: "later", status: "closed", closeReason: "test fixture", closedAt: new Date().toISOString() });
+
+    var filtered = getFilteredGaps({});
+    var closedInResult = filtered.filter(function(g) { return g.status === "closed"; });
+    assert(closedInResult.length >= 1,
+      "RA5.a · getFilteredGaps default opts INCLUDES closed gaps via v3 (audited contract; got " +
+      closedInResult.length + " closed in result of " + filtered.length + ")");
+    var openOnly = filtered.filter(function(g) { return g.status !== "closed"; });
+    assert(openOnly.length === filtered.length - closedInResult.length,
+      "RA5.b · caller-side `.filter(g => g.status !== \"closed\")` removes exactly the closed entries");
   });
 
   it("RA6 · buildProjects on demo returns { projects: [...] } with derived metadata", () => {
