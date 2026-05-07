@@ -4987,7 +4987,14 @@ describe("39 · Phase 17 · v2.4.8 taxonomy unification — 7-term Action table"
 });
 
 // ── Phase 19i / v2.4.9 · primary-layer + Gap→Project data model ────────
-import { setPrimaryLayer, deriveProjectId } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · via test-fixture shim
+// rc.7 / 7e-8 redo Step I Phase I-B-2 · setPrimaryLayer + deriveProjectId
+// imports dropped. They were used by PL4 + PR2 (pure-helper unit tests).
+// Those tests dropped per architecture doc Step I plan (non-vector-id-
+// bearing tests of v2-only helpers): the helpers' integration behavior
+// is asserted end-to-end by PL5 (migrator backfill) + PR1 (createGap
+// auto-assign projectId) + PR3 (buildProjects bucketing). Internal-
+// helper unit assertions add no architectural coverage post-Step J
+// (when interactions/gapsCommands.js, the helpers' v2 home, is deleted).
 
 describe("40 · Phase 19i · v2.4.9 primary-layer invariant + explicit gap.projectId", () => {
 
@@ -5025,21 +5032,8 @@ describe("40 · Phase 19i · v2.4.9 primary-layer invariant + explicit gap.proje
     }), "empty array is tolerated — migrator backfills on load");
   });
 
-  it("PL4 · setPrimaryLayer prepends + dedupes to maintain the invariant", () => {
-    var g1 = { layerId: "storage", affectedLayers: [] };
-    setPrimaryLayer(g1, "compute");
-    assertEqual(g1.layerId, "compute", "layerId updated");
-    assertEqual(g1.affectedLayers.length, 1, "empty → length 1");
-    assertEqual(g1.affectedLayers[0], "compute", "[0] is new primary");
-
-    var g2 = { layerId: "storage", affectedLayers: ["storage", "compute"] };
-    setPrimaryLayer(g2, "compute");
-    assertEqual(g2.affectedLayers[0], "compute", "new primary first");
-    assertEqual(g2.affectedLayers.indexOf("storage") >= 0, true, "old primary retained as non-primary");
-    // No duplicates of the new primary.
-    var computeCount = g2.affectedLayers.filter(function(l) { return l === "compute"; }).length;
-    assertEqual(computeCount, 1, "new primary must appear exactly once after dedupe");
-  });
+  // PL4 dropped per Step I Phase I-B-2 (pure setPrimaryLayer helper unit
+  // test; integration coverage in PL5 + RH19 via createGap+updateGap).
 
   it("PL5 · migrator backfills affectedLayers[0]=layerId on legacy gaps", () => {
     const legacy = {
@@ -5088,14 +5082,8 @@ describe("40 · Phase 19i · v2.4.9 primary-layer invariant + explicit gap.proje
       "projectId must derive from (env, layer, gapType)");
   });
 
-  it("PR2 · deriveProjectId falls back to crossCutting when no affectedEnvironments", () => {
-    const pid = deriveProjectId({ layerId: "compute", gapType: "ops", affectedEnvironments: [] });
-    assertEqual(pid, "crossCutting::compute::ops",
-      "no env → crossCutting prefix");
-    const pid2 = deriveProjectId({ layerId: "compute", gapType: null });
-    assertEqual(pid2, "crossCutting::compute::null",
-      "null gapType → 'null' string in projectId");
-  });
+  // PR2 dropped per Step I Phase I-B-2 (pure deriveProjectId helper unit
+  // test; integration coverage in PR1 + PR3 via createGap + buildProjects).
 
   it("PR3 · buildProjects groups by gap.projectId (explicit field drives bucketing)", () => {
     const s = createEmptySession();
@@ -5398,7 +5386,9 @@ import {
   actionById as actionByIdRH
 } from "../core/taxonomy.js";
 import { effectiveDriverReason } from "../services/programsService.js";
-import { setPrimaryLayer as setPrimaryLayerRH } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · via test-fixture shim
+// rc.7 / 7e-8 redo Step I Phase I-B-2 · setPrimaryLayerRH dead alias dropped
+// (no call sites; RH19 exercises setPrimaryLayer indirectly via createGap +
+// updateGap, not through this alias).
 
 describe("42 · Phase 19k · v2.4.11 rules hardening + relationships polish", () => {
 

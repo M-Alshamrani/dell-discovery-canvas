@@ -60,9 +60,13 @@ export {
 } from "../interactions/matrixCommands.js";
 
 // ─── from interactions/gapsCommands.js ─────────────────────────────
+// rc.7 / 7e-8 redo Step I Phase I-B-2 · setPrimaryLayer + deriveProjectId
+// dropped from this re-export. Their only test consumers (PL4, PR2, dead
+// setPrimaryLayerRH alias) were dropped in the same commit. The helpers
+// stay PRIVATE inside state/runtimeMigrate.js (where they were inlined
+// during Step B); after Step J deletes interactions/gapsCommands.js,
+// nothing in the codebase imports these helpers any more.
 export {
-  setPrimaryLayer,
-  deriveProjectId,
   createGap,
   approveGap,
   updateGap,
