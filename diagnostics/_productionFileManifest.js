@@ -104,7 +104,15 @@ export const PRODUCTION_FILES = [
   "/state/filterState.js",
   "/state/integritySweep.js",
   "/state/runtimeMigrate.js",
-  "/state/sessionBridge.js",     // deletion target
+  // /state/sessionBridge.js DELETED in rc.7 / 7e-8 redo Step G
+  // (was: SPEC §S19.3 co-existence-window bridge; v2 session-changed ->
+  // v3 customer shallow-merge + v3 -> v2 mirror loop. With v2 views
+  // retired post-rc.7/7e-3..7 and v2 admin retired in Steps E + F, no
+  // production reader of liveSession remains; the mirror is dead weight.
+  // Boot-seed inlined in app.js DOMContentLoaded; session-reset chat-
+  // clear inlined at app.js newSessionBtn handler. V-FLOW-MIGRATE-TAB1-
+  // DRIVERS-3 + ENVS-3 + CUSTOMER-2 retired with vector-id preservation
+  // since they pinned the cutover-window mirror that no longer exists).
   "/state/sessionStore.js",      // deletion target
   "/state/v3Projection.js",
   "/state/v3SkillStore.js",

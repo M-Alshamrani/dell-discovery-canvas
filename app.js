@@ -38,10 +38,18 @@ import { clearTranscript } from "./state/chatMemory.js";
 import { runAllTests }               from "./diagnostics/appSpec.js";
 import { openSettingsModal }         from "./ui/views/SettingsModal.js";
 import * as aiUndoStack              from "./state/aiUndoStack.js";
-import { onSessionChanged, emitSessionChanged } from "./core/sessionEvents.js";
+// rc.7 / 7e-8 redo Step G · onSessionChanged dropped (shell repaint
+// migrated to subscribeActiveEngagement on the v3 engagementStore).
+// emitSessionChanged retained: it pulses markSaving() in core/
+// sessionEvents.js for the topbar Saving... indicator on the 3
+// session-replace transitions (demo / reset / file-open). Step K
+// finishes the cleanup -- audits remaining onSessionChanged callers
+// (interactions/aiCommands.js, state/aiUndoStack.js) and decides
+// whether core/sessionEvents.js itself retires.
+import { emitSessionChanged } from "./core/sessionEvents.js";
 // rc.7 / 7e-8c'-impl · stepper greys Tabs 4/5 when visibleEnvCount===0 per SPEC §S41.2.
 // rc.7 / 7e-8d-1 · setActiveEngagement also imported here (file-open path).
-import { getActiveEngagement, setActiveEngagement } from "./state/engagementStore.js";
+import { getActiveEngagement, setActiveEngagement, subscribeActiveEngagement } from "./state/engagementStore.js";
 import { visibleEnvCount } from "./ui/components/NoEnvsCard.js";
 import { APP_VERSION }               from "./core/version.js";
 import { loadAiConfig, saveAiConfig } from "./core/aiConfig.js";
@@ -51,12 +59,16 @@ import { getStatus as getSaveStatus, onStatusChange as onSaveStatusChange } from
 // restores the user's saved body[data-filter-<dim>] attributes on app
 // boot, before the user navigates to a tab that uses FilterBar.
 import "./state/filterState.js";
-// v3.0.0-rc.1 . SPEC §S19.3 co-existence bridge. Side-effect import
-// subscribes to session-changed and runs the v2->v3 migrator into
-// the v3EngagementStore on every emission (and once at boot). v2.x
-// views keep reading sessionState today; per-view migration in
-// later commits flips reads over to state/adapter.js.
-import "./state/sessionBridge.js";
+// rc.7 / 7e-8 redo Step G · state/sessionBridge.js DELETED.
+// (Was: SPEC §S19.3 co-existence bridge -- v2 session-changed -> v3
+// engagement customer-only shallow merge + v3 -> v2 mirror loop for
+// non-migrated v2 view tabs.) With v2 views fully migrated to v3-native
+// reads (rc.7 / 7e-3..7) and v2 admin retired (Step E + Step F), no
+// production reader of liveSession remains and the mirror is dead
+// weight. The bridge's session-reset chat-clear contract is inlined at
+// the newSessionBtn handler below; the bridge's boot-seed is inlined
+// in DOMContentLoaded so the v3 store is non-null after first paint.
+// Authority: SPEC §S40.4 F40.4.2 (no v2 bridge in v3-pure architecture).
 import { confirmAction, notifyError, notifyInfo, notifySuccess } from "./ui/components/Notify.js";
 import { buildSaveEnvelope, parseFileEnvelope, applyEnvelope, suggestFilename, FILE_MIME } from "./services/sessionFile.js";
 import { renderContextView }         from "./ui/views/ContextView.js";
@@ -103,6 +115,17 @@ var currentReportingTab = "overview";
 window.renderStepperForTests = renderStepper;
 
 document.addEventListener("DOMContentLoaded", function() {
+  // rc.7 / 7e-8 redo Step G · boot-seed the v3 engagement store. Pre-Step
+  // G this was sessionBridge.bridgeOnce("boot")'s job: if no engagement
+  // exists yet (cold boot, no localStorage), seed an empty v3 engagement
+  // so views render against a stable shape (vs. null) from first paint.
+  // engagementStore._rehydrateFromStorage runs at module load and either
+  // restores a persisted engagement or leaves _active null; we close that
+  // null-window here. setActiveEngagement persists the seed so subsequent
+  // reloads skip this branch.
+  if (!getActiveEngagement()) {
+    setActiveEngagement(createEmptyEngagement());
+  }
   renderHeaderMeta();
   renderStepper();
   renderStage();
@@ -119,17 +142,20 @@ document.addEventListener("DOMContentLoaded", function() {
   onSaveStatusChange(updateTabTitle);
   setInterval(renderSessionStripStatus, 30 * 1000);
   updateTabTitle();
-  // v2.4.5 · every AI apply/undo + session reset routes through the
-  // session-changed bus. The app shell re-renders header + current
-  // tab so views pick up the live data (fixes the v2.4.4
-  // "driver tile vanishes" + "tab blanks after undo" bugs).
-  // rc.7 / 7e-8c'-impl · also re-render the stepper on every emit so
-  // Tab 4/5 disabled state stays in sync with visibleEnvCount changes.
-  // rc.7 / 7e-8c'-fix2 · the 0->1 first-add acknowledgment toast was
-  // dropped per user direction; the empty-state card already conveys
-  // the soft-delete invariant in its bullet list, so a second one-time
-  // toast on first env add was redundant noise.
-  onSessionChanged(function() {
+  // rc.7 / 7e-8 redo Step G · v3-pure shell-repaint listener.
+  // Pre-Step G this was onSessionChanged from core/sessionEvents.js (the
+  // legacy "session-changed" bus). With sessionBridge deleted and v2 views
+  // retired, the v3 engagementStore IS the source of truth: every
+  // commitAction success + every setActiveEngagement (demo loader, +New
+  // session, file-open, AI undo) emits to subscribeActiveEngagement.
+  // Subscribing here repaints header + stepper + current tab whenever
+  // the v3 store mutates -- the v3-pure analogue of the prior bus.
+  // This is wider than the old emitSessionChanged-only triggers (every
+  // entity write now repaints the shell), but views are designed for
+  // re-mount on engagement change per SPEC §S19.3.
+  // rc.7 / 7e-8c'-impl carry-over · stepper re-renders so Tab 4/5
+  // disabled state stays in sync with visibleEnvCount changes.
+  subscribeActiveEngagement(function() {
     renderHeaderMeta();
     renderStepper();
     renderStage();
