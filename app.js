@@ -5,7 +5,22 @@
 // (session, resetSession, resetToDemo, saveToLocalStorage, replaceSession)
 // migrate to engagementStore in a subsequent v2-deletion sub-arc per
 // SPEC §S40 deletion-readiness checklist.
-import { session, resetSession, resetToDemo, saveToLocalStorage, replaceSession } from "./state/sessionStore.js";
+// rc.7 / 7e-8c · trimmed v2 sessionStore imports.
+//   - `session` dropped: 5 read sites + 2 buildSaveEnvelope arg sites
+//     migrated to getActiveEngagement() (+ engagementToV2Session at the
+//     v2-shape file boundary).
+//   - `saveToLocalStorage` dropped: v3 engagementStore auto-persists on
+//     every commit, so the explicit v2 persistence calls became no-ops
+//     (stepper click, demo loader, file-open).
+//   - `resetToDemo` dropped: was imported but never called.
+//   - `resetSession` + `replaceSession` retained for now: the file-open
+//     flow (services/sessionFile.js applyEnvelope) still returns a
+//     v2-shape session via migrateLegacySession, and resetSession's
+//     bridge-mediated reset path still runs through the v2 emit. Both
+//     migrate in a follow-up arc that gives canvasFile.js a v3-native
+//     load path + provides a v2→v3 runtime translator.
+import { resetSession, replaceSession } from "./state/sessionStore.js";
+import { engagementToV2Session } from "./state/v3ToV2DemoAdapter.js";
 import { runAllTests }               from "./diagnostics/appSpec.js";
 import { openSettingsModal }         from "./ui/views/SettingsModal.js";
 import * as aiUndoStack              from "./state/aiUndoStack.js";
@@ -303,9 +318,11 @@ function renderHeaderMeta() {
     if (verEl) verEl.textContent = "Canvas v" + APP_VERSION;
     return;
   }
-  var customerName = (session.customer && session.customer.name) || "";
+  // rc.7 / 7e-8c · v3-pure read. v3 engagement.customer.name + meta.isDemo.
+  var _engHdr = getActiveEngagement();
+  var customerName = (_engHdr && _engHdr.customer && _engHdr.customer.name) || "";
   var hasName      = !!customerName.trim();
-  var isDemo       = !!session.isDemo;
+  var isDemo       = !!(_engHdr && _engHdr.meta && _engHdr.meta.isDemo);
 
   el.innerHTML = "";
   el.setAttribute("data-empty", hasName || isDemo ? "false" : "true");
@@ -404,8 +421,10 @@ function renderSessionStripStatus() {
   if (!dot || !text) return;
 
   var snap = getSaveStatus();
-  var hasName = !!(session.customer && session.customer.name && session.customer.name.trim());
-  var isDemo  = !!session.isDemo;
+  // rc.7 / 7e-8c · v3-pure read.
+  var _engStr = getActiveEngagement();
+  var hasName = !!(_engStr && _engStr.customer && _engStr.customer.name && _engStr.customer.name.trim());
+  var isDemo  = !!(_engStr && _engStr.meta && _engStr.meta.isDemo);
   var state   = "idle";
   var label   = "Empty canvas";
 
@@ -487,8 +506,10 @@ function updateTabTitle() {
   var snap = getSaveStatus();
   var base = "Dell Discovery Canvas";
   var prefix = "";
+  // rc.7 / 7e-8c · v3-pure read for tab-title.
+  var _engTab = getActiveEngagement();
   if (snap.status === "saving") prefix = "• ";
-  else if (snap.status === "idle" && session.customer && session.customer.name && session.customer.name.trim()) {
+  else if (snap.status === "idle" && _engTab && _engTab.customer && _engTab.customer.name && _engTab.customer.name.trim()) {
     prefix = "• ";
   }
   document.title = prefix + base;
@@ -541,7 +562,10 @@ function renderStepper() {
     div.addEventListener("click", function() {
       // Disabled steps are non-interactive (per §S41.2).
       if (isDisabled) return;
-      saveToLocalStorage();
+      // rc.7 / 7e-8c · explicit saveToLocalStorage() retired -- v3
+      // engagementStore.setActiveEngagement auto-persists on every
+      // commit, so the pre-tab-switch v2 persistence call is a no-op
+      // in v3-pure mode.
       currentStep = step.id;
       renderStepper();
       renderStage();
@@ -558,12 +582,16 @@ function renderStage() {
   left.innerHTML  = "";
   right.innerHTML = "";
 
+  // rc.7 / 7e-8c · view renderers' signature is (left, right, _legacySession);
+  // the third arg is ignored (v3-pure, every read goes through getActiveEngagement).
+  // Pass null so we don't trip the `session` ReferenceError now that we dropped
+  // the v2 sessionStore import.
   switch (currentStep) {
-    case "context":   renderContextView(left, right, session);                          break;
-    case "current":   renderMatrixView(left, right, session, { stateFilter:"current"}); break;
-    case "desired":   renderMatrixView(left, right, session, { stateFilter:"desired"}); break;
-    case "gaps":      renderGapsEditView(left, right, session);                         break;
-    case "reporting": renderReportingStep(left, right);                                 break;
+    case "context":   renderContextView(left, right, null);                          break;
+    case "current":   renderMatrixView(left, right, null, { stateFilter:"current"}); break;
+    case "desired":   renderMatrixView(left, right, null, { stateFilter:"desired"}); break;
+    case "gaps":      renderGapsEditView(left, right, null);                         break;
+    case "reporting": renderReportingStep(left, right);                              break;
   }
 }
 
@@ -654,13 +682,14 @@ function wireFooter() {
         try {
           var demoMod    = await import("./core/demoEngagement.js");
           var storeMod   = await import("./state/engagementStore.js");
-          var adapterMod = await import("./state/v3ToV2DemoAdapter.js");
           var v3eng    = demoMod.loadDemo();
-          var v2sess   = adapterMod.engagementToV2Session(v3eng);
-          // v2 sessionState - derived from v3.
-          replaceSession(v2sess);
-          saveToLocalStorage();
-          // v3 engagement - authoritative.
+          // rc.7 / 7e-8c · v2-mirror RETIRED. Pre-7e-8c the demo loader
+          // wrote a v3→v2 down-converted session into liveSession via
+          // replaceSession + saveToLocalStorage so the now-retired v2
+          // view tabs would see the demo. With v2 views fully migrated
+          // (per rc.7 / 7e-3..7), nothing reads liveSession in production
+          // anymore -- the v2 mirror is dead weight. v3 engagementStore.
+          // setActiveEngagement IS the authoritative write.
           storeMod.setActiveEngagement(v3eng);
           // Emit AFTER both stores are coherent so subscribers see the
           // matched pair. The bridge's shallow-merge is a no-op here
@@ -723,8 +752,13 @@ function wireFooter() {
     document.getElementById("saveDialogCancel").addEventListener("click", function() { overlay.remove(); });
     document.getElementById("saveDialogOk").addEventListener("click", function() {
       var includeApiKeys = document.getElementById("saveInclKeysChk").checked;
+      // rc.7 / 7e-8c · save flow now derives the v2-shape session at the
+      // file boundary from v3 via engagementToV2Session(). The .canvas
+      // file format is still v2 (services/sessionFile.js is the
+      // boundary; a v3-native canvasFile rewrite is a follow-up arc).
+      var v2sessForSave = engagementToV2Session(getActiveEngagement());
       var envelope = buildSaveEnvelope({
-        session:        session,
+        session:        v2sessForSave,
         skills:         loadSkills(),
         providerConfig: loadAiConfig(),
         includeApiKeys: includeApiKeys
@@ -733,7 +767,7 @@ function wireFooter() {
       var url  = URL.createObjectURL(blob);
       var a    = document.createElement("a");
       a.href = url;
-      a.download = suggestFilename(session);
+      a.download = suggestFilename(v2sessForSave);
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
       overlay.remove();
@@ -765,8 +799,16 @@ function wireFooter() {
           notifyError({ title: "Can't apply this file", body: e.message || String(e) });
           return;
         }
+        // rc.7 / 7e-8c · file-open still routes through v2 sessionStore
+        // (replaceSession + sessionBridge customer-merge) because
+        // services/sessionFile.js applyEnvelope returns a v2-shape
+        // session via migrateLegacySession. A v2→v3 runtime translator
+        // (or a v3-native canvasFile rewrite) is the follow-up arc that
+        // unblocks dropping replaceSession + the bridge in 7e-8d.
         replaceSession(res.session);
-        saveToLocalStorage();
+        // saveToLocalStorage() retired here -- v3 engagementStore auto-
+        // persists, and v2 sessionStore.replaceSession is followed by
+        // the bridge's session-changed pipeline which handles v3 side.
         saveSkills(res.skills);
         if (res.providerConfig) saveAiConfig(res.providerConfig);
         emitSessionChanged("session-replace", "Opened " + (file.name || "file"));
