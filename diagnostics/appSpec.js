@@ -61,12 +61,17 @@ import {
 import {
   session, createEmptySession, resetSession,
   saveToLocalStorage, loadFromLocalStorage,
-  migrateLegacySession,
   // v2.4.12 · PR1 · context-save helper (RED-stub mirrors v2.4.11 bug)
   applyContextSave
   // Note: `replaceSession` is imported separately lower in the file
   // (line ~4469); my new tests reuse that import.
 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../state/sessionStore.js)
+// rc.7 / 7e-8 redo Step I-B-1 · migrateLegacySession sourced directly
+// from state/runtimeMigrate.js (its canonical home post-Step B). Was
+// previously re-exported through state/sessionStore.js -> _v2TestFixtures
+// shim; that path retires now since migrateLegacySession is a pure
+// canonicalize-v2 function with no v2 sessionStore state dependency.
+import { migrateLegacySession } from "../state/runtimeMigrate.js";
 
 // v2.4.12 · Section S · services catalog + opt-in suggested chips
 import {
@@ -4843,7 +4848,10 @@ import {
   ACTIONS, ACTION_IDS, GAP_TYPES as TAX_GAP_TYPES, ACTION_TO_GAP_TYPE as TAX_ACTION_MAP,
   DISPOSITION_ACTIONS as TAX_DISPOSITIONS, actionById, evaluateLinkRule, validateActionLinks
 } from "../core/taxonomy.js";
-import { session as sessionForTx, replaceSession as replaceSessionForTx, migrateLegacySession as migrateForTx } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · via test-fixture shim
+// rc.7 / 7e-8 redo Step I-B-1 · sessionForTx + replaceSessionForTx imports
+// were dead aliases (no call sites). migrateForTx replaced with the
+// canonical migrateLegacySession import from state/runtimeMigrate.js
+// at the top of the file.
 
 describe("39 · Phase 17 · v2.4.8 taxonomy unification — 7-term Action table", () => {
 
@@ -4954,13 +4962,13 @@ describe("39 · Phase 17 · v2.4.8 taxonomy unification — 7-term Action table"
         relatedCurrentInstanceIds: [], relatedDesiredInstanceIds: [],
         status: "open", reviewed: true }]
     };
-    const migrated1 = migrateForTx(JSON.parse(JSON.stringify(legacy)));
+    const migrated1 = migrateLegacySession(JSON.parse(JSON.stringify(legacy)));
     assertEqual(migrated1.gaps[0].gapType, "ops",
       "gap.gapType 'rationalize' must coerce to 'ops'");
     assertEqual(migrated1.instances[0].disposition, "retire",
       "instance.disposition 'rationalize' must coerce to 'retire'");
     // Second pass — idempotent.
-    const migrated2 = migrateForTx(migrated1);
+    const migrated2 = migrateLegacySession(migrated1);
     assertEqual(migrated2.gaps[0].gapType, "ops", "idempotent: gap stays ops");
     assertEqual(migrated2.instances[0].disposition, "retire", "idempotent: instance stays retire");
   });

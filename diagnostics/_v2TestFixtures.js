@@ -30,6 +30,11 @@
 // Authority: SPEC §S40 + RULES §16 CH34 + project_v3_pure_arc.md.
 
 // ─── from state/sessionStore.js ────────────────────────────────────
+// rc.7 / 7e-8 redo Step I-B-1 · migrateLegacySession dropped from this
+// shim. It lives canonically in state/runtimeMigrate.js (post-Step B);
+// test consumers now import it directly. This is a pure-function symbol
+// with no v2 sessionStore state coupling, so the direct path is the
+// architecturally correct one.
 export {
   session,
   createEmptySession,
@@ -40,7 +45,6 @@ export {
   applyContextSave,
   saveToLocalStorage,
   loadFromLocalStorage,
-  migrateLegacySession,
   isFreshSession
 } from "../state/sessionStore.js";
 
