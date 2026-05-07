@@ -66,7 +66,7 @@ import {
   applyContextSave
   // Note: `replaceSession` is imported separately lower in the file
   // (line ~4469); my new tests reuse that import.
-} from "../state/sessionStore.js";
+} from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../state/sessionStore.js)
 
 // v2.4.12 · Section S · services catalog + opt-in suggested chips
 import {
@@ -86,13 +86,13 @@ import {
   addInstance, updateInstance,
   deleteInstance, moveInstance,
   mapAsset, unmapAsset, proposeCriticalityUpgrades
-} from "../interactions/matrixCommands.js";
+} from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../interactions/matrixCommands.js)
 
 import {
   createGap, updateGap, deleteGap,
   linkCurrentInstance, linkDesiredInstance,
   unlinkCurrentInstance, unlinkDesiredInstance
-} from "../interactions/gapsCommands.js";
+} from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../interactions/gapsCommands.js)
 
 import {
   getHealthSummary, computeBucketMetrics, scoreToRiskLabel
@@ -2601,7 +2601,7 @@ import {
 import {
   computeDiscoveryCoverage, computeRiskPosture
 } from "../services/roadmapService.js";
-import { approveGap as approveGapCmd } from "../interactions/gapsCommands.js";
+import { approveGap as approveGapCmd } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed via test-fixture shim
 
 describe("22 · services/programsService", () => {
 
@@ -3431,7 +3431,7 @@ import {
   buildGapFromDisposition,
   syncGapFromDesired, syncGapsFromCurrentCriticality,
   syncDesiredFromGap, confirmPhaseOnLink
-} from "../interactions/desiredStateSync.js";
+} from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed via test-fixture shim (was: ../interactions/desiredStateSync.js)
 
 describe("18 * interactions/desiredStateSync", () => {
 
@@ -4901,7 +4901,7 @@ describe("29 · Phase 19d.1 · Prompt guards + Refine-to-CARE button + test-befo
 import { parseProposals, applyProposal, applyAllProposals, setPathFromRoot, resolvePathFromRoot }
   from "../interactions/aiCommands.js";
 import * as aiUndoStack from "../state/aiUndoStack.js";
-import { session as liveSession, replaceSession } from "../state/sessionStore.js";
+import { session as liveSession, replaceSession } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · via test-fixture shim
 import { WRITE_RESOLVERS, isWritablePath } from "../core/bindingResolvers.js";
 import { FIELD_MANIFEST as FM, writableFieldsForTab } from "../core/fieldManifest.js";
 import { RESPONSE_FORMATS, APPLY_POLICIES } from "../core/skillStore.js";
@@ -5536,7 +5536,7 @@ describe("37 · Phase 19g · v2.4.6 UX quick-wins — version chip + skill chip 
 });
 
 // ── Phase 19h / v2.4.7 · Fresh-start UX (FS1-FS5) ──────────────────────
-import { isFreshSession, session as liveSession7 } from "../state/sessionStore.js";
+import { isFreshSession, session as liveSession7 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · via test-fixture shim
 
 describe("38 · Phase 19h · v2.4.7 fresh-start UX — empty default + welcome card", () => {
 
@@ -5629,7 +5629,7 @@ import {
   ACTIONS, ACTION_IDS, GAP_TYPES as TAX_GAP_TYPES, ACTION_TO_GAP_TYPE as TAX_ACTION_MAP,
   DISPOSITION_ACTIONS as TAX_DISPOSITIONS, actionById, evaluateLinkRule, validateActionLinks
 } from "../core/taxonomy.js";
-import { session as sessionForTx, replaceSession as replaceSessionForTx, migrateLegacySession as migrateForTx } from "../state/sessionStore.js";
+import { session as sessionForTx, replaceSession as replaceSessionForTx, migrateLegacySession as migrateForTx } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · via test-fixture shim
 
 describe("39 · Phase 17 · v2.4.8 taxonomy unification — 7-term Action table", () => {
 
@@ -5765,7 +5765,7 @@ describe("39 · Phase 17 · v2.4.8 taxonomy unification — 7-term Action table"
 });
 
 // ── Phase 19i / v2.4.9 · primary-layer + Gap→Project data model ────────
-import { setPrimaryLayer, deriveProjectId } from "../interactions/gapsCommands.js";
+import { setPrimaryLayer, deriveProjectId } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · via test-fixture shim
 
 describe("40 · Phase 19i · v2.4.9 primary-layer invariant + explicit gap.projectId", () => {
 
@@ -6154,7 +6154,7 @@ import {
   actionById as actionByIdRH
 } from "../core/taxonomy.js";
 import { effectiveDriverReason } from "../services/programsService.js";
-import { setPrimaryLayer as setPrimaryLayerRH } from "../interactions/gapsCommands.js";
+import { setPrimaryLayer as setPrimaryLayerRH } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · via test-fixture shim
 
 describe("42 · Phase 19k · v2.4.11 rules hardening + relationships polish", () => {
 
