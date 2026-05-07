@@ -141,6 +141,70 @@ This is not boilerplate. It's the forcing function that makes the agent stop and
 
 ---
 
+## R11 · Recite + Pledge + Execute + Prove (MANDATORY at every step boundary)
+
+🔴 **HARDEST RULE · LOCKED 2026-05-08 evening** by user direction (verbatim):
+
+> *"you will recitiate and answer , what would a principle architect do for this step , and then execute what a principale architect would do , this is not a cheap jounior develper patch work , this iss a preincipal architect work. then you pledge and execute a broser live smoke test with rigression testing with screenshot with eveyr feature in scope of that pass."*
+
+The user has had to ask for this multiple times. The agent keeps deviating to "test banner only" verification, which is the failed-attempt anti-pattern. R11 is the durable forcing function that makes deviation impossible.
+
+**At the start of every step (every commit-sized unit of work), the agent MUST emit a four-block ritual in user-visible text BEFORE editing any file:**
+
+### Block 1 · Recite
+
+> "Step **{name}**: principal-architect question — what would a principal architect do here?"
+
+State the step's full scope as the user understands it (not just the line of code about to change). Surface the consumer graph in scope.
+
+### Block 2 · Answer
+
+> "A principal architect would: {1-3 sentence concrete plan}."
+
+The plan must name:
+- The architectural concern (what invariant is being preserved or moved).
+- The blast radius (which files / which tests / which UX flows).
+- The smoke pass that will prove it.
+
+If the answer is "they wouldn't ship this in a single commit" — STOP and apply R8 (surface scope balloon).
+
+### Block 3 · Execute
+
+Do the work. No skipping ahead to the screenshot.
+
+### Block 4 · Pledge + Smoke + Screenshot
+
+Before committing, the agent MUST:
+1. **Pledge**: write "Browser smoke pledge: I will exercise {flow 1} + {flow 2} + ... in the live preview, capture screenshots, verify against the demo + +New session regression baseline."
+2. **Execute** the pledge:
+   - `mcp__Claude_Preview__preview_screenshot` AT LEAST ONCE per visible feature in scope of the pass.
+   - Walk every feature the change touches (load demo, click each affected stepper tab, exercise overlays, +New session reset, etc.).
+   - For non-observable changes (pure docs, pure test-only edits): say so explicitly + still capture ONE post-change screenshot of the working app as the "no observable regression" baseline.
+3. **Regression suite**: every commit re-runs the standing regression flow:
+   - Boot empty → "New customer", 0 of all collections.
+   - Load demo → Acme Healthcare, 3 drivers, 4 envs, 23 instances, 8 gaps.
+   - Click all 5 stepper tabs → each renders content (Tab 2 matrix tiles, Tab 5 sub-tabs).
+   - Open AI Assist → canvas-chat overlay opens with input + transcript.
+   - Open Settings → Skills builder mounts SkillBuilder.js shell.
+   - Click +New session → engagementId rotates, chat transcript drops to 0 (BUG-029).
+4. **Capture screenshots inline** in the agent's message — at minimum: post-demo state + +New-session-reset state. More if the pass touches specific UX surfaces.
+5. **Surface findings**: if anything in the regression flow doesn't match baseline, that's a regression — REVERT the commit (R7), don't fix forward.
+
+**The test banner is NOT browser smoke**. Reading "1140/1146 GREEN" without exercising the UX is the exact pattern that broke rc.7 / 7e-8d-3..5 (the deletion that made the user revert and lock this discipline). R11 makes "test banner only" a discipline violation.
+
+**Every commit message ends with a `Browser smoke evidence:` block** listing the screenshots captured + the regression flows walked. No `Browser smoke evidence:` block = the commit is incomplete and gets reverted.
+
+This rule applies to:
+- Code changes (production .js).
+- Test changes (diagnostics/*.js).
+- Doc changes (docs/*.md, including this file — yes, this very change must be screenshot-verified).
+- Memory anchor changes.
+- Any commit that reaches the repo, with no exceptions for "trivial" or "doc-only" or "test-only."
+
+**The user has explicitly compared deviation from this rule to alzheimer's** (verbatim: *"i need this as a must do , and gets done everytinme as you alwyes diviate from this ask like you have alzahimer"*). The duty of this document is to be the external memory the agent cannot forget.
+
+---
+
 ## Cross-references
 
 - `feedback_spec_and_test_first.md` — spec → tests → code → smoke (LOCKED).
