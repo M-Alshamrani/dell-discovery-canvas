@@ -4444,7 +4444,12 @@ import {
 } from "../core/skillStore.js";
 import { SEED_SKILL_IDS } from "../core/seedSkills.js";
 import { renderTemplate, extractBindings } from "../services/skillEngine.js";
-import { renderSkillAdmin } from "../ui/views/SkillAdmin.js";
+// rc.7 / 7e-8 Step F · ui/views/SkillAdmin.js DELETED.
+// Production routing now goes through ui/views/SkillBuilder.js (V-SKILL-V3-8..15
+// pin its contract). The v2 SkillAdmin DOM-coupled tests (SB6, SB7, FP5, FP6,
+// FP8, FP9, PG5, QW3..QW6) are retired below with vector-id preservation per
+// principal-architect discipline R6 (tests assert v3 contracts) + R8 (no scope
+// balloons; the v3 admin UX is covered by V-SKILL-V3-* in §T36).
 
 describe("26 · Phase 19b · Skill Builder — store, engine, admin UI", () => {
 
@@ -4537,31 +4542,18 @@ describe("26 · Phase 19b · Skill Builder — store, engine, admin UI", () => {
     clearSkills();
   });
 
-  it("SB6 · Skills admin renders a row per saved skill + the + Add button (post-seed-purge: explicit population)", () => {
-    clearSkills();
-    // Post-rc.5-dev hotfix #4: loadSkills no longer auto-seeds, so we
-    // explicitly populate one skill via addSkill before asserting that
-    // a row renders for it. This isolates the SB6 contract ("one row
-    // per skill record") from the seed-library dependency.
-    addSkill({ name: "SB6 fixture", tabId: "context", promptTemplate: "x", outputMode: "suggest" });
-    const container = document.createElement("div");
-    renderSkillAdmin(container);
-    const rows = container.querySelectorAll(".skill-row");
-    assertEqual(rows.length, 1,
-      "one row per saved skill (we added exactly one fixture)");
-    const addBtn = [...container.querySelectorAll("button")].find(b => b.textContent.indexOf("Add") >= 0);
-    assert(addBtn, "+ Add skill button must render");
-    clearSkills();
+  it("SB6 · RETIRED rc.7 / 7e-8 Step F per project_v3_pure_arc.md — was: SkillAdmin renders a row per saved skill + the + Add button; v2 SkillAdmin.js DELETED, list/add UX covered by ui/views/SkillBuilder.js (V-SKILL-V3-8..15)", () => {
+    // Vector id preserved per TESTS §T1.2. v2 SkillAdmin DOM is gone;
+    // the row-per-skill + Add affordance contracts now live in the
+    // evolved SkillBuilder under §T36 (V-SKILL-V3-* family).
+    assert(true, "SB6 retired; see V-SKILL-V3-8..15");
   });
 
-  it("SB7 · Skills admin empty state when no skills saved (persisted empty)", () => {
-    // Simulate a user who deleted everything (including the seed).
-    saveSkills([]);
-    const container = document.createElement("div");
-    renderSkillAdmin(container);
-    const empty = container.querySelector(".skill-admin-empty");
-    assert(empty, "empty state must render when list is empty");
-    clearSkills();
+  it("SB7 · RETIRED rc.7 / 7e-8 Step F per project_v3_pure_arc.md — was: SkillAdmin empty state when no skills saved; v2 SkillAdmin.js DELETED, empty-state UX covered by SkillBuilder + V-SKILL-V3-* family", () => {
+    // Vector id preserved per TESTS §T1.2. The v2 .skill-admin-empty
+    // marker no longer exists; the v3 SkillBuilder renders its own
+    // empty state asserted by V-SKILL-V3-* in §T36.
+    assert(true, "SB7 retired; see V-SKILL-V3-8..15");
   });
 
   // v2.4.13 S4E . SB8 dropped. Original test asserted the per-driver
@@ -4626,47 +4618,20 @@ describe("27 · Phase 19c · Field manifest + click-to-insert in skill builder",
       "reporting tab preview scope must carry a selectedProject fallback");
   });
 
-  it("FP5 · Skill admin edit form renders a field-chip per bindable field of the selected tab", () => {
-    clearSkills();
-    // Post-rc.5-dev hotfix #4 (no auto-seed): explicitly populate.
-    saveSkills(seedSkills());
-    var container = document.createElement("div");
-    document.body.appendChild(container); // form relies on DOM focus; attach for realism
-    renderSkillAdmin(container);
-    var editBtns = [...container.querySelectorAll("button")].filter(b => b.textContent === "Edit");
-    assert(editBtns[0], "Edit button on the populated row must be present");
-    editBtns[0].click();
-    var chips = container.querySelectorAll(".field-chip");
-    // Seed targets 'context'; field manifest has ≥ 8 entries for that tab.
-    assert(chips.length >= 8, "expected at least 8 chips for the Context tab (got " + chips.length + ")");
-    var chipPaths = [...chips].map(c => c.getAttribute("data-path"));
-    assert(chipPaths.indexOf("context.selectedDriver.label") >= 0,
-      "context.selectedDriver.label chip must render");
-    container.remove();
-    clearSkills();
+  it("FP5 · RETIRED rc.7 / 7e-8 Step F per project_v3_pure_arc.md — was: SkillAdmin edit form renders a field-chip per bindable field of the selected tab; v2 SkillAdmin DOM gone, chip-palette UX evolved into SkillBuilder.js + V-SKILL-V3-10..12", () => {
+    // Vector id preserved per TESTS §T1.2. The FIELD_MANIFEST contract
+    // is still asserted by FP1..FP4 above; the chip-rendering surface
+    // moved into SkillBuilder.js with V-SKILL-V3-10's parameters[]
+    // editor and V-SKILL-V3-11's chip-palette filtering.
+    assert(true, "FP5 retired; see V-SKILL-V3-10..12");
   });
 
-  it("FP6 · chip click inserts LABELED binding pill into the pill-editor; serialize reads back as 'Label: {{path}}'", () => {
-    clearSkills();
-    saveSkills(seedSkills()); // post-rc.5-dev hotfix #4: explicit populate
-    var container = document.createElement("div");
-    document.body.appendChild(container);
-    renderSkillAdmin(container);
-    var editBtns = [...container.querySelectorAll("button")].filter(b => b.textContent === "Edit");
-    editBtns[0].click();
-    var editor = container.querySelector(".pill-editor");
-    assert(editor, "edit form must render a .pill-editor (not a textarea) for the template");
-    // Clear editor so the insertion is easy to assert.
-    editor.innerHTML = "";
-    editor.focus();
-    var chip = container.querySelector('.field-chip[data-path="session.customer.name"]');
-    assert(chip, "expected a chip with data-path=session.customer.name");
-    chip.click();
-    var serialized = editor.serialize();
-    assert(serialized.indexOf("Customer name: {{session.customer.name}}") >= 0,
-      "default chip click must insert a LABELED pill that serializes to 'Customer name: {{session.customer.name}}' (got: " + serialized + ")");
-    container.remove();
-    clearSkills();
+  it("FP6 · RETIRED rc.7 / 7e-8 Step F per project_v3_pure_arc.md — was: chip click inserts LABELED binding pill into the pill-editor; PillEditor module + chip-click-insertion contract still covered by Suite 28 (PE1..PE7) against PillEditor.js directly", () => {
+    // Vector id preserved per TESTS §T1.2. The PillEditor's labeled-
+    // pill insertion is the unit being tested; that contract lives
+    // in Suite 28 (PE1..PE7) which exercises PillEditor.js directly
+    // without needing the v2 SkillAdmin host.
+    assert(true, "FP6 retired; PillEditor contract covered by Suite 28");
   });
 
   it("FP7 · coerceForLLM stringifies scalars directly and non-scalars as pretty JSON", () => {
@@ -4683,43 +4648,19 @@ describe("27 · Phase 19c · Field manifest + click-to-insert in skill builder",
     assert(longArr.indexOf("truncated") >= 0, "cap is visible to the LLM");
   });
 
-  it("FP8 · Alt-click on a chip inserts a BARE pill; serialize reads back as bare {{path}} (no label)", () => {
-    clearSkills();
-    saveSkills(seedSkills()); // post-rc.5-dev hotfix #4: explicit populate
-    var container = document.createElement("div");
-    document.body.appendChild(container);
-    renderSkillAdmin(container);
-    [...container.querySelectorAll("button")].filter(b => b.textContent === "Edit")[0].click();
-    var editor = container.querySelector(".pill-editor");
-    editor.innerHTML = "";
-    editor.focus();
-    var chip = container.querySelector('.field-chip[data-path="session.customer.vertical"]');
-    assert(chip, "expected a chip with data-path=session.customer.vertical");
-    var evt = new MouseEvent("click", { bubbles: true, cancelable: true, altKey: true });
-    chip.dispatchEvent(evt);
-    var serialized = editor.serialize();
-    // Trailing NBSP becomes a space via the serializer; allow either form.
-    assert(serialized.indexOf("{{session.customer.vertical}}") === 0,
-      "Alt-click must emit a bare pill (serialize starts with {{path}}, got: " + serialized + ")");
-    assert(serialized.indexOf("vertical: {{") < 0,
-      "bare pill must NOT carry the label prefix");
-    container.remove();
-    clearSkills();
+  it("FP8 · RETIRED rc.7 / 7e-8 Step F per project_v3_pure_arc.md — was: Alt-click on a chip inserts a BARE pill; bare-pill insertion is a PillEditor-module concern, asserted by Suite 28 (PE3 + PE5) directly against PillEditor.js", () => {
+    // Vector id preserved per TESTS §T1.2. The Alt-click → bare-pill
+    // contract is on PillEditor.js, not SkillAdmin. Suite 28's
+    // PillEditor unit tests cover the same insertion path without a
+    // v2 SkillAdmin host.
+    assert(true, "FP8 retired; PillEditor bare-pill contract covered by Suite 28");
   });
 
-  it("FP9 · Skill admin edit form renders a 'Test skill now' button that wires to a test-output target", () => {
-    clearSkills();
-    saveSkills(seedSkills()); // post-rc.5-dev hotfix #4: explicit populate
-    var container = document.createElement("div");
-    document.body.appendChild(container);
-    renderSkillAdmin(container);
-    [...container.querySelectorAll("button")].filter(b => b.textContent === "Edit")[0].click();
-    var testBtn = [...container.querySelectorAll("button")].find(b => b.textContent.indexOf("Test skill now") >= 0);
-    assert(testBtn, "'Test skill now' button must render in the edit form");
-    var testOut = container.querySelector(".skill-form-test-out");
-    assert(testOut, "test-output target .skill-form-test-out must exist (starts hidden)");
-    container.remove();
-    clearSkills();
+  it("FP9 · RETIRED rc.7 / 7e-8 Step F per project_v3_pure_arc.md — was: SkillAdmin edit form renders a 'Test skill now' button + test-output target; v3 SkillBuilder owns the test affordance, asserted by V-SKILL-V3-13..15", () => {
+    // Vector id preserved per TESTS §T1.2. The Test-skill-now button
+    // and its output target now live in SkillBuilder.js with the
+    // evolved parameters[]+outputTarget shape.
+    assert(true, "FP9 retired; see V-SKILL-V3-13..15");
   });
 
 });
@@ -4863,7 +4804,7 @@ describe("29 · Phase 19d.1 · Prompt guards + Refine-to-CARE button + test-befo
       "action-commands mode must throw (ships in v2.4.5+)");
   });
 
-  it("PG4 · summaryForMode + REFINE_META_SYSTEM exposed for the SkillAdmin UI + meta-prompt", () => {
+  it("PG4 · summaryForMode + REFINE_META_SYSTEM exposed for the Skill Builder UI + meta-prompt", () => {
     assert(typeof summaryForMode === "function", "summaryForMode export must be a function");
     const s = summaryForMode("text-brief");
     assert(typeof s === "string" && s.length > 0, "text-brief summary must be non-empty");
@@ -4874,33 +4815,13 @@ describe("29 · Phase 19d.1 · Prompt guards + Refine-to-CARE button + test-befo
     assert(/CARE/.test(REFINE_META_SYSTEM), "meta-prompt must reference the CARE framework");
   });
 
-  it("PG5 · SkillAdmin edit form renders Refine + footer-summary hint + save-gate hint (v2.4.6 rule: EDIT is not test-blocked)", () => {
-    // v2.4.6 · L6 rule change: test-before-save is MANDATORY for
-    // CREATE, ADVISORY for EDIT. The original PG5 (v2.4.3) asserted
-    // Save was disabled on Edit too — that contract is retired.
-    // The gate still exists, it's just narrower. CREATE-mode coverage
-    // lives in Suite 37 QW5. This test covers EDIT-mode: Save enabled
-    // AND the save-gate hint is present (warn flavour, not error).
-    clearSkills();
-    saveSkills(seedSkills()); // post-rc.5-dev hotfix #4: explicit populate
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    renderSkillAdmin(container);
-    [...container.querySelectorAll("button")].filter(b => b.textContent === "Edit")[0].click();
-    const refineBtn = [...container.querySelectorAll("button")].find(b => b.textContent.indexOf("Refine") >= 0);
-    assert(refineBtn, "'Refine to CARE format' button must render in the edit form");
-    const hint = container.querySelector(".skill-form-footer-hint");
-    assert(hint, "footer-summary hint must render under the system-prompt field");
-    const saveBtn = [...container.querySelectorAll("button")].find(b => /save|create/i.test(b.textContent));
-    assert(saveBtn, "Save/Create button must render");
-    assertEqual(saveBtn.disabled, false,
-      "EDIT mode: Save must stay ACTIVE (v2.4.6 rule change — test-before-save is CREATE-only)");
-    const gateHint = container.querySelector(".save-gate-hint");
-    assert(gateHint, "save-gate hint must still render next to Save (advisory state)");
-    assert(gateHint.className.indexOf("save-gate-hint-error") < 0,
-      "EDIT mode: gate hint must NOT carry error styling (Save is not blocked)");
-    container.remove();
-    clearSkills();
+  it("PG5 · RETIRED rc.7 / 7e-8 Step F per project_v3_pure_arc.md — was: SkillAdmin edit form renders Refine + footer-summary hint + save-gate hint (v2.4.6: EDIT not test-blocked); refine + footer-hint + save-gate UX evolved into SkillBuilder.js, contracts covered by V-SKILL-V3-13..15", () => {
+    // Vector id preserved per TESTS §T1.2. The Refine button + footer-
+    // summary hint + save-gate distinction (CREATE blocking vs EDIT
+    // advisory) are evolved-admin concerns now expressed against
+    // SkillBuilder.js + state/v3SkillStore.js by the V-SKILL-V3-*
+    // family in §T36. The PG4 export-shape contract above is unchanged.
+    assert(true, "PG5 retired; see V-SKILL-V3-13..15");
   });
 
   it("PG6 · OUTPUT_MODES export is the v2.4.3-shipped triad (text-brief, json-schema, action-commands)", () => {
@@ -5422,106 +5343,34 @@ describe("37 · Phase 19g · v2.4.6 UX quick-wins — version chip + skill chip 
       "session meta chip must NOT display the session-schema version (v2.4.6 removed it)");
   });
 
-  it("QW3 · every saved skill round-trips into a renderSkillAdmin row with non-empty chip set (no more empty `mode` chip)", () => {
-    clearSkills();
-    // Post-rc.5-dev hotfix #4: loadSkills() doesn't auto-seed, so we
-    // explicitly populate fixtures via saveSkills(seedSkills()) to
-    // exercise the chip-set rendering contract on the same record
-    // shapes as before. Tests the rendering, not the auto-install.
-    saveSkills(seedSkillsForQW());
-    const container = document.createElement("div");
-    renderSkillAdmin(container);
-    const rows = container.querySelectorAll(".skill-row");
-    assertEqual(rows.length, SEED_IDS_FOR_QW.length,
-      "one row per saved skill (we explicitly populated " + SEED_IDS_FOR_QW.length + " seeds for this test)");
-    rows.forEach(function(row) {
-      // Old bug: skill.outputMode was rendered → empty <span> → empty chip.
-      const oldChip = row.querySelector(".skill-row-mode");
-      if (oldChip) {
-        assert(oldChip.textContent.trim().length > 0,
-          "legacy .skill-row-mode chip (if still rendered for non-seeds) must not be empty");
-      }
-      // New contract: every row carries a responseFormat chip AND
-      // an applyPolicy chip, both with non-empty text.
-      const fmtChip    = row.querySelector(".skill-row-format");
-      const policyChip = row.querySelector(".skill-row-policy");
-      assert(fmtChip,
-        "every skill row must render a .skill-row-format chip (v2.4.6)");
-      assert(policyChip,
-        "every skill row must render a .skill-row-policy chip (v2.4.6)");
-      assert(fmtChip.textContent.trim().length > 0,
-        "responseFormat chip must be non-empty");
-      assert(policyChip.textContent.trim().length > 0,
-        "applyPolicy chip must be non-empty");
-    });
-    clearSkills();
+  it("QW3 · RETIRED rc.7 / 7e-8 Step F per project_v3_pure_arc.md — was: every saved skill round-trips into a renderSkillAdmin row with non-empty chip set (no more empty `mode` chip); the .skill-row-format / .skill-row-policy chips are v2 SkillAdmin DOM, retired with v2 admin", () => {
+    // Vector id preserved per TESTS §T1.2. The post-purge skill-row
+    // chip vocabulary is now an evolved-admin concern; the v3 admin
+    // expresses skill metadata via outputContract + outputTarget +
+    // parameters[] (see V-MIGRATE-V2-V3-2 + V-SKILL-V3-* in §T36).
+    assert(true, "QW3 retired; see V-SKILL-V3-* in §T36");
   });
 
-  it("QW4 · skill-row chip vocabulary matches RESPONSE_FORMATS + APPLY_POLICIES (no stale values)", () => {
-    clearSkills();
-    // Post-rc.5-dev hotfix #4: explicitly populate fixtures (see QW3
-    // comment for the same migration pattern).
-    saveSkills(seedSkillsForQW());
-    const container = document.createElement("div");
-    renderSkillAdmin(container);
-    container.querySelectorAll(".skill-row-format").forEach(function(c) {
-      assert(RESPONSE_FORMATS.indexOf(c.textContent.trim()) >= 0,
-        "chip '" + c.textContent + "' must be a known responseFormat");
-    });
-    container.querySelectorAll(".skill-row-policy").forEach(function(c) {
-      assert(APPLY_POLICIES.indexOf(c.textContent.trim()) >= 0,
-        "chip '" + c.textContent + "' must be a known applyPolicy");
-    });
-    clearSkills();
+  it("QW4 · RETIRED rc.7 / 7e-8 Step F per project_v3_pure_arc.md — was: skill-row chip vocabulary matches RESPONSE_FORMATS + APPLY_POLICIES; v2 chip vocabulary superseded by v3 outputContract/outputTarget shape, asserted via V-MIGRATE-V2-V3-2 + V-SKILL-V3-*", () => {
+    // Vector id preserved per TESTS §T1.2. RESPONSE_FORMATS +
+    // APPLY_POLICIES exports stay valid (still consumed elsewhere)
+    // but the v2 chip-rendering contract is replaced by the v3
+    // outputContract enum asserted in the V-SKILL-V3-* family.
+    assert(true, "QW4 retired; see V-MIGRATE-V2-V3-2 + V-SKILL-V3-*");
   });
 
-  it("QW5 · Save button for NEW skill stays disabled until a successful test run", () => {
-    clearSkills();
-    const container = document.createElement("div");
-    renderSkillAdmin(container);
-    // Click the "+ Add skill" button to open the form in create mode.
-    const addBtn = [...container.querySelectorAll("button")].find(b => /add skill/i.test(b.textContent));
-    assert(addBtn, "+ Add skill button must exist");
-    addBtn.click();
-    // Save button text for a new skill reads "Create skill".
-    const saveBtn = container.querySelector(".form-actions .btn-primary");
-    assert(saveBtn, "Save button must render inside the edit form");
-    assertEqual(/create|save/i.test(saveBtn.textContent), true, "Save button label is present");
-    assertEqual(saveBtn.disabled, true,
-      "NEW skill: Save button MUST start disabled (test-before-save is mandatory for creation)");
-    // The hint alongside must render the error-styled class.
-    const hint = container.querySelector(".save-gate-hint");
-    assert(hint, "Save gate hint must render");
-    assert(hint.className.indexOf("save-gate-hint-error") >= 0,
-      "NEW skill + untested: hint must carry error style (blocks save)");
-    clearSkills();
+  it("QW5 · RETIRED rc.7 / 7e-8 Step F per project_v3_pure_arc.md — was: Save button for NEW skill stays disabled until a successful test run; CREATE-mode test-before-save gate moves to SkillBuilder.js, contract covered by V-SKILL-V3-13..15", () => {
+    // Vector id preserved per TESTS §T1.2. The CREATE-mode test-
+    // before-save discipline is preserved by the evolved admin and
+    // expressed against SkillBuilder.js's gate UI in §T36.
+    assert(true, "QW5 retired; see V-SKILL-V3-13..15");
   });
 
-  it("QW6 · Save button for EDIT mode stays ENABLED even without re-test (v2.4.6 rule change)", () => {
-    clearSkills();
-    // Post-rc.5-dev hotfix #4: explicitly populate one fixture via
-    // saveSkills(seedSkills()) so the Edit button has a row to
-    // operate on. The contract here is "EDIT button enables Save
-    // even untested" — independent of how the row got into storage.
-    saveSkills(seedSkillsForQW());
-    const seedId = SEED_IDS_FOR_QW[0];
-    const container = document.createElement("div");
-    renderSkillAdmin(container);
-    // Find the Edit button for the first row and click it.
-    const editBtn = [...container.querySelectorAll("button")].find(b => /edit/i.test(b.textContent));
-    assert(editBtn, "first skill row must surface an Edit button");
-    editBtn.click();
-    const saveBtn = container.querySelector(".form-actions .btn-primary");
-    assert(saveBtn, "Save button must render after Edit click");
-    // Edit mode + no re-test = warn, not block.
-    assertEqual(saveBtn.disabled, false,
-      "EDIT mode: Save button MUST stay active even without re-test (v2.4.6 rule change)");
-    const hint = container.querySelector(".save-gate-hint");
-    assert(hint, "Save gate hint must render");
-    // Hint must be warn OR ok (never error) for existing skills.
-    assert(hint.className.indexOf("save-gate-hint-error") < 0,
-      "EDIT mode: hint must NOT carry error style (save is not blocked)");
-    clearSkills();
+  it("QW6 · RETIRED rc.7 / 7e-8 Step F per project_v3_pure_arc.md — was: Save button for EDIT mode stays ENABLED even without re-test (v2.4.6 rule change); EDIT-mode advisory-not-blocking discipline carried into SkillBuilder.js, contract covered by V-SKILL-V3-13..15", () => {
+    // Vector id preserved per TESTS §T1.2. The v2.4.6 rule (CREATE
+    // blocks; EDIT advisory) is preserved in the evolved admin and
+    // asserted there.
+    assert(true, "QW6 retired; see V-SKILL-V3-13..15");
   });
 
   it("QW7 · test runner banner: green fades in ~5s; red stays sticky", () => {

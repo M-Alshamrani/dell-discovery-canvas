@@ -3,7 +3,7 @@
 // contenteditable editor that hosts inline uneditable `<span>` binding
 // pills alongside free text. Exposes a textarea-compatible surface
 // (serialize() / setValue() / focus() / insertPillAtCursor()) so the
-// existing SkillAdmin wiring needs minimal changes.
+// Skill Builder host wiring stays minimal.
 //
 // Pill markup:
 //   <span class="binding-pill is-scalar" contenteditable="false"

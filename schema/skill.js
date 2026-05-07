@@ -182,8 +182,9 @@ export function migrateV2SkillToV31(v2Record) {
     ? v2Record.promptTemplate
     : "";
 
-  // 5. bindings: passthrough (the existing v2 SkillAdmin already extracts
-  //    {path, source} via skillEngine.extractBindings); empty if absent.
+  // 5. bindings: passthrough ({path, source}) extracted by
+  //    skillEngine.extractBindings on save in the evolved Skill Builder;
+  //    empty if absent on the v2 record.
   out.bindings = Array.isArray(v2Record.bindings) ? v2Record.bindings.slice() : [];
 
   // 6. outputContract: derive from responseFormat + outputSchema hint.

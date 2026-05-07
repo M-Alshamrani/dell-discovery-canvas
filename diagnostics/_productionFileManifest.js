@@ -129,6 +129,12 @@ export const PRODUCTION_FILES = [
   // it a V-ANTI-V2-IMPORT-1 violator that the rc.7 / 7e-8 v2 deletion
   // arc retires entirely; project_v2x_admin_deferred.md "preserve as
   // dormant" contract superseded by project_v3_pure_arc.md).
+  // /ui/views/SkillAdmin.js DELETED in rc.7 / 7e-8 redo Step F
+  // (was: dormant since rc.4 Arc 4; SettingsModal now routes Skills
+  // section through ui/views/SkillBuilder.js. The 11 v2 DOM-coupled
+  // tests SB6/SB7/FP5/FP6/FP8/FP9/PG5/QW3..QW6 retired in lock-step
+  // with vector-id preservation; v3 admin contracts live in
+  // V-SKILL-V3-8..15 + V-MIGRATE-V2-V3-1..4 in §T36 of appSpec).
   "/ui/views/CanvasChatOverlay.js",
   "/ui/views/ContextView.js",
   "/ui/views/GapsEditView.js",
@@ -136,7 +142,6 @@ export const PRODUCTION_FILES = [
   "/ui/views/MatrixView.js",
   "/ui/views/ReportingView.js",
   "/ui/views/SettingsModal.js",
-  "/ui/views/SkillAdmin.js",             // dormant, deletion target
   "/ui/views/SkillBuilder.js",
   "/ui/views/SummaryGapsView.js",
   "/ui/views/SummaryHealthView.js",
