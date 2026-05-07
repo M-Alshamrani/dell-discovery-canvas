@@ -12567,61 +12567,76 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     // 404 on the module file imply no import can resolve. We additionally
     // scan known-consumer files to belt-and-brace the 404 contract.
 
-    it("V-ANTI-V2-IMPORT-1 · NO production module imports state/sessionStore (forbidden per SPEC §S40.4 F40.4.1) — RED until rc.7 / 7e-8", async () => {
-      const consumers = [
-        "/app.js",
-        "/ui/views/ContextView.js",
-        "/ui/views/MatrixView.js",
-        "/ui/views/GapsEditView.js",
-        "/ui/views/ReportingView.js",
-        "/state/aiUndoStack.js",
-        "/interactions/aiCommands.js",
-        "/core/bindingResolvers.js"
-      ];
-      for (const url of consumers) {
+    // -----------------------------------------------------------------
+    // rc.7 / 7e-8 redo Step A · V-ANTI-V2-IMPORT-1/2/3 EXPANDED to scan
+    // ALL production .js files via diagnostics/_productionFileManifest.js.
+    //
+    // Why: the previous closed-list scope (8 files for IMPORT-1, 5 for
+    // IMPORT-2, 5 for IMPORT-3) was the root cause of the 7e-8d-3..5
+    // boot-breaking deletion -- 5 production importers of sessionStore
+    // weren't on the list, the test passed GREEN, and deletion shipped
+    // a broken app. The expanded scope reveals the REAL consumer graph;
+    // RED entries become the migration backlog for Steps B..H.
+    //
+    // Authority: docs/V2_DELETION_ARCHITECTURE.md (Step A) +
+    // `feedback_no_patches_flag_first.md` + the principal-architect
+    // discipline locked 2026-05-08.
+    // -----------------------------------------------------------------
+
+    it("V-ANTI-V2-IMPORT-1 · NO production module imports state/sessionStore (forbidden per SPEC §S40.4 F40.4.1) — scans ALL production files via _productionFileManifest", async () => {
+      const { PRODUCTION_FILES } = await import("./_productionFileManifest.js");
+      const FORBIDDEN = /import\s*[^;]*\bfrom\s*["'][^"']*\bsessionStore(?:\.js)?["']/;
+      const violators = [];
+      for (const url of PRODUCTION_FILES) {
         const r = await fetch(url, { method: "HEAD" });
-        if (r.status === 404) continue;            // module already deleted; vacuously OK
+        if (r.status === 404) continue;            // module deleted; vacuously OK
         const src = await (await fetch(url)).text();
-        const FORBIDDEN = /import\s*[^;]*\bfrom\s*["'][^"']*\bsessionStore(?:\.js)?["']/;
-        assert(!FORBIDDEN.test(src),
-          "V-ANTI-V2-IMPORT-1: " + url + " MUST NOT import from state/sessionStore (RED until rc.7 / 7e-8)");
+        if (FORBIDDEN.test(src)) violators.push(url);
       }
+      assert(violators.length === 0,
+        "V-ANTI-V2-IMPORT-1: production files MUST NOT import from state/sessionStore. Violators: " +
+        (violators.length ? violators.join(", ") : "none"));
     });
 
-    it("V-ANTI-V2-IMPORT-2 · NO production module imports interactions/{matrixCommands, gapsCommands, desiredStateSync} (forbidden per SPEC §S40.4 F40.4.2) — RED until rc.7 / 7e-8", async () => {
-      const consumers = [
-        "/ui/views/MatrixView.js",
-        "/ui/views/GapsEditView.js",
-        "/interactions/aiCommands.js",
-        "/core/bindingResolvers.js",
-        "/core/promptGuards.js"
-      ];
-      for (const url of consumers) {
+    it("V-ANTI-V2-IMPORT-2 · NO production module imports interactions/{matrixCommands, gapsCommands, desiredStateSync} (forbidden per SPEC §S40.4 F40.4.2) — scans ALL production files via _productionFileManifest", async () => {
+      const { PRODUCTION_FILES } = await import("./_productionFileManifest.js");
+      const FORBIDDEN = /import\s*[^;]*\bfrom\s*["'][^"']*\b(matrixCommands|gapsCommands|desiredStateSync)(?:\.js)?["']/;
+      const violators = [];
+      for (const url of PRODUCTION_FILES) {
+        // The 3 interaction modules themselves cross-import (gapsCommands
+        // imports confirmPhaseOnLink from desiredStateSync; sessionStore
+        // imports setPrimaryLayer + deriveProjectId from gapsCommands).
+        // Skip the deletion targets themselves since their internal
+        // imports are not the bug we're guarding against.
+        if (url === "/interactions/matrixCommands.js" ||
+            url === "/interactions/gapsCommands.js" ||
+            url === "/interactions/desiredStateSync.js" ||
+            url === "/state/sessionStore.js") continue;
         const r = await fetch(url, { method: "HEAD" });
         if (r.status === 404) continue;
         const src = await (await fetch(url)).text();
-        const FORBIDDEN = /import\s*[^;]*\bfrom\s*["'][^"']*\b(matrixCommands|gapsCommands|desiredStateSync)(?:\.js)?["']/;
-        assert(!FORBIDDEN.test(src),
-          "V-ANTI-V2-IMPORT-2: " + url + " MUST NOT import from interactions/matrixCommands|gapsCommands|desiredStateSync (RED until rc.7 / 7e-8)");
+        if (FORBIDDEN.test(src)) violators.push(url);
       }
+      assert(violators.length === 0,
+        "V-ANTI-V2-IMPORT-2: production files MUST NOT import from interactions/matrixCommands|gapsCommands|desiredStateSync. Violators: " +
+        (violators.length ? violators.join(", ") : "none"));
     });
 
-    it("V-ANTI-V2-IMPORT-3 · NO production module imports state/sessionBridge (forbidden per SPEC §S40.4 F40.4.3) — RED until rc.7 / 7e-8", async () => {
-      const consumers = [
-        "/app.js",
-        "/ui/views/ContextView.js",
-        "/ui/views/MatrixView.js",
-        "/ui/views/GapsEditView.js",
-        "/state/adapter.js"
-      ];
-      for (const url of consumers) {
+    it("V-ANTI-V2-IMPORT-3 · NO production module imports state/sessionBridge (forbidden per SPEC §S40.4 F40.4.3) — scans ALL production files via _productionFileManifest", async () => {
+      const { PRODUCTION_FILES } = await import("./_productionFileManifest.js");
+      const FORBIDDEN = /import\s*[^;]*\bfrom\s*["'][^"']*\bsessionBridge(?:\.js)?["']|import\s*["'][^"']*\bsessionBridge(?:\.js)?["']/;
+      const violators = [];
+      for (const url of PRODUCTION_FILES) {
+        // Skip the bridge file itself (its own imports aren't the bug).
+        if (url === "/state/sessionBridge.js") continue;
         const r = await fetch(url, { method: "HEAD" });
         if (r.status === 404) continue;
         const src = await (await fetch(url)).text();
-        const FORBIDDEN = /import\s*[^;]*\bfrom\s*["'][^"']*\bsessionBridge(?:\.js)?["']/;
-        assert(!FORBIDDEN.test(src),
-          "V-ANTI-V2-IMPORT-3: " + url + " MUST NOT import from state/sessionBridge (RED until rc.7 / 7e-8)");
+        if (FORBIDDEN.test(src)) violators.push(url);
       }
+      assert(violators.length === 0,
+        "V-ANTI-V2-IMPORT-3: production files MUST NOT import from state/sessionBridge (including side-effect imports). Violators: " +
+        (violators.length ? violators.join(", ") : "none"));
     });
 
     // -----------------------------------------------------------------
