@@ -29,7 +29,10 @@
 // imports from app.js -- only the side-effect import of sessionBridge.js
 // (line ~30) remains, which itself drops in 7e-8d-3.
 import { engagementToV2Session } from "./state/v3ToV2DemoAdapter.js";
-import { translateV2SessionToV3Engagement } from "./state/runtimeMigrate.js";
+// rc.7 / 7e-8 redo Step B · translateV2SessionToV3Engagement no longer
+// imported here. The translation lives inside services/sessionFile.js
+// applyEnvelope, which now returns a v3 engagement directly. app.js
+// stays oblivious to the file-format-on-the-wire being v2.
 import { createEmptyEngagement } from "./schema/engagement.js";
 import { clearTranscript } from "./state/chatMemory.js";
 import { runAllTests }               from "./diagnostics/appSpec.js";
@@ -827,22 +830,14 @@ function wireFooter() {
           notifyError({ title: "Can't apply this file", body: e.message || String(e) });
           return;
         }
-        // rc.7 / 7e-8d-1 · file-open path now translates the v2 session
-        // returned by applyEnvelope through the runtime v2→v3 migrator
-        // (state/runtimeMigrate.js, which delegates to the same 10-step
-        // pipeline used at .canvas file load) and writes directly to
-        // v3 engagementStore. Closes the latent data-loss bug where
-        // the bridge's customer-only shallow merge dropped instances/
-        // gaps/envs/drivers from a loaded .canvas file. v3 auto-persists;
-        // saveToLocalStorage() retired here too (v2 path retired with
-        // it).
-        var v3engFromFile;
-        try { v3engFromFile = translateV2SessionToV3Engagement(res.session); }
-        catch (e) {
-          notifyError({ title: "Can't translate this file to v3", body: (e && e.message) || String(e) });
-          return;
-        }
-        setActiveEngagement(v3engFromFile);
+        // rc.7 / 7e-8 redo Step B · applyEnvelope now returns a v3
+        // engagement directly (translation lives inside sessionFile.js
+        // via state/runtimeMigrate.js). The previous shape returned a
+        // v2-shape session and made app.js do its own translation; that
+        // leaked the v2-shape boundary into the consumer. Encapsulating
+        // the translation at the file-boundary module is the v3-pure
+        // architecture: app.js doesn't know the file format is v2.
+        setActiveEngagement(res.engagement);
         saveSkills(res.skills);
         if (res.providerConfig) saveAiConfig(res.providerConfig);
         emitSessionChanged("session-replace", "Opened " + (file.name || "file"));

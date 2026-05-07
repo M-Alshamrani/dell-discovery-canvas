@@ -8,9 +8,16 @@ import { LEGACY_DRIVER_LABEL_TO_ID, ENV_CATALOG, DEFAULT_ENABLED_ENV_IDS } from 
 import { createDemoSession as createDemoSessionImpl } from "./demoSession.js";
 import { emitSessionChanged } from "../core/sessionEvents.js";
 import { clear as clearAiUndoStack } from "./aiUndoStack.js";
-import { setPrimaryLayer, deriveProjectId } from "../interactions/gapsCommands.js";
-import { normalizeServices } from "../core/services.js";
 import { markSaved } from "../core/saveStatus.js";
+// rc.7 / 7e-8 redo Step B · migrateLegacySession + its
+// setPrimaryLayer/deriveProjectId/normalizeServices deps moved to
+// state/runtimeMigrate.js (the canonical v2->v3 module). sessionStore
+// re-imports + re-exports it for backward-compat with the live `session`
+// IIFE below + the diagnostics test fixtures + diagnostics/demoSpec.js
+// (those move off in a later step). The previous in-file definition
+// is gone; sessionStore no longer imports from interactions/gapsCommands.
+import { migrateLegacySession } from "./runtimeMigrate.js";
+export { migrateLegacySession } from "./runtimeMigrate.js";
 
 export { createDemoSession } from "./demoSession.js";
 
@@ -47,173 +54,15 @@ export function createEmptySession() {
   };
 }
 
-/**
- * Migrate a raw session object from any pre-v2 shape into the current shape.
- * Pure function — does not touch the live `session` export.
- * Rules (mirrors SPEC §2.5):
- *   - Ensure customer.{name,vertical,segment,industry,region} all exist (empty strings ok).
- *   - If customer.drivers is missing, derive from customer.primaryDriver + session.businessOutcomes
- *     via LEGACY_DRIVER_LABEL_TO_ID. Unknown / empty labels → drivers = [].
- *   - Always strip legacy primaryDriver and businessOutcomes keys.
- *   - instances[*].timeline preserved on read; dropped by next save's JSON round-trip only
- *     because views will no longer emit it. (We do not forcibly delete here.)
- *   - gaps[*].driverId not auto-populated here; renderer derives at display time.
- *   - Ensure arrays for instances and gaps.
- *   - Ensure sessionMeta + sessionId exist.
- */
-export function migrateLegacySession(raw) {
-  var s = raw || {};
-  if (!s.customer || typeof s.customer !== "object") s.customer = {};
-  var c = s.customer;
-
-  if (typeof c.name     === "undefined") c.name     = "";
-  if (typeof c.vertical === "undefined") c.vertical = c.segment || c.industry || "";
-  if (typeof c.segment  === "undefined") c.segment  = "";
-  if (typeof c.industry === "undefined") c.industry = "";
-  if (typeof c.region   === "undefined") c.region   = "";
-
-  if (!Array.isArray(c.drivers)) {
-    var legacyLabel    = c.primaryDriver;
-    var legacyOutcomes = s.businessOutcomes;
-    if (legacyLabel && LEGACY_DRIVER_LABEL_TO_ID[legacyLabel]) {
-      c.drivers = [{
-        id:       LEGACY_DRIVER_LABEL_TO_ID[legacyLabel],
-        priority: "High",
-        outcomes: legacyOutcomes || ""
-      }];
-    } else {
-      c.drivers = [];
-    }
-  }
-  delete c.primaryDriver;
-  delete s.businessOutcomes;
-
-  if (!Array.isArray(s.instances)) s.instances = [];
-  if (!Array.isArray(s.gaps))      s.gaps      = [];
-
-  // ------------------------------------------------------------------
-  // v2.4.15 . dynamic environment model.
-  // (1) Build session.environments[] from referenced ids if not present.
-  //     Auto-enable any env id mentioned by an instance.environmentId or
-  //     a gap.affectedEnvironments[]. If still empty, leave [] so
-  //     getActiveEnvironments() falls back to DEFAULT_ENABLED_ENV_IDS.
-  // (2) Drain legacy s.environmentAliases[envId] into per-env alias.
-  // (3) Backfill hidden:false on every entry (idempotent — running the
-  //     migrator on a v2.4.15-shaped session is a no-op).
-  // (4) Drop the legacy environmentAliases field once drained.
-  // ------------------------------------------------------------------
-  var legacyAliases = (s.environmentAliases && typeof s.environmentAliases === "object")
-    ? s.environmentAliases : null;
-
-  if (!Array.isArray(s.environments)) {
-    var referenced = {};
-    s.instances.forEach(function(i) {
-      if (i && typeof i.environmentId === "string" && i.environmentId.length > 0) {
-        referenced[i.environmentId] = true;
-      }
-    });
-    s.gaps.forEach(function(g) {
-      if (g && Array.isArray(g.affectedEnvironments)) {
-        g.affectedEnvironments.forEach(function(envId) {
-          if (typeof envId === "string" && envId.length > 0) referenced[envId] = true;
-        });
-      }
-    });
-    s.environments = Object.keys(referenced).map(function(id) {
-      return { id: id, hidden: false };
-    });
-  }
-
-  // Per-entry hygiene: ensure shape (id + hidden), drain alias, dedupe ids.
-  var seenIds = {};
-  s.environments = s.environments.filter(function(e) {
-    if (!e || typeof e.id !== "string" || e.id.length === 0) return false;
-    if (seenIds[e.id]) return false;
-    seenIds[e.id] = true;
-    return true;
-  }).map(function(e) {
-    var out = Object.assign({}, e);
-    if (typeof out.hidden !== "boolean") out.hidden = false;
-    if (legacyAliases && typeof legacyAliases[out.id] === "string" &&
-        legacyAliases[out.id].trim().length > 0 &&
-        (typeof out.alias !== "string" || out.alias.length === 0)) {
-      out.alias = legacyAliases[out.id].trim();
-    }
-    return out;
-  });
-
-  // Drop the legacy field once drained — single source of truth from
-  // here on is session.environments[].alias.
-  if ("environmentAliases" in s) delete s.environmentAliases;
-
-  // v2.1 rule 6: default `reviewed` on any gap missing it.
-  //   auto-drafted (has linked desired tiles) → reviewed: false (surfaces the dot)
-  //   everything else                         → reviewed: true
-  s.gaps.forEach(function(g) {
-    if (typeof g.reviewed !== "boolean") {
-      g.reviewed = !((g.relatedDesiredInstanceIds || []).length > 0);
-    }
-  });
-
-  // v2.4.8 · Phase 17 · coerce the retired "rationalize" value on any
-  // gap / instance that predates the taxonomy change. Idempotent — a
-  // session that has no rationalize values is a no-op. Logs once per
-  // coercion so the migration is visible in the console at least once.
-  s.gaps.forEach(function(g) {
-    if (g && g.gapType === "rationalize") {
-      console.warn("[migrate · Phase 17] coercing gap.gapType 'rationalize' → 'ops' on gap " + g.id);
-      g.gapType = "ops";
-    }
-  });
-  s.instances.forEach(function(i) {
-    if (i && i.disposition === "rationalize") {
-      console.warn("[migrate · Phase 17] coercing instance.disposition 'rationalize' → 'retire' on " + i.id);
-      i.disposition = "retire";
-    }
-  });
-
-  // v2.4.9 · backfill primary-layer invariant (affectedLayers[0] === layerId)
-  // and explicit gap.projectId for every gap. Both are idempotent — a
-  // gap already conforming gets a no-op; re-running the migrator is safe.
-  // v2.4.11 · M10 · also default gap.urgencyOverride to false on legacy gaps.
-  // v2.4.12 · M11 · default gap.services to [] on legacy gaps; normalize
-  // arrays through normalizeServices so unknown ids (e.g. left over from a
-  // hand-edited .canvas file) are dropped + duplicates collapsed.
-  s.gaps.forEach(function(g) {
-    if (!g || !g.layerId) return;
-    // Primary-layer invariant — setPrimaryLayer prepends+dedupes.
-    var alreadyOk = Array.isArray(g.affectedLayers) &&
-                    g.affectedLayers.length > 0 &&
-                    g.affectedLayers[0] === g.layerId;
-    if (!alreadyOk) setPrimaryLayer(g, g.layerId);
-    // Project relationship — derive if missing.
-    if (!g.projectId) g.projectId = deriveProjectId(g);
-    // v2.4.11 · A6 · default urgencyOverride to false (urgency follows
-    // propagation rules unless user explicitly set it).
-    if (typeof g.urgencyOverride !== "boolean") g.urgencyOverride = false;
-    // v2.4.12 · M11 · services backfill + normalization.
-    if (!Array.isArray(g.services)) {
-      g.services = [];
-    } else {
-      g.services = normalizeServices(g.services);
-    }
-  });
-
-  if (!s.sessionMeta || typeof s.sessionMeta !== "object") {
-    s.sessionMeta = {
-      date:          new Date().toISOString().slice(0, 10),
-      presalesOwner: "",
-      status:        "Draft",
-      version:       "2.0"
-    };
-  }
-
-  if (!s.sessionId) {
-    s.sessionId = "sess-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
-  }
-
-  return s;
-}
+// rc.7 / 7e-8 redo Step B · `migrateLegacySession` body MOVED to
+// state/runtimeMigrate.js (canonical home for v2 migration logic).
+// sessionStore re-imports + re-exports it above for backward-compat
+// with existing callers (live session IIFE below + diagnostics test
+// consumers + diagnostics/demoSpec.js).
+//
+// Also dropped: the v2 setPrimaryLayer / deriveProjectId / normalizeServices
+// imports that the in-file body needed. sessionStore no longer imports
+// from interactions/gapsCommands or core/services.
 
 export let session = (function() {
   try {

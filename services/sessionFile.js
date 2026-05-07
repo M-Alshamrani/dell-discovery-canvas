@@ -35,7 +35,14 @@
 // backfill we've shipped applies to imported files automatically.
 
 import { APP_VERSION } from "../core/version.js";
-import { migrateLegacySession } from "../state/sessionStore.js";
+// rc.7 / 7e-8 redo Step B · sessionFile is v3-native at the runtime
+// boundary. The .canvas file format STAYS v2 (single source of truth
+// for inter-version compatibility); translation to v3 happens here on
+// load, so app.js receives a v3 engagement ready for setActiveEngagement.
+// Closes the latent file-open data-loss bug where the bridge's
+// customer-only shallow merge dropped instances/gaps/envs from loaded
+// files. v2 sessionStore is no longer imported.
+import { translateV2SessionToV3Engagement } from "../state/runtimeMigrate.js";
 
 export var FILE_FORMAT_VERSION = 1;
 export var FILE_EXTENSION      = ".canvas";
@@ -134,17 +141,31 @@ export function parseFileEnvelope(rawText) {
   return parsed;
 }
 
-// Apply an envelope to live localStorage. Runs every session field
-// through migrateLegacySession so cross-version migrations (Phase 17
-// coercion, v2.4.9 primary-layer backfill, etc.) happen on import.
-// Returns { session, skills, providerConfig, savedAppVersion, savedAt,
-// warnings } — caller uses this to refresh the UI and show any
-// user-readable warnings.
+// Apply an envelope. Translates the v2-shape `env.session` into a v3
+// engagement via the runtime migrator (state/runtimeMigrate.js, which
+// pipes through the same 10-step migrations/v2-0_to_v3-0 pipeline used
+// at any v2->v3 conversion). The returned `engagement` is ready for
+// state/engagementStore.setActiveEngagement directly -- no bridge,
+// no v2 sessionStore, no customer-only shallow merge that drops
+// instances/gaps/envs.
+//
+// rc.7 / 7e-8 redo Step B (post-revert of 7e-8d): the prior shape
+// returned `session` (v2-migrated) and let the bridge handle v3
+// translation. The bridge only translated customer fields; instances/
+// gaps/envs/drivers from the loaded file silently disappeared at the
+// v3 surface. This commit closes that latent data-loss bug.
+//
+// Returns { engagement, skills, providerConfig, savedAppVersion,
+// savedAt, warnings } -- caller (app.js handleOpenedFile) writes the
+// engagement directly via setActiveEngagement.
 export function applyEnvelope(env, opts) {
   opts = opts || {};
   var warnings = [];
 
-  var migratedSession = migrateLegacySession(cloneJson(env.session));
+  // Translate the v2 envelope's session block into a v3 engagement.
+  // Throws MigrationStepError on malformed input; the caller catches
+  // and surfaces via notifyError.
+  var engagement = translateV2SessionToV3Engagement(cloneJson(env.session));
 
   // Envelope was saved in a newer appVersion — flag for UI to warn.
   if (env.appVersion && env.appVersion > APP_VERSION) {
@@ -175,7 +196,7 @@ export function applyEnvelope(env, opts) {
   }
 
   return {
-    session:         migratedSession,
+    engagement:      engagement,
     skills:          skills,
     providerConfig:  providerConfig,
     savedAppVersion: env.appVersion || "unknown",

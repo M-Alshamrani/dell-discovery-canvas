@@ -6088,10 +6088,14 @@ describe("41 · Phase 19j · v2.4.10 save/open file (.canvas round-trip)", () =>
       "unknown fields must be preserved, not rejected");
   });
 
-  it("SF8 · applyEnvelope runs migrateLegacySession (cross-version migration applied on import)", () => {
-    // Construct an envelope whose session has a pre-v2.4.8 rationalize
-    // gap. applyEnvelope must coerce it — proves imported files benefit
-    // from every migration we've shipped.
+  it("SF8 · applyEnvelope translates v2 envelope through the runtime v2→v3 migrator (cross-version migration applied on import; rationalize coercion lands on v3 gap)", () => {
+    // rc.7 / 7e-8 redo Step B · this test was rewritten to assert
+    // the v3 contract: applyEnvelope returns `engagement` (v3 shape)
+    // and the v2.4.8 rationalize coercion + every other v2->v3
+    // pipeline step has been applied. Pre-Step B, this test asserted
+    // on res.session (v2 shape). The contract shifted from "v2 to
+    // v2-with-migrator-rules" to "v2 to v3-engagement"; the
+    // rationalize coercion still applies but lands on the v3 gap.
     const env = buildSaveEnvelope(demoBundle());
     env.session.gaps.push({
       id: "g-sf8-rat",
@@ -6105,10 +6109,17 @@ describe("41 · Phase 19j · v2.4.10 save/open file (.canvas round-trip)", () =>
       status: "open", reviewed: true
     });
     const res = applyEnvelope(env);
-    const ratGap = res.session.gaps.find(g => g.id === "g-sf8-rat");
-    assert(ratGap, "imported gap must survive applyEnvelope");
+    assert(res.engagement && res.engagement.gaps,
+      "SF8: applyEnvelope MUST return a v3 engagement with gaps collection");
+    // v3 gaps live in {byId, allIds}; locate the imported one by
+    // walking allIds (v3 gives gaps a UUID id; the v2 'g-sf8-rat'
+    // id is preserved internally in v3 only if the migrator does so,
+    // which it doesn't necessarily -- so locate by description).
+    const v3Gaps = res.engagement.gaps.allIds.map(id => res.engagement.gaps.byId[id]);
+    const ratGap = v3Gaps.find(g => g && /Legacy rationalize/.test(g.description || ""));
+    assert(ratGap, "SF8: imported gap (matched by description) must survive applyEnvelope and surface in v3 engagement.gaps");
     assertEqual(ratGap.gapType, "ops",
-      "migrator must coerce 'rationalize' → 'ops' on imported file (v2.4.8 rule applies to imports too)");
+      "SF8: v2->v3 migrator MUST coerce 'rationalize' → 'ops' on imported file (Phase 17 rule applies to imports)");
   });
 
   it("SF9 · applyEnvelope WARNS about bundled API keys but keeps user's own by default", () => {
@@ -6121,24 +6132,35 @@ describe("41 · Phase 19j · v2.4.10 save/open file (.canvas round-trip)", () =>
       "keys must NOT leak into the returned providerConfig unless user opted in");
   });
 
-  it("SF10 · full round-trip: save → parse → apply yields JSON-identical session after a parallel migrator pass", () => {
-    // Import the session-store migrator inline so we can run the
-    // ORIGINAL session through the same migrator the import path does.
-    // Migration is forward-only (adds missing projectId, enforces
-    // primary-layer invariant, etc.), so round-trip equality only
-    // holds AFTER both sides have been migrated. In real usage, the
-    // "original" in localStorage is already migrated on every load;
-    // this test mirrors that invariant.
+  it("SF10 · full round-trip: save → parse → apply yields a v3 engagement matching a parallel translateV2SessionToV3Engagement pass on the original (stable round-trip; gaps + drivers + envs preserved)", async () => {
+    // rc.7 / 7e-8 redo Step B · the round-trip target is the v3
+    // engagement now (was the v2 migrated session). Strict
+    // JSON-equality is fragile because translateV2SessionToV3Engagement
+    // generates timestamp + uuid fields keyed by makePipelineContext;
+    // we assert STRUCTURAL equality (driver count, env count, gap
+    // count, customer.name) which proves no data was lost in the
+    // round-trip while tolerating the expected non-deterministic ids.
+    const { translateV2SessionToV3Engagement } = await import("../state/runtimeMigrate.js");
     const bundle = demoBundle();
     const env = buildSaveEnvelope(bundle);
     const json = JSON.stringify(env);
     const parsed = parseFileEnvelope(json);
     const res = applyEnvelope(parsed);
-    const originalMigrated = migrateLegacySession(JSON.parse(JSON.stringify(bundle.session)));
-    const originalSig = JSON.stringify(originalMigrated);
-    const restoredSig = JSON.stringify(res.session);
-    assertEqual(restoredSig, originalSig,
-      "save → parse → apply must match a parallel migrator pass on the original (stable round-trip)");
+    const directV3 = translateV2SessionToV3Engagement(JSON.parse(JSON.stringify(bundle.session)));
+
+    assert(res.engagement && res.engagement.engagementMeta,
+      "SF10: round-trip MUST yield a v3 engagement with engagementMeta");
+    assertEqual(res.engagement.customer.name, directV3.customer.name,
+      "SF10: customer.name preserved through save → parse → apply");
+    assertEqual(res.engagement.drivers.allIds.length, directV3.drivers.allIds.length,
+      "SF10: drivers count matches direct v2→v3 translation (round-trip preserves drivers)");
+    assertEqual(res.engagement.environments.allIds.length, directV3.environments.allIds.length,
+      "SF10: environments count matches (round-trip preserves envs)");
+    assertEqual(res.engagement.instances.allIds.length, directV3.instances.allIds.length,
+      "SF10: instances count matches (round-trip preserves instances -- closes the latent file-open data-loss bug)");
+    assertEqual(res.engagement.gaps.allIds.length, directV3.gaps.allIds.length,
+      "SF10: gaps count matches (round-trip preserves gaps)");
+
     // Skills come back too.
     assertEqual(res.skills.length, bundle.skills.length, "skills round-trip count matches");
     assertEqual(res.skills[0].id, bundle.skills[0].id, "skills round-trip by identity");
