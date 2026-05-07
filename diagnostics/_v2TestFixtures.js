@@ -50,7 +50,8 @@ export {
   // V3 successor is state/adapter.js commitContextEdit (asserted by
   // V-FLOW-MIGRATE-TAB1-CUSTOMER-1 in §T36 source-grep). The v2 helper's
   // only test consumers (PR1.a + PR1.b) were dropped in the same commit.
-  saveToLocalStorage,
+  // rc.7 / 7e-8 redo Step I Phase I-B-7 · saveToLocalStorage dropped
+  // (was a dead re-export; zero call sites in appSpec.js *.js).
   loadFromLocalStorage
   // rc.7 / 7e-8 redo Step I Phase I-B-3 · isFreshSession dropped.
   // V3 successor is ui/views/ContextView.js _isFreshEngagement (covered

@@ -60,7 +60,9 @@ import {
 
 import {
   session, createEmptySession, resetSession,
-  saveToLocalStorage, loadFromLocalStorage
+  // rc.7 / 7e-8 redo Step I Phase I-B-7 · saveToLocalStorage dropped
+  // (was a dead import; zero call sites in *.js post-audit).
+  loadFromLocalStorage
   // rc.7 / 7e-8 redo Step I Phase I-B-5 · applyContextSave dropped.
   // Was used only by PR1.a + PR1.b which were dropped this commit
   // (v2-only contract; v3 path goes through commitContextEdit per
