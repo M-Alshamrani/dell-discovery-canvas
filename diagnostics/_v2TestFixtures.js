@@ -1,39 +1,50 @@
 // diagnostics/_v2TestFixtures.js
 //
-// rc.7 / 7e-8b · Test-only shim that gives `diagnostics/appSpec.js` ONE
-// import surface for all v2 fixture builders.
+// rc.7 / 7e-8b..d · Test-only consolidation file for all v2 fixture
+// builders. Single import surface for `diagnostics/appSpec.js`.
 //
-// rc.7 / 7e-8d-4 (CURRENT): the sessionStore.js re-exports got INLINED
-// here as actual function bodies. state/sessionStore.js is now DELETED.
-// The 3 v2 interaction modules (matrixCommands, gapsCommands,
-// desiredStateSync) are still re-exports; 7e-8d-5 inlines them and
-// deletes their files.
+// rc.7 / 7e-8d-4: state/sessionStore.js DELETED. Pure helpers
+//                  (createEmptySession + migrateLegacySession +
+//                  isFreshSession + the IIFE-initialized session
+//                  singleton) inlined here.
+// rc.7 / 7e-8d-5 (THIS COMMIT): the 3 interaction modules
+//                  (matrixCommands + gapsCommands + desiredStateSync)
+//                  DELETED. Function bodies inlined here.
 //
 // Why this is safe per RULES §16 CH34:
-//   - V-ANTI-V2-IMPORT-1 forbids PRODUCTION files from importing
-//     state/sessionStore.js. Test fixtures live in `diagnostics/`,
-//     not production. The grep test scopes itself to production
-//     paths so this file does NOT trip it.
-//   - V-ANTI-V2-IMPORT-2 same scoping for the 3 interaction modules.
+//   - V-ANTI-V2-IMPORT-1 + V-ANTI-V2-IMPORT-2 (production source-grep
+//     tests) scope themselves to PRODUCTION files. _v2TestFixtures.js
+//     lives in `diagnostics/`, not production. Neither test trips.
+//   - V-FLOW-V3-PURE-1/2/3/4/5 source-grep for the v2 file paths at
+//     HTTP HEAD. All 5 paths now 404. **All 5 GREEN.**
 //
 // Authority: SPEC §S40 + RULES §16 CH34 + project_v3_pure_arc.md.
 
-// rc.7 / 7e-8d-4 · sessionStore.js dependencies pulled in here:
-import { LEGACY_DRIVER_LABEL_TO_ID } from "../core/config.js";
+// ─── shared imports ────────────────────────────────────────────────
+import { LEGACY_DRIVER_LABEL_TO_ID, LAYERS } from "../core/config.js";
 import { createDemoSession as createDemoSessionImpl } from "../state/demoSession.js";
 import { emitSessionChanged } from "../core/sessionEvents.js";
 import { clear as clearAiUndoStack } from "../state/aiUndoStack.js";
-import { setPrimaryLayer, deriveProjectId } from "../interactions/gapsCommands.js";
 import { normalizeServices } from "../core/services.js";
 import { markSaved } from "../core/saveStatus.js";
+import { validateInstance, validateGap } from "../core/models.js";
+import {
+  DISPOSITION_ACTIONS as TAXONOMY_ACTIONS,
+  ACTION_TO_GAP_TYPE  as TAXONOMY_ACTION_MAP,
+  validateActionLinks,
+  requiresAtLeastOneCurrent,
+  requiresAtLeastOneDesired
+} from "../core/taxonomy.js";
 
 // Re-export createDemoSession so tests that pulled it from sessionStore
 // keep working without changing their import.
 export { createDemoSession } from "../state/demoSession.js";
 
+// ═══════════════════════════════════════════════════════════════════
+// === FROM state/sessionStore.js (deleted in 7e-8d-4) ===============
+// ═══════════════════════════════════════════════════════════════════
+
 // ─── createEmptySession (PURE) ─────────────────────────────────────
-// Builds a v2-shape empty session object. Fresh sessionId per call.
-// Was: state/sessionStore.js createEmptySession.
 export function createEmptySession() {
   return {
     sessionId:    "sess-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
@@ -59,10 +70,6 @@ export function createEmptySession() {
 }
 
 // ─── migrateLegacySession (PURE) ───────────────────────────────────
-// Rewrites pre-v2 / v2.x raw session objects into the v2.4.x shape
-// many tests still build fixtures around. Was: state/sessionStore.js
-// migrateLegacySession. Body copied verbatim except the import
-// resolutions above.
 export function migrateLegacySession(raw) {
   var s = raw || {};
   if (!s.customer || typeof s.customer !== "object") s.customer = {};
@@ -93,7 +100,6 @@ export function migrateLegacySession(raw) {
   if (!Array.isArray(s.instances)) s.instances = [];
   if (!Array.isArray(s.gaps))      s.gaps      = [];
 
-  // v2.4.15 dynamic environment model + alias drain.
   var legacyAliases = (s.environmentAliases && typeof s.environmentAliases === "object")
     ? s.environmentAliases : null;
 
@@ -116,7 +122,6 @@ export function migrateLegacySession(raw) {
     });
   }
 
-  // Per-entry hygiene.
   var seenIds = {};
   s.environments = s.environments.filter(function(e) {
     if (!e || typeof e.id !== "string" || e.id.length === 0) return false;
@@ -135,14 +140,12 @@ export function migrateLegacySession(raw) {
   });
   if ("environmentAliases" in s) delete s.environmentAliases;
 
-  // v2.1 rule 6: default `reviewed` on any gap missing it.
   s.gaps.forEach(function(g) {
     if (typeof g.reviewed !== "boolean") {
       g.reviewed = !((g.relatedDesiredInstanceIds || []).length > 0);
     }
   });
 
-  // v2.4.8 Phase 17: coerce retired "rationalize" disposition/gapType.
   s.gaps.forEach(function(g) {
     if (g && g.gapType === "rationalize") {
       console.warn("[migrate · Phase 17] coercing gap.gapType 'rationalize' → 'ops' on gap " + g.id);
@@ -156,7 +159,6 @@ export function migrateLegacySession(raw) {
     }
   });
 
-  // v2.4.9 / .11 / .12 backfills.
   s.gaps.forEach(function(g) {
     if (!g || !g.layerId) return;
     var alreadyOk = Array.isArray(g.affectedLayers) &&
@@ -189,12 +191,6 @@ export function migrateLegacySession(raw) {
 }
 
 // ─── session (test-fixture mutable singleton) ──────────────────────
-// Was: state/sessionStore.js's `let session` IIFE-initialized from
-// localStorage at module load. This fixture version IS still IIFE-
-// initialized so tests that import {session} get a populated v2-shape
-// object with whatever was persisted from a prior test run; the
-// runIsolated harness wraps each test pass in a localStorage snapshot
-// so cross-test pollution is bounded.
 const STORAGE_KEY = "dell_discovery_v1";
 
 export let session = (function() {
@@ -222,13 +218,6 @@ export function isFreshSession(s) {
 }
 
 // ─── mutating helpers (operate on the test-fixture session) ────────
-// Pre-7e-8d-4 these lived in state/sessionStore.js as production
-// helpers. Post-deletion they survive ONLY here as test-fixture
-// shims that mutate the local `session` singleton + emit on the
-// session-changed bus so legacy tests keep their assertion shape.
-// Production code routes through state/engagementStore.js +
-// state/adapter.js instead.
-
 export function resetSession() {
   var fresh = createEmptySession();
   Object.keys(session).forEach(function(k) { delete session[k]; });
@@ -305,45 +294,482 @@ export function loadFromLocalStorage() {
   }
 }
 
-// ─── from interactions/matrixCommands.js (still re-export; 7e-8d-5 inlines) ─
-export {
-  addInstance,
-  updateInstance,
-  deleteInstance,
-  moveInstance,
-  mapAsset,
-  unmapAsset,
-  proposeCriticalityUpgrades
-} from "../interactions/matrixCommands.js";
+// ═══════════════════════════════════════════════════════════════════
+// === FROM interactions/matrixCommands.js (deleted in 7e-8d-5) ======
+// ═══════════════════════════════════════════════════════════════════
 
-// ─── from interactions/gapsCommands.js (still re-export; 7e-8d-5 inlines) ───
-// setPrimaryLayer + deriveProjectId are already imported above (for
-// migrateLegacySession's internal use); re-export the same locals so
-// test consumers of this shim get the same symbols. The other gaps-
-// commands exports re-export from the v2 module directly until 7e-8d-5
-// inlines them too.
-export { setPrimaryLayer, deriveProjectId };
-export {
-  createGap,
-  approveGap,
-  updateGap,
-  deleteGap,
-  linkCurrentInstance,
-  linkDesiredInstance,
-  unlinkCurrentInstance,
-  unlinkDesiredInstance,
-  setGapDriverId
-} from "../interactions/gapsCommands.js";
+function _mxUid() { return "inst-" + Math.random().toString(36).slice(2, 9); }
 
-// ─── from interactions/desiredStateSync.js (still re-export; 7e-8d-5 inlines) ─
-export {
-  DISPOSITION_ACTIONS,
-  ACTION_TO_GAP_TYPE,
-  getDesiredCounterpart,
-  getCurrentSource,
-  buildGapFromDisposition,
-  syncGapFromDesired,
-  syncDesiredFromGap,
-  confirmPhaseOnLink,
-  syncGapsFromCurrentCriticality
-} from "../interactions/desiredStateSync.js";
+export function addInstance(session, props) {
+  var defaultCriticality = (props.state === "current" && !props.criticality) ? "Low" : undefined;
+  var inst = {
+    id:              props.id              || _mxUid(),
+    state:           props.state,
+    layerId:         props.layerId,
+    environmentId:   props.environmentId,
+    label:           props.label,
+    vendor:          props.vendor          || "",
+    vendorGroup:     props.vendorGroup     || "custom",
+    criticality:     props.criticality     || defaultCriticality,
+    priority:        props.priority        || undefined,
+    timeline:        props.timeline        || undefined,
+    notes:           props.notes           || "",
+    originId:        props.originId        || undefined,
+    disposition:     props.disposition     || undefined,
+    mappedAssetIds:  props.mappedAssetIds  || undefined
+  };
+  Object.keys(inst).forEach(function(k) { if (inst[k] === undefined) delete inst[k]; });
+  validateInstance(inst);
+  (session.instances = session.instances || []).push(inst);
+  return inst;
+}
+
+export function updateInstance(session, instanceId, patch) {
+  var list = session.instances || [];
+  var idx  = list.findIndex(function(i) { return i.id === instanceId; });
+  if (idx === -1) throw new Error("Instance '" + instanceId + "' not found");
+  var updated = Object.assign({}, list[idx], patch);
+  Object.keys(updated).forEach(function(k) { if (updated[k] === undefined) delete updated[k]; });
+  validateInstance(updated);
+  list[idx] = updated;
+  return updated;
+}
+
+export function deleteInstance(session, instanceId) {
+  var list = session.instances || [];
+  var idx  = list.findIndex(function(i) { return i.id === instanceId; });
+  if (idx === -1) throw new Error("Instance '" + instanceId + "' not found");
+  list.splice(idx, 1);
+}
+
+export function moveInstance(session, instanceId, move) {
+  var patch = {};
+  if (move && move.newLayerId)       patch.layerId       = move.newLayerId;
+  if (move && move.newEnvironmentId) patch.environmentId = move.newEnvironmentId;
+  if (move && move.newState)         patch.state         = move.newState;
+  return updateInstance(session, instanceId, patch);
+}
+
+function _mxFindInstance(session, id, label) {
+  var inst = (session.instances || []).find(function(i) { return i.id === id; });
+  if (!inst) throw new Error(label + ": instance '" + id + "' not found");
+  return inst;
+}
+
+export function mapAsset(session, workloadId, assetId) {
+  if (workloadId === assetId) throw new Error("mapAsset: a workload cannot map to itself");
+  var workload = _mxFindInstance(session, workloadId, "mapAsset");
+  var asset    = _mxFindInstance(session, assetId,    "mapAsset");
+  if (workload.layerId !== "workload") {
+    throw new Error("mapAsset: source '" + workload.label + "' is not a workload-layer instance");
+  }
+  if (asset.layerId === "workload") {
+    throw new Error("mapAsset: target '" + asset.label + "' is also a workload — workloads only map to infrastructure layers");
+  }
+  if (asset.state !== workload.state) {
+    throw new Error("mapAsset: state mismatch — " + workload.state + " workload cannot map a " + asset.state + " asset");
+  }
+  if (asset.environmentId !== workload.environmentId) {
+    throw new Error("mapAsset: environment mismatch — workload is in " +
+      workload.environmentId + ", asset is in " + asset.environmentId +
+      ". Create a separate workload tile in '" + asset.environmentId +
+      "' to model hybrid deployments.");
+  }
+  workload.mappedAssetIds = workload.mappedAssetIds || [];
+  if (workload.mappedAssetIds.indexOf(assetId) < 0) workload.mappedAssetIds.push(assetId);
+  validateInstance(workload);
+  return workload;
+}
+
+export function unmapAsset(session, workloadId, assetId) {
+  var workload = _mxFindInstance(session, workloadId, "unmapAsset");
+  workload.mappedAssetIds = (workload.mappedAssetIds || []).filter(function(id) { return id !== assetId; });
+  validateInstance(workload);
+  return workload;
+}
+
+export function proposeCriticalityUpgrades(session, workloadId) {
+  var CRIT_RANK = { Low: 1, Medium: 2, High: 3 };
+  var workload = _mxFindInstance(session, workloadId, "proposeCriticalityUpgrades");
+  if (workload.layerId !== "workload") {
+    throw new Error("proposeCriticalityUpgrades: '" + workload.label + "' is not a workload-layer instance");
+  }
+  var workloadRank = CRIT_RANK[workload.criticality] || 0;
+  if (!workloadRank) return [];
+  var proposals = [];
+  (workload.mappedAssetIds || []).forEach(function(assetId) {
+    var asset = (session.instances || []).find(function(i) { return i.id === assetId; });
+    if (!asset) return;
+    var assetRank = CRIT_RANK[asset.criticality] || 0;
+    if (assetRank < workloadRank) {
+      proposals.push({
+        assetId:        asset.id,
+        label:          asset.label,
+        layerId:        asset.layerId,
+        currentCrit:    asset.criticality || null,
+        newCrit:        workload.criticality
+      });
+    }
+  });
+  return proposals;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// === FROM interactions/desiredStateSync.js (deleted in 7e-8d-5) ====
+// (Inlined BEFORE gapsCommands because gapsCommands references
+//  confirmPhaseOnLink. JS hoisting handles this for `function`
+//  declarations either way; ordering is for readability.)
+// ═══════════════════════════════════════════════════════════════════
+
+export var DISPOSITION_ACTIONS = TAXONOMY_ACTIONS;
+export var ACTION_TO_GAP_TYPE  = TAXONOMY_ACTION_MAP;
+
+export function getDesiredCounterpart(session, currentInstanceId) {
+  return (session.instances || []).find(function(i) {
+    return i.state === "desired" && i.originId === currentInstanceId;
+  });
+}
+
+export function getCurrentSource(session, desiredInstance) {
+  if (!desiredInstance || !desiredInstance.originId) return null;
+  return (session.instances || []).find(function(i) {
+    return i.id === desiredInstance.originId;
+  });
+}
+
+function _dssPriorityToPhase(priority) {
+  if (priority === "Now")   return "now";
+  if (priority === "Next")  return "next";
+  if (priority === "Later") return "later";
+  return null;
+}
+
+export function buildGapFromDisposition(session, desiredInst) {
+  var action  = desiredInst && desiredInst.disposition;
+  var gapType = ACTION_TO_GAP_TYPE[action];
+  if (gapType === null || gapType === undefined) return null;
+
+  var sourceInst = getCurrentSource(session, desiredInst);
+
+  var layerLabel = "";
+  if (typeof LAYERS !== "undefined") {
+    var found = LAYERS.find(function(l) { return l.id === desiredInst.layerId; });
+    layerLabel = found ? found.label : desiredInst.layerId;
+  } else {
+    layerLabel = desiredInst.layerId;
+  }
+
+  var actionLabel = DISPOSITION_ACTIONS.find(function(a) { return a.id === action; });
+  var label = actionLabel ? actionLabel.label : action;
+
+  var description;
+  if (sourceInst && desiredInst.label && desiredInst.label !== sourceInst.label) {
+    description = label + " " + sourceInst.label + " → " + desiredInst.label + " [" + layerLabel + "]";
+  } else if (sourceInst) {
+    description = label + ": " + sourceInst.label + " [" + layerLabel + "]";
+  } else {
+    description = label + " " + desiredInst.label + " [" + layerLabel + "]";
+  }
+
+  var phase = _dssPriorityToPhase(desiredInst.priority) || "next";
+  var urgency = (sourceInst && sourceInst.criticality) ? sourceInst.criticality : "Medium";
+
+  var currentIds = sourceInst ? [sourceInst.id] : [];
+  var desiredIds = [desiredInst.id];
+
+  var notes;
+  if (action === "ops") {
+    notes = "Operational / services work: " + description;
+  } else if (action === "introduce") {
+    notes = "Net-new: " + desiredInst.label + ". No current technology to replace.";
+  } else if (sourceInst) {
+    notes = "From workshop: " + label + " " + sourceInst.label;
+    if (desiredInst.label && desiredInst.label !== sourceInst.label) {
+      notes += " → " + desiredInst.label;
+    }
+    notes += ".";
+  } else {
+    notes = "From workshop: " + label + " " + desiredInst.label + ".";
+  }
+
+  return {
+    description:               description,
+    layerId:                   desiredInst.layerId,
+    affectedLayers:            [],
+    affectedEnvironments:      desiredInst.environmentId ? [desiredInst.environmentId] : [],
+    gapType:                   gapType,
+    urgency:                   urgency,
+    phase:                     phase,
+    mappedDellSolutions:       "",
+    notes:                     notes,
+    relatedCurrentInstanceIds: currentIds,
+    relatedDesiredInstanceIds: desiredIds,
+    status:                    "open",
+    reviewed:                  false
+  };
+}
+
+export function syncGapFromDesired(session, desiredInstanceId) {
+  var desiredInst = (session.instances || []).find(function(i) {
+    return i.id === desiredInstanceId && i.state === "desired";
+  });
+  if (!desiredInst) return;
+
+  var linkedGaps = (session.gaps || []).filter(function(g) {
+    return (g.relatedDesiredInstanceIds || []).indexOf(desiredInstanceId) >= 0;
+  });
+
+  if (desiredInst.disposition === "keep") {
+    linkedGaps.forEach(function(gap) {
+      if (gap.status === "closed") return;
+      gap.status = "closed";
+      gap.closeReason = "auto: disposition changed to keep on " + (desiredInst.label || desiredInst.id);
+      gap.closedAt = new Date().toISOString();
+    });
+    return;
+  }
+
+  linkedGaps.forEach(function(gap) {
+    var newPhase = _dssPriorityToPhase(desiredInst.priority);
+    if (newPhase) gap.phase = newPhase;
+
+    if (desiredInst.disposition) {
+      var newGapType = ACTION_TO_GAP_TYPE[desiredInst.disposition];
+      if (newGapType) gap.gapType = newGapType;
+    }
+
+    if (gap.urgencyOverride === true) return;
+
+    if (desiredInst.originId) {
+      var origin = (session.instances || []).find(function(i) { return i.id === desiredInst.originId; });
+      if (origin && origin.criticality) gap.urgency = origin.criticality;
+    } else {
+      gap.urgency = "Medium";
+    }
+  });
+}
+
+export function syncDesiredFromGap(session, gapId) {
+  var gap = (session.gaps || []).find(function(g) { return g.id === gapId; });
+  if (!gap) return;
+  var phaseToPriority = { now: "Now", next: "Next", later: "Later" };
+  var targetPriority = phaseToPriority[gap.phase];
+  if (!targetPriority) return;
+  (gap.relatedDesiredInstanceIds || []).forEach(function(desId) {
+    var des = (session.instances || []).find(function(i) {
+      return i.id === desId && i.state === "desired";
+    });
+    if (des) des.priority = targetPriority;
+  });
+}
+
+export function confirmPhaseOnLink(session, gapId, desiredInstanceId) {
+  var gap = (session.gaps || []).find(function(g) { return g.id === gapId; });
+  var des = (session.instances || []).find(function(i) {
+    return i.id === desiredInstanceId && i.state === "desired";
+  });
+  if (!gap || !des) return { status: "ok" };
+  var phaseToPriority = { now: "Now", next: "Next", later: "Later" };
+  var targetPriority = phaseToPriority[gap.phase];
+  if (!des.priority || des.priority === targetPriority) return { status: "ok" };
+  return {
+    status:          "conflict",
+    currentPriority: des.priority,
+    targetPriority:  targetPriority,
+    desiredLabel:    des.label,
+    gapPhase:        gap.phase
+  };
+}
+
+export function syncGapsFromCurrentCriticality(session, currentInstanceId) {
+  var curInst = (session.instances || []).find(function(i) {
+    return i.id === currentInstanceId && i.state === "current";
+  });
+  if (!curInst || !curInst.criticality) return;
+  (session.gaps || []).forEach(function(gap) {
+    if ((gap.relatedCurrentInstanceIds || []).indexOf(currentInstanceId) >= 0) {
+      if (gap.urgencyOverride === true) return;
+      gap.urgency = curInst.criticality;
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// === FROM interactions/gapsCommands.js (deleted in 7e-8d-5) ========
+// ═══════════════════════════════════════════════════════════════════
+
+export function setPrimaryLayer(gap, layerId) {
+  if (!gap || typeof layerId !== "string" || layerId.length === 0) return;
+  gap.layerId = layerId;
+  var existing = Array.isArray(gap.affectedLayers) ? gap.affectedLayers : [];
+  var rest = existing.filter(function(l) { return l !== layerId; });
+  gap.affectedLayers = [layerId].concat(rest);
+}
+
+export function deriveProjectId(gap) {
+  if (!gap) return "unknown::unknown::unknown";
+  var env = (Array.isArray(gap.affectedEnvironments) && gap.affectedEnvironments[0])
+    || "crossCutting";
+  var layer = gap.layerId || "unknown";
+  var type = gap.gapType || "null";
+  return env + "::" + layer + "::" + type;
+}
+
+function _gpUid() { return "gap-" + Math.random().toString(36).slice(2, 9); }
+function _gpMarkReviewed(gap) { if (gap) gap.reviewed = true; }
+
+export function createGap(session, props) {
+  const gap = {
+    id:                        props.id || _gpUid(),
+    description:               (typeof props.description === 'string' && props.description.trim().length > 0) ? props.description : undefined,
+    layerId:                   props.layerId,
+    affectedLayers:            props.affectedLayers            || [],
+    affectedEnvironments:      props.affectedEnvironments      || [],
+    gapType:                   props.gapType                   || undefined,
+    urgency:                   props.urgency                   || "Medium",
+    phase:                     props.phase                     || "now",
+    mappedDellSolutions:       props.mappedDellSolutions       || "",
+    notes:                     props.notes                     || "",
+    relatedCurrentInstanceIds: props.relatedCurrentInstanceIds ? [...new Set(props.relatedCurrentInstanceIds)] : [],
+    relatedDesiredInstanceIds: props.relatedDesiredInstanceIds  ? [...new Set(props.relatedDesiredInstanceIds)]  : [],
+    services:                  normalizeServices(props.services),
+    status:                    props.status                    || "open",
+    reviewed:                  props.reviewed === false ? false : true
+  };
+  if (props.driverId) gap.driverId = props.driverId;
+  gap.urgencyOverride = props.urgencyOverride === true;
+  if (gap.layerId) setPrimaryLayer(gap, gap.layerId);
+  if (!props.projectId && gap.layerId) gap.projectId = deriveProjectId(gap);
+  else if (props.projectId)            gap.projectId = props.projectId;
+  validateGap(gap);
+  validateActionLinks(gap);
+  (session.gaps = session.gaps || []).push(gap);
+  return gap;
+}
+
+export function approveGap(session, gapId) {
+  const gap = (session.gaps || []).find(g => g.id === gapId);
+  if (!gap) throw new Error(`approveGap: gap '${gapId}' not found`);
+  const probe = Object.assign({}, gap, { reviewed: true });
+  validateActionLinks(probe);
+  gap.reviewed = true;
+  return gap;
+}
+
+export function updateGap(session, gapId, patch) {
+  const list = session.gaps || [];
+  const idx  = list.findIndex(g => g.id === gapId);
+  if (idx === -1) throw new Error(`updateGap: gap '${gapId}' not found`);
+  const updated = { ...list[idx], ...patch };
+  if (patch.relatedCurrentInstanceIds) updated.relatedCurrentInstanceIds = [...new Set(patch.relatedCurrentInstanceIds)];
+  if (patch.relatedDesiredInstanceIds)  updated.relatedDesiredInstanceIds  = [...new Set(patch.relatedDesiredInstanceIds)];
+  if (patch.services !== undefined) updated.services = normalizeServices(patch.services);
+
+  var STRUCTURAL_FIELDS = [
+    "gapType", "layerId", "affectedLayers", "affectedEnvironments",
+    "relatedCurrentInstanceIds", "relatedDesiredInstanceIds"
+  ];
+  var hasStructuralPatch = STRUCTURAL_FIELDS.some(function(f) { return patch[f] !== undefined; });
+
+  if (patch.reviewed === true || patch.reviewed === false) {
+    updated.reviewed = patch.reviewed;
+  } else if (hasStructuralPatch) {
+    var probe = Object.assign({}, updated, { reviewed: true });
+    try {
+      validateActionLinks(probe);
+      updated.reviewed = true;
+    } catch (e) {
+      if (typeof updated.reviewed !== "boolean") updated.reviewed = false;
+    }
+  }
+
+  if (patch.layerId !== undefined) setPrimaryLayer(updated, patch.layerId);
+  if (patch.projectId === undefined &&
+      (patch.layerId !== undefined ||
+       patch.affectedEnvironments !== undefined ||
+       patch.gapType !== undefined)) {
+    updated.projectId = deriveProjectId(updated);
+  }
+  validateGap(updated);
+  var shouldValidateLinks =
+    (patch.reviewed === true) ||
+    (hasStructuralPatch && updated.reviewed === true);
+  if (shouldValidateLinks) validateActionLinks(updated);
+  list[idx] = updated;
+  return updated;
+}
+
+export function deleteGap(session, gapId) {
+  const list = session.gaps || [];
+  const idx  = list.findIndex(g => g.id === gapId);
+  if (idx === -1) throw new Error(`deleteGap: gap '${gapId}' not found`);
+  list.splice(idx, 1);
+}
+
+export function linkCurrentInstance(session, gapId, instanceId) {
+  const gap = (session.gaps || []).find(g => g.id === gapId);
+  if (!gap) throw new Error(`linkCurrentInstance: gap '${gapId}' not found`);
+  if (!gap.relatedCurrentInstanceIds.includes(instanceId))
+    gap.relatedCurrentInstanceIds.push(instanceId);
+  _gpMarkReviewed(gap);
+  validateGap(gap);
+  return gap;
+}
+
+export function linkDesiredInstance(session, gapId, instanceId, opts) {
+  const gap = (session.gaps || []).find(g => g.id === gapId);
+  if (!gap) throw new Error(`linkDesiredInstance: gap '${gapId}' not found`);
+  const conflict = confirmPhaseOnLink(session, gapId, instanceId);
+  if (conflict && conflict.status === "conflict" && !(opts && opts.acknowledged === true)) {
+    const e = new Error(
+      `Linking '${conflict.desiredLabel}' (${conflict.currentPriority}) to a gap in phase '${conflict.gapPhase}' will change the tile's priority to '${conflict.targetPriority}'. ` +
+      `Confirm in the UI, then re-call with { acknowledged: true }.`
+    );
+    e.code = "PHASE_CONFLICT_NEEDS_ACK";
+    e.conflict = conflict;
+    throw e;
+  }
+  if (!gap.relatedDesiredInstanceIds.includes(instanceId))
+    gap.relatedDesiredInstanceIds.push(instanceId);
+  _gpMarkReviewed(gap);
+  validateGap(gap);
+  return gap;
+}
+
+export function unlinkCurrentInstance(session, gapId, instanceId) {
+  const gap = (session.gaps || []).find(g => g.id === gapId);
+  if (!gap) throw new Error(`unlinkCurrentInstance: gap '${gapId}' not found`);
+  const afterRemoval = (gap.relatedCurrentInstanceIds || []).filter(id => id !== instanceId);
+  if (requiresAtLeastOneCurrent(gap.gapType) && afterRemoval.length === 0) {
+    throw new Error(`Cannot unlink: a '${gap.gapType}' gap requires at least one current technology linked`);
+  }
+  gap.relatedCurrentInstanceIds = afterRemoval;
+  _gpMarkReviewed(gap);
+  validateGap(gap);
+  return gap;
+}
+
+export function setGapDriverId(session, gapId, driverId) {
+  const gap = (session.gaps || []).find(g => g.id === gapId);
+  if (!gap) throw new Error(`setGapDriverId: gap '${gapId}' not found`);
+  if (driverId === null || driverId === "" || driverId === undefined) {
+    delete gap.driverId;
+  } else {
+    gap.driverId = driverId;
+  }
+  _gpMarkReviewed(gap);
+  return gap;
+}
+
+export function unlinkDesiredInstance(session, gapId, instanceId) {
+  const gap = (session.gaps || []).find(g => g.id === gapId);
+  if (!gap) throw new Error(`unlinkDesiredInstance: gap '${gapId}' not found`);
+  const afterRemoval = (gap.relatedDesiredInstanceIds || []).filter(id => id !== instanceId);
+  if (requiresAtLeastOneDesired(gap.gapType) && afterRemoval.length === 0) {
+    throw new Error(`Cannot unlink: a '${gap.gapType}' gap requires at least one desired technology linked`);
+  }
+  gap.relatedDesiredInstanceIds = afterRemoval;
+  _gpMarkReviewed(gap);
+  validateGap(gap);
+  return gap;
+}
