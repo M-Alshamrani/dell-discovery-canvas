@@ -1,6 +1,6 @@
 # Dell Discovery Canvas — Session Handoff
 
-**Last session end**: 2026-05-06 (late-evening) · **`v3.0.0-rc.7-dev`** in progress on `v3.0-data-architecture` · HEAD = `324b37a` · **Banner 1210/1218 GREEN** (8 fails are all known: 6 RED scaffolds for the v2 deletion sub-arc + OH5 + FS3 deferred fixtures).
+**Last session end**: 2026-05-07 (morning) · **`v3.0.0-rc.7-dev`** in progress on `v3.0-data-architecture` · HEAD = `02f94ed` · **Banner 1212/1221 GREEN** (9 fails — same 8 known + intermittent VT29 page-overflow flake).
 
 **rc.7 dev log (full arc since rc.6 tag, in order)**:
 
@@ -14,7 +14,28 @@
 | 7e-8c'-spec | `0347a1f` | SPEC §S41 + RULES §16 CH35 + V-FLOW-EMPTY-ENVS-1..7 RED scaffolds + VT20 em-dash regression fix | 1203/1218 (7 RED by design) |
 | 7e-8c'-impl | `8a147f4` | Shared `ui/components/NoEnvsCard.js` + stepper greying Tabs 4/5 + matrix `--env-count` column scaling + first-add ack | 1210/1218 |
 | **7e-8c'-fix** | `5a77d6a` | **Drop NoEnvsCard host-class mutation** (the "house of cards" bug — class polluted Context tab on re-render) **+ drop CTA button + drop nav listener + move empty-state check before MatrixView header** · SPEC F41.6.6/7/8 added | 1209/1218 |
-| **7e-8c'-fix2** | `324b37a` | **Retire first-add acknowledgment toast** wholesale per user direction ("no need for it"). Drop `surfaceFirstAddAcknowledgment` + `envFirstAddAck_v1` localStorage key + `.env-first-add-ack-banner` CSS + V-FLOW-EMPTY-ENVS-6 (reworked into negative assertion) + RULES CH35 clause (e). SPEC §S41.3 marked RETIRED | **1210/1218** ✅ |
+| **7e-8c'-fix2** | `324b37a` | **Retire first-add acknowledgment toast** wholesale per user direction ("no need for it"). Drop `surfaceFirstAddAcknowledgment` + `envFirstAddAck_v1` localStorage key + `.env-first-add-ack-banner` CSS + V-FLOW-EMPTY-ENVS-6 (reworked into negative assertion) + RULES CH35 clause (e). SPEC §S41.3 marked RETIRED | 1210/1218 |
+| **BUG-041** | `709e778` | **AI Assist provider-popover stale-snapshot fix** (catches user-reported "every provider click opens Settings" bug). Extracts `refreshRow` helper; popover refreshes class+meta on open; click handler re-reads `loadAiConfig()` before deciding switch-vs-Settings. 3 new V-PILLS-5/6/7 source-grep regression tests. | 1213/1221 |
+| **7e-8b** | `1c55b95` | **Test-fixture shim** — NEW `diagnostics/_v2TestFixtures.js` re-exports v2 symbols; 10 appSpec.js import statements retargeted from `state/sessionStore` + `interactions/{matrix,gaps,desired}*` to the shim. Decouples test-suite coupling to v2 modules in one place. No production-code change. | 1213/1221 |
+| **7e-8c** | `02f94ed` | **Trim app.js v2 sessionStore call sites** — 5 read sites (`session.X` → `getActiveEngagement().X`) + 3 redundant `saveToLocalStorage()` drops (v3 auto-persists) + 2 demo-loader v2 mirror lines retired + save flow now derives v2 shape via `engagementToV2Session()` at the file boundary. Imports trimmed to `{ resetSession, replaceSession }`. **`resetSession` + `replaceSession`-in-file-open retained** (need v3-native canvasFile or v2→v3 runtime translator first — see 7e-8d blocker below). Mid-arc fix: `session`-undefined ReferenceError in `renderStage` was halting boot before wire* handlers; fixed by passing `null` explicitly to view renderers. | **1212/1221** ✅ |
+
+## 7e-8d BLOCKER (next session entry point)
+
+`state/sessionStore.js` + `state/sessionBridge.js` cannot be deleted yet because two production callers in `app.js` still need them:
+
+1. **`resetSession()`** (line ~712) — the bridge's session-reset handler clears chat memory + resets v3 engagement-id. Inlining the bridge logic at the call site is doable but couples `app.js` to `state/chatMemory.clearTranscript` + `schema/engagement.createEmptyEngagement` + `state/aiUndoStack.clear` + `core/sessionEvents.emitSessionChanged`.
+
+2. **`replaceSession(res.session)`** (line ~808 in file-open) — `services/sessionFile.js applyEnvelope()` returns a v2-shape session via `migrateLegacySession`. Without a v2→v3 runtime translator, there's no way to put that into v3 directly. **The bridge currently does customer-only shallow merge — instances/gaps/envs from a loaded `.canvas` file silently DON'T appear in v3 today.** That's a real bug the file-open path masks.
+
+**Three ways to unblock**:
+
+| Option | Effort | Tradeoff |
+|---|---|---|
+| **A** · Inline bridge logic in app.js + build full v2→v3 runtime translator | 2-3h | Translator already partially exists in `state/sessionBridge.js v2CustomerPatch` (customer-only); needs full instances/gaps/envs. Lets us delete bridge + sessionStore in one commit. Also fixes the latent file-open data-loss bug. |
+| **B** · Make `services/sessionFile.js` v3-native | 3-4h | Cleanest long-term. `applyEnvelope` returns v3 engagement; file format may need versioning. |
+| **C** · Defer 7e-8d to its own dedicated session | 0h | Push the 2 commits we have; let 7e-8d wait. |
+
+User chose Path A as the cleaner, more complete approach to the v2 deletion arc; we executed 7e-8b + 7e-8c tonight. **7e-8d is the next sub-arc on the same path** but needs the v2→v3 runtime translator to land first.
 
 **Smoke (Chrome MCP, fix2 verification on user's actual browser)**: fresh-start session → "+ Add environment" → Primary Data Center → 0→1 transition complete → NO banner appears anywhere · localStorage `envFirstAddAck_v1` = null · all 5 stepper tabs un-disabled (Tabs 4/5 properly un-grey when first env arrives).
 
