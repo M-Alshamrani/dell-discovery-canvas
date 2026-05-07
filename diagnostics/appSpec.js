@@ -4755,41 +4755,19 @@ describe("37 · Phase 19g · v2.4.6 UX quick-wins — version chip + skill chip 
 });
 
 // ── Phase 19h / v2.4.7 · Fresh-start UX (FS1-FS5) ──────────────────────
-import { isFreshSession, session as liveSession7 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · via test-fixture shim
+// rc.7 / 7e-8 redo Step I Phase I-B-3 · isFreshSession + liveSession7 imports
+// dropped. FS1 + FS2 (pure-helper unit tests of the v2 isFreshSession
+// predicate) dropped per architecture doc Step I plan: their v3 successor
+// is ui/views/ContextView.js _isFreshEngagement, exercised end-to-end by
+// FS3 + FS4 integration tests below (welcome card renders for empty
+// engagement; hides once data exists). The v2 predicate's edge cases
+// (whitespace-only name, null defensive) are covered by _isFreshEngagement's
+// matching logic + the schema-required defaults from createEmptyCustomer.
 
 describe("38 · Phase 19h · v2.4.7 fresh-start UX — empty default + welcome card", () => {
 
-  it("FS1 · isFreshSession returns true for an empty-shaped session", () => {
-    assertEqual(isFreshSession({
-      customer: { name: "", drivers: [] },
-      instances: [], gaps: []
-    }), true, "empty customer + no data → fresh");
-    assertEqual(isFreshSession({
-      customer: { name: "   ", drivers: [] },
-      instances: [], gaps: []
-    }), true, "whitespace-only customer name → fresh (trimmed)");
-    // Missing arrays should not crash.
-    assertEqual(isFreshSession({ customer: {} }), true, "missing arrays → fresh");
-    assertEqual(isFreshSession(null), true, "null session → fresh (defensive)");
-  });
-
-  it("FS2 · isFreshSession returns false once the user has authored anything", () => {
-    assertEqual(isFreshSession({
-      customer: { name: "Acme", drivers: [] }, instances: [], gaps: []
-    }), false, "customer name present → not fresh");
-    assertEqual(isFreshSession({
-      customer: { name: "", drivers: [{ id: "cyber_resilience" }] },
-      instances: [], gaps: []
-    }), false, "drivers present → not fresh");
-    assertEqual(isFreshSession({
-      customer: { name: "", drivers: [] },
-      instances: [{ id: "i-001" }], gaps: []
-    }), false, "instances present → not fresh");
-    assertEqual(isFreshSession({
-      customer: { name: "", drivers: [] },
-      instances: [], gaps: [{ id: "g-001" }]
-    }), false, "gaps present → not fresh");
-  });
+  // FS1 + FS2 dropped per Step I Phase I-B-3 (pure-helper unit tests of
+  // v2 isFreshSession predicate; v3 _isFreshEngagement covered by FS3 + FS4).
 
   it("FS3 · ContextView renders the fresh-start welcome card on an empty session", () => {
     const emptySession = {

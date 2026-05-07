@@ -44,8 +44,10 @@ export {
   replaceSession,
   applyContextSave,
   saveToLocalStorage,
-  loadFromLocalStorage,
-  isFreshSession
+  loadFromLocalStorage
+  // rc.7 / 7e-8 redo Step I Phase I-B-3 · isFreshSession dropped.
+  // V3 successor is ui/views/ContextView.js _isFreshEngagement (covered
+  // end-to-end by FS3 + FS4 in appSpec).
 } from "../state/sessionStore.js";
 
 // ─── from interactions/matrixCommands.js ───────────────────────────
