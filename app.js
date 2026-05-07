@@ -22,9 +22,16 @@
 //   - `resetSession` retained for now: the bridge's session-reset
 //     handler (chat memory clear + v3 engagement reset) needs inlining
 //     at the call site before this can drop. Coming in 7e-8d-2.
-import { resetSession } from "./state/sessionStore.js";
+// rc.7 / 7e-8d-2 · resetSession dropped from v2 sessionStore imports.
+// The bridge's session-reset handler (chat memory clear + v3 engagement
+// reset + AI undo clear + session-changed emit) is now inlined at the
+// newSessionBtn click site below. v2 sessionStore now has ZERO live
+// imports from app.js -- only the side-effect import of sessionBridge.js
+// (line ~30) remains, which itself drops in 7e-8d-3.
 import { engagementToV2Session } from "./state/v3ToV2DemoAdapter.js";
 import { translateV2SessionToV3Engagement } from "./state/runtimeMigrate.js";
+import { createEmptyEngagement } from "./schema/engagement.js";
+import { clearTranscript } from "./state/chatMemory.js";
 import { runAllTests }               from "./diagnostics/appSpec.js";
 import { openSettingsModal }         from "./ui/views/SettingsModal.js";
 import * as aiUndoStack              from "./state/aiUndoStack.js";
@@ -718,7 +725,23 @@ function wireFooter() {
         danger: true
       }).then(function(yes) {
         if (!yes) return;
-        resetSession();
+        // rc.7 / 7e-8d-2 · v3-pure session reset. Replaces v2
+        // resetSession() + sessionBridge's session-reset handler.
+        // Order matters: clear chat memory FIRST while we still
+        // have the prior engagementId, THEN swap engagement, THEN
+        // clear AI undo, THEN emit so subscribers see the fully
+        // coherent post-reset state.
+        try {
+          var _priorEng = getActiveEngagement();
+          var _priorEngId = _priorEng && _priorEng.meta && _priorEng.meta.engagementId;
+          if (_priorEngId) {
+            try { clearTranscript(_priorEngId); }
+            catch (_e) { console.warn("[reset] clearTranscript failed:", _e && _e.message); }
+          }
+        } catch (_e) { /* defensive -- never let chat-memory cleanup block reset */ }
+        setActiveEngagement(createEmptyEngagement());
+        try { aiUndoStack.clear(); } catch (_e) { /* AI undo not loaded -- harmless */ }
+        emitSessionChanged("session-reset", "New session");
         currentStep = "context"; currentReportingTab = "overview";
         renderHeaderMeta(); renderStepper(); renderStage();
       });
