@@ -41,7 +41,11 @@ export {
   createDemoSession,
   resetSession,
   resetToDemo,
-  replaceSession,
+  // rc.7 / 7e-8 redo Step I Phase I-B-6 · replaceSession dropped.
+  // V3 successor is state/engagementStore.js setActiveEngagement. The v2
+  // helper's last test consumer (VT26) was rewritten v3-direct in the
+  // same commit (createEmptyEngagement + commitContextEdit +
+  // engagementToV2Session for renderer signatures).
   // rc.7 / 7e-8 redo Step I Phase I-B-5 · applyContextSave dropped.
   // V3 successor is state/adapter.js commitContextEdit (asserted by
   // V-FLOW-MIGRATE-TAB1-CUSTOMER-1 in §T36 source-grep). The v2 helper's

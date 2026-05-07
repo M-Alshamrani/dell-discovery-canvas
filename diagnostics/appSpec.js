@@ -120,6 +120,12 @@ import {
 } from "../services/roadmapService.js";
 
 import { renderReportingOverview } from "../ui/views/ReportingView.js";
+// rc.7 / 7e-8 redo Step I Phase I-B-6 · v3->v2 shape adapter for test
+// fixtures that pass a v2-shape session arg to renderers whose
+// signatures still accept one (the v3-native cutover work in rc.7 / 7e
+// migrated the views to read v3 directly, but the function signatures
+// retained backward-compat session args for some renderers).
+import { engagementToV2Session } from "../state/v3ToV2DemoAdapter.js";
 
 import { renderContextView, _resetSelectionForTests as _resetContextSelectionForTests } from "../ui/views/ContextView.js";
 import { renderMatrixView }        from "../ui/views/MatrixView.js";
@@ -4195,11 +4201,13 @@ describe("29 · Phase 19d.1 · Prompt guards + Refine-to-CARE button + test-befo
 import { parseProposals, applyProposal, applyAllProposals, setPathFromRoot, resolvePathFromRoot }
   from "../interactions/aiCommands.js";
 import * as aiUndoStack from "../state/aiUndoStack.js";
-// rc.7 / 7e-8 redo Step I Phase I-B-4 · `session as liveSession` dead alias dropped
-// (zero call sites in *.js; the only line mentioning "liveSession" is a doc string
-// in a retired test). `replaceSession` retained -- it has 3 real test call sites
-// (PR1.a + PR1.b + VT26) that need per-test v3-direct rewrites in Phase I-B-5+.
-import { replaceSession } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · via test-fixture shim
+// rc.7 / 7e-8 redo Step I Phase I-B-4..6 · entire line-4195 import group RETIRED:
+//   - `session as liveSession` dropped at Phase I-B-4 (b348271) -- dead alias.
+//   - `replaceSession` dropped at Phase I-B-6 -- 3 call sites cleared:
+//     PR1.a + PR1.b dropped at Phase I-B-5 (fa2ea32, v2-applyContextSave-internal);
+//     VT26 rewritten v3-direct in this commit (createEmptyEngagement w/
+//     meta.isDemo:true + commitContextEdit + commitDriverAdd +
+//     engagementToV2Session for renderer signatures).
 import { WRITE_RESOLVERS, isWritablePath } from "../core/bindingResolvers.js";
 import { FIELD_MANIFEST as FM, writableFieldsForTab } from "../core/fieldManifest.js";
 import { RESPONSE_FORMATS, APPLY_POLICIES } from "../core/skillStore.js";
@@ -6523,18 +6531,21 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
   // Section 5 . demo banner on all 5 tabs when isDemo=true (VT26)
   // ──────────────────────────────────────────────────────────────────────
 
-  it("VT26 · Demo banner renders in the left panel of every tab when session.isDemo === true", () => {
-    replaceSession({
-      sessionId: "sess-vt26", isDemo: true,
-      customer: { name: "VT26 Demo Co", vertical: "Enterprise", region: "EMEA",
-                  drivers: [{ id: "cyber_resilience", priority: "High", outcomes: "" }] },
-      sessionMeta: { date: "2026-04-27", presalesOwner: "", status: "Demo", version: "2.0" },
-      instances: [], gaps: []
-    });
-    // rc.7 / 7e-3 · v3-pure: MatrixView reads engagement.meta.isDemo
-    // (not session.isDemo). Install the v2 session as a v3 engagement so
-    // engagement.meta.isDemo === true reaches MatrixView's banner check.
-    _installSessionAsV3Engagement(session);
+  it("VT26 · Demo banner renders in the left panel of every tab when meta.isDemo === true (v3-direct setup)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-6 · v3-direct rewrite. Pre-rewrite
+    // the test built a v2-shape session via replaceSession({...}) then
+    // translated it via _installSessionAsV3Engagement. Both steps were
+    // v2-shim dependencies. The v3-direct path: build a v3 engagement
+    // directly with meta.isDemo:true, install via setActiveEngagement,
+    // populate customer + a driver via the adapter commit helpers. For
+    // renderer signatures that still accept a session arg, derive a v2-
+    // shape view from the live v3 engagement via engagementToV2Session
+    // (the same v3->v2 projection used at the file-save boundary).
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: true } }));
+    commitContextEdit({ customer: { name: "VT26 Demo Co", vertical: "Enterprise", region: "EMEA" } });
+    commitDriverAdd({ businessDriverId: "cyber_resilience", priority: "High", outcomes: "" });
+    var v2shape = engagementToV2Session(getActiveEngagement());
     var renderers = [
       [renderContextView,        "Tab 1 Context"],
       [renderMatrixView,         "Tab 2/3 Matrix"],
@@ -6545,18 +6556,19 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
       var fn = pair[0]; var label = pair[1];
       var l = document.createElement("div"); var r = document.createElement("div");
       try {
-        // Render with whatever signature the function accepts; pass session
-        // and an empty options object to avoid breakage.
-        if (fn === renderMatrixView)        fn(l, r, session, { stateFilter: "current" });
-        else if (fn === renderGapsEditView) fn(l, r, session);
-        else if (fn === renderContextView)  fn(l, r, session);
+        // Render with whatever signature the function accepts; pass the
+        // v2-shape projection (derived from v3) for renderers that still
+        // expect one.
+        if (fn === renderMatrixView)        fn(l, r, v2shape, { stateFilter: "current" });
+        else if (fn === renderGapsEditView) fn(l, r, v2shape);
+        else if (fn === renderContextView)  fn(l, r, v2shape);
         else                                 fn(l, r);
       } catch (e) {
         assert(false, "VT26 . " + label + " renderer threw: " + (e && e.message));
         return;
       }
       var banner = l.querySelector(".demo-mode-banner");
-      assert(banner, "VT26 . " + label + " must render a .demo-mode-banner when session.isDemo === true");
+      assert(banner, "VT26 . " + label + " must render a .demo-mode-banner when meta.isDemo === true");
     });
   });
 
