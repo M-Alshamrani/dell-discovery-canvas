@@ -1494,6 +1494,43 @@ This is the third "rc.7 / 7e-8c'" follow-up bug surfaced by the user catching re
 
 ---
 
+## BUG-042 · Demo-mode banner does NOT render on Tab 4 (Gaps) when meta.isDemo:true via the live demo-loader path
+
+**Status**: OPEN · Reported 2026-05-08 evening · v3.0.0-rc.7-dev · Scheduled rc.7 / 7e-post
+**Reporter**: Agent during R11-mandated browser smoke walk for Step I-B-5
+**Severity**: Low (cosmetic; banner is informational, not load-bearing)
+**Regression**: Unknown — pre-existing state at the time of discovery (Step I-B-5 commit fa2ea32 only touched test code; not introduced by this session's commits)
+
+### Repro
+1. Load demo session via the footer "Load demo" button.
+2. Click Tabs 1 (Context), 2 (Current state), 3 (Desired state), 5 (Reporting) — verify each shows a `.demo-mode-banner` element with text "Demo mode · You're viewing example data."
+3. Click Tab 4 (Gaps).
+
+### Expected
+`.demo-mode-banner` renders in Tab 4's left panel with the same text, matching the contract V-FLOW-VT26 asserts ("Demo banner renders in the left panel of every tab when meta.isDemo === true").
+
+### Actual
+Tab 4 (Gaps) renders content but no `.demo-mode-banner` element. The Gaps board shows but the user has no visible "you're in demo mode" indicator on this specific tab.
+
+### Why VT26 is GREEN despite this
+VT26 in §T45 invokes `renderGapsEditView(l, r, v2shape)` directly with a freshly-built v3 engagement (post-I-B-6 rewrite via `setActiveEngagement(createEmptyEngagement({meta:{isDemo:true}}))` + `engagementToV2Session` projection). The direct-render path apparently includes the banner. The discrepancy is in the LIVE demo-loader path — `app.js` Load demo button → `demoMod.loadDemo()` → `setActiveEngagement(v3eng)` → `subscribeActiveEngagement` triggers `renderStage()` → routes to GapsEditView through a different code path that omits the banner.
+
+### Suspected root cause
+Either (a) `ui/views/GapsEditView.js` reads `meta.isDemo` from a different state shape than VT26's direct-call path provides, or (b) the demo-banner-render branch in GapsEditView is conditional on something the demo-loader path doesn't set (e.g. `engagement.customer.name` non-empty AND `meta.isDemo:true` — VT26 sets a customer name, which is what makes its render path show the banner).
+
+### Fix plan
+1. Compare the rendering flow:
+   - VT26 path: `setActiveEngagement(createEmptyEngagement({meta:{isDemo:true}}))` + `commitContextEdit({customer:{name:"VT26 Demo Co"}})` + `commitDriverAdd(...)` + direct `renderGapsEditView(l, r, v2shape)`.
+   - Live demo-loader: `demoMod.loadDemo()` + `setActiveEngagement(v3eng)` + `subscribeActiveEngagement` triggers `renderStage()` which routes through `app.js` to `renderGapsEditView`.
+2. Read `ui/views/GapsEditView.js` for the demo-banner render block and identify the predicate.
+3. If predicate diverges from VT26's setup: either widen the predicate to catch the live-demo case OR fix the demo-loader to populate the missing field.
+   With regression test: V-FLOW-DEMO-BANNER-GAPS-1 — drive the FULL live demo-loader flow (call `loadDemo()` + `setActiveEngagement` + dispatch `renderStage`), assert `.demo-mode-banner` present in main-left after navigating to Tab 4. (This is stronger than VT26's direct-render check.)
+
+### Memory anchor
+Surfaced by R11's mandatory regression-suite walk at every commit boundary. Without R11, banner-only verification would have missed this entirely (the test suite is GREEN; only manual Tab 4 click reveals the gap). This is exactly the failed-attempt anti-pattern R11 is designed to catch — confirms R11's value on its first hard application.
+
+---
+
 ## BUG-NNN · One-line headline
 
 **Status**: OPEN · Reported YYYY-MM-DD · vX.Y.Z · Scheduled <bucket>
