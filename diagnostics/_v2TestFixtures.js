@@ -38,9 +38,12 @@
 export {
   session,
   createEmptySession,
-  createDemoSession,
+  // rc.7 / 7e-8 redo Step I Phase I-B-8 · createDemoSession + resetToDemo
+  // dropped from this shim. createDemoSession is consumed via direct
+  // imports from ../state/demoSession.js (lines 5209 + 7793 in appSpec
+  // pre-cleanup, aliased as createDemoSessionForSF + txCreateDemoSession).
+  // resetToDemo had ZERO call sites in *.js post-audit.
   resetSession,
-  resetToDemo,
   // rc.7 / 7e-8 redo Step I Phase I-B-6 · replaceSession dropped.
   // V3 successor is state/engagementStore.js setActiveEngagement. The v2
   // helper's last test consumer (VT26) was rewritten v3-direct in the
