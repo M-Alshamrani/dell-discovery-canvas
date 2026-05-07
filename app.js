@@ -5,28 +5,33 @@
 // (session, resetSession, resetToDemo, saveToLocalStorage, replaceSession)
 // migrate to engagementStore in a subsequent v2-deletion sub-arc per
 // SPEC §S40 deletion-readiness checklist.
-// rc.7 / 7e-8c · trimmed v2 sessionStore imports.
-//   - `session` dropped: 5 read sites + 2 buildSaveEnvelope arg sites
-//     migrated to getActiveEngagement() (+ engagementToV2Session at the
-//     v2-shape file boundary).
-//   - `saveToLocalStorage` dropped: v3 engagementStore auto-persists on
-//     every commit, so the explicit v2 persistence calls became no-ops
-//     (stepper click, demo loader, file-open).
-//   - `resetToDemo` dropped: was imported but never called.
-//   - `resetSession` + `replaceSession` retained for now: the file-open
-//     flow (services/sessionFile.js applyEnvelope) still returns a
-//     v2-shape session via migrateLegacySession, and resetSession's
-//     bridge-mediated reset path still runs through the v2 emit. Both
-//     migrate in a follow-up arc that gives canvasFile.js a v3-native
-//     load path + provides a v2→v3 runtime translator.
-import { resetSession, replaceSession } from "./state/sessionStore.js";
+// rc.7 / 7e-8c..d · trimmed v2 sessionStore imports.
+//   - `session` dropped (7e-8c): 5 read sites + 2 buildSaveEnvelope arg
+//     sites migrated to getActiveEngagement() (+ engagementToV2Session
+//     at the v2-shape file boundary).
+//   - `saveToLocalStorage` dropped (7e-8c): v3 engagementStore auto-
+//     persists on every commit, so the explicit v2 persistence calls
+//     became no-ops (stepper click, demo loader, file-open).
+//   - `resetToDemo` dropped (7e-8c): was imported but never called.
+//   - `replaceSession` dropped (7e-8d-1): file-open path now translates
+//     the v2 session returned by applyEnvelope through the runtime
+//     v2→v3 migrator (state/runtimeMigrate.js) and writes directly to
+//     v3 engagementStore via setActiveEngagement. Closes the latent
+//     file-open data-loss bug where the bridge's customer-only shallow
+//     merge dropped instances/gaps/envs from a loaded .canvas file.
+//   - `resetSession` retained for now: the bridge's session-reset
+//     handler (chat memory clear + v3 engagement reset) needs inlining
+//     at the call site before this can drop. Coming in 7e-8d-2.
+import { resetSession } from "./state/sessionStore.js";
 import { engagementToV2Session } from "./state/v3ToV2DemoAdapter.js";
+import { translateV2SessionToV3Engagement } from "./state/runtimeMigrate.js";
 import { runAllTests }               from "./diagnostics/appSpec.js";
 import { openSettingsModal }         from "./ui/views/SettingsModal.js";
 import * as aiUndoStack              from "./state/aiUndoStack.js";
 import { onSessionChanged, emitSessionChanged } from "./core/sessionEvents.js";
 // rc.7 / 7e-8c'-impl · stepper greys Tabs 4/5 when visibleEnvCount===0 per SPEC §S41.2.
-import { getActiveEngagement } from "./state/engagementStore.js";
+// rc.7 / 7e-8d-1 · setActiveEngagement also imported here (file-open path).
+import { getActiveEngagement, setActiveEngagement } from "./state/engagementStore.js";
 import { visibleEnvCount } from "./ui/components/NoEnvsCard.js";
 import { APP_VERSION }               from "./core/version.js";
 import { loadAiConfig, saveAiConfig } from "./core/aiConfig.js";
@@ -799,16 +804,22 @@ function wireFooter() {
           notifyError({ title: "Can't apply this file", body: e.message || String(e) });
           return;
         }
-        // rc.7 / 7e-8c · file-open still routes through v2 sessionStore
-        // (replaceSession + sessionBridge customer-merge) because
-        // services/sessionFile.js applyEnvelope returns a v2-shape
-        // session via migrateLegacySession. A v2→v3 runtime translator
-        // (or a v3-native canvasFile rewrite) is the follow-up arc that
-        // unblocks dropping replaceSession + the bridge in 7e-8d.
-        replaceSession(res.session);
-        // saveToLocalStorage() retired here -- v3 engagementStore auto-
-        // persists, and v2 sessionStore.replaceSession is followed by
-        // the bridge's session-changed pipeline which handles v3 side.
+        // rc.7 / 7e-8d-1 · file-open path now translates the v2 session
+        // returned by applyEnvelope through the runtime v2→v3 migrator
+        // (state/runtimeMigrate.js, which delegates to the same 10-step
+        // pipeline used at .canvas file load) and writes directly to
+        // v3 engagementStore. Closes the latent data-loss bug where
+        // the bridge's customer-only shallow merge dropped instances/
+        // gaps/envs/drivers from a loaded .canvas file. v3 auto-persists;
+        // saveToLocalStorage() retired here too (v2 path retired with
+        // it).
+        var v3engFromFile;
+        try { v3engFromFile = translateV2SessionToV3Engagement(res.session); }
+        catch (e) {
+          notifyError({ title: "Can't translate this file to v3", body: (e && e.message) || String(e) });
+          return;
+        }
+        setActiveEngagement(v3engFromFile);
         saveSkills(res.skills);
         if (res.providerConfig) saveAiConfig(res.providerConfig);
         emitSessionChanged("session-replace", "Opened " + (file.name || "file"));
