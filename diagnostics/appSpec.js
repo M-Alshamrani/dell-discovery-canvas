@@ -60,11 +60,14 @@ import {
 
 import {
   session, createEmptySession, resetSession,
-  saveToLocalStorage, loadFromLocalStorage,
-  // v2.4.12 · PR1 · context-save helper (RED-stub mirrors v2.4.11 bug)
-  applyContextSave
+  saveToLocalStorage, loadFromLocalStorage
+  // rc.7 / 7e-8 redo Step I Phase I-B-5 · applyContextSave dropped.
+  // Was used only by PR1.a + PR1.b which were dropped this commit
+  // (v2-only contract; v3 path goes through commitContextEdit per
+  // V-FLOW-MIGRATE-TAB1-CUSTOMER-1).
   // Note: `replaceSession` is imported separately lower in the file
-  // (line ~4469); my new tests reuse that import.
+  // (line ~4195) for VT26 -- migration to v3-direct deferred to
+  // Phase I-B-6 (its own commit per R8).
 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../state/sessionStore.js)
 // rc.7 / 7e-8 redo Step I-B-1 · migrateLegacySession sourced directly
 // from state/runtimeMigrate.js (its canonical home post-Step B). Was
@@ -5841,38 +5844,15 @@ describe("43 · Phase 19l · v2.4.12 services scope + pre-flight regression fixe
   // Section PR · Pre-flight regression fixes (PR1 + PR2)
   // ──────────────────────────────────────────────────────────────────────
 
-  it("PR1.a · ContextView no-op Save preserves session.isDemo", () => {
-    replaceSession({
-      sessionId: "sess-pr1a", isDemo: true,
-      customer: { name: "Acme Financial Services", vertical: "Financial Services",
-                  segment: "", industry: "", region: "EMEA", drivers: [] },
-      sessionMeta: { date: "2026-04-26", presalesOwner: "", status: "Draft", version: "2.0" },
-      instances: [], gaps: []
-    });
-    applyContextSave({
-      customer: { name: "Acme Financial Services", vertical: "Financial Services", region: "EMEA" },
-      sessionMeta: { presalesOwner: "" }
-    });
-    assertEqual(session.isDemo, true,
-      "no-op save (no field changed) must NOT flip isDemo to false — demo banner must survive refresh");
-  });
-
-  it("PR1.b · ContextView Save with name change DOES flip isDemo to false", () => {
-    replaceSession({
-      sessionId: "sess-pr1b", isDemo: true,
-      customer: { name: "Acme Financial Services", vertical: "Financial Services",
-                  segment: "", industry: "", region: "EMEA", drivers: [] },
-      sessionMeta: { date: "2026-04-26", presalesOwner: "", status: "Draft", version: "2.0" },
-      instances: [], gaps: []
-    });
-    applyContextSave({
-      customer: { name: "Different Customer Co", vertical: "Financial Services", region: "EMEA" },
-      sessionMeta: { presalesOwner: "" }
-    });
-    assertEqual(session.isDemo, false,
-      "real name change must flip isDemo to false (legitimate path preserved)");
-    assertEqual(session.customer.name, "Different Customer Co", "name patch was applied");
-  });
+  // PR1.a + PR1.b dropped per Step I Phase I-B-5 (architecture doc Step I
+  // plan: tests asserting v2-only contracts get DROPPED). They asserted
+  // the v2 helper applyContextSave's isDemo-flip behavior. That helper is
+  // no longer used in production -- V-FLOW-MIGRATE-TAB1-CUSTOMER-1 in
+  // §T36 source-greps that ContextView's Save-context handler calls
+  // commitContextEdit (NOT applyContextSave). The v3 contract (whether
+  // commitContextEdit preserves vs flips meta.isDemo on no-op vs name-
+  // change) is its own concern, asserted by V-ADP-* family in Suite 49
+  // independently of these v2 tests.
 
   // PR2 helpers — each test isolates its own ai_skills_v1 storage so it
   // never sees skills from other tests or the user's real localStorage.

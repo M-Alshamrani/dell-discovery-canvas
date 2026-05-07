@@ -42,7 +42,10 @@ export {
   resetSession,
   resetToDemo,
   replaceSession,
-  applyContextSave,
+  // rc.7 / 7e-8 redo Step I Phase I-B-5 · applyContextSave dropped.
+  // V3 successor is state/adapter.js commitContextEdit (asserted by
+  // V-FLOW-MIGRATE-TAB1-CUSTOMER-1 in §T36 source-grep). The v2 helper's
+  // only test consumers (PR1.a + PR1.b) were dropped in the same commit.
   saveToLocalStorage,
   loadFromLocalStorage
   // rc.7 / 7e-8 redo Step I Phase I-B-3 · isFreshSession dropped.
