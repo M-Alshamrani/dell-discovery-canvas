@@ -164,8 +164,12 @@ export {
 // (aliased import from state/dispositionLogic.js -- v3 successor
 // shares signature shape (engagement, gapId, desiredInstanceId) and
 // status-return contract).
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-18 · DISPOSITION_ACTIONS +
+// ACTION_TO_GAP_TYPE dropped. These are constants (not functions);
+// state/dispositionLogic.js re-exports them from core/taxonomy.js
+// with identical values. The appSpec.js import-line was switched in
+// the same commit; zero test rewrites required.
 export {
-  DISPOSITION_ACTIONS,
-  ACTION_TO_GAP_TYPE,
   buildGapFromDisposition
 } from "../interactions/desiredStateSync.js";

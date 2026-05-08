@@ -3193,8 +3193,17 @@ describe("17 · AI integration readiness", () => {
 // Step J (interactions/*). The DISPOSITION_ACTIONS / ACTION_TO_GAP_TYPE
 // imports STAY here -- they're still consumed by Suite 22 services/programsService
 // at lines ~2503/2666/2782 etc. (those tests will migrate in Phase I-B).
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-18 · DISPOSITION_ACTIONS +
+// ACTION_TO_GAP_TYPE moved to a separate v3-direct import from
+// state/dispositionLogic.js (which re-exports them from core/taxonomy.js
+// with identical values). Same shape as Phase I-B-11's dead-sweep
+// efficiency: zero test rewrites required since the constants are
+// identical objects across both paths.
 import {
-  DISPOSITION_ACTIONS, ACTION_TO_GAP_TYPE,
+  DISPOSITION_ACTIONS, ACTION_TO_GAP_TYPE
+} from "../state/dispositionLogic.js";
+import {
   // rc.7 / 7e-8 redo Step I Phase I-B-11 · getDesiredCounterpart +
   // getCurrentSource dropped (zero call sites in *.js post-audit; the
   // v3 successors live in state/dispositionLogic.js with the same names
