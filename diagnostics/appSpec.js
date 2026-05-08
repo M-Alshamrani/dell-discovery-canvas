@@ -4044,14 +4044,28 @@ describe("21 * ui/views/ReportingView", () => {
       "summary content remains populated before and after refresh");
   });
 
-  it("Overview renders a driver chip for every session driver (T5.2)", () => {
+  it("Overview renders a driver chip for every session driver (T5.2 · v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-32 · v3-direct rewrite. Pre-rewrite
+    // this read v2 `session.customer.drivers` (the v2 sessionStore singleton
+    // re-exported through the test-fixture shim). v3-pure path: read the
+    // active engagement's drivers collection directly. Same contract: "one
+    // chip per driver in scope." The test is conditional (only asserts when
+    // drivers exist) because boot-empty has zero drivers and the chip count
+    // is zero in that case -- the contract still holds (0 == 0).
+    //
+    // NOTE: shim's `session` re-export is retained -- Suites 15 + 20 still
+    // have bare-`session` JS-reference call sites in their mount helpers.
+    // Dropping `session` from the shim is a separate Suite-15+20 mega-commit
+    // (R8 surfaced 2026-05-08; bundle would balloon scope past this 1-test
+    // pass). Phase I-B-32 keeps this one rewrite atomic.
     var l = document.createElement("div"); var r = document.createElement("div");
     renderReportingOverview(l, r);
     var chips = l.querySelectorAll(".reporting-driver-chip");
-    var drivers = (session.customer && session.customer.drivers) || [];
+    var eng = getActiveEngagement();
+    var drivers = (eng && eng.drivers && eng.drivers.allIds) || [];
     if (drivers.length > 0) {
       assertEqual(chips.length, drivers.length,
-        "one .reporting-driver-chip per session driver (session has " + drivers.length + ")");
+        "one .reporting-driver-chip per engagement driver (engagement has " + drivers.length + ")");
     }
   });
 
