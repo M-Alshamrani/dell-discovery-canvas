@@ -93,7 +93,7 @@ import {
 } from "../core/skillsEvents.js";
 
 import {
-  addInstance, updateInstance,
+  addInstance,
   // rc.7 / 7e-8 redo Step I Phase I-B-11 · moveInstance dropped (was on
   // this line; zero call sites in *.js post-audit).
   // rc.7 / 7e-8 redo Step I Phase I-B-17 · deleteInstance dropped. Its
@@ -104,6 +104,10 @@ import {
   // dropped. Its 3 test consumers (W3 + W4 + W5 in Suite 26) were
   // rewritten v3-direct in the same commit using
   // proposeCriticalityUpgradesV3 from state/dispositionLogic.js.
+  // rc.7 / 7e-8 redo Step I Phase I-B-21 · updateInstance dropped.
+  // Pure dead re-export -- own-grep confirms zero updateInstance(
+  // call sites in appSpec.js (the only matches are the v3-aliased
+  // updateInstanceV3 import + its consumer V-SEL-INVAL-4).
   mapAsset, unmapAsset
 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../interactions/matrixCommands.js)
 

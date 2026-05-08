@@ -79,9 +79,14 @@ export {
 // proposeCriticalityUpgradesV3 (aliased import from state/
 // dispositionLogic.js -- v3 signature is (engagement,
 // workloadInstanceId); pure function, no engagement mutation).
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-21 · updateInstance dropped.
+// Pure dead re-export -- own-grep confirms zero updateInstance(
+// call sites in *.js (the only matches were the v3-aliased
+// updateInstanceV3 import in appSpec.js + its V-SEL-INVAL-4
+// consumer; both unaffected).
 export {
   addInstance,
-  updateInstance,
   mapAsset,
   unmapAsset
 } from "../interactions/matrixCommands.js";
