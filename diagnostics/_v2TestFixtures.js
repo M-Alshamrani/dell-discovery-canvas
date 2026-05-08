@@ -67,10 +67,14 @@ export {
 // returns only the canonical export in interactions/matrixCommands.js;
 // zero call sites in *.js elsewhere. Same shape as Phase I-B-7
 // (saveToLocalStorage) and Phase I-B-10 (setGapDriverId) drops.
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-17 · deleteInstance dropped. Its
+// only test consumer (Suite 17 "all command functions accept plain
+// objects") was rewritten v3-direct in the same commit using
+// commitInstanceRemove from state/adapter.js.
 export {
   addInstance,
   updateInstance,
-  deleteInstance,
   mapAsset,
   unmapAsset,
   proposeCriticalityUpgrades
@@ -109,10 +113,14 @@ export {
 // state/adapter.js (which wraps _gapLinkInstance with built-in dedupe
 // per the v3-pure architecture). Pattern is the Phase I-B-9 + I-B-12
 // snapshot+restore-_active wrapper.
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-17 · deleteGap dropped. Its only
+// test consumer (Suite 17 "all command functions accept plain objects")
+// was rewritten v3-direct in the same commit using commitGapRemove
+// from state/adapter.js.
 export {
   createGap,
   updateGap,
-  deleteGap,
   linkDesiredInstance,
   unlinkCurrentInstance
 } from "../interactions/gapsCommands.js";

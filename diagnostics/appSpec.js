@@ -94,17 +94,24 @@ import {
 
 import {
   addInstance, updateInstance,
-  deleteInstance,
   // rc.7 / 7e-8 redo Step I Phase I-B-11 · moveInstance dropped (was on
   // this line; zero call sites in *.js post-audit).
+  // rc.7 / 7e-8 redo Step I Phase I-B-17 · deleteInstance dropped. Its
+  // only test consumer (Suite 17 "all command functions accept plain
+  // objects") was rewritten v3-direct in the same commit using
+  // commitInstanceRemove.
   mapAsset, unmapAsset, proposeCriticalityUpgrades
 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../interactions/matrixCommands.js)
 
 import {
-  createGap, updateGap, deleteGap,
+  createGap, updateGap,
   // rc.7 / 7e-8 redo Step I Phase I-B-12 · linkCurrentInstance dropped.
   // Its only test consumer (T8.4 line 3552) was rewritten v3-direct in
   // the same commit using commitGapLinkCurrentInstance from adapter.js.
+  // rc.7 / 7e-8 redo Step I Phase I-B-17 · deleteGap dropped. Its only
+  // test consumer (Suite 17 "all command functions accept plain
+  // objects") was rewritten v3-direct in the same commit using
+  // commitGapRemove.
   linkDesiredInstance,
   unlinkCurrentInstance
   // rc.7 / 7e-8 redo Step I Phase I-B-11 · unlinkDesiredInstance dropped
@@ -3064,19 +3071,52 @@ describe("17 · AI integration readiness", () => {
     assert(typeof validateGap      === "function", "validateGap must be a standalone function");
   });
 
-  it("all command functions accept plain objects — no DOM dependencies", () => {
-    const s = freshSession();
-    doesNotThrow(() => {
-      const inst = addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[0], label:"AI test", vendorGroup:"dell" });
-      updateInstance(s, inst.id, { notes:"updated by AI" });
-      deleteInstance(s, inst.id);
-    }, "matrixCommands must work with plain objects only");
+  it("all command functions accept plain objects — no DOM dependencies (v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-17 · v3-direct rewrite.
+    // Pre-rewrite asserted the v2 matrixCommands + gapsCommands helpers
+    // were pure-object-input. The v3 contract is the same applied to
+    // the v3 commit-helpers (state/adapter.js commitInstance*/commitGap*),
+    // which route through commitAction -> pure action functions on the
+    // engagement -- by construction pure-object-input. AI / API / UI
+    // callers can pass plain JSON to these helpers.
+    //
+    // Snapshot+restore _active per Phase I-B-9 pollution-prevention.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const envId = getActiveEngagement().environments.allIds[0];
+      doesNotThrow(() => {
+        const addRes = commitInstanceAdd({
+          state: "current", layerId: LayerIds[0], environmentId: envId,
+          label: "AI test", vendorGroup: "dell"
+        });
+        if (!addRes.ok) throw new Error("commitInstanceAdd failed: " + JSON.stringify(addRes));
+        const instId = getActiveEngagement().instances.allIds.at(-1);
+        const editRes = commitInstanceEdit(null, null, { id: instId, notes: "updated by AI" });
+        if (!editRes.ok) throw new Error("commitInstanceEdit failed: " + JSON.stringify(editRes));
+        const removeRes = commitInstanceRemove(instId);
+        if (removeRes && removeRes.ok === false) throw new Error("commitInstanceRemove failed: " + JSON.stringify(removeRes));
+      }, "v3 commit* instance helpers must work with plain objects only");
 
-    doesNotThrow(() => {
-      const gap = createGap(s, { description:"AI gap", layerId:LayerIds[0] });
-      updateGap(s, gap.id, { urgency:"High", dellSolutions:"PPDM" });
-      deleteGap(s, gap.id);
-    }, "gapsCommands must work with plain objects only");
+      doesNotThrow(() => {
+        const gapAddRes = commitGapAdd({
+          description: "AI gap", layerId: LayerIds[0],
+          gapType: "ops",
+          notes: "Workshop ops gap notes substantial enough to satisfy AL7.",
+          reviewed: false
+        });
+        if (!gapAddRes.ok) throw new Error("commitGapAdd failed: " + JSON.stringify(gapAddRes));
+        const gapId = getActiveEngagement().gaps.allIds.at(-1);
+        const gapEditRes = commitGapEdit(gapId, { urgency: "High" });
+        if (!gapEditRes.ok) throw new Error("commitGapEdit failed: " + JSON.stringify(gapEditRes));
+        const gapRemoveRes = commitGapRemove(gapId);
+        if (gapRemoveRes && gapRemoveRes.ok === false) throw new Error("commitGapRemove failed: " + JSON.stringify(gapRemoveRes));
+      }, "v3 commit* gap helpers must work with plain objects only");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   it("all validation errors produce string messages (AI can parse and re-prompt)", () => {
@@ -8889,6 +8929,11 @@ import {
   commitGapEdit,
   // rc.7 / 7e-2 · v3-pure write surface used by Suite 13 v3 fixture below.
   commitInstanceAdd,
+  // rc.7 / 7e-8 redo Step I Phase I-B-17 · commitInstanceRemove added
+  // for the Suite 17 "all command functions accept plain objects"
+  // v3-direct rewrite (drops both deleteInstance + deleteGap shim
+  // re-exports in one commit).
+  commitInstanceRemove,
   commitEnvAdd,
   // rc.7 / 7e-4 · v3-pure gap fixture surface.
   commitGapAdd,
