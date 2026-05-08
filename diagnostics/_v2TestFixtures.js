@@ -78,10 +78,19 @@ export {
 // call sites in *.js (the only matches were the v3-aliased
 // updateInstanceV3 import in appSpec.js + its V-SEL-INVAL-4
 // consumer; both unaffected).
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-24 · mapAsset + unmapAsset
+// dropped. Suite 26 high-density rewrite: W1 + W1b migrated v3-direct
+// via commitInstanceAdd + InstanceSchema.superRefine; W2 + W6 RETIRED
+// per Step I plan (v2 helper-layer-invariant contracts no-longer-
+// applicable in v3-pure architecture; v3 mapWorkloadAssets is a thin
+// updateInstance wrapper with NO enforcement). The 5 invariants
+// (dedupe / self-map / workload-to-workload / cross-state / cross-
+// environment) are preserved in HANDOFF "Open R8 backlog" item #2
+// for the future rc.8 v3-invariant-enforcement arc -- not lost,
+// just deferred.
 export {
-  addInstance,
-  mapAsset,
-  unmapAsset
+  addInstance
 } from "../interactions/matrixCommands.js";
 
 // ─── from interactions/gapsCommands.js ─────────────────────────────

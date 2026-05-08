@@ -97,22 +97,20 @@ import {
 } from "../core/skillsEvents.js";
 
 import {
-  addInstance,
-  // rc.7 / 7e-8 redo Step I Phase I-B-11 · moveInstance dropped (was on
-  // this line; zero call sites in *.js post-audit).
-  // rc.7 / 7e-8 redo Step I Phase I-B-17 · deleteInstance dropped. Its
-  // only test consumer (Suite 17 "all command functions accept plain
-  // objects") was rewritten v3-direct in the same commit using
-  // commitInstanceRemove.
+  addInstance
+  // rc.7 / 7e-8 redo Step I Phase I-B-11 · moveInstance dropped.
+  // rc.7 / 7e-8 redo Step I Phase I-B-17 · deleteInstance dropped.
   // rc.7 / 7e-8 redo Step I Phase I-B-19 · proposeCriticalityUpgrades
-  // dropped. Its 3 test consumers (W3 + W4 + W5 in Suite 26) were
-  // rewritten v3-direct in the same commit using
-  // proposeCriticalityUpgradesV3 from state/dispositionLogic.js.
+  // dropped (W3+W4+W5 v3-direct via proposeCriticalityUpgradesV3).
   // rc.7 / 7e-8 redo Step I Phase I-B-21 · updateInstance dropped.
-  // Pure dead re-export -- own-grep confirms zero updateInstance(
-  // call sites in appSpec.js (the only matches are the v3-aliased
-  // updateInstanceV3 import + its consumer V-SEL-INVAL-4).
-  mapAsset, unmapAsset
+  //
+  // rc.7 / 7e-8 redo Step I Phase I-B-24 · mapAsset + unmapAsset
+  // dropped. W1 + W1b rewritten v3-direct (commitInstanceAdd +
+  // InstanceSchema.superRefine reject); W2 + W6 RETIRED per Step I
+  // plan (v2 helper-layer-invariant contracts no-longer-applicable
+  // in v3-pure -- v3 mapWorkloadAssets has no enforcement; the 5
+  // invariants are preserved in HANDOFF "Open R8 backlog" #2 for
+  // the rc.8 v3-invariant-enforcement arc). Last consumers cleared.
 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../interactions/matrixCommands.js)
 
 import {
@@ -3917,54 +3915,106 @@ describe("23 · Phase 18 · gap links — always-visible + warn-but-allow + casc
 // ── Phase 16 / v2.3.1 · Workload Mapping (W1-W4) ──────────────────────
 describe("24 · Phase 16 · workload layer + asset mapping + upward propagation", () => {
 
-  it("W1 · workload layer exists at the top of LAYERS and accepts an instance with mappedAssetIds=[]", () => {
+  it("W1 · workload layer exists at the top of LAYERS and v3 InstanceSchema accepts mappedAssetIds=[] on workload (v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-24 · v3-direct rewrite.
+    // The contract -- "workload is layer 0; v3 InstanceSchema accepts an
+    // empty mappedAssetIds array on a workload-layer instance" -- is
+    // v3-applicable directly. v3 InstanceSchema (schema/instance.js
+    // line 28-49) validates state/layerId/environmentId + superRefine
+    // for mappedAssetIds-on-workload-only invariant.
     assertEqual(LAYERS[0].id, "workload", "workload must be the first (topmost) layer");
-    const s = freshSession();
-    const wl = addInstance(s, {
-      state: "current", layerId: "workload", environmentId: EnvironmentIds[0],
-      label: "Order-management ERP", vendorGroup: "nonDell",
-      mappedAssetIds: [] // explicit empty; validateInstance must accept on workload only
-    });
-    assert(wl.id, "addInstance must return a workload with an id");
-    assertEqual(wl.layerId, "workload", "instance must remain on workload layer");
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const envId = getActiveEngagement().environments.allIds[0];
+      const wlRes = commitInstanceAdd({
+        state: "current", layerId: "workload", environmentId: envId,
+        label: "Order-management ERP", vendorGroup: "nonDell",
+        mappedAssetIds: []   // explicit empty; v3 schema accepts on workload only
+      });
+      assertEqual(wlRes.ok, true, "commitInstanceAdd(workload, mappedAssetIds=[]) succeeded");
+      const wlId = getActiveEngagement().instances.allIds[0];
+      const wl = getActiveEngagement().instances.byId[wlId];
+      assert(wl && wl.id, "v3 commit must return a workload with an id");
+      assertEqual(wl.layerId, "workload", "instance must remain on workload layer");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
-  it("W1b · validateInstance rejects mappedAssetIds on a non-workload layer", () => {
-    const s = freshSession();
-    throws(() => addInstance(s, {
-      state: "current", layerId: "compute", environmentId: EnvironmentIds[0],
-      label: "Misplaced", mappedAssetIds: ["cur-1"]
-    }), "mappedAssetIds on a compute-layer instance must throw");
+  it("W1b · v3 InstanceSchema rejects mappedAssetIds on a non-workload layer (v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-24 · v3-direct rewrite.
+    // The contract -- "mappedAssetIds is a workload-only field; non-
+    // workload instances with non-empty mappedAssetIds must fail
+    // schema validation" -- is preserved in v3 InstanceSchema's
+    // superRefine at schema/instance.js line 60-65 (R3.5.b
+    // "mappedAssetIds only on workload"). v3 createEmptyInstance
+    // (schema/instance.js line 72) calls InstanceSchema.parse() which
+    // THROWS ZodError on superRefine failure -- so commitInstanceAdd
+    // throws (not returns ok:false) when the input would violate the
+    // workload-only invariant. Test wraps in try/catch and asserts the
+    // throw + error message references mappedAssetIds.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const envId = getActiveEngagement().environments.allIds[0];
+      let threw = false;
+      let errMsg = "";
+      try {
+        commitInstanceAdd({
+          state: "current", layerId: "compute", environmentId: envId,
+          label: "Misplaced",
+          mappedAssetIds: ["00000000-0000-4000-8000-0000000000aa"]   // UUID-shape; non-workload
+        });
+      } catch (e) {
+        threw = true;
+        // Zod's parse error has a .issues array OR .message
+        errMsg = (e && (e.message || JSON.stringify(e.issues || []))) || "";
+      }
+      assertEqual(threw, true,
+        "v3 InstanceSchema must reject mappedAssetIds on a non-workload-layer instance (throw expected)");
+      assert(/mappedAssetIds/.test(errMsg),
+        "error message must reference mappedAssetIds (got: " + errMsg.slice(0, 200) + ")");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
-  it("W2 · mapAsset adds the id (deduped) and refuses cross-state or workload-to-workload", () => {
-    const s = freshSession();
-    const wl = addInstance(s, { state:"current", layerId:"workload", environmentId:EnvironmentIds[0],
-                                label:"Critical workload" });
-    const cmp = addInstance(s, { state:"current", layerId:"compute", environmentId:EnvironmentIds[0],
-                                 label:"Production cluster" });
-    mapAsset(s, wl.id, cmp.id);
-    mapAsset(s, wl.id, cmp.id); // dedup
-    assertEqual(wl.mappedAssetIds.length, 1, "duplicate mapAsset call must not append");
-    assertEqual(wl.mappedAssetIds[0], cmp.id, "the compute id must be the mapped one");
+  // rc.7 / 7e-8 redo Step I Phase I-B-24 · W2 + W6 RETIRED.
+  //
+  // W2 was: "mapAsset adds the id (deduped) and refuses cross-state or
+  // workload-to-workload" -- asserted that v2 mapAsset enforced 4
+  // invariants atomically (dedupe / self-map throw / workload→workload
+  // throw / cross-state throw + unmapAsset remove).
+  //
+  // W6 was: "mapAsset refuses cross-environment mapping (workload + asset
+  // must share environment)" -- 5th invariant.
+  //
+  // The v2 contract (helper-layer atomic invariant enforcement) is
+  // NO-LONGER-APPLICABLE in v3-pure architecture. v3 mapWorkloadAssets
+  // (state/collections/instanceActions.js line 127) is a thin
+  // updateInstance wrapper with NO invariant enforcement -- the v3
+  // architecture deliberately moved invariants to the CALLER layer
+  // (UI workload-edit flow + AI Assist), not the helper. v3 retains
+  // the data-model capability (instances.byId[wlId].mappedAssetIds)
+  // but the enforcement gates are caller-side.
+  //
+  // Per docs/V2_DELETION_ARCHITECTURE.md Step I plan ("Tests that
+  // asserted no longer-applicable contracts DROP, not retired with
+  // negative file-existence assertions"), W2 + W6 retire here. The
+  // 5 invariants are preserved in HANDOFF "Open R8 backlog" item #2
+  // (mapWorkloadAssets) for the future rc.8 v3-invariant-enforcement
+  // arc -- once that arc lands, equivalent v3-direct tests will
+  // assert the gates exist at the caller layer.
+  //
+  // Authority: feedback_no_patches_flag_first.md (don't bend v3 to
+  // re-add v2 helper-layer invariants without explicit approval) +
+  // R6 (don't keep RED tests as the only contract documentation).
 
-    // refuse self-map
-    throws(() => mapAsset(s, wl.id, wl.id), "mapping a workload to itself must throw");
-
-    // refuse workload→workload
-    const wl2 = addInstance(s, { state:"current", layerId:"workload", environmentId:EnvironmentIds[0],
-                                 label:"Other workload" });
-    throws(() => mapAsset(s, wl.id, wl2.id), "mapping a workload to another workload must throw");
-
-    // refuse cross-state
-    const desCmp = addInstance(s, { state:"desired", layerId:"compute", environmentId:EnvironmentIds[0],
-                                    label:"Future cluster" });
-    throws(() => mapAsset(s, wl.id, desCmp.id), "mapping a current workload to a desired asset must throw");
-
-    // unmapAsset removes
-    unmapAsset(s, wl.id, cmp.id);
-    assertEqual(wl.mappedAssetIds.length, 0, "unmapAsset must remove the id");
-  });
 
   it("W3 · proposeCriticalityUpgrades returns Low/Medium mapped assets when workload is High (upward only, opt-in apply) (v3-direct)", () => {
     // rc.7 / 7e-8 redo Step I Phase I-B-19 · v3-direct rewrite.
@@ -4063,24 +4113,12 @@ describe("24 · Phase 16 · workload layer + asset mapping + upward propagation"
     }
   });
 
-  it("W6 · mapAsset refuses cross-environment mapping (workload + asset must share environment)", () => {
-    const s = freshSession();
-    const wl = addInstance(s, { state:"current", layerId:"workload", environmentId:EnvironmentIds[0],
-                                label:"Cloud-hosted ERP" });
-    // Same state, same layer constraints satisfied; only environment differs.
-    const otherEnvAsset = addInstance(s, { state:"current", layerId:"compute",
-                                           environmentId:EnvironmentIds[1],
-                                           label:"On-prem cluster" });
-    throws(() => mapAsset(s, wl.id, otherEnvAsset.id),
-      "mapping a workload to an asset in a different environment must throw");
-    // Hybrid workloads are modelled as one workload tile per environment;
-    // a same-env asset still maps cleanly.
-    const sameEnvAsset = addInstance(s, { state:"current", layerId:"compute",
-                                          environmentId:EnvironmentIds[0],
-                                          label:"Cloud cluster" });
-    doesNotThrow(() => mapAsset(s, wl.id, sameEnvAsset.id),
-      "same-env mapping must still succeed");
-  });
+  // rc.7 / 7e-8 redo Step I Phase I-B-24 · W6 RETIRED alongside W2
+  // (see retirement comment block above the W3 v3-direct test). v2
+  // mapAsset's cross-environment invariant has the same shape as the
+  // other 4 invariants -- helper-layer enforcement that v3-pure
+  // architecture moved to the caller. Preserved in HANDOFF "Open R8
+  // backlog" for the future rc.8 v3-invariant-enforcement arc.
 
   it("W5 · proposeCriticalityUpgrades is pure — never mutates instances (v3-direct)", () => {
     // rc.7 / 7e-8 redo Step I Phase I-B-19 · v3-direct rewrite.
