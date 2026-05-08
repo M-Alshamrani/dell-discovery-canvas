@@ -62,11 +62,15 @@ export {
 } from "../state/sessionStore.js";
 
 // ─── from interactions/matrixCommands.js ───────────────────────────
+// rc.7 / 7e-8 redo Step I Phase I-B-11 · moveInstance dropped. Pure
+// dead re-export -- own-grep (`grep -rnE "moveInstance" --include="*.js"`)
+// returns only the canonical export in interactions/matrixCommands.js;
+// zero call sites in *.js elsewhere. Same shape as Phase I-B-7
+// (saveToLocalStorage) and Phase I-B-10 (setGapDriverId) drops.
 export {
   addInstance,
   updateInstance,
   deleteInstance,
-  moveInstance,
   mapAsset,
   unmapAsset,
   proposeCriticalityUpgrades
@@ -93,22 +97,31 @@ export {
 // "setGapDriverId" --include="*.js"`) returns ZERO consumers (the only
 // references are doc strings in README.md, SPEC.md, RULES.md). Same
 // shape as Phase I-B-7's saveToLocalStorage drop.
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-11 · unlinkDesiredInstance dropped.
+// Pure dead re-export -- own-grep returns only the canonical export in
+// interactions/gapsCommands.js + the appSpec.js import line that this
+// commit also trimmed. Zero call sites in *.js elsewhere.
 export {
   createGap,
   updateGap,
   deleteGap,
   linkCurrentInstance,
   linkDesiredInstance,
-  unlinkCurrentInstance,
-  unlinkDesiredInstance
+  unlinkCurrentInstance
 } from "../interactions/gapsCommands.js";
 
 // ─── from interactions/desiredStateSync.js ─────────────────────────
+// rc.7 / 7e-8 redo Step I Phase I-B-11 · getDesiredCounterpart +
+// getCurrentSource dropped. Pure dead re-exports -- own-grep returns
+// the canonical exports in interactions/desiredStateSync.js + the
+// appSpec.js import line that this commit also trimmed + the v3
+// successors in state/dispositionLogic.js (consumed by ui/views/
+// MatrixView.js directly, NOT through this shim). Zero call sites in
+// *.js elsewhere for the v2 shim path.
 export {
   DISPOSITION_ACTIONS,
   ACTION_TO_GAP_TYPE,
-  getDesiredCounterpart,
-  getCurrentSource,
   buildGapFromDisposition,
   syncGapFromDesired,
   syncDesiredFromGap,

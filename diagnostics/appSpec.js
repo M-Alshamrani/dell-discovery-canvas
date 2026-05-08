@@ -94,14 +94,18 @@ import {
 
 import {
   addInstance, updateInstance,
-  deleteInstance, moveInstance,
+  deleteInstance,
+  // rc.7 / 7e-8 redo Step I Phase I-B-11 · moveInstance dropped (was on
+  // this line; zero call sites in *.js post-audit).
   mapAsset, unmapAsset, proposeCriticalityUpgrades
 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../interactions/matrixCommands.js)
 
 import {
   createGap, updateGap, deleteGap,
   linkCurrentInstance, linkDesiredInstance,
-  unlinkCurrentInstance, unlinkDesiredInstance
+  unlinkCurrentInstance
+  // rc.7 / 7e-8 redo Step I Phase I-B-11 · unlinkDesiredInstance dropped
+  // (was on this line; zero call sites in *.js post-audit).
 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../interactions/gapsCommands.js)
 
 import {
@@ -3018,7 +3022,10 @@ describe("17 · AI integration readiness", () => {
 // at lines ~2503/2666/2782 etc. (those tests will migrate in Phase I-B).
 import {
   DISPOSITION_ACTIONS, ACTION_TO_GAP_TYPE,
-  getDesiredCounterpart, getCurrentSource,
+  // rc.7 / 7e-8 redo Step I Phase I-B-11 · getDesiredCounterpart +
+  // getCurrentSource dropped (zero call sites in *.js post-audit; the
+  // v3 successors live in state/dispositionLogic.js with the same names
+  // and are consumed directly by ui/views/MatrixView.js).
   buildGapFromDisposition,
   syncGapFromDesired, syncGapsFromCurrentCriticality,
   syncDesiredFromGap, confirmPhaseOnLink
