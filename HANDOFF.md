@@ -2,7 +2,7 @@
 
 **🔴 READ FIRST · Principal-architect discipline (LOCKED 2026-05-08, R11 added evening)**: every session, every commit, every handover. Full text in [`docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md`](docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md) (R0..R11) + tier-1 memory anchor `feedback_principal_architect_discipline.md`. Core rules: **R0** acknowledge "what would a principal architect do?" before non-trivial action · **R1** own-grep before delete · **R2** migrate consumers FIRST, delete LAST · **R3** Chrome MCP browser smoke at every commit boundary (test banner alone is NOT sufficient) · **R4** no v3-store backward-compat hacks · **R5** no fig-leaf test fixtures hiding v2 logic · **R6** rewrite tests to assert v3 contracts (never retire-with-negative) · **R7** per-commit revertibility · **R8** surface scope balloons · **R9** every handover references this · **R10** acknowledge in every action out loud · **R11 (HARDEST · LOCKED 2026-05-08 evening)** Recite + Answer + Execute + Pledge-Smoke-Screenshot at EVERY step boundary; every commit message ends with a `Browser smoke evidence:` block. **Test banner alone is a discipline violation.**
 
-**Last session end**: 2026-05-09 · `v3.0.0-rc.7-dev` on `v3.0-data-architecture` · HEAD `4b9d5c9` · **Banner 1139/1144 GREEN** with 5 expected RED (FS3, V-FLOW-V3-PURE-1/3/4/5; VT29 stayed GREEN since the prior session's HANDOFF baseline of 1138/1144). Phase I-B-9..15 advanced through 7 commits (5c8d69f, 044dba5, 64a1e6a, 879f611, 2e0b6f3, f4d412d, 4b9d5c9); `_v2TestFixtures.js` shim slimmed 28 → 19 re-exports (9 dropped: `approveGap`, `setGapDriverId`, `moveInstance`, `unlinkDesiredInstance`, `getDesiredCounterpart`, `getCurrentSource`, `linkCurrentInstance`, `syncGapFromDesired`, `syncGapsFromCurrentCriticality`, `syncDesiredFromGap` — actually 10 names dropped). 4 R8 awareness items collected for a future v3-invariant-enforcement arc (see "Open R8 backlog" section below). Steps H/J/K + rc.7 / 7e-post + tag still pending. **R11 LOCKED at `96e8a16`**.
+**Last session end**: 2026-05-09 · `v3.0.0-rc.7-dev` on `v3.0-data-architecture` · HEAD `6abd74f` · **Banner 1139/1144 GREEN** with 5 expected RED (FS3, V-FLOW-V3-PURE-1/3/4/5). Phase I-B-9..22 advanced through 14 commits this session; `_v2TestFixtures.js` shim slimmed 28 → 11 re-exports (17 names dropped). **MILESTONE: entire desiredStateSync re-export block RETIRED** at Phase I-B-20 (`0b33543`). 4 R8 awareness items collected for a future v3-invariant-enforcement arc. Steps H/J/K + rc.7 / 7e-post + tag still pending. **R11 LOCKED at `96e8a16`**.
 
 **rc.7 dev log (full arc since rc.6 tag, in order)**:
 
@@ -46,26 +46,43 @@
 | 7e-8 redo Step I-B-13 | `2e0b6f3` | **RH9 rewritten v3-direct** (`commitSyncGapFromDesired` from `state/dispositionLogic.js`) + **`syncGapFromDesired` shim re-export dropped**. v2-only sub-assertions on `closeReason` + `closedAt` DROPPED per Step I plan (v3 GapSchema deliberately omits these fields per `dispositionLogic.js` line 199-203 comment; not a contract gap). | 1139/1144 |
 | 7e-8 redo Step I-B-14 | `f4d412d` | **RH13 rewritten v3-direct** (`commitSyncGapsFromCurrentCriticality`) + **`syncGapsFromCurrentCriticality` shim re-export dropped**. v3 preserves the `urgencyOverride !== true` invariant (filter at line 250 of `syncGapsFromCurrentCriticalityAction`). RH20 (`unlinkCurrentInstance`) deferred — **third R8 finding**: v3 `_gapUnlinkInstance` does not enforce per-Action link rules (same shape as the AL10 + mapWorkloadAssets findings). | 1139/1144 |
 | **7e-8 redo Step I-B-15** | `4b9d5c9` | **T4.5 + T6.3 rewritten v3-direct** (`commitSyncDesiredFromGap` + `commitGapEdit(phase)` for T4.5; `commitGapLinkDesiredInstance` + sync for T6.3) + **`syncDesiredFromGap` shim re-export dropped**. T6.3 v2-only `acknowledged:true` PHASE_CONFLICT_NEEDS_ACK sub-contract scoped out — **fourth R8 finding**: v3 `_gapLinkInstance` does not enforce phase-conflict acknowledgment (RH10 covers the v2 acknowledged-arg contract directly). | 1139/1144 |
+| 7e-8 redo Step I-B-16 | `2f72630` | **T6.1 + T6.2 rewritten v3-direct** (`confirmPhaseOnLinkV3` aliased) + **`confirmPhaseOnLink` shim re-export dropped**. Pure-function v3 contract preservation. | 1139/1144 |
+| 7e-8 redo Step I-B-17 | `d0727c7` | **Suite 17 plain-object-input test rewritten v3-direct** (commitInstance*/commitGap* helpers as v3 contract surface) + **`deleteInstance` + `deleteGap` shim re-exports dropped** (2-for-1 leverage; one test was the sole consumer of both). | 1139/1144 |
+| 7e-8 redo Step I-B-18 | `f845cd7` | **`DISPOSITION_ACTIONS` + `ACTION_TO_GAP_TYPE` import-source switched** from shim to `state/dispositionLogic.js` (identical constants, zero test rewrites). | 1139/1144 |
+| 7e-8 redo Step I-B-19 | `55ca473` | **W3 + W4 + W5 rewritten v3-direct** (`proposeCriticalityUpgradesV3` aliased) + **`proposeCriticalityUpgrades` shim re-export dropped**. mapAsset usage in W3/W4/W5 is fixture-only (no invariant assertions); `commitWorkloadMapping` set-list form is clean. | 1139/1144 |
+| **7e-8 redo Step I-B-20** | `0b33543` | **🔴 MILESTONE: ENTIRE desiredStateSync re-export block RETIRED.** T6.4 + RH16/17/18 rewritten v3-direct (`buildGapFromDispositionV3` aliased) + **`buildGapFromDisposition` shim re-export dropped**. RH17 contract delta documented (v3 ASCII arrow `->` + layer suffix `[Compute]` vs v2 Unicode arrow `→`). RH16 uses `engagementToV2Session` for still-v2-shape `services/roadmapService.js buildProjects`. | 1139/1144 |
+| 7e-8 redo Step I-B-21 | `d63a9d0` | drop dead `updateInstance` shim re-export (zero `updateInstance(` call sites in `*.js`; only the v3-aliased `updateInstanceV3` import + V-SEL-INVAL-4 consumer remain, both unaffected) | 1139/1144 |
+| 7e-8 redo Step I-B-22 | `6abd74f` | **Suite 17 'engagement structure stable across reset' rewritten v3-direct** (test-body modernization without shim drop; `resetSession` remains in shim because the test-runner afterRestore at line 17149 still consumes it as a v2 sessionStore restoration fallback — that migration couples to Step H lifecycle). | 1139/1144 |
 
-## Phase I-B-16+ (next session entry point · 2026-05-09)
+## Phase I-B-23+ (next session entry point · 2026-05-09 evening)
 
-`_v2TestFixtures.js` shim shrunk **35 → 19 re-exports** total across the rc.7 / 7e-8 redo arc (16 dropped). Latest 7-commit session (Phase I-B-9..15) dropped 10 names: `approveGap`, `setGapDriverId`, `moveInstance`, `unlinkDesiredInstance`, `getDesiredCounterpart`, `getCurrentSource`, `linkCurrentInstance`, `syncGapFromDesired`, `syncGapsFromCurrentCriticality`, `syncDesiredFromGap`. **Remaining 19**:
-- **sessionStore (4)**: `session`, `createEmptySession`, `resetSession`, `loadFromLocalStorage`
-- **matrixCommands (6)**: `addInstance`, `updateInstance`, `deleteInstance`, `mapAsset`, `unmapAsset`, `proposeCriticalityUpgrades`
-- **gapsCommands (5)**: `createGap`, `updateGap`, `deleteGap`, `linkDesiredInstance`, `unlinkCurrentInstance`
-- **desiredStateSync (4)**: `DISPOSITION_ACTIONS`, `ACTION_TO_GAP_TYPE`, `buildGapFromDisposition`, `confirmPhaseOnLink`
+`_v2TestFixtures.js` shim shrunk **35 → 11 re-exports** total across the rc.7 / 7e-8 redo arc (24 dropped). Latest 14-commit session (Phase I-B-9..22) dropped 17 names: `approveGap`, `setGapDriverId`, `moveInstance`, `unlinkDesiredInstance`, `getDesiredCounterpart`, `getCurrentSource`, `linkCurrentInstance`, `syncGapFromDesired`, `syncGapsFromCurrentCriticality`, `syncDesiredFromGap`, `confirmPhaseOnLink`, `deleteInstance`, `deleteGap`, `DISPOSITION_ACTIONS`, `ACTION_TO_GAP_TYPE`, `proposeCriticalityUpgrades`, `buildGapFromDisposition`, `updateInstance`. **MILESTONE: entire desiredStateSync re-export block RETIRED at Phase I-B-20.**
 
-The desiredStateSync block can ONLY drop further once the v2 `confirmPhaseOnLink` (RH10 in Suite 28) and `buildGapFromDisposition` (8+ tests) consumers migrate to v3 (`state/dispositionLogic.js confirmPhaseOnLink` + `buildGapFromDisposition` are v3-pure with the same names; aliasing pattern from Phase I-B-13). The bulk of remaining work is gapsCommands + matrixCommands (high-usage helpers consumed by ~150+ test sites total — `addInstance` 129, `createGap` 134, `updateGap` 31).
+**Remaining 11 shim re-exports**:
+- **sessionStore (4)**: `session` (250 usages · v2 singleton), `createEmptySession` (56 usages · v2 fixture builder), `resetSession` (1 usage · test-runner afterRestore line 17149), `loadFromLocalStorage` (1 usage · same afterRestore line 17123)
+- **matrixCommands (3)**: `addInstance` (129 usages · high-usage), `mapAsset` (12 usages · partly R8-blocked), `unmapAsset` (1 usage · R8-blocked)
+- **gapsCommands (4)**: `createGap` (134 usages · high-usage), `updateGap` (31 usages · high-usage), `linkDesiredInstance` (4 usages · paired with RH10 R8-blocked), `unlinkCurrentInstance` (2 usages · RH20 R8-blocked)
+- **desiredStateSync (0)**: ✅ block fully retired
 
-**Most-actionable next**: pick a single-test consumer with a clean v3 path. Candidates surveyed:
-- `unmapAsset` (W2, line 3625) — **R8-blocked**: v3 `mapWorkloadAssets` lacks invariant enforcement. Defer to a v3-invariant-enforcement arc.
-- `unlinkCurrentInstance` (RH20, line 5906) — **R8-blocked**: v3 `_gapUnlinkInstance` doesn't enforce AL link rules. Same arc.
-- `proposeCriticalityUpgrades` (W3+) — needs a v3 helper audit before rewrite scope is known.
-- `confirmPhaseOnLink` (RH10 + others) — clean v3 path via aliased import (Phase I-B-13 pattern).
+**Strategic crossroads** — the easy wins are exhausted. Every remaining shim drop falls into one of three categories:
 
-**Recommended order**: tackle `confirmPhaseOnLink` rewrite next (clean v3 path), then audit the high-usage `addInstance`/`createGap`/`updateGap` migration sequence — those drops will unblock most remaining shim shrinkage in fewer commits because each rewrite touches MANY tests.
+1. **R8-blocked targets** (need v3-invariant-enforcement arc first): `mapAsset`/`unmapAsset` (mapWorkloadAssets invariants), `unlinkCurrentInstance` (RH20 AL-rule), `linkDesiredInstance` (RH10 phase-conflict-ack). Three of these four R8 findings are now collected — see "Open R8 backlog" section.
 
-**Standing pattern (Phase I-B-9..15 template)**:
+2. **Infrastructure (Step H lifecycle)**: `resetSession` + `loadFromLocalStorage` retire when the test-runner afterRestore migrates from v2 sessionStore restoration to v3-only. `session` + `createEmptySession` retire when all 250+/56 v2-fixture call sites migrate. These couple to Step H (DELETE `state/sessionStore.js`).
+
+3. **High-usage bulk rewrites**: `addInstance` (129), `createGap` (134), `updateGap` (31). Each requires a multi-commit incremental migration OR a single big-bang commit with aggressive scope.
+
+**Recommended next-session strategic decision** — pick ONE of:
+
+- **Path A: v3-invariant-enforcement arc** (R8 findings consolidation). Add invariant enforcement to `mapWorkloadAssets`/`updateGap`(reviewed-flip)/`_gapLinkInstance`(phase-conflict)/`_gapUnlinkInstance`(AL-rule). Production-code change; gates 4 deferred tests.
+
+- **Path B: Bulk addInstance rewrite arc**. Migrate the 129 addInstance call sites in batches of ~10-15 per commit. Drops `addInstance` from shim. ~10 commits.
+
+- **Path C: Step H + afterRestore migration arc**. Migrate the test-runner afterRestore to v3-only restoration. Drops `resetSession` + `loadFromLocalStorage` + makes `state/sessionStore.js` deletable. Then `session` + `createEmptySession` migrations cascade.
+
+The optimal order is likely **Path C → Path A → Path B**: Step H unlocks the v3-pure architecture; then R8 findings are addressed in a focused arc; then the bulk rewrites can proceed without legacy session-singleton entanglement.
+
+**Standing pattern (Phase I-B-9..22 template)**:
 ```js
 const savedEng = getActiveEngagement();
 try {
@@ -97,9 +114,9 @@ Four related findings, all the same shape: v2 enforced an invariant atomically; 
 
 ## Brief prompt to continue (next session)
 
-> Continue rc.7 / 7e-8 v2 deletion arc per `docs/V2_DELETION_ARCHITECTURE.md` and `docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md` (LOCKED R0..R11). Last session ended at HEAD `4b9d5c9`; banner 1139/1144 GREEN with 5 expected RED (FS3 + V-FLOW-V3-PURE-1/3/4/5; VT29 stays GREEN since 2026-05-08 baseline). Apply principal-architect persona + R11 four-block ritual (Recite + Answer + Execute + Pledge-Smoke-Screenshot) at every step boundary. Walk standing regression flow (boot empty → "New customer" 0 collections; load demo → Acme Healthcare 3/4/23/8; 5 stepper tabs render; AI Assist overlay opens; Settings → Skills builder mounts; +New session → engagementId rotates + chat 1→0 messages BUG-029 contract). Capture Chrome MCP screenshots inline. Every commit message ends with `Browser smoke evidence:` block. Test banner alone is a discipline violation per R11.
+> Continue rc.7 / 7e-8 v2 deletion arc per `docs/V2_DELETION_ARCHITECTURE.md` and `docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md` (LOCKED R0..R11). Last session ended at HEAD `6abd74f`; banner 1139/1144 GREEN with 5 expected RED (FS3 + V-FLOW-V3-PURE-1/3/4/5). Apply principal-architect persona + R11 four-block ritual (Recite + Answer + Execute + Pledge-Smoke-Screenshot) at every step boundary. Walk standing regression flow (boot empty → "New customer" 0 collections; load demo → Acme Healthcare 3/4/23/8; 5 stepper tabs render; AI Assist overlay opens; Settings → Skills builder mounts; +New session → engagementId rotates + chat 1→0 messages BUG-029 contract). Capture Chrome MCP screenshots inline. Every commit message ends with `Browser smoke evidence:` block. Test banner alone is a discipline violation per R11.
 >
-> Next concrete step: rewrite `confirmPhaseOnLink` consumers v3-direct using the aliased v3 import pattern from Phase I-B-13 (commit `2e0b6f3`) + the snapshot+restore-`_active` wrapper from Phase I-B-9 (commit `5c8d69f`). Or pick `proposeCriticalityUpgrades` after auditing its v3 path. Avoid R8-blocked targets (W2/RH20) until the v3-invariant-enforcement arc is sequenced.
+> **The easy wins are exhausted** — shim slimmed 35 → 11 re-exports across 24 phases (last 14 commits this session). Remaining 11 fall into 3 categories: R8-blocked (4) · infrastructure tied to Step H (4) · high-usage bulk rewrites (3). Pick a strategic path (A/B/C — see "Phase I-B-23+ next session entry point" section above) BEFORE jumping to a target. Recommended order: **Path C** (afterRestore migration → Step H unlock) → **Path A** (R8 invariant arc) → **Path B** (bulk addInstance/createGap/updateGap rewrites).
 >
 > Authority: `docs/V2_DELETION_ARCHITECTURE.md` · `docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md` R0..R11 · `memory/feedback_principal_architect_discipline.md` (tier-1; loads first) · `HANDOFF.md`.
 
