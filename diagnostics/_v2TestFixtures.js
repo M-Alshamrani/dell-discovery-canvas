@@ -142,9 +142,20 @@ export {
 // caller-layer is the new gate location). The 2 contracts are
 // preserved in HANDOFF "Open R8 backlog" item #3 (unlink-AL-rule)
 // + #4 (phase-conflict-ack) for the future rc.8 invariant arc.
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-26 · updateGap dropped. SVC2 +
+// SVC5 (gap.services round-trip + opt-in semantics) rewritten
+// v3-direct via commitGapEdit. T6.6 + PR5 + RH7 + RH8 + RH19
+// RETIRED per Step I plan -- v2 helper-layer auto-flip-reviewed +
+// projectId-auto-derivation + setPrimaryLayer-active-rebalance
+// contracts are no-longer-applicable in v3-pure (v3 commitGapEdit
+// only runs GapSchema.safeParse; AL10/G6/projectId logic moved to
+// the caller layer or dropped). 2 contracts preserved in HANDOFF
+// "Open R8 backlog" #1 (AL10 gate) + #5 (setPrimaryLayer-rebalance)
+// for the future rc.8 invariant arc; projectId permanently dropped
+// (v3 schema deliberately omits it).
 export {
-  createGap,
-  updateGap
+  createGap
 } from "../interactions/gapsCommands.js";
 
 // ─── from interactions/desiredStateSync.js ─── ENTIRE BLOCK RETIRED ─

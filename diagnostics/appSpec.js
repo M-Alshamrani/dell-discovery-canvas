@@ -114,20 +114,24 @@ import {
 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../interactions/matrixCommands.js)
 
 import {
-  createGap, updateGap
+  createGap
   // rc.7 / 7e-8 redo Step I Phase I-B-12 · linkCurrentInstance dropped.
   // rc.7 / 7e-8 redo Step I Phase I-B-17 · deleteGap dropped.
   // rc.7 / 7e-8 redo Step I Phase I-B-11 · unlinkDesiredInstance dropped.
-  //
   // rc.7 / 7e-8 redo Step I Phase I-B-25 · linkDesiredInstance +
-  // unlinkCurrentInstance dropped. RH11 rewritten v3-direct via
-  // commitGapLinkDesiredInstance (no-conflict-link contract is
-  // v3-applicable). RH10 + RH20 RETIRED per Step I plan: their v2
-  // helper-layer invariants (PHASE_CONFLICT_NEEDS_ACK + AL-rule on
-  // unlink) are no-longer-applicable in v3-pure architecture
-  // (caller-layer enforcement, not helper-layer). 2 contracts
-  // preserved in HANDOFF "Open R8 backlog" #3 (unlink-AL-rule) +
-  // #4 (phase-conflict-ack) for the future rc.8 invariant arc.
+  // unlinkCurrentInstance dropped (R8-deferred to rc.8 invariant arc).
+  //
+  // rc.7 / 7e-8 redo Step I Phase I-B-26 · updateGap dropped. SVC2 +
+  // SVC5 rewritten v3-direct via commitGapEdit. T6.6 + PR5 + RH7 +
+  // RH8 + RH19 RETIRED per Step I plan: their v2 helper-layer
+  // contracts (auto-flip-reviewed-on-structural-edit + projectId
+  // auto-derivation + auto-flip-shape-aware + setPrimaryLayer
+  // active-rebalance-on-update) are no-longer-applicable in v3-pure
+  // architecture. 2 contracts preserved in HANDOFF "Open R8 backlog"
+  // #1 (AL10 gate) + #5 (setPrimaryLayer-rebalance-on-update) for
+  // the future rc.8 invariant arc; projectId is permanently dropped
+  // (v3 schema deliberately omits it; project grouping is computed
+  // via selectProjects at projection time).
 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../interactions/gapsCommands.js)
 
 import {
@@ -2350,22 +2354,29 @@ describe("22 · services/programsService", () => {
     assertEqual(gap.reviewed, true, "manual createGap → reviewed: true");
   });
 
-  it("updateGap flips reviewed to true on any STRUCTURAL edit (T6.6 · revised v2.4.11)", () => {
-    // v2.4.11 · A1 · was "any substantive edit". Now: only structural
-    // edits (gapType / layer / env / links) trigger the implicit flip.
-    // Metadata edits (notes / urgency / status) NO longer auto-flip,
-    // so users can save notes on an invalid auto-draft without
-    // tripping the review-time validation.
-    const s = freshSession();
-    const gap = createGap(s, { description:"G", layerId:LayerIds[0], reviewed:false });
-    assertEqual(gap.reviewed, false, "starts unreviewed");
-    // Metadata-only edit: NO implicit flip.
-    updateGap(s, gap.id, { notes: "added context" });
-    assertEqual(s.gaps[0].reviewed, false, "metadata-only edit does NOT auto-flip reviewed");
-    // Structural edit (add a link) on a valid-shape gapless gap: implicit flip.
-    updateGap(s, gap.id, { relatedCurrentInstanceIds: ["i-x"] });
-    assertEqual(s.gaps[0].reviewed, true, "structural edit on a valid gap auto-flips reviewed");
-  });
+  // rc.7 / 7e-8 redo Step I Phase I-B-26 · T6.6 RETIRED.
+  // T6.6 was: "updateGap flips reviewed to true on any STRUCTURAL
+  // edit" -- asserted v2 updateGap's auto-flip-reviewed behavior
+  // (metadata edits skip flip, structural edits flip if shape valid).
+  //
+  // The v2 contract is NO-LONGER-APPLICABLE in v3-pure architecture.
+  // v3 commitGapEdit (state/adapter.js line 232) -> updateGap action
+  // (state/collections/gapActions.js line 49) only runs GapSchema
+  // .safeParse for shape validation -- NO auto-flip-reviewed logic.
+  // Per HANDOFF "Open R8 backlog" item #1 (v3 updateGap AL10 gate),
+  // the v2 auto-flip behavior is deliberately moved to the CALLER
+  // layer in v3-pure (UI gap-edit flow drives reviewed:true via
+  // explicit commitGapEdit({reviewed:true}) call after caller-side
+  // validateActionLinks gate).
+  //
+  // Per docs/V2_DELETION_ARCHITECTURE.md Step I plan ("Tests that
+  // asserted no longer-applicable contracts DROP"), T6.6 retires
+  // cleanly. The auto-flip semantics are preserved in HANDOFF R8
+  // backlog #1 for the future rc.8 v3-invariant-enforcement arc.
+  //
+  // Per feedback_no_patches_flag_first.md: this is NOT a patch. We
+  // do NOT bend v3 to re-add v2 helper-layer auto-flip without
+  // explicit approval. Contract loss acknowledged + tracked.
 
   it("commitGapEdit({reviewed:true}) flips reviewed on a v3 gap with no other persisted edits (T6.7 · v3-direct)", () => {
     // rc.7 / 7e-8 redo Step I Phase I-B-9 · v3-direct rewrite. Pre-rewrite
@@ -5622,31 +5633,28 @@ describe("40 · Phase 19i · v2.4.9 primary-layer invariant + explicit gap.proje
       "idempotent backfill keeps projectId stable");
   });
 
-  it("PR5 · updateGap re-derives projectId when layerId/env/gapType changes (unless caller sets it)", () => {
-    const s = createEmptySession();
-    const gap = createGap(s, {
-      description: "Moves",
-      layerId: "storage", gapType: "replace",
-      affectedEnvironments: ["coreDc"],
-      relatedCurrentInstanceIds: ["i-1"], relatedDesiredInstanceIds: ["d-1"],
-      reviewed: false
-    });
-    assertEqual(gap.projectId, "coreDc::storage::replace", "baseline");
-    const moved = updateGap(s, gap.id, {
-      layerId: "compute",
-      // layerId change should re-derive projectId AND re-normalise
-      // affectedLayers to keep the invariant.
-      relatedCurrentInstanceIds: ["i-1"], relatedDesiredInstanceIds: ["d-1"]
-    });
-    assertEqual(moved.projectId, "coreDc::compute::replace",
-      "layerId change must re-derive projectId");
-    assertEqual(moved.affectedLayers[0], "compute",
-      "layerId change must re-normalise affectedLayers invariant");
-    // Explicit projectId in patch overrides the auto-derivation.
-    const pinned = updateGap(s, gap.id, { projectId: "special" });
-    assertEqual(pinned.projectId, "special",
-      "explicit projectId in patch wins over auto-derivation");
-  });
+  // rc.7 / 7e-8 redo Step I Phase I-B-26 · PR5 RETIRED.
+  // PR5 was: "updateGap re-derives projectId when layerId/env/gapType
+  // changes (unless caller sets it)" -- asserted the v2 gap.projectId
+  // field's auto-derivation behavior on structural edits.
+  //
+  // The v2 contract is NO-LONGER-APPLICABLE in v3 architecture: per
+  // schema/gap.js line 7-9 ("projectId is DERIVED, not stored --
+  // selectProjects (SPEC sec S5.2.3) computes project grouping at
+  // projection time. Migrator drops the v2.x stored gap.projectId
+  // per MIGRATION sec M10."), v3 GapSchema does NOT have a projectId
+  // field. Project grouping is computed via selectProjects at read
+  // time, not stored on the gap.
+  //
+  // Per docs/V2_DELETION_ARCHITECTURE.md Step I plan ("Tests that
+  // asserted no longer-applicable contracts DROP"), PR5 retires
+  // cleanly. The project-grouping contract is preserved as the
+  // selectProjects selector contract in §T19 V-ADP (Suite 49).
+  //
+  // Per feedback_no_patches_flag_first.md: this is NOT a patch. We
+  // do NOT re-add gap.projectId to v3 GapSchema. The contract is
+  // expressed at the projection layer (selectProjects), not on the
+  // gap entity itself.
 
   it("CL1 · Clear-all-data footer button renders + is styled destructive", () => {
     const btn = document.getElementById("clearAllBtn");
@@ -6003,51 +6011,33 @@ describe("42 · Phase 19k · v2.4.11 rules hardening + relationships polish", ()
     }
   });
 
-  it("RH7 · A1 · updateGap implicit reviewed-flip skips when shape is invalid", () => {
-    // Create an invalid auto-draft. Edit notes (no patch.reviewed). Should
-    // succeed AND keep reviewed:false.
-    const s = createEmptySession();
-    const draft = createGap(s, {
-      description: "Auto-drafted enhance",
-      layerId: "compute", gapType: "enhance",
-      relatedCurrentInstanceIds: [],   // missing required current
-      reviewed: false
-    });
-    const after = updateGap(s, draft.id, { notes: "Some workshop note" });
-    assertEqual(after.reviewed, false,
-      "implicit reviewed-flip must NOT happen when validateActionLinks would fail");
-    assertEqual(after.notes, "Some workshop note", "the notes edit STILL saves");
-  });
-
-  it("RH8 · A1 · updateGap implicit reviewed-flip succeeds on STRUCTURAL change with valid shape", () => {
-    // v2.4.11 · A1 (refined) · only STRUCTURAL patches (gapType / layer /
-    // env / links) trigger the implicit flip. Metadata edits (notes,
-    // urgency, status, driverId, urgencyOverride) deliberately do NOT
-    // flip — that would block users mid-workshop from adding a side
-    // note to an in-progress invalid gap.
-    const s = createEmptySession();
-    const valid = createGap(s, {
-      description: "Valid enhance",
-      layerId: "compute", gapType: "enhance",
-      relatedCurrentInstanceIds: ["i-x"],
-      reviewed: false
-    });
-    // Metadata-only patch: NO flip.
-    var meta = updateGap(s, valid.id, { notes: "Side note from workshop" });
-    assertEqual(meta.reviewed, false,
-      "metadata-only patch must NOT auto-flip reviewed (workshop-flow protection)");
-    // Structural patch (add a link): flip happens because shape is valid.
-    var struct = updateGap(s, valid.id, { relatedCurrentInstanceIds: ["i-x", "i-y"] });
-    // 2 currents on enhance — but enhance requires exactly 1, so this
-    // would fail. Use a valid structural change instead: change
-    // affectedEnvironments which is structural but doesn't break shape.
-    var struct2 = updateGap(s, valid.id, {
-      relatedCurrentInstanceIds: ["i-x"],   // back to 1
-      affectedEnvironments: ["coreDc"]
-    });
-    assertEqual(struct2.reviewed, true,
-      "structural patch with valid resulting shape auto-flips reviewed");
-  });
+  // rc.7 / 7e-8 redo Step I Phase I-B-26 · RH7 + RH8 RETIRED.
+  // RH7 + RH8 were sibling tests asserting v2 updateGap's auto-flip-
+  // reviewed semantics across shape-invalid + shape-valid structural
+  // edits (RH7: metadata edits skip flip when shape invalid; RH8:
+  // structural edit with valid shape triggers flip).
+  //
+  // Both contracts are NO-LONGER-APPLICABLE in v3-pure architecture.
+  // v3 commitGapEdit (state/adapter.js line 232) -> updateGap action
+  // (state/collections/gapActions.js line 49) only runs GapSchema
+  // .safeParse for shape validation -- NO auto-flip-reviewed logic
+  // and NO validateActionLinks gate. Per HANDOFF "Open R8 backlog"
+  // item #1 (v3 updateGap AL10 gate), the v2 auto-flip + AL-rule
+  // behaviors are deliberately moved to the CALLER layer in v3-pure
+  // (UI gap-edit drives reviewed:true via explicit commitGapEdit
+  // ({reviewed:true}) call after a caller-side validateActionLinks
+  // gate -- the pattern Phase I-B-9 codified for T6.7 + RH6).
+  //
+  // Per docs/V2_DELETION_ARCHITECTURE.md Step I plan ("Tests that
+  // asserted no longer-applicable contracts DROP"), RH7 + RH8 retire
+  // cleanly alongside T6.6 (sibling auto-flip-reviewed retirement
+  // earlier in this same Phase I-B-26 commit). The auto-flip
+  // semantics are preserved in HANDOFF R8 backlog #1 for the future
+  // rc.8 v3-invariant-enforcement arc.
+  //
+  // Per feedback_no_patches_flag_first.md: this is NOT a patch. We
+  // do NOT bend v3 to re-add v2 helper-layer auto-flip without
+  // explicit approval. Contract loss acknowledged + tracked.
 
   it("RH9 · A2 · commitSyncGapFromDesired flips linked gaps to status:closed when disposition becomes 'keep' (v3-direct)", () => {
     // rc.7 / 7e-8 redo Step I Phase I-B-13 · v3-direct rewrite.
@@ -6408,23 +6398,34 @@ describe("42 · Phase 19k · v2.4.11 rules hardening + relationships polish", ()
     }
   });
 
-  it("RH19 · B2 · setPrimaryLayer keeps invariant when called from updateGap with new layerId", () => {
-    var s = createEmptySession();
-    var gap = createGap(s, {
-      description:"Multi-layer", layerId:"compute",
-      affectedLayers: ["compute", "storage"], reviewed:false
-    });
-    assertEqual(gap.affectedLayers[0], "compute", "baseline primary first");
-    var moved = updateGap(s, gap.id, { layerId: "virtualization" });
-    assertEqual(moved.layerId, "virtualization", "layerId updated");
-    assertEqual(moved.affectedLayers[0], "virtualization",
-      "primary moved to index 0; old primary 'compute' demoted to non-primary");
-    assert(moved.affectedLayers.indexOf("compute") > 0,
-      "old primary stays in affectedLayers as a non-primary entry");
-    // No duplicates
-    var virtCount = moved.affectedLayers.filter(l => l === "virtualization").length;
-    assertEqual(virtCount, 1, "new primary appears exactly once");
-  });
+  // rc.7 / 7e-8 redo Step I Phase I-B-26 · RH19 RETIRED.
+  // RH19 was: "setPrimaryLayer keeps invariant when called from
+  // updateGap with new layerId" -- asserted v2 updateGap's
+  // setPrimaryLayer auto-rebalance behavior (when layerId changes,
+  // the v2 helper rebalanced affectedLayers so the new primary moved
+  // to index 0 + old primary demoted to non-primary entry, no
+  // duplicates).
+  //
+  // The v2 contract is a HELPER-LAYER auto-rebalance behavior that
+  // is NO-LONGER-APPLICABLE in v3-pure architecture. v3 GapSchema
+  // (schema/gap.js line 44-49) enforces the G6 invariant
+  // (affectedLayers[0] === layerId) via superRefine -- a passive
+  // shape check, not an active rebalance. v3 commitGapEdit either
+  // succeeds (caller passed valid affectedLayers) or fails schema
+  // (caller's responsibility to maintain the invariant). The v2
+  // helper-side rebalance is moved to the CALLER layer.
+  //
+  // Per docs/V2_DELETION_ARCHITECTURE.md Step I plan ("Tests that
+  // asserted no longer-applicable contracts DROP"), RH19 retires
+  // cleanly. The G6 invariant is still asserted (positively) by
+  // §T19 V-ADP source-grep tests on GapSchema's superRefine. The
+  // active-rebalance semantic is added to HANDOFF "Open R8 backlog"
+  // item #5 (setPrimaryLayer-rebalance-on-update) for the future
+  // rc.8 v3-invariant-enforcement arc.
+  //
+  // Per feedback_no_patches_flag_first.md: this is NOT a patch. We
+  // do NOT add active-rebalance logic to v3 commitGapEdit without
+  // explicit approval. Contract loss acknowledged + tracked.
 
   // rc.7 / 7e-8 redo Step I Phase I-B-25 · RH20 RETIRED.
   // RH20 was: "unlinkCurrentInstance now blocks for keep + retire
@@ -6487,18 +6488,39 @@ describe("43 · Phase 19l · v2.4.12 services scope + pre-flight regression fixe
     });
   });
 
-  it("SVC2 · gap.services persists round-trip through createGap + updateGap", () => {
-    var s = createEmptySession();
-    var g = createGap(s, {
-      description: "Service-bearing gap", layerId: "compute",
-      services: ["migration", "deployment"]
-    });
-    assert(Array.isArray(g.services), "createGap must preserve services as an array");
-    assertEqual(g.services.length, 2, "createGap must keep both services");
-    assertEqual(g.services[0], "migration", "first service preserved");
-    var u = updateGap(s, g.id, { services: ["migration", "deployment", "training"] });
-    assertEqual(u.services.length, 3, "updateGap must accept services patch");
-    assert(u.services.indexOf("training") >= 0, "added service appears");
+  it("SVC2 · gap.services persists round-trip through commitGapAdd + commitGapEdit (v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-26 · v3-direct rewrite.
+    // The contract -- "gap.services array survives commit-add and
+    // is patchable via commit-edit" -- is v3-applicable: GapSchema
+    // (schema/gap.js line 40) declares `services: z.array(z.string())
+    // .default([])`; v3 commitGapAdd persists the array; v3
+    // commitGapEdit accepts services in the patch.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const addRes = commitGapAdd({
+        description: "Service-bearing gap", layerId: "compute",
+        gapType: "ops",
+        notes: "Workshop ops gap notes substantial enough to satisfy AL7.",
+        services: ["migration", "deployment"],
+        reviewed: false
+      });
+      assertEqual(addRes.ok, true, "commitGapAdd succeeded");
+      const gapId = getActiveEngagement().gaps.allIds.at(-1);
+      const g = getActiveEngagement().gaps.byId[gapId];
+      assert(Array.isArray(g.services), "commitGapAdd must preserve services as an array");
+      assertEqual(g.services.length, 2, "commitGapAdd must keep both services");
+      assertEqual(g.services[0], "migration", "first service preserved");
+      const editRes = commitGapEdit(gapId, { services: ["migration", "deployment", "training"] });
+      assertEqual(editRes.ok, true, "commitGapEdit succeeded");
+      const u = getActiveEngagement().gaps.byId[gapId];
+      assertEqual(u.services.length, 3, "commitGapEdit must accept services patch");
+      assert(u.services.indexOf("training") >= 0, "added service appears");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   it("SVC3 · gap.services dedupes on createGap (same id twice → one)", () => {
@@ -6525,18 +6547,43 @@ describe("43 · Phase 19l · v2.4.12 services scope + pre-flight regression fixe
     assert(ops.indexOf("runbook") >= 0, "ops suggests runbook");
   });
 
-  it("SVC5 · changing gap.gapType does NOT auto-mutate gap.services (opt-in)", () => {
-    var s = createEmptySession();
-    var g = createGap(s, {
-      description: "Type-change probe", layerId: "compute", gapType: "replace",
-      relatedCurrentInstanceIds: ["c-x"], relatedDesiredInstanceIds: ["d-x"],
-      services: ["migration"]
-    });
-    var u = updateGap(s, g.id, { gapType: "consolidate",
-      relatedCurrentInstanceIds: ["c-x", "c-y"], relatedDesiredInstanceIds: ["d-x"] });
-    assert(Array.isArray(u.services), "services must remain an array after gapType change");
-    assertEqual(u.services.length, 1, "user's prior pick preserved (no auto-replacement)");
-    assertEqual(u.services[0], "migration", "the prior service id is intact");
+  it("SVC5 · changing gap.gapType does NOT auto-mutate gap.services (opt-in) (v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-26 · v3-direct rewrite.
+    // The contract -- "changing gapType via update preserves the
+    // user's prior services pick (no auto-replacement)" -- is
+    // v3-applicable: v3 commitGapEdit accepts gapType in the patch
+    // and only updates fields explicitly named; services is NOT
+    // touched unless the patch includes it.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const addRes = commitGapAdd({
+        description: "Type-change probe", layerId: "compute", gapType: "replace",
+        // UUID-shaped placeholders satisfy GapSchema .uuid() format check
+        // for relatedCurrentInstanceIds / relatedDesiredInstanceIds.
+        relatedCurrentInstanceIds: ["00000000-0000-4000-8000-0000000000c1"],
+        relatedDesiredInstanceIds: ["00000000-0000-4000-8000-0000000000d1"],
+        services: ["migration"],
+        reviewed: false
+      });
+      assertEqual(addRes.ok, true, "commitGapAdd succeeded");
+      const gapId = getActiveEngagement().gaps.allIds.at(-1);
+      const editRes = commitGapEdit(gapId, {
+        gapType: "consolidate",
+        relatedCurrentInstanceIds: ["00000000-0000-4000-8000-0000000000c1",
+                                    "00000000-0000-4000-8000-0000000000c2"],
+        relatedDesiredInstanceIds: ["00000000-0000-4000-8000-0000000000d1"]
+      });
+      assertEqual(editRes.ok, true, "commitGapEdit succeeded");
+      const u = getActiveEngagement().gaps.byId[gapId];
+      assert(Array.isArray(u.services), "services must remain an array after gapType change");
+      assertEqual(u.services.length, 1, "user's prior pick preserved (no auto-replacement)");
+      assertEqual(u.services[0], "migration", "the prior service id is intact");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   it("SVC6 · empty array is a valid services value (not undefined)", () => {
