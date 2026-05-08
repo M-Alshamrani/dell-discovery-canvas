@@ -72,12 +72,18 @@ export {
 // only test consumer (Suite 17 "all command functions accept plain
 // objects") was rewritten v3-direct in the same commit using
 // commitInstanceRemove from state/adapter.js.
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-19 · proposeCriticalityUpgrades
+// dropped. Its 3 test consumers (W3 + W4 + W5 in Suite 26) were
+// rewritten v3-direct in the same commit using
+// proposeCriticalityUpgradesV3 (aliased import from state/
+// dispositionLogic.js -- v3 signature is (engagement,
+// workloadInstanceId); pure function, no engagement mutation).
 export {
   addInstance,
   updateInstance,
   mapAsset,
-  unmapAsset,
-  proposeCriticalityUpgrades
+  unmapAsset
 } from "../interactions/matrixCommands.js";
 
 // ─── from interactions/gapsCommands.js ─────────────────────────────

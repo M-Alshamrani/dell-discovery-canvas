@@ -100,7 +100,11 @@ import {
   // only test consumer (Suite 17 "all command functions accept plain
   // objects") was rewritten v3-direct in the same commit using
   // commitInstanceRemove.
-  mapAsset, unmapAsset, proposeCriticalityUpgrades
+  // rc.7 / 7e-8 redo Step I Phase I-B-19 · proposeCriticalityUpgrades
+  // dropped. Its 3 test consumers (W3 + W4 + W5 in Suite 26) were
+  // rewritten v3-direct in the same commit using
+  // proposeCriticalityUpgradesV3 from state/dispositionLogic.js.
+  mapAsset, unmapAsset
 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../interactions/matrixCommands.js)
 
 import {
@@ -3921,42 +3925,101 @@ describe("24 · Phase 16 · workload layer + asset mapping + upward propagation"
     assertEqual(wl.mappedAssetIds.length, 0, "unmapAsset must remove the id");
   });
 
-  it("W3 · proposeCriticalityUpgrades returns Low/Medium mapped assets when workload is High (upward only, opt-in apply)", () => {
-    const s = freshSession();
-    const wl = addInstance(s, { state:"current", layerId:"workload", environmentId:EnvironmentIds[0],
-                                label:"High-criticality workload", criticality:"High" });
-    const lowCmp  = addInstance(s, { state:"current", layerId:"compute", environmentId:EnvironmentIds[0],
-                                     label:"Low compute",  criticality:"Low" });
-    const medSto  = addInstance(s, { state:"current", layerId:"storage", environmentId:EnvironmentIds[0],
-                                     label:"Medium storage", criticality:"Medium" });
-    mapAsset(s, wl.id, lowCmp.id);
-    mapAsset(s, wl.id, medSto.id);
-
-    const proposals = proposeCriticalityUpgrades(s, wl.id);
-    assertEqual(proposals.length, 2, "both lower-criticality assets must be proposed for upgrade");
-    proposals.forEach(p => {
-      assertEqual(p.newCrit, "High", "newCrit must match the workload's criticality");
-    });
-
-    // Apply via existing updateInstance (caller's responsibility); verify mutation
-    updateInstance(s, lowCmp.id, { criticality: "High" });
-    const lc = s.instances.find(i => i.id === lowCmp.id);
-    assertEqual(lc.criticality, "High", "updateInstance must apply the upgrade");
+  it("W3 · proposeCriticalityUpgrades returns Low/Medium mapped assets when workload is High (upward only, opt-in apply) (v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-19 · v3-direct rewrite.
+    // Pre-rewrite used v2 mapAsset + proposeCriticalityUpgrades +
+    // updateInstance. The contract -- "propose upgrade for any mapped
+    // asset whose criticality < workload's; never downgrade; pure-fn
+    // (no mutation); apply via separate update" -- is v3-applicable.
+    // state/dispositionLogic.js proposeCriticalityUpgrades (line 144)
+    // takes (engagement, workloadInstanceId), reads
+    // engagement.instances.byId[workloadInstanceId].mappedAssetIds, and
+    // returns an array of { assetId, label, layerId, currentCrit, newCrit }.
+    //
+    // Snapshot+restore _active per Phase I-B-9 pollution-prevention.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const envId = getActiveEngagement().environments.allIds[0];
+      const wlRes = commitInstanceAdd({
+        state: "current", layerId: "workload", environmentId: envId,
+        label: "High-criticality workload", vendorGroup: "dell", criticality: "High"
+      });
+      assertEqual(wlRes.ok, true, "commitInstanceAdd(workload) succeeded");
+      const wlId = getActiveEngagement().instances.allIds[0];
+      const lowRes = commitInstanceAdd({
+        state: "current", layerId: "compute", environmentId: envId,
+        label: "Low compute", vendorGroup: "dell", criticality: "Low"
+      });
+      assertEqual(lowRes.ok, true, "commitInstanceAdd(low) succeeded");
+      const lowId = getActiveEngagement().instances.allIds[1];
+      const medRes = commitInstanceAdd({
+        state: "current", layerId: "storage", environmentId: envId,
+        label: "Medium storage", vendorGroup: "dell", criticality: "Medium"
+      });
+      assertEqual(medRes.ok, true, "commitInstanceAdd(med) succeeded");
+      const medId = getActiveEngagement().instances.allIds[2];
+      // commitWorkloadMapping replaces the v2 mapAsset(wl, asset) sequence.
+      // Per the Phase I-B-12 R8 finding, v3 mapWorkloadAssets has no
+      // invariant enforcement -- but here the inputs are valid (no
+      // self-map / cross-state / dedup needed) so the simpler set-list
+      // form is a clean fixture.
+      const mapRes = commitWorkloadMapping(wlId, [lowId, medId]);
+      assertEqual(mapRes.ok, true, "commitWorkloadMapping succeeded");
+      const proposals = proposeCriticalityUpgradesV3(getActiveEngagement(), wlId);
+      assertEqual(proposals.length, 2, "both lower-criticality assets must be proposed for upgrade");
+      proposals.forEach(p => {
+        assertEqual(p.newCrit, "High", "newCrit must match the workload's criticality");
+      });
+      // Apply via commitInstanceEdit (caller's responsibility); verify mutation.
+      const editRes = commitInstanceEdit(null, null, { id: lowId, criticality: "High" });
+      assertEqual(editRes.ok, true, "commitInstanceEdit(criticality) succeeded");
+      assertEqual(getActiveEngagement().instances.byId[lowId].criticality, "High",
+        "commitInstanceEdit must apply the upgrade");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
-  it("W4 · propagation never downgrades — assets meeting/exceeding workload criticality are excluded", () => {
-    const s = freshSession();
-    const wl = addInstance(s, { state:"current", layerId:"workload", environmentId:EnvironmentIds[0],
-                                label:"Medium workload", criticality:"Medium" });
-    const equalCmp = addInstance(s, { state:"current", layerId:"compute", environmentId:EnvironmentIds[0],
-                                      label:"Equal compute", criticality:"Medium" });
-    const highSto = addInstance(s, { state:"current", layerId:"storage", environmentId:EnvironmentIds[0],
-                                     label:"High storage", criticality:"High" });
-    mapAsset(s, wl.id, equalCmp.id);
-    mapAsset(s, wl.id, highSto.id);
-
-    const proposals = proposeCriticalityUpgrades(s, wl.id);
-    assertEqual(proposals.length, 0, "no proposals when all mapped assets meet or exceed workload criticality");
+  it("W4 · propagation never downgrades — assets meeting/exceeding workload criticality are excluded (v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-19 · v3-direct rewrite.
+    // Same contract shape as W3, exercised on a Medium workload with
+    // an equal-criticality asset and a higher-criticality asset --
+    // proposals must be empty (no downgrade direction).
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const envId = getActiveEngagement().environments.allIds[0];
+      const wlRes = commitInstanceAdd({
+        state: "current", layerId: "workload", environmentId: envId,
+        label: "Medium workload", vendorGroup: "dell", criticality: "Medium"
+      });
+      assertEqual(wlRes.ok, true, "commitInstanceAdd(workload) succeeded");
+      const wlId = getActiveEngagement().instances.allIds[0];
+      const equalRes = commitInstanceAdd({
+        state: "current", layerId: "compute", environmentId: envId,
+        label: "Equal compute", vendorGroup: "dell", criticality: "Medium"
+      });
+      assertEqual(equalRes.ok, true, "commitInstanceAdd(equal) succeeded");
+      const equalId = getActiveEngagement().instances.allIds[1];
+      const highRes = commitInstanceAdd({
+        state: "current", layerId: "storage", environmentId: envId,
+        label: "High storage", vendorGroup: "dell", criticality: "High"
+      });
+      assertEqual(highRes.ok, true, "commitInstanceAdd(high) succeeded");
+      const highId = getActiveEngagement().instances.allIds[2];
+      const mapRes = commitWorkloadMapping(wlId, [equalId, highId]);
+      assertEqual(mapRes.ok, true, "commitWorkloadMapping succeeded");
+      const proposals = proposeCriticalityUpgradesV3(getActiveEngagement(), wlId);
+      assertEqual(proposals.length, 0,
+        "no proposals when all mapped assets meet or exceed workload criticality");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   it("W6 · mapAsset refuses cross-environment mapping (workload + asset must share environment)", () => {
@@ -3978,18 +4041,41 @@ describe("24 · Phase 16 · workload layer + asset mapping + upward propagation"
       "same-env mapping must still succeed");
   });
 
-  it("W5 · proposeCriticalityUpgrades is pure — never mutates instances", () => {
-    const s = freshSession();
-    const wl = addInstance(s, { state:"current", layerId:"workload", environmentId:EnvironmentIds[0],
-                                label:"Workload", criticality:"High" });
-    const lowCmp = addInstance(s, { state:"current", layerId:"compute", environmentId:EnvironmentIds[0],
-                                    label:"Low compute", criticality:"Low" });
-    mapAsset(s, wl.id, lowCmp.id);
-    const beforeCrit = lowCmp.criticality;
-    proposeCriticalityUpgrades(s, wl.id);
-    proposeCriticalityUpgrades(s, wl.id);
-    const after = s.instances.find(i => i.id === lowCmp.id);
-    assertEqual(after.criticality, beforeCrit, "asset criticality must be unchanged after pure propose calls");
+  it("W5 · proposeCriticalityUpgrades is pure — never mutates instances (v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-19 · v3-direct rewrite.
+    // Asserts the v3 helper's purity: calling proposeCriticalityUpgrades
+    // multiple times must NOT mutate engagement.instances. v3
+    // proposeCriticalityUpgrades (state/dispositionLogic.js line 144)
+    // returns a proposals array without writing to engagement -- pure.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const envId = getActiveEngagement().environments.allIds[0];
+      const wlRes = commitInstanceAdd({
+        state: "current", layerId: "workload", environmentId: envId,
+        label: "Workload", vendorGroup: "dell", criticality: "High"
+      });
+      assertEqual(wlRes.ok, true, "commitInstanceAdd(workload) succeeded");
+      const wlId = getActiveEngagement().instances.allIds[0];
+      const lowRes = commitInstanceAdd({
+        state: "current", layerId: "compute", environmentId: envId,
+        label: "Low compute", vendorGroup: "dell", criticality: "Low"
+      });
+      assertEqual(lowRes.ok, true, "commitInstanceAdd(low) succeeded");
+      const lowId = getActiveEngagement().instances.allIds[1];
+      const mapRes = commitWorkloadMapping(wlId, [lowId]);
+      assertEqual(mapRes.ok, true, "commitWorkloadMapping succeeded");
+      const beforeCrit = getActiveEngagement().instances.byId[lowId].criticality;
+      proposeCriticalityUpgradesV3(getActiveEngagement(), wlId);
+      proposeCriticalityUpgradesV3(getActiveEngagement(), wlId);
+      const afterCrit = getActiveEngagement().instances.byId[lowId].criticality;
+      assertEqual(afterCrit, beforeCrit,
+        "asset criticality must be unchanged after pure propose calls");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
 });
@@ -8978,7 +9064,12 @@ import {
   // for the T6.1 + T6.2 v3-direct rewrites. v3 signature is
   // (engagement, gapId, desiredInstanceId); aliased to avoid name
   // collision with the v2 shim re-export (dropped this same commit).
-  confirmPhaseOnLink as confirmPhaseOnLinkV3
+  confirmPhaseOnLink as confirmPhaseOnLinkV3,
+  // rc.7 / 7e-8 redo Step I Phase I-B-19 · proposeCriticalityUpgradesV3
+  // added for the W3 + W4 + W5 v3-direct rewrites. v3 signature is
+  // (engagement, workloadInstanceId); aliased to avoid name collision
+  // with the v2 shim re-export (dropped this same commit).
+  proposeCriticalityUpgrades as proposeCriticalityUpgradesV3
 } from "../state/dispositionLogic.js";
 import {
   getActiveEngagement,
