@@ -114,18 +114,20 @@ import {
 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../interactions/matrixCommands.js)
 
 import {
-  createGap, updateGap,
+  createGap, updateGap
   // rc.7 / 7e-8 redo Step I Phase I-B-12 · linkCurrentInstance dropped.
-  // Its only test consumer (T8.4 line 3552) was rewritten v3-direct in
-  // the same commit using commitGapLinkCurrentInstance from adapter.js.
-  // rc.7 / 7e-8 redo Step I Phase I-B-17 · deleteGap dropped. Its only
-  // test consumer (Suite 17 "all command functions accept plain
-  // objects") was rewritten v3-direct in the same commit using
-  // commitGapRemove.
-  linkDesiredInstance,
-  unlinkCurrentInstance
-  // rc.7 / 7e-8 redo Step I Phase I-B-11 · unlinkDesiredInstance dropped
-  // (was on this line; zero call sites in *.js post-audit).
+  // rc.7 / 7e-8 redo Step I Phase I-B-17 · deleteGap dropped.
+  // rc.7 / 7e-8 redo Step I Phase I-B-11 · unlinkDesiredInstance dropped.
+  //
+  // rc.7 / 7e-8 redo Step I Phase I-B-25 · linkDesiredInstance +
+  // unlinkCurrentInstance dropped. RH11 rewritten v3-direct via
+  // commitGapLinkDesiredInstance (no-conflict-link contract is
+  // v3-applicable). RH10 + RH20 RETIRED per Step I plan: their v2
+  // helper-layer invariants (PHASE_CONFLICT_NEEDS_ACK + AL-rule on
+  // unlink) are no-longer-applicable in v3-pure architecture
+  // (caller-layer enforcement, not helper-layer). 2 contracts
+  // preserved in HANDOFF "Open R8 backlog" #3 (unlink-AL-rule) +
+  // #4 (phase-conflict-ack) for the future rc.8 invariant arc.
 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../interactions/gapsCommands.js)
 
 import {
@@ -6109,33 +6111,74 @@ describe("42 · Phase 19k · v2.4.11 rules hardening + relationships polish", ()
     }
   });
 
-  it("RH10 · A4 · linkDesiredInstance throws PHASE_CONFLICT_NEEDS_ACK when conflict + no acknowledged", () => {
-    var s = createEmptySession();
-    var des = addInstance(s, { state:"desired", layerId:"compute", environmentId:"coreDc",
-      label:"Des", vendorGroup:"dell", priority:"Later" });
-    var gap = createGap(s, {
-      description:"Phase conflict probe", layerId:"compute",
-      phase:"now", reviewed:false
-    });
-    let err = null;
-    try { linkDesiredInstance(s, gap.id, des.id); } catch (e) { err = e; }
-    assert(err, "must throw when phase conflicts and acknowledged not passed");
-    assertEqual(err.code, "PHASE_CONFLICT_NEEDS_ACK", "error code is PHASE_CONFLICT_NEEDS_ACK");
-    // With acknowledged: true the link succeeds.
-    doesNotThrow(() => linkDesiredInstance(s, gap.id, des.id, { acknowledged: true }),
-      "acknowledged opt-in unblocks the link");
-  });
+  // rc.7 / 7e-8 redo Step I Phase I-B-25 · RH10 RETIRED.
+  // RH10 was: "linkDesiredInstance throws PHASE_CONFLICT_NEEDS_ACK
+  // when conflict + no acknowledged" -- asserted v2 linkDesiredInstance
+  // enforced phase-conflict acknowledgment atomically via a coded
+  // throw + opt-in via { acknowledged: true }.
+  //
+  // The v2 contract is NO-LONGER-APPLICABLE in v3-pure architecture.
+  // v3 _gapLinkInstance (state/adapter.js line 389) has NO phase-
+  // conflict enforcement -- it just appends instanceId to gap[field]
+  // with built-in dedupe; phase conflict acknowledgment is moved to
+  // the CALLER layer (UI gap-link flow + AI Assist sync).
+  //
+  // Per docs/V2_DELETION_ARCHITECTURE.md Step I plan ("Tests that
+  // asserted no longer-applicable contracts DROP"), RH10 retires
+  // cleanly. The PHASE_CONFLICT_NEEDS_ACK contract is preserved in
+  // HANDOFF "Open R8 backlog" item #4 (phase-conflict-ack) for the
+  // future rc.8 v3-invariant-enforcement arc -- once that arc lands,
+  // an equivalent v3-direct test will assert the gate exists at the
+  // caller layer.
+  //
+  // Per feedback_no_patches_flag_first.md: this is NOT a patch. We
+  // do NOT bend v3 to re-add the v2 helper-layer invariant without
+  // explicit approval. Contract loss is acknowledged + tracked.
 
-  it("RH11 · A4 · linkDesiredInstance does NOT require acknowledged when there's no conflict", () => {
-    var s = createEmptySession();
-    var des = addInstance(s, { state:"desired", layerId:"compute", environmentId:"coreDc",
-      label:"Des", vendorGroup:"dell", priority:"Now" });
-    var gap = createGap(s, {
-      description:"No conflict", layerId:"compute",
-      phase:"now", reviewed:false
-    });
-    doesNotThrow(() => linkDesiredInstance(s, gap.id, des.id),
-      "no-conflict link works without acknowledged");
+  it("RH11 · A4 · v3 commitGapLinkDesiredInstance succeeds for non-conflicting links (v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-25 · v3-direct rewrite.
+    // The contract -- "linking a desired instance to a gap with
+    // matching/no phase conflict succeeds without explicit
+    // acknowledgment" -- is v3-applicable: state/adapter.js
+    // commitGapLinkDesiredInstance (line 431) wraps _gapLinkInstance
+    // which appends instanceId with dedupe and never throws on
+    // matching phases. The v2 conflict-throw assertion (RH10
+    // retired above) has moved to caller-layer enforcement (per
+    // HANDOFF R8 backlog #4).
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const envId = getActiveEngagement().environments.allIds[0];
+      const desRes = commitInstanceAdd({
+        state: "desired", layerId: "compute", environmentId: envId,
+        label: "Des", vendorGroup: "dell", priority: "Now"
+      });
+      assertEqual(desRes.ok, true, "commitInstanceAdd(desired-Now) succeeded");
+      const desId = getActiveEngagement().instances.byState.desired[0];
+      const gapAddRes = commitGapAdd({
+        description: "No conflict", layerId: "compute",
+        gapType: "replace", phase: "now",
+        reviewed: false
+      });
+      assertEqual(gapAddRes.ok, true, "commitGapAdd succeeded");
+      const gapId = getActiveEngagement().gaps.allIds.at(-1);
+      doesNotThrow(
+        () => {
+          const r = commitGapLinkDesiredInstance(gapId, desId);
+          if (r && r.ok === false) throw new Error("commitGapLinkDesiredInstance failed: " + JSON.stringify(r));
+        },
+        "no-conflict link succeeds via v3 commitGapLinkDesiredInstance"
+      );
+      // Verify the link was persisted.
+      const persisted = getActiveEngagement().gaps.byId[gapId];
+      assert(Array.isArray(persisted.relatedDesiredInstanceIds) &&
+        persisted.relatedDesiredInstanceIds.indexOf(desId) >= 0,
+        "desired instance must be present in relatedDesiredInstanceIds after link");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   it("RH12 · A5 · effectiveDriverReason returns explicit/suggested/none with reason text", () => {
@@ -6383,23 +6426,29 @@ describe("42 · Phase 19k · v2.4.11 rules hardening + relationships polish", ()
     assertEqual(virtCount, 1, "new primary appears exactly once");
   });
 
-  it("RH20 · A3 · unlinkCurrentInstance now blocks for keep + retire too (was missing in pre-v2.4.11 hand-typed list)", () => {
-    var s = createEmptySession();
-    // 'keep' has gapType: null — unlinkCurrentInstance fires on gapType, so
-    // keep gaps don't have a gapType to fire the rule against. Use 'retire'
-    // instead (gapType: ops, requiresAtLeastOneCurrent → true via the
-    // taxonomy-derived helper).
-    var gap = createGap(s, {
-      description:"Retire", layerId:"compute", gapType:"ops",
-      relatedCurrentInstanceIds:["c1"], relatedDesiredInstanceIds:[],
-      // For ops gapType, requires-at-least-one-current is TRUE because
-      // 'keep' AND 'retire' actions both require 1. So unlinking the last
-      // current must throw via the new helper.
-      reviewed:false
-    });
-    throws(() => unlinkCurrentInstance(s, gap.id, "c1"),
-      "ops gap unlinking last current must throw — keep+retire actions need 1 current");
-  });
+  // rc.7 / 7e-8 redo Step I Phase I-B-25 · RH20 RETIRED.
+  // RH20 was: "unlinkCurrentInstance now blocks for keep + retire
+  // too" -- asserted v2 unlinkCurrentInstance enforced the AL-rule
+  // atomically (refused to unlink the last required current when
+  // the gapType action required >=1 current).
+  //
+  // The v2 contract is NO-LONGER-APPLICABLE in v3-pure architecture.
+  // v3 _gapUnlinkInstance (state/adapter.js, sibling to _gapLinkInstance)
+  // has NO AL-rule enforcement -- it just removes instanceId from
+  // gap[field] without checking action-link rules. AL-rule enforcement
+  // is moved to the CALLER layer (UI gap-edit flow + AI Assist).
+  //
+  // Per docs/V2_DELETION_ARCHITECTURE.md Step I plan ("Tests that
+  // asserted no longer-applicable contracts DROP"), RH20 retires
+  // cleanly. The unlink-AL-rule contract is preserved in HANDOFF
+  // "Open R8 backlog" item #3 (unlink-AL-rule) for the future rc.8
+  // v3-invariant-enforcement arc -- once that arc lands, an
+  // equivalent v3-direct test will assert the gate exists at the
+  // caller layer (positive caller-side assertion).
+  //
+  // Per feedback_no_patches_flag_first.md: this is NOT a patch. We
+  // do NOT bend v3 to re-add the v2 helper-layer invariant without
+  // explicit approval. Contract loss is acknowledged + tracked.
 
 });
 

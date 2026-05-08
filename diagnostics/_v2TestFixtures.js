@@ -131,11 +131,20 @@ export {
 // test consumer (Suite 17 "all command functions accept plain objects")
 // was rewritten v3-direct in the same commit using commitGapRemove
 // from state/adapter.js.
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-25 · linkDesiredInstance +
+// unlinkCurrentInstance dropped. RH11 rewritten v3-direct using
+// commitGapLinkDesiredInstance (no-conflict-link contract is
+// v3-applicable). RH10 + RH20 RETIRED per Step I plan -- their v2
+// helper-layer invariants (PHASE_CONFLICT_NEEDS_ACK on link +
+// AL-rule on unlink) are no-longer-applicable in v3-pure architecture
+// (v3 _gapLinkInstance + _gapUnlinkInstance have NO enforcement;
+// caller-layer is the new gate location). The 2 contracts are
+// preserved in HANDOFF "Open R8 backlog" item #3 (unlink-AL-rule)
+// + #4 (phase-conflict-ack) for the future rc.8 invariant arc.
 export {
   createGap,
-  updateGap,
-  linkDesiredInstance,
-  unlinkCurrentInstance
+  updateGap
 } from "../interactions/gapsCommands.js";
 
 // ─── from interactions/desiredStateSync.js ─── ENTIRE BLOCK RETIRED ─
