@@ -1042,40 +1042,106 @@ describe("04 · core/models — validateGap", () => {
 // ============================================================================
 describe("08 · services/healthMetrics", () => {
 
+  // rc.7 / 7e-8 redo Step I Phase I-B-31 · Suite 08 shim-free rewrite.
+  // services/healthMetrics.js (getHealthSummary, computeBucketMetrics)
+  // is a PURE v2-shape service (separate migration arc). Its API
+  // contract is "v2-shape session in -> expected output", so the
+  // cleanest test fixture is a v2-shape object literal -- no shim
+  // call, no v3 engagement, no boundary projection.
+  //
+  // Earlier attempt routed through v3 engagement + engagementToV2Session
+  // (Suite 11 pattern). That approach is correct for roadmapService
+  // (which exercises the env-uuid mapping) but redundant for healthMetrics
+  // (which only counts/groups -- the boundary projection is already
+  // covered by Suite 11). Two hits:
+  //   - v3 GapSchema requires affectedEnvironments.length >= 1 + UUID
+  //     entries, so gap-empty-envs-matches-all (the v2 contract) cannot
+  //     be expressed via commitGapAdd.
+  //   - v3 InstanceSchema requires originId on desired (with current
+  //     present), forcing two-step build for totalDesired tests.
+  // Net: simpler v2-shape literal restores the original contract and
+  // drops freshSession + addInstance + createGap from this suite -- which
+  // is the actual goal of this commit (Step H prerequisite work).
+  //
+  // No engagement state touched -> no pollution risk -> no snapshot wrapper
+  // needed. Fully pure.
+
+  function v2Sess(opts) {
+    return {
+      sessionId:    "test-sess",
+      isDemo:       false,
+      customer:     { name: "", drivers: [] },
+      sessionMeta:  { date: "2026-05-08", presalesOwner: "", status: "Draft", version: "2.0" },
+      environments: [],
+      instances:    (opts && opts.instances) || [],
+      gaps:         (opts && opts.gaps)      || []
+    };
+  }
+
+  let _idCounter = 0;
+  function inst(props) {
+    return Object.assign({
+      id: "i-" + (++_idCounter),
+      state: "current",
+      vendorGroup: "dell",
+      label: "X",
+      criticality: "Medium",
+      disposition: "",
+      vendor: ""
+    }, props);
+  }
+  function gap(props) {
+    return Object.assign({
+      id: "g-" + (++_idCounter),
+      gapType: "ops",
+      notes: "",
+      reviewed: true,
+      affectedEnvironments: [],
+      relatedCurrentInstanceIds: [],
+      relatedDesiredInstanceIds: []
+    }, props);
+  }
+
   it("getHealthSummary returns an object with all five numeric keys", () => {
-    const s = freshSession();
+    const s = v2Sess({});
     const r = getHealthSummary(s, LAYERS, ENVIRONMENTS);
     ["totalBuckets","totalCurrent","totalDesired","totalGaps","highRiskGaps"]
       .forEach(k => assert(typeof r[k] === "number", `summary.${k} must be a number`));
   });
 
   it("totalBuckets equals LAYERS.length × ENVIRONMENTS.length", () => {
-    const s = freshSession();
+    const s = v2Sess({});
     const r = getHealthSummary(s, LAYERS, ENVIRONMENTS);
     assertEqual(r.totalBuckets, LAYERS.length * ENVIRONMENTS.length,
       "totalBuckets must be layers × environments");
   });
 
   it("totalCurrent counts only current-state instances", () => {
-    const s = freshSession();
-    addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[0], label:"C1", vendorGroup:"dell" });
-    addInstance(s, { state:"desired", layerId:LayerIds[0], environmentId:EnvironmentIds[0], label:"D1", vendorGroup:"dell" });
+    const s = v2Sess({
+      instances: [
+        inst({ state: "current", layerId: LayerIds[0], environmentId: EnvironmentIds[0], label: "C1" }),
+        inst({ state: "desired", layerId: LayerIds[0], environmentId: EnvironmentIds[0], label: "D1" })
+      ]
+    });
     const r = getHealthSummary(s, LAYERS, ENVIRONMENTS);
     assertEqual(r.totalCurrent, 1, "only current instances counted");
     assertEqual(r.totalDesired, 1, "only desired instances counted");
   });
 
   it("highRiskGaps counts only High urgency gaps", () => {
-    const s = freshSession();
-    createGap(s, { description:"High gap",   layerId:LayerIds[0], urgency:"High" });
-    createGap(s, { description:"Medium gap", layerId:LayerIds[0], urgency:"Medium" });
+    const s = v2Sess({
+      gaps: [
+        gap({ description: "High gap",   layerId: LayerIds[0], urgency: "High" }),
+        gap({ description: "Medium gap", layerId: LayerIds[0], urgency: "Medium" })
+      ]
+    });
     const r = getHealthSummary(s, LAYERS, ENVIRONMENTS);
     assertEqual(r.totalGaps,    2, "totalGaps must count all gaps");
     assertEqual(r.highRiskGaps, 1, "highRiskGaps must count only High urgency");
   });
 
   it("computeBucketMetrics returns correct shape", () => {
-    const s = freshSession();
+    const s = v2Sess({});
     const m = computeBucketMetrics(LayerIds[0], EnvironmentIds[0], s);
     assert(typeof m.totalScore   === "number",  "totalScore must be number");
     assert(typeof m.currentScore === "number",  "currentScore must be number");
@@ -1086,56 +1152,76 @@ describe("08 · services/healthMetrics", () => {
   });
 
   it("currentScore: High criticality = 2, Medium = 1, Low = 0.5", () => {
-    const s = freshSession();
-    addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[0], label:"H", vendorGroup:"dell", criticality:"High" });
-    addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[0], label:"M", vendorGroup:"dell", criticality:"Medium" });
-    addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[0], label:"L", vendorGroup:"dell", criticality:"Low" });
+    const s = v2Sess({
+      instances: [
+        inst({ state: "current", layerId: LayerIds[0], environmentId: EnvironmentIds[0], label: "H", criticality: "High" }),
+        inst({ state: "current", layerId: LayerIds[0], environmentId: EnvironmentIds[0], label: "M", criticality: "Medium" }),
+        inst({ state: "current", layerId: LayerIds[0], environmentId: EnvironmentIds[0], label: "L", criticality: "Low" })
+      ]
+    });
     const m = computeBucketMetrics(LayerIds[0], EnvironmentIds[0], s);
     assertEqual(m.currentScore, 3.5, "High(2) + Medium(1) + Low(0.5) = 3.5");
   });
 
   it("gapScore: High urgency = 3, Medium = 2, Low = 1", () => {
-    const s = freshSession();
-    createGap(s, { description:"H", layerId:LayerIds[0], urgency:"High",   affectedEnvironments:[], phase:"now" });
-    createGap(s, { description:"M", layerId:LayerIds[0], urgency:"Medium", affectedEnvironments:[], phase:"now" });
-    createGap(s, { description:"L", layerId:LayerIds[0], urgency:"Low",    affectedEnvironments:[], phase:"now" });
+    const s = v2Sess({
+      gaps: [
+        gap({ description: "H", layerId: LayerIds[0], urgency: "High",   affectedEnvironments: [], phase: "now" }),
+        gap({ description: "M", layerId: LayerIds[0], urgency: "Medium", affectedEnvironments: [], phase: "now" }),
+        gap({ description: "L", layerId: LayerIds[0], urgency: "Low",    affectedEnvironments: [], phase: "now" })
+      ]
+    });
     const m = computeBucketMetrics(LayerIds[0], EnvironmentIds[0], s);
     assertEqual(m.gapScore, 6, "High(3) + Medium(2) + Low(1) = 6");
   });
 
   it("totalScore = currentScore + gapScore", () => {
-    const s = freshSession();
-    addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[0], label:"X", vendorGroup:"dell", criticality:"High" });
-    createGap(s, { description:"G", layerId:LayerIds[0], urgency:"High", affectedEnvironments:[], phase:"now" });
+    const s = v2Sess({
+      instances: [
+        inst({ state: "current", layerId: LayerIds[0], environmentId: EnvironmentIds[0], label: "X", criticality: "High" })
+      ],
+      gaps: [
+        gap({ description: "G", layerId: LayerIds[0], urgency: "High", affectedEnvironments: [], phase: "now" })
+      ]
+    });
     const m = computeBucketMetrics(LayerIds[0], EnvironmentIds[0], s);
     assertEqual(m.totalScore, m.currentScore + m.gapScore, "totalScore = currentScore + gapScore");
   });
 
   it("hasData is false when cell has no instances and no gaps", () => {
-    const s = freshSession();
+    const s = v2Sess({});
     const m = computeBucketMetrics(LayerIds[0], EnvironmentIds[0], s);
     assertEqual(m.hasData, false, "empty cell must have hasData = false");
   });
 
   it("hasData is true when cell has at least one instance", () => {
-    const s = freshSession();
-    addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[0], label:"X", vendorGroup:"dell" });
+    const s = v2Sess({
+      instances: [
+        inst({ state: "current", layerId: LayerIds[0], environmentId: EnvironmentIds[0], label: "X" })
+      ]
+    });
     const m = computeBucketMetrics(LayerIds[0], EnvironmentIds[0], s);
     assertEqual(m.hasData, true, "cell with instance must have hasData = true");
   });
 
   it("bucket metrics only includes current instances matching layer AND environment", () => {
-    const s = freshSession();
-    addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[0], label:"Match",    vendorGroup:"dell" });
-    addInstance(s, { state:"current", layerId:LayerIds[1], environmentId:EnvironmentIds[0], label:"WrongLayer",vendorGroup:"dell" });
-    addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[1], label:"WrongEnv",  vendorGroup:"dell" });
+    const s = v2Sess({
+      instances: [
+        inst({ state: "current", layerId: LayerIds[0], environmentId: EnvironmentIds[0], label: "Match" }),
+        inst({ state: "current", layerId: LayerIds[1], environmentId: EnvironmentIds[0], label: "WrongLayer" }),
+        inst({ state: "current", layerId: LayerIds[0], environmentId: EnvironmentIds[1], label: "WrongEnv" })
+      ]
+    });
     const m = computeBucketMetrics(LayerIds[0], EnvironmentIds[0], s);
     assertEqual(m.current.length, 1, "only matching instance must appear");
   });
 
   it("gap is included in bucket when affectedEnvironments is empty (matches all envs)", () => {
-    const s = freshSession();
-    createGap(s, { description:"All envs", layerId:LayerIds[0], urgency:"High", affectedEnvironments:[], phase:"now" });
+    const s = v2Sess({
+      gaps: [
+        gap({ description: "All envs", layerId: LayerIds[0], urgency: "High", affectedEnvironments: [], phase: "now" })
+      ]
+    });
     const m = computeBucketMetrics(LayerIds[0], EnvironmentIds[2], s);
     assertEqual(m.gaps.length, 1, "gap with no envs must appear in every environment bucket");
   });
