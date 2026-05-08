@@ -3173,14 +3173,34 @@ describe("17 · AI integration readiness", () => {
     assertEqual(errors.length, cases.length, "all test cases must have thrown");
   });
 
-  it("session structure is stable across reset (AI can rely on field names)", () => {
-    resetSession();
-    const s1 = JSON.stringify(Object.keys(session).sort());
-    session.customer.name = "Changed";
-    createGap(session, { description:"D", layerId:LayerIds[0] });
-    resetSession();
-    const s2 = JSON.stringify(Object.keys(session).sort());
-    assertEqual(s1, s2, "session keys must be stable across resets");
+  it("engagement structure is stable across reset (AI can rely on field names) (v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-22 · v3-direct rewrite. Pre-
+    // rewrite asserted the v2 session top-level keys stayed stable
+    // across resetSession + mutate + resetSession. The v3 equivalent
+    // contract: setActiveEngagement(createEmptyEngagement()) produces
+    // an engagement with stable Object.keys regardless of intermediate
+    // commit* mutations.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const s1 = JSON.stringify(Object.keys(getActiveEngagement()).sort());
+      // Mutate via a v3 commit (customer name + a gap add).
+      commitContextEdit({ customer: { name: "Changed" } });
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      commitGapAdd({
+        description: "D", layerId: LayerIds[0],
+        gapType: "ops",
+        notes: "Workshop ops gap notes substantial enough to satisfy AL7.",
+        reviewed: false
+      });
+      // Reset to a fresh engagement; key shape MUST match.
+      setActiveEngagement(createEmptyEngagement());
+      const s2 = JSON.stringify(Object.keys(getActiveEngagement()).sort());
+      assertEqual(s1, s2, "engagement keys must be stable across resets");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   it("LayerIds and EnvironmentIds are flat string arrays (AI can enumerate them)", () => {
