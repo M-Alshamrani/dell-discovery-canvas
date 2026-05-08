@@ -1,149 +1,8 @@
 # Dell Discovery Canvas — Session Handoff
 
-**🔴 READ FIRST · Principal-architect discipline (LOCKED 2026-05-08, R11 added evening)**: every session, every commit, every handover. Full text in [`docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md`](docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md) (R0..R11) + tier-1 memory anchor `feedback_principal_architect_discipline.md`. Core rules: **R0** acknowledge "what would a principal architect do?" before non-trivial action · **R1** own-grep before delete (no closed-list test scopes) · **R2** migrate consumers FIRST, delete LAST · **R3** Chrome MCP browser smoke at every commit boundary (test banner alone is NOT sufficient) · **R4** no v3-store backward-compat hacks · **R5** no fig-leaf test fixtures hiding v2 logic · **R6** rewrite tests to assert v3 contracts (never retire-with-negative) · **R7** per-commit revertibility (smoke fail = revert, not pile-fix) · **R8** surface scope balloons · **R9** every handover references this · **R10** acknowledge in every action out loud · **R11 (HARDEST · LOCKED 2026-05-08 evening)** Recite + Answer + Execute + Pledge-Smoke-Screenshot at EVERY step boundary; every commit message ends with a `Browser smoke evidence:` block listing standing regression flow walked + snapshot captured. **Test banner alone is a discipline violation.**
+**🔴 READ FIRST · Principal-architect discipline (LOCKED 2026-05-08, R11 added evening)**: every session, every commit, every handover. Full text in [`docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md`](docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md) (R0..R11) + tier-1 memory anchor `feedback_principal_architect_discipline.md`. Core rules: **R0** acknowledge "what would a principal architect do?" before non-trivial action · **R1** own-grep before delete · **R2** migrate consumers FIRST, delete LAST · **R3** Chrome MCP browser smoke at every commit boundary (test banner alone is NOT sufficient) · **R4** no v3-store backward-compat hacks · **R5** no fig-leaf test fixtures hiding v2 logic · **R6** rewrite tests to assert v3 contracts (never retire-with-negative) · **R7** per-commit revertibility · **R8** surface scope balloons · **R9** every handover references this · **R10** acknowledge in every action out loud · **R11 (HARDEST · LOCKED 2026-05-08 evening)** Recite + Answer + Execute + Pledge-Smoke-Screenshot at EVERY step boundary; every commit message ends with a `Browser smoke evidence:` block. **Test banner alone is a discipline violation.**
 
----
-
-## Last session end · 2026-05-08 (evening) · 14 commits this session
-
-**Branch**: `v3.0-data-architecture` · **HEAD**: `e8f2bd6` · **Banner**: **1138/1144 GREEN** with same 6 expected RED throughout (FS3, VT29, V-FLOW-V3-PURE-1/3/4/5).
-
-**Session arc**: continued the v2 deletion REDO from where the morning left off (Step A `1abba74`). Shipped Steps B–G + Step I-A + Steps I-B-1 through I-B-8 + the R11 discipline lock. `~1670 LOC removed` across production + test code. `_v2TestFixtures.js` shim shrunk from 35 → 28 re-exports. Steps H + J still blocked on Phase I-B completion.
-
-### Commits this session (14)
-
-| # | Commit | Step | LOC | R11 |
-|---|--------|------|-----|-----|
-| 1 | `6940df2` | B · sessionFile v3-native | — | pre-R11 |
-| 2 | `a1a1b8b` | C · gapsService v3-native | — | pre-R11 |
-| 3 | `805bb92` | D · vendorMixService v3-native | — | pre-R11 |
-| 4 | `2e9268e` | E · DELETE AiAssistOverlay.js | (1 file) | pre-R11 |
-| 5 | `4789cd2` | F · DELETE SkillAdmin.js | 608 | pre-R11 |
-| 6 | `ec06d34` | G · DELETE sessionBridge + listener flip | 398 | pre-R11 |
-| 7 | `8705e83` | I-A · drop 71 v2-internal tests (Suites 5/6/7/18) | 633 | pre-R11 |
-| 8 | `abc0767` | I-B-1 · migrateLegacySession direct import | — | pre-R11 |
-| 9 | `7594613` | I-B-2 · drop PL4 + PR2 helper-unit tests | — | pre-R11 |
-| 10 | `b4debe8` | I-B-3 · drop FS1 + FS2 helper-unit tests | — | pre-R11 |
-| 11 | **`96e8a16`** | **🔴 R11 LOCKED · four-block ritual** | (docs) | self |
-| 12 | `b348271` | I-B-4 · drop dead `liveSession` alias | — | ✅ R11 |
-| 13 | `fa2ea32` | I-B-5 · drop PR1.a/b + applyContextSave | — | ✅ R11 |
-| 14 | `2b28c01` | I-B-6 · VT26 rewritten v3-direct + drop replaceSession | — | ✅ R11 |
-| 15 | `4eb025b` | I-B-7 · drop dead saveToLocalStorage | — | ✅ R11 |
-| 16 | `e8f2bd6` | I-B-8 · drop dead createDemoSession + resetToDemo | — | ✅ R11 |
-
-(Step E AiAssistOverlay was actually committed pre-this-session via 2e9268e; included for completeness of the rc.7 / 7e-8 redo arc.)
-
-### What changed at the architecture level
-
-- **`ui/views/AiAssistOverlay.js` DELETED** (Step E). Cmd+K + topbar AI Assist route to `CanvasChatOverlay.js`.
-- **`ui/views/SkillAdmin.js` DELETED** (Step F · 608 LOC). Settings → Skills builder pill mounts `SkillBuilder.js`.
-- **`state/sessionBridge.js` DELETED** (Step G · 398 LOC). The cutover-window v2↔v3 bridge is gone. Listener flipped from `onSessionChanged` (legacy bus) to `subscribeActiveEngagement` (v3 store). Boot-seed inlined in `app.js` DOMContentLoaded. The session-reset chat-clear (BUG-029) handler stayed inlined at the `+New session` button (was already inlined pre-Step G).
-- **R11 LOCKED**: `docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md` extended with full R11 four-block ritual; tier-1 memory anchor + `MEMORY.md` index updated; the rule loads in every future session before any work.
-
-### What changed at the test level
-
-- **Suites 5 (state/sessionStore), 6 (matrixCommands), 7 (gapsCommands), 18 (desiredStateSync) RETIRED** — 71 v2-internal tests dropped per architecture doc Step I plan ("DROP, not retired-with-negative"). V3 successors: V-ADP-* + V-FLOW-PERSIST-* + state/dispositionLogic test surfaces.
-- **`_v2TestFixtures.js` shim shrinkage** — 35 → 28 re-exports. Dropped: `migrateLegacySession`, `setPrimaryLayer`, `deriveProjectId`, `isFreshSession`, `applyContextSave`, `replaceSession`, `saveToLocalStorage`, `createDemoSession`, `resetToDemo` (9 exports gone).
-- **VT26 (Suite 45 demo-banner test) REWRITTEN v3-direct** — first major fixture rewrite under R11. Pattern: `setActiveEngagement(createEmptyEngagement({meta:{isDemo:true}}))` + `commitContextEdit({customer:{...}})` + `commitDriverAdd(...)` + `engagementToV2Session(getActiveEngagement())` to derive the v2-shape projection for renderer signatures that retain the session arg. Use this same pattern for remaining fixture migrations.
-- **Bridge-coupled tests retired with vector-id preservation** (Step G): V-FLOW-MIGRATE-TAB1-DRIVERS-3 + ENVS-3 + CUSTOMER-2 + V-FLOW-CHAT-DEMO-2 + T1.8 + T1.9 (the v3→v2 mirror is gone with the bridge).
-- **BUG-029 chat-clear regression tests** rewritten to drive the inlined +New session sequence directly (V-FLOW-CHAT-LIFECYCLE-1/2 — clearTranscript + setActiveEngagement, no bridge transport).
-- **Helper-unit test drops**: PL4 (setPrimaryLayer dedupe), PR2 (deriveProjectId fallback), FS1+FS2 (isFreshSession edge cases), PR1.a+PR1.b (applyContextSave isDemo flip). All v2-only contracts; v3 integration coverage unaffected.
-
-### Findings logged this session
-
-- **BUG-042** · Demo-mode banner does NOT render on Tab 4 (Gaps) when meta.isDemo:true via the live demo-loader path. Pre-existing state surfaced by R11 mandatory regression walk in commit fa2ea32. VT26 still GREEN (uses direct-render path that includes the banner). Live demo-loader → renderStage → renderGapsEditView path apparently omits the banner. Logged in `docs/BUG_LOG.md` BUG-042 with full repro + suspected root cause + V-FLOW-DEMO-BANNER-GAPS-1 fix-plan test. Scheduled `rc.7 / 7e-post`. **First win for R11**: would have been missed by banner-only verification.
-
----
-
-## Next-session entry plan
-
-### Where things stand
-
-- **`_v2TestFixtures.js` shim still has 28 re-exports** (was 35 pre-session). The remaining 4 sessionStore re-exports (`session`, `createEmptySession`, `resetSession`, `loadFromLocalStorage`) + 7 matrixCommands + 9 gapsCommands + 9 desiredStateSync are all heavy v2-singleton-state-coupled. Each requires per-test rewrite (similar magnitude to VT26 in I-B-6).
-- **Steps H + J + K + rc.7 / 7e-post + rc.7 tag** all pending.
-- **Test count**: 1138/1144 GREEN, 6 expected RED (FS3, VT29, V-FLOW-V3-PURE-1/3/4/5).
-
-### Backlog (priority order)
-
-1. **Phase I-B-9..N · per-test fixture rewrites** (multi-session arc). Each commit migrates 1-2 test sites or 1 helper symbol. Pattern: VT26-style `setActiveEngagement(createEmptyEngagement(...))` + commit-helpers + `engagementToV2Session` for renderer args. Highest-value targets:
-   - Suite 12 ContextView (heavy `createEmptySession + addInstance + createGap`)
-   - Suite 13 MatrixView · Suite 14 GapsEditView (view fixtures)
-   - Suite 22 programsService — `approveGapCmd` (T6.7 + RH6) → either `commitGapEdit({reviewed:true})` rewrite or RETIRE per architecture doc plan
-   - Suite 35e TX taxonomy tests (uses `session + sessionMeta`)
-   - Scattered sites for `addInstance / createGap / etc.` v2-helper calls
-2. **Step H · DELETE state/sessionStore.js** (220 LOC). Unblocked when `_v2TestFixtures.js` no longer re-exports anything from sessionStore.
-3. **Step J · DELETE 3 interaction modules** (matrixCommands 143 LOC + gapsCommands 263 LOC + desiredStateSync 237 LOC = 643 LOC). Unblocked when shim drops the 7+9+9 = 25 re-exports from those modules.
-4. **Step K · engagementStore architectural cleanup**. Audit remaining `onSessionChanged` callers (interactions/aiCommands.js, state/aiUndoStack.js); decide whether `core/sessionEvents.js` retires entirely.
-5. **rc.7 / 7e-post · deferred fixtures**. FS3 (ContextView fresh-start card RED) + VT29 (page overflow). Now 2 entries (was 3 — OH5 fixed as a bonus in Step G).
-6. **BUG-042 · Demo-mode banner on Tab 4 Gaps** (logged this session). Schedule alongside 7e-post.
-7. **rc.7 tag · PREFLIGHT real-LLM smoke + GA gate**. The user's hands-on verification step per `docs/PREFLIGHT.md §5b`.
-
-### Bugs / open findings
-
-| ID | Severity | Status | Title | Schedule |
-|----|----------|--------|-------|----------|
-| BUG-042 | Low | OPEN | Demo banner missing on Tab 4 Gaps via live demo path | rc.7 / 7e-post |
-| BUG-001 | Medium | OPEN | Propagation toast shows "low" when actual mutation is "high" | rc.2 polish |
-| BUG-032 | Medium | DEFERRED | (rc.6 workshop bug deferred pending user-side repro) | rc.6.1 / rc.7 |
-| BUG-036 | Medium | OPEN | (v2-v3 sync gap; partially closed by Step G) | re-audit |
-| BUG-037 | Low | OPEN | Chat msg user/assistant visual differentiation | rc.5+ polish |
-| BUG-038 | Low | OPEN | Skill Builder UI text-heavy / primitive | post-rc.3 UX arc |
-| BUG-039 | Medium | OPEN | Vendor mix % is by record not deployment scale | rc.7 / 7f |
-| BUG-040 | Low | OPEN | Desired state allows mapping to "retire" instance | rc.7 / 7f |
-
-(Full repro/expected/actual/fix-plan in `docs/BUG_LOG.md`. BUG-002 through BUG-035 mostly CLOSED — see entries.)
-
-### Specs touched this session
-
-| Doc | Change |
-|-----|--------|
-| `docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md` | R11 added (HARDEST RULE; four-block ritual; standing regression suite definition; no-exceptions language; user-quote authority anchor) |
-| `~/.claude/.../memory/feedback_principal_architect_discipline.md` | R11 added to "12 rules"; How-to-apply updated to lead with R11 |
-| `~/.claude/.../memory/MEMORY.md` | Index entry updated: R0..R10 → R0..R11 |
-| `docs/BUG_LOG.md` | BUG-042 added (demo banner Tab 4 Gaps) |
-| `docs/V2_DELETION_ARCHITECTURE.md` | Authoritative for the redo; not edited this session (plan is sound) |
-| `diagnostics/_productionFileManifest.js` | AiAssistOverlay + SkillAdmin + sessionBridge entries dropped + comment blocks added |
-| `diagnostics/_v2TestFixtures.js` | Shim shrunk from 35 → 28 re-exports (9 dropped over the session) |
-| `diagnostics/appSpec.js` | 71 v2-internal tests dropped + 11+ test bodies retired/rewritten + multiple import-line cleanups + VT26 v3-direct rewrite |
-| `app.js` | Step G changes: dropped sessionBridge import; flipped onSessionChanged → subscribeActiveEngagement; inlined boot-seed |
-
-### Files NOT touched but may be relevant
-
-- `docs/SPEC.md` + `docs/v3.0/SPEC.md` — no edits this session (plan was for code-level cleanup; SPEC stays frozen until rc.7 tag).
-- `docs/CHANGELOG_PLAN.md` — no edits; the rc.7 / 7e-8 sub-arcs need a final summary entry pre-tag.
-- `docs/PREFLIGHT.md` — no edits; PREFLIGHT 5b real-LLM smoke is the rc.7 tag-gate.
-
----
-
-## Brief prompt to continue (for next session)
-
-Copy-paste this into the next session as the opening message:
-
-> Continue rc.7 / 7e-8 v2 deletion arc per `docs/V2_DELETION_ARCHITECTURE.md` and `docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md` (LOCKED R0..R11). Last session ended at HEAD `e8f2bd6` (Step I-B-8); banner 1138/1144 GREEN with 6 expected RED.
->
-> **Apply R11 four-block ritual at every step boundary**:
-> - Block 1 Recite: state the step's full scope
-> - Block 2 Answer: 1-3 sentence concrete plan + architectural concern + blast radius + smoke pass
-> - Block 3 Execute
-> - Block 4 Pledge + Smoke + Screenshot: walk the standing regression flow (boot empty → "New customer", 0 collections; load demo → Acme Healthcare 3 drivers / 4 envs / 23 instances / 8 gaps; click 5 stepper tabs each renders content; AI Assist overlay opens; Settings → Skills builder mounts; +New session → engagementId rotates + chat 1→0 messages BUG-029 contract intact). Capture `mcp__Claude_Preview__preview_snapshot` inline. Every commit message ends with a `Browser smoke evidence:` block. **Test banner alone is a discipline violation per R11.**
->
-> **Next concrete steps** (Phase I-B-9+ multi-session arc):
-> 1. Migrate Suite 22 `approveGapCmd` consumers (T6.7 line 2271 + RH6 line 5463) — either rewrite to `commitGapEdit({reviewed:true})` w/ explicit `validateActionLinks` for shape errors, or RETIRE per architecture doc Step I plan; drop `approveGap` from shim.
-> 2. Migrate Suite 12 ContextView fixture sites (heavy `createEmptySession + addInstance + createGap`) using the VT26 pattern: `setActiveEngagement(createEmptyEngagement(...))` + `commitInstanceAdd / commitGapAdd / commitDriverAdd` + `engagementToV2Session(getActiveEngagement())` for renderer args.
-> 3. Continue per-test rewrites until `_v2TestFixtures.js` has zero re-exports from sessionStore + 3 interaction modules.
-> 4. Then unblocks Step H (DELETE sessionStore.js · 220 LOC) + Step J (DELETE 3 interaction modules · 643 LOC) + Step K (engagementStore cleanup).
->
-> **Open findings**: BUG-042 (demo banner missing on Tab 4 Gaps via live demo-loader path; logged in `docs/BUG_LOG.md`; first R11-surfaced finding). Schedule rc.7 / 7e-post alongside FS3 + VT29 deferred fixtures.
->
-> **Authority files**: `docs/V2_DELETION_ARCHITECTURE.md` (Steps H/I/J/K plan) · `docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md` (R0..R11) · `memory/feedback_principal_architect_discipline.md` (tier-1 anchor; loads first every session) · `HANDOFF.md` (this doc).
->
-> Apply principal-architect persona. Use the VT26 pattern (commit `2b28c01`) as the template for v3-direct test rewrites. Walk the standing regression flow for every commit. Capture snapshots inline.
-
----
-
-## Pre-existing handover content (rc.7 / 7e-8 morning state, kept for archeology)
-
-**Original morning entry**: `v3.0.0-rc.7-dev` in progress on `v3.0-data-architecture` · HEAD pending after Step A · **Banner 1212/1221 GREEN** · v2 deletion arc REDO under way after the 7e-8d-3..5 attempt was reverted (`977bf68`); plan in [`docs/V2_DELETION_ARCHITECTURE.md`](docs/V2_DELETION_ARCHITECTURE.md). Steps A done; Steps B..K pending.
+**Last session end**: 2026-05-08 (evening) · `v3.0.0-rc.7-dev` on `v3.0-data-architecture` · HEAD pending (this commit) · **Banner 1138/1144 GREEN** with 6 expected RED (FS3, VT29, V-FLOW-V3-PURE-1/3/4/5). v2 deletion arc REDO advanced through Step G + Phase I-B-8 + R11 LOCK; Steps H/J/K + rc.7 / 7e-post + tag pending. ~1670 LOC removed across the session (608 SkillAdmin + 398 sessionBridge + 633 v2-internal tests + ~30 misc). `_v2TestFixtures.js` shim shrunk 35 → 28 re-exports. **R11 LOCKED at `96e8a16`**.
 
 **rc.7 dev log (full arc since rc.6 tag, in order)**:
 
@@ -160,27 +19,44 @@ Copy-paste this into the next session as the opening message:
 | **7e-8c'-fix2** | `324b37a` | **Retire first-add acknowledgment toast** wholesale per user direction ("no need for it"). Drop `surfaceFirstAddAcknowledgment` + `envFirstAddAck_v1` localStorage key + `.env-first-add-ack-banner` CSS + V-FLOW-EMPTY-ENVS-6 (reworked into negative assertion) + RULES CH35 clause (e). SPEC §S41.3 marked RETIRED | 1210/1218 |
 | **BUG-041** | `709e778` | **AI Assist provider-popover stale-snapshot fix** (catches user-reported "every provider click opens Settings" bug). Extracts `refreshRow` helper; popover refreshes class+meta on open; click handler re-reads `loadAiConfig()` before deciding switch-vs-Settings. 3 new V-PILLS-5/6/7 source-grep regression tests. | 1213/1221 |
 | **7e-8b** | `1c55b95` | **Test-fixture shim** — NEW `diagnostics/_v2TestFixtures.js` re-exports v2 symbols; 10 appSpec.js import statements retargeted from `state/sessionStore` + `interactions/{matrix,gaps,desired}*` to the shim. Decouples test-suite coupling to v2 modules in one place. No production-code change. | 1213/1221 |
-| **7e-8c** | `02f94ed` | **Trim app.js v2 sessionStore call sites** — 5 read sites (`session.X` → `getActiveEngagement().X`) + 3 redundant `saveToLocalStorage()` drops (v3 auto-persists) + 2 demo-loader v2 mirror lines retired + save flow now derives v2 shape via `engagementToV2Session()` at the file boundary. Imports trimmed to `{ resetSession, replaceSession }`. **`resetSession` + `replaceSession`-in-file-open retained** (need v3-native canvasFile or v2→v3 runtime translator first — see 7e-8d blocker below). Mid-arc fix: `session`-undefined ReferenceError in `renderStage` was halting boot before wire* handlers; fixed by passing `null` explicitly to view renderers. | **1212/1221** ✅ |
+| **7e-8c** | `02f94ed` | **Trim app.js v2 sessionStore call sites** — 5 read sites (`session.X` → `getActiveEngagement().X`) + 3 redundant `saveToLocalStorage()` drops (v3 auto-persists) + 2 demo-loader v2 mirror lines retired + save flow now derives v2 shape via `engagementToV2Session()` at the file boundary. Imports trimmed to `{ resetSession, replaceSession }`. **`resetSession` + `replaceSession`-in-file-open retained** (need v3-native canvasFile or v2→v3 runtime translator first). Mid-arc fix: `session`-undefined ReferenceError in `renderStage` was halting boot before wire* handlers; fixed by passing `null` explicitly to view renderers. | 1212/1221 ✅ |
+| 7e-8d-3..5 (REVERTED) | `cef8a54..d712d29` | v2 deletion attempt that broke app boot; scope-limited V-ANTI-V2-IMPORT-1 missed 5 production importers of `state/sessionStore.js` (services/gapsService + sessionFile + vendorMixService + ui/views/AiAssistOverlay + SkillAdmin); 1410+ LOC removed but app rendered empty stepper · **REVERTED 977bf68** | (reverted) |
+| 7e-8 redo Phase 1 | `f73dbcf` | `docs/V2_DELETION_ARCHITECTURE.md` authored — principal-architect plan A..K + cross-cutting gates after the revert | (docs) |
+| **R0..R10 LOCKED** | `f2e12cd` | **🔴 `docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md` LOCKED · `feedback_principal_architect_discipline.md` tier-1 memory anchor + MEMORY.md index** — own-grep R1, migrate-before-delete R2, browser-smoke-at-every-commit R3, no-fig-leaf R5, rewrite-tests R6, per-commit-revertibility R7, scope-balloon R8, handover-references R9, acknowledge-out-loud R10 | (docs) |
+| 7e-8 redo Step A | `1abba74` | V-ANTI-V2-IMPORT-1/2/3 expanded to scan ALL production files via `_productionFileManifest.js` (RED reveals real consumer graph) | 1212/1221 |
+| 7e-8 redo Step B | `6940df2` | `services/sessionFile.js` v3-native + new `state/runtimeMigrate.js` (migrateLegacySession + setPrimaryLayer + deriveProjectId moved to canonical home; canonicalize-then-migrate pipeline) — V-ANTI-V2-IMPORT-1 violators 6 → 5 | 1212/1221 |
+| 7e-8 redo Step C | `a1a1b8b` | `services/gapsService.js` v3-native reads via `getActiveEngagement().gaps` — V-ANTI-V2-IMPORT-1 violators 5 → 4 · 7 v2-fixture-coupled tests rewritten | 1212/1221 |
+| 7e-8 redo Step D | `805bb92` | `services/vendorMixService.js` v3-native reads via `getActiveEngagement().instances` — V-ANTI-V2-IMPORT-1 violators 4 → 3 | 1212/1221 |
+| 7e-8 redo Step E | `2e9268e` | DELETE `ui/views/AiAssistOverlay.js` (dormant since rc.4 Arc 2; Cmd+K rebound to openCanvasChat) — V-AI-ASSIST-DORMANT-1 flips to MUST-404 | 1212/1221 |
+| 7e-8 redo Step F | `4789cd2` | DELETE `ui/views/SkillAdmin.js` (608 LOC; dormant since rc.4 Arc 4; Settings → SkillBuilder.js) · 11 v2 DOM-coupled tests retired vector-id-preserving (SB6/SB7/FP5/FP6/FP8/FP9/PG5/QW3..QW6) — V-ANTI-V2-IMPORT-1 violators 2 → 1 | 1211/1221 |
+| 7e-8 redo Step G | `ec06d34` | DELETE `state/sessionBridge.js` (398 LOC) + flip `app.js` shell listener `onSessionChanged` → `subscribeActiveEngagement` + boot-seed inline + 6 bridge-coupled tests retired/rewritten — V-FLOW-V3-PURE-2 + V-ANTI-V2-IMPORT-3 GREEN · V-ANTI-V2-IMPORT-1 violator list 1 → 0 · **OH5 fixed as bonus** (listener flip means undo-via-setActiveEngagement triggers shell repaint) | 1215/1221 |
+| 7e-8 redo Step I-A | `8705e83` | drop 71 v2-internal tests across Suites 5/6/7/18 (633 LOC; v2-module-internals contracts; v3 successor V-ADP-* + V-FLOW-PERSIST-* + state/dispositionLogic) | 1144/1150 |
+| 7e-8 redo Step I-B-1..3 | `abc0767` / `7594613` / `b4debe8` | shim slim: `migrateLegacySession` direct import from `runtimeMigrate.js` (10 call sites unified) + drop PL4 + PR2 + FS1 + FS2 helper-unit tests + dead aliases (`liveSession7`, `setPrimaryLayerRH`) — `_v2TestFixtures.js` -4 exports | 1140/1146 |
+| **R11 LOCKED** | `96e8a16` | **🔴 `docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md` R11 four-block ritual (Recite + Answer + Execute + Pledge-Smoke-Screenshot at EVERY step) + `Browser smoke evidence:` block mandatory in every commit · MEMORY.md + tier-1 anchor updated · "test banner alone is a discipline violation" anchored** | 1140/1146 |
+| 7e-8 redo Step I-B-4 | `b348271` | drop dead `liveSession` alias at appSpec:4195 (R11-applied · first R11-governed commit) | 1140/1146 |
+| 7e-8 redo Step I-B-5 | `fa2ea32` | drop PR1.a + PR1.b + `applyContextSave` shim re-export — shim -1 export · **BUG-042 surfaced** by R11 standing-regression walk (demo banner missing on Tab 4 Gaps via live demo-loader path; logged in `docs/BUG_LOG.md`) | 1138/1144 |
+| 7e-8 redo Step I-B-6 | `2b28c01` | **VT26 rewritten v3-direct** (`setActiveEngagement(createEmptyEngagement({meta:{isDemo:true}}))` + `commitContextEdit` + `commitDriverAdd` + `engagementToV2Session` for renderer args) + `replaceSession` shim re-export dropped · **VT26 pattern is the template for remaining fixture rewrites** | 1138/1144 |
+| 7e-8 redo Step I-B-7 | `4eb025b` | drop dead `saveToLocalStorage` shim re-export | 1138/1144 |
+| 7e-8 redo Step I-B-8 | `e8f2bd6` | drop dead `createDemoSession` + `resetToDemo` shim re-exports — shim -2 exports | 1138/1144 |
+| handover | `3fa833e → <this>` | session-end log + BUG-042 logged + next-session prompt (R9-mandated) · **refactored to terse rc.7-dev-log convention** in this commit | 1138/1144 |
 
-## 7e-8d BLOCKER (next session entry point)
+## Phase I-B-9+ (next session entry point)
 
-`state/sessionStore.js` + `state/sessionBridge.js` cannot be deleted yet because two production callers in `app.js` still need them:
+`_v2TestFixtures.js` shim shrunk **35 → 28 re-exports** this session (9 dropped: `migrateLegacySession`, `setPrimaryLayer`, `deriveProjectId`, `isFreshSession`, `applyContextSave`, `replaceSession`, `saveToLocalStorage`, `createDemoSession`, `resetToDemo`). Remaining 28 (4 sessionStore + 7 matrixCommands + 9 gapsCommands + 9 desiredStateSync) are heavy v2-singleton-state-coupled — each requires per-test rewrite (similar magnitude to VT26 in `2b28c01`).
 
-1. **`resetSession()`** (line ~712) — the bridge's session-reset handler clears chat memory + resets v3 engagement-id. Inlining the bridge logic at the call site is doable but couples `app.js` to `state/chatMemory.clearTranscript` + `schema/engagement.createEmptyEngagement` + `state/aiUndoStack.clear` + `core/sessionEvents.emitSessionChanged`.
+**Most-actionable next**: Suite 22 `approveGapCmd` (T6.7 line 2271 + RH6 line 5463) — either rewrite to `commitGapEdit({reviewed:true})` w/ explicit `validateActionLinks` for shape errors, or RETIRE per architecture doc Step I plan; drop `approveGap` from shim. **VT26 pattern (commit `2b28c01`) is the template** for v3-direct rewrites: `setActiveEngagement(createEmptyEngagement(...))` + `commit*` helpers + `engagementToV2Session(getActiveEngagement())` for renderer args.
 
-2. **`replaceSession(res.session)`** (line ~808 in file-open) — `services/sessionFile.js applyEnvelope()` returns a v2-shape session via `migrateLegacySession`. Without a v2→v3 runtime translator, there's no way to put that into v3 directly. **The bridge currently does customer-only shallow merge — instances/gaps/envs from a loaded `.canvas` file silently DON'T appear in v3 today.** That's a real bug the file-open path masks.
+**Then unblocks**: Step H (DELETE `state/sessionStore.js` · 220 LOC) → Step J (DELETE 3 interaction modules · 643 LOC) → Step K (engagementStore cleanup) → rc.7 / 7e-post (FS3 + VT29 + BUG-042) → rc.7 tag (PREFLIGHT 5b real-LLM smoke + GA gate per `docs/PREFLIGHT.md §5b`).
 
-**Three ways to unblock**:
+**Open finding (this session)**: BUG-042 — demo-mode banner missing on Tab 4 Gaps via live demo-loader path; **first R11-surfaced finding** (would have been missed by banner-only verification). Full repro + fix-plan in `docs/BUG_LOG.md`.
 
-| Option | Effort | Tradeoff |
-|---|---|---|
-| **A** · Inline bridge logic in app.js + build full v2→v3 runtime translator | 2-3h | Translator already partially exists in `state/sessionBridge.js v2CustomerPatch` (customer-only); needs full instances/gaps/envs. Lets us delete bridge + sessionStore in one commit. Also fixes the latent file-open data-loss bug. |
-| **B** · Make `services/sessionFile.js` v3-native | 3-4h | Cleanest long-term. `applyEnvelope` returns v3 engagement; file format may need versioning. |
-| **C** · Defer 7e-8d to its own dedicated session | 0h | Push the 2 commits we have; let 7e-8d wait. |
+## Brief prompt to continue (next session)
 
-User chose Path A as the cleaner, more complete approach to the v2 deletion arc; we executed 7e-8b + 7e-8c tonight. **7e-8d is the next sub-arc on the same path** but needs the v2→v3 runtime translator to land first.
-
-**Smoke (Chrome MCP, fix2 verification on user's actual browser)**: fresh-start session → "+ Add environment" → Primary Data Center → 0→1 transition complete → NO banner appears anywhere · localStorage `envFirstAddAck_v1` = null · all 5 stepper tabs un-disabled (Tabs 4/5 properly un-grey when first env arrives).
+> Continue rc.7 / 7e-8 v2 deletion arc per `docs/V2_DELETION_ARCHITECTURE.md` and `docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md` (LOCKED R0..R11). Last session ended at HEAD `<this commit>`; banner 1138/1144 GREEN with 6 expected RED. Apply principal-architect persona + R11 four-block ritual (Recite + Answer + Execute + Pledge-Smoke-Screenshot) at every step boundary. Walk standing regression flow (boot empty → "New customer" 0 collections; load demo → Acme Healthcare 3/4/23/8; 5 stepper tabs render; AI Assist overlay opens; Settings → Skills builder mounts; +New session → engagementId rotates + chat 1→0 messages BUG-029 contract). Capture `mcp__Claude_Preview__preview_snapshot` inline. Every commit message ends with `Browser smoke evidence:` block. Test banner alone is a discipline violation per R11.
+>
+> Next concrete step: Suite 22 `approveGapCmd` (T6.7 line 2271 + RH6 line 5463) — rewrite to `commitGapEdit({reviewed:true})` + `validateActionLinks` OR retire per Step I plan; drop `approveGap` from shim. Use VT26 pattern (commit `2b28c01`) as the template.
+>
+> Authority: `docs/V2_DELETION_ARCHITECTURE.md` · `docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md` R0..R11 · `memory/feedback_principal_architect_discipline.md` (tier-1; loads first) · `HANDOFF.md`.
 
 **rc.6 frozen state** (still authoritative for the rc.6 release; last tag on origin = `v3.0.0-rc.6`):
 
