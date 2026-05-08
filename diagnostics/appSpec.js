@@ -2441,29 +2441,83 @@ describe("22 · services/programsService", () => {
 
   // ── v2.1 · Phase 10 · Manual-link phase-conflict (T6.1-3) ─
 
-  it("confirmPhaseOnLink returns ok when phases already match or tile has no priority (T6.1)", () => {
-    const s = freshSession();
-    const des = addInstance(s, { state:"desired", layerId:LayerIds[0], environmentId:EnvironmentIds[0],
-      label:"Tgt", vendorGroup:"dell", priority:"Now" });
-    const gap = createGap(s, { description:"G", layerId:LayerIds[0], phase:"now" });
-    const out = confirmPhaseOnLink(s, gap.id, des.id);
-    assertEqual(out.status, "ok", "matching phases → ok");
-
-    const des2 = addInstance(s, { state:"desired", layerId:LayerIds[0], environmentId:EnvironmentIds[1],
-      label:"Tgt2", vendorGroup:"dell" });  // no priority
-    const out2 = confirmPhaseOnLink(s, gap.id, des2.id);
-    assertEqual(out2.status, "ok", "unset priority → ok (adopts on link)");
+  it("confirmPhaseOnLink returns ok when phases already match or tile has no priority (T6.1 · v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-16 · v3-direct rewrite. v3
+    // confirmPhaseOnLink in state/dispositionLogic.js line 300 has
+    // the same signature shape (engagement, gapId, desiredInstanceId)
+    // and same status return contract.
+    //
+    // Snapshot+restore _active per Phase I-B-9 pollution-prevention.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const env1Res = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(env1Res.ok, true, "commitEnvAdd(coreDc) succeeded");
+      const env1Id = getActiveEngagement().environments.allIds[0];
+      const env2Res = commitEnvAdd({ envCatalogId: "drDc" });
+      assertEqual(env2Res.ok, true, "commitEnvAdd(drDc) succeeded");
+      const env2Id = getActiveEngagement().environments.allIds[1];
+      // Matching phases (gap "now" + desired "Now")
+      const desRes = commitInstanceAdd({
+        state: "desired", layerId: LayerIds[0], environmentId: env1Id,
+        label: "Tgt", vendorGroup: "dell", priority: "Now"
+      });
+      assertEqual(desRes.ok, true, "commitInstanceAdd(desired-Now) succeeded");
+      const desId = getActiveEngagement().instances.byState.desired[0];
+      const gapAddRes = commitGapAdd({
+        description: "G", layerId: LayerIds[0],
+        gapType: "replace", phase: "now",
+        reviewed: false
+      });
+      assertEqual(gapAddRes.ok, true, "commitGapAdd succeeded");
+      const gapId = getActiveEngagement().gaps.allIds.at(-1);
+      const out = confirmPhaseOnLinkV3(getActiveEngagement(), gapId, desId);
+      assertEqual(out.status, "ok", "matching phases → ok");
+      // Unset priority (no priority set on the desired) → ok (adopts on link)
+      const des2Res = commitInstanceAdd({
+        state: "desired", layerId: LayerIds[0], environmentId: env2Id,
+        label: "Tgt2", vendorGroup: "dell"   // no priority
+      });
+      assertEqual(des2Res.ok, true, "commitInstanceAdd(desired-no-priority) succeeded");
+      const des2Id = getActiveEngagement().instances.byState.desired[1];
+      const out2 = confirmPhaseOnLinkV3(getActiveEngagement(), gapId, des2Id);
+      assertEqual(out2.status, "ok", "unset priority → ok (adopts on link)");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
-  it("confirmPhaseOnLink returns conflict when phases differ (T6.2)", () => {
-    const s = freshSession();
-    const des = addInstance(s, { state:"desired", layerId:LayerIds[0], environmentId:EnvironmentIds[0],
-      label:"Tgt", vendorGroup:"dell", priority:"Now" });
-    const gap = createGap(s, { description:"G", layerId:LayerIds[0], phase:"later" });
-    const out = confirmPhaseOnLink(s, gap.id, des.id);
-    assertEqual(out.status, "conflict", "conflicting phases → conflict");
-    assertEqual(out.currentPriority, "Now");
-    assertEqual(out.targetPriority, "Later");
+  it("confirmPhaseOnLink returns conflict when phases differ (T6.2 · v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-16 · v3-direct rewrite. Same
+    // pattern as T6.1; here the gap's phase is "later" and the
+    // desired's priority is "Now" -- v3 confirmPhaseOnLink returns
+    // a conflict status with currentPriority/targetPriority surfaced.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const envId = getActiveEngagement().environments.allIds[0];
+      const desRes = commitInstanceAdd({
+        state: "desired", layerId: LayerIds[0], environmentId: envId,
+        label: "Tgt", vendorGroup: "dell", priority: "Now"
+      });
+      assertEqual(desRes.ok, true, "commitInstanceAdd(desired-Now) succeeded");
+      const desId = getActiveEngagement().instances.byState.desired[0];
+      const gapAddRes = commitGapAdd({
+        description: "G", layerId: LayerIds[0],
+        gapType: "replace", phase: "later",
+        reviewed: false
+      });
+      assertEqual(gapAddRes.ok, true, "commitGapAdd succeeded");
+      const gapId = getActiveEngagement().gaps.allIds.at(-1);
+      const out = confirmPhaseOnLinkV3(getActiveEngagement(), gapId, desId);
+      assertEqual(out.status, "conflict", "conflicting phases → conflict");
+      assertEqual(out.currentPriority, "Now");
+      assertEqual(out.targetPriority, "Later");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   it("Link-flow: after linking a desired instance to a phase-mismatched gap, sync propagates (T6.3 · v3-direct)", () => {
@@ -3124,7 +3178,13 @@ import {
   // Its 2 test consumers (T4.5 line 2066, T6.3 line 2431) were rewritten
   // v3-direct in the same commit using commitSyncDesiredFromGap from
   // state/dispositionLogic.js.
-  confirmPhaseOnLink
+  //
+  // rc.7 / 7e-8 redo Step I Phase I-B-16 · confirmPhaseOnLink dropped.
+  // Its 2 test consumers (T6.1 line 2444 + T6.2 line 2458) were
+  // rewritten v3-direct in the same commit using confirmPhaseOnLinkV3
+  // (aliased import from state/dispositionLogic.js) — the v3 successor
+  // has the same signature shape (engagement, gapId, desiredInstanceId)
+  // and identical status-return contract.
 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed via test-fixture shim (was: ../interactions/desiredStateSync.js)
 
 
@@ -8859,7 +8919,12 @@ import {
   // rc.7 / 7e-8 redo Step I Phase I-B-15 · commitSyncDesiredFromGap
   // added for the T4.5 + T6.3 v3-direct rewrites (gap-phase change
   // propagates to linked desired-instance priority).
-  commitSyncDesiredFromGap
+  commitSyncDesiredFromGap,
+  // rc.7 / 7e-8 redo Step I Phase I-B-16 · confirmPhaseOnLinkV3 added
+  // for the T6.1 + T6.2 v3-direct rewrites. v3 signature is
+  // (engagement, gapId, desiredInstanceId); aliased to avoid name
+  // collision with the v2 shim re-export (dropped this same commit).
+  confirmPhaseOnLink as confirmPhaseOnLinkV3
 } from "../state/dispositionLogic.js";
 import {
   getActiveEngagement,

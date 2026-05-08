@@ -149,9 +149,15 @@ export {
 // was scoped out (not enforced by v3 _gapLinkInstance; covered by RH10
 // directly); T6.3's v3-direct form focuses on the sync-propagation
 // contract (gap.phase -> linked desired.priority via phaseToPriority).
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-16 · confirmPhaseOnLink dropped.
+// Its 2 test consumers (T6.1 line 2444 + T6.2 line 2458) were
+// rewritten v3-direct in the same commit using confirmPhaseOnLinkV3
+// (aliased import from state/dispositionLogic.js -- v3 successor
+// shares signature shape (engagement, gapId, desiredInstanceId) and
+// status-return contract).
 export {
   DISPOSITION_ACTIONS,
   ACTION_TO_GAP_TYPE,
-  buildGapFromDisposition,
-  confirmPhaseOnLink
+  buildGapFromDisposition
 } from "../interactions/desiredStateSync.js";
