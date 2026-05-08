@@ -2515,10 +2515,68 @@ import {
 
 describe("22 · services/programsService", () => {
 
+  // rc.7 / 7e-8 redo Step I Phase I-B-33 · pure-function tests rewritten
+  // shim-free via v2-shape literals (programsService + computeDiscovery
+  // Coverage + computeRiskPosture + effectiveDellSolutions are all v2-only
+  // pure functions; same architectural pattern as Phase I-B-31 Suite 08).
+  // sessionWithDrivers helper rewired to build v2-shape inline -- no
+  // freshSession() in the helper; the 7 caller tests below stay
+  // syntactically unchanged.
+  //
+  // DOM-render tests in this Suite (T6.9, T6.10-12 palette, T6.14-17
+  // help modal, T7.* render*) NOT migrated this pass -- they require
+  // _installSessionAsV3Engagement which still expects a v2-shape input.
+  // Separate Suite-22-DOM mega-commit will follow once the v3 render
+  // path is mature for those views.
+
   function sessionWithDrivers(ids) {
-    const s = freshSession();
-    s.customer.drivers = ids.map(id => ({ id, priority: "Medium", outcomes: "" }));
-    return s;
+    return {
+      sessionId:    "test-sess",
+      isDemo:       false,
+      customer:     { name: "", drivers: ids.map(id => ({ id, priority: "Medium", outcomes: "" })) },
+      sessionMeta:  { date: "2026-05-08", presalesOwner: "", status: "Draft", version: "2.0" },
+      environments: [],
+      instances:    [],
+      gaps:         []
+    };
+  }
+
+  // v2-shape literal helper for tests that need instances/gaps without
+  // touching the v2 sessionStore singleton or its addInstance/createGap
+  // wrappers. Same pattern as Suite 08 (Phase I-B-31).
+  let _idCounter22 = 0;
+  function inst22(props) {
+    return Object.assign({
+      id: "i22-" + (++_idCounter22),
+      state: "current",
+      vendorGroup: "dell",
+      label: "X",
+      criticality: "Medium",
+      disposition: "",
+      vendor: ""
+    }, props);
+  }
+  function gap22(props) {
+    return Object.assign({
+      id: "g22-" + (++_idCounter22),
+      gapType: "ops",
+      notes: "",
+      reviewed: true,
+      affectedEnvironments: [],
+      relatedCurrentInstanceIds: [],
+      relatedDesiredInstanceIds: []
+    }, props);
+  }
+  function v2Sess22(opts) {
+    return {
+      sessionId:    "test-sess",
+      isDemo:       false,
+      customer:     Object.assign({ name: "", drivers: [] }, (opts && opts.customer) || {}),
+      sessionMeta:  { date: "2026-05-08", presalesOwner: "", status: "Draft", version: "2.0" },
+      environments: [],
+      instances:    (opts && opts.instances) || [],
+      gaps:         (opts && opts.gaps)      || []
+    };
   }
 
   it("suggestDriverId returns null when no rule matches (T5.17)", () => {
@@ -2574,35 +2632,35 @@ describe("22 · services/programsService", () => {
   // ── v2.1 · effectiveDellSolutions (T2b.1-3) ──────────────
 
   it("effectiveDellSolutions returns Dell-tagged linked desired tile labels (T2b.1)", () => {
-    const s = freshSession();
-    const des = addInstance(s, { state:"desired", layerId:LayerIds[0], environmentId:EnvironmentIds[0],
-      label:"PowerProtect PPDM", vendor:"Dell", vendorGroup:"dell" });
-    const gap = createGap(s, { description:"Cyber", layerId:LayerIds[0],
-      relatedDesiredInstanceIds:[des.id] });
-    const out = effectiveDellSolutions(gap, s);
+    const des = inst22({ state: "desired", layerId: LayerIds[0], environmentId: EnvironmentIds[0],
+      label: "PowerProtect PPDM", vendor: "Dell", vendorGroup: "dell" });
+    const g = gap22({ description: "Cyber", layerId: LayerIds[0],
+      relatedDesiredInstanceIds: [des.id] });
+    const s = v2Sess22({ instances: [des], gaps: [g] });
+    const out = effectiveDellSolutions(g, s);
     assertEqual(out.length, 1, "one Dell tile linked → one solution label");
     assertEqual(out[0], "PowerProtect PPDM", "label matches the linked tile");
   });
 
   it("effectiveDellSolutions returns [] when no linked Dell tiles (T2b.2)", () => {
-    const s = freshSession();
-    const des = addInstance(s, { state:"desired", layerId:LayerIds[0], environmentId:EnvironmentIds[0],
-      label:"HPE System", vendor:"HPE", vendorGroup:"nonDell" });
-    const gap = createGap(s, { description:"Gap", layerId:LayerIds[0],
-      relatedDesiredInstanceIds:[des.id] });
-    const out = effectiveDellSolutions(gap, s);
+    const des = inst22({ state: "desired", layerId: LayerIds[0], environmentId: EnvironmentIds[0],
+      label: "HPE System", vendor: "HPE", vendorGroup: "nonDell" });
+    const g = gap22({ description: "Gap", layerId: LayerIds[0],
+      relatedDesiredInstanceIds: [des.id] });
+    const s = v2Sess22({ instances: [des], gaps: [g] });
+    const out = effectiveDellSolutions(g, s);
     assertEqual(out.length, 0, "non-Dell linked tiles don't count");
   });
 
   it("effectiveDellSolutions dedupes repeated labels (T2b.3)", () => {
-    const s = freshSession();
-    const a = addInstance(s, { state:"desired", layerId:LayerIds[0], environmentId:EnvironmentIds[0],
-      label:"PowerStore", vendor:"Dell", vendorGroup:"dell" });
-    const b = addInstance(s, { state:"desired", layerId:LayerIds[0], environmentId:EnvironmentIds[1],
-      label:"PowerStore", vendor:"Dell", vendorGroup:"dell" });
-    const gap = createGap(s, { description:"Dup", layerId:LayerIds[0],
-      relatedDesiredInstanceIds:[a.id, b.id] });
-    const out = effectiveDellSolutions(gap, s);
+    const a = inst22({ state: "desired", layerId: LayerIds[0], environmentId: EnvironmentIds[0],
+      label: "PowerStore", vendor: "Dell", vendorGroup: "dell" });
+    const b = inst22({ state: "desired", layerId: LayerIds[0], environmentId: EnvironmentIds[1],
+      label: "PowerStore", vendor: "Dell", vendorGroup: "dell" });
+    const g = gap22({ description: "Dup", layerId: LayerIds[0],
+      relatedDesiredInstanceIds: [a.id, b.id] });
+    const s = v2Sess22({ instances: [a, b], gaps: [g] });
+    const out = effectiveDellSolutions(g, s);
     assertEqual(out.length, 1, "two tiles, same label, dedupes to 1");
   });
 
@@ -2647,11 +2705,27 @@ describe("22 · services/programsService", () => {
     }
   });
 
-  it("Manually-created gaps default reviewed=true (T6.5)", () => {
-    const s = freshSession();
-    const gap = createGap(s, { description:"Manual", layerId:LayerIds[0] });
-    assertEqual(gap.reviewed, true, "manual createGap → reviewed: true");
-  });
+  // rc.7 / 7e-8 redo Step I Phase I-B-33 · T6.5 RETIRED.
+  // T6.5 was: "v2 createGap defaults reviewed:true on manual creation
+  // (so manual gaps don't show needs-review styling out of the box)."
+  //
+  // The v2 contract is NO-LONGER-APPLICABLE in v3-pure architecture.
+  // v3 GapSchema (schema/gap.js line 32) defaults `reviewed` to FALSE,
+  // not true (the schema treats every gap as draft until the caller
+  // marks it reviewed). The "manual-add appears reviewed" UX expectation
+  // moved to the caller layer: GapsEditView's manual-add-dialog flow
+  // is expected to pass `reviewed: true` to commitGapAdd. That is a
+  // UI-contract test, not a service-layer test.
+  //
+  // Per docs/V2_DELETION_ARCHITECTURE.md Step I plan ("Tests that
+  // asserted no-longer-applicable contracts DROP"), T6.5 retires
+  // cleanly. The UX expectation is preserved in HANDOFF "Open R8
+  // backlog" item #6 (manual-add-dialog reviewed:true assertion) for
+  // a future UI-contract pass.
+  //
+  // Per feedback_no_patches_flag_first.md: this is NOT a patch. We
+  // do NOT bend v3 GapSchema to default reviewed:true to preserve the
+  // v2 helper-layer behaviour. Contract loss acknowledged + tracked.
 
   // rc.7 / 7e-8 redo Step I Phase I-B-26 · T6.6 RETIRED.
   // T6.6 was: "updateGap flips reviewed to true on any STRUCTURAL
@@ -2741,55 +2815,62 @@ describe("22 · services/programsService", () => {
   // ── v2.1 · Discovery Coverage + Risk Posture (T6.18-24) ──
 
   it("computeDiscoveryCoverage on empty session returns { percent: 0, actions } (T6.18)", () => {
-    const s = freshSession();
+    const s = v2Sess22({});
     const c = computeDiscoveryCoverage(s);
     assertEqual(c.percent, 0, "empty session → 0 %");
     assert(Array.isArray(c.actions), "actions is an array");
   });
 
   it("computeDiscoveryCoverage hits 100 when all fractions complete (T6.19)", () => {
-    const s = freshSession();
-    s.customer.drivers = [{ id:"ai_data", priority:"High", outcomes:"" }];
     // Satisfies: drivers present. No current tiles, no gaps → other fractions default to 1.
+    const s = v2Sess22({ customer: { drivers: [{ id: "ai_data", priority: "High", outcomes: "" }] } });
     const c = computeDiscoveryCoverage(s);
     assertEqual(c.percent, 100, "all fractions at 1 → 100%");
   });
 
   it("Adding a current tile without disposition lowers Coverage (T6.20)", () => {
-    const s = freshSession();
-    s.customer.drivers = [{ id:"ai_data", priority:"High", outcomes:"" }];
-    var before = computeDiscoveryCoverage(s).percent;
-    addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[0],
-      label:"X", vendorGroup:"dell" });
-    var after = computeDiscoveryCoverage(s).percent;
+    const baseline = v2Sess22({ customer: { drivers: [{ id: "ai_data", priority: "High", outcomes: "" }] } });
+    var before = computeDiscoveryCoverage(baseline).percent;
+    const withTile = v2Sess22({
+      customer: { drivers: [{ id: "ai_data", priority: "High", outcomes: "" }] },
+      instances: [
+        inst22({ state: "current", layerId: LayerIds[0], environmentId: EnvironmentIds[0], label: "X" })
+      ]
+    });
+    var after = computeDiscoveryCoverage(withTile).percent;
     assert(after < before, "adding a current tile without disposition should drop coverage");
   });
 
   it("computeRiskPosture on empty session returns Stable (T6.21)", () => {
-    const s = freshSession();
+    const s = v2Sess22({});
     const p = computeRiskPosture(s);
     assertEqual(p.level, "Stable", "empty session → Stable posture");
   });
 
   it("One High-urgency gap in Now phase raises Risk to at least Elevated (T6.22)", () => {
-    const s = freshSession();
-    createGap(s, { description:"Crit", layerId:LayerIds[0], urgency:"High", phase:"now" });
+    const s = v2Sess22({
+      gaps: [ gap22({ description: "Crit", layerId: LayerIds[0], urgency: "High", phase: "now" }) ]
+    });
     const p = computeRiskPosture(s);
     assert(p.level === "Elevated" || p.level === "High",
       "Risk level must be Elevated or High, was: " + p.level);
   });
 
   it("Critical current tile without disposition forces level High (T6.23)", () => {
-    const s = freshSession();
-    addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[0],
-      label:"Critical", vendorGroup:"dell", criticality:"High" });
+    const s = v2Sess22({
+      instances: [
+        inst22({ state: "current", layerId: LayerIds[0], environmentId: EnvironmentIds[0],
+          label: "Critical", criticality: "High" })
+      ]
+    });
     const p = computeRiskPosture(s);
     assertEqual(p.level, "High", "critical unreviewed → High");
   });
 
   it("Risk posture includes action strings when level ≠ Stable (T6.24)", () => {
-    const s = freshSession();
-    createGap(s, { description:"Crit", layerId:LayerIds[0], urgency:"High", phase:"now" });
+    const s = v2Sess22({
+      gaps: [ gap22({ description: "Crit", layerId: LayerIds[0], urgency: "High", phase: "now" }) ]
+    });
     const p = computeRiskPosture(s);
     assert(Array.isArray(p.actions) && p.actions.length >= 1,
       "non-Stable posture must surface at least one action hint");
