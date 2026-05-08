@@ -102,11 +102,17 @@ export {
 // Pure dead re-export -- own-grep returns only the canonical export in
 // interactions/gapsCommands.js + the appSpec.js import line that this
 // commit also trimmed. Zero call sites in *.js elsewhere.
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-12 · linkCurrentInstance dropped.
+// Its only test consumer (T8.4 in Suite 24 of appSpec.js) was rewritten
+// v3-direct in the same commit using commitGapLinkCurrentInstance from
+// state/adapter.js (which wraps _gapLinkInstance with built-in dedupe
+// per the v3-pure architecture). Pattern is the Phase I-B-9 + I-B-12
+// snapshot+restore-_active wrapper.
 export {
   createGap,
   updateGap,
   deleteGap,
-  linkCurrentInstance,
   linkDesiredInstance,
   unlinkCurrentInstance
 } from "../interactions/gapsCommands.js";

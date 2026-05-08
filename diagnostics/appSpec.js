@@ -102,7 +102,10 @@ import {
 
 import {
   createGap, updateGap, deleteGap,
-  linkCurrentInstance, linkDesiredInstance,
+  // rc.7 / 7e-8 redo Step I Phase I-B-12 · linkCurrentInstance dropped.
+  // Its only test consumer (T8.4 line 3552) was rewritten v3-direct in
+  // the same commit using commitGapLinkCurrentInstance from adapter.js.
+  linkDesiredInstance,
   unlinkCurrentInstance
   // rc.7 / 7e-8 redo Step I Phase I-B-11 · unlinkDesiredInstance dropped
   // (was on this line; zero call sites in *.js post-audit).
@@ -3549,20 +3552,88 @@ describe("23 · Phase 18 · gap links — always-visible + warn-but-allow + casc
     assert(/2\s+gaps/.test(chip.textContent), "chip text must mention 2 gaps (got: " + chip.textContent + ")");
   });
 
-  it("T8.4 · deleting a gap leaves its previously-linked instances intact and re-linkable (Item 10)", () => {
-    const s = freshSession();
-    const curId = addCurrent(s, "Survivor-server");
-    const desId = addDesired(s, "Survivor-platform");
-    const original = createGap(s, { description:"Will be deleted", layerId: LayerIds[0],
-      gapType:"replace", relatedCurrentInstanceIds:[curId], relatedDesiredInstanceIds:[desId] });
-    deleteGap(s, original.id);
-    // Instances must still exist on the session.
-    const stillThere = (s.instances || []).filter(i => i.id === curId || i.id === desId);
-    assertEqual(stillThere.length, 2, "both linked instances must survive gap deletion (no cascade)");
-    // And must be re-linkable into a fresh gap.
-    const fresh = createGap(s, { description:"Re-link target", layerId: LayerIds[0], gapType:"enhance", reviewed:false });
-    doesNotThrow(() => linkCurrentInstance(s, fresh.id, curId), "current instance must be re-linkable after parent gap deletion");
-    doesNotThrow(() => linkDesiredInstance(s, fresh.id, desId), "desired instance must be re-linkable after parent gap deletion");
+  it("T8.4 · deleting a gap leaves its previously-linked instances intact and re-linkable (Item 10) (v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-12 · v3-direct rewrite.
+    // Pre-rewrite this used v2 helpers (addCurrent + addDesired closures
+    // wrapping addInstance, createGap, deleteGap, linkCurrentInstance,
+    // linkDesiredInstance). The contract -- "deleting a gap MUST NOT
+    // cascade-delete its linked instances, and the instances MUST be
+    // re-linkable into a fresh gap" -- is v3-applicable: state/collections
+    // /gapActions.js removeGap mutates only engagement.gaps (no cascade
+    // into engagement.instances), and state/adapter.js
+    // commitGapLinkCurrentInstance / commitGapLinkDesiredInstance
+    // (line ~428) handle re-link via _gapLinkInstance with built-in
+    // dedupe.
+    //
+    // Snapshot+restore _active per the Phase I-B-9 pollution-prevention
+    // pattern (testRunner.runIsolated wraps the whole pass, not per-test).
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      // v3 InstanceSchema requires environmentId to be a real UUID (not
+      // the v2 catalog string id). Add a v3 environment via commitEnvAdd
+      // first, then use its UUID for the instances.
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const envId = getActiveEngagement().environments.allIds[0];
+      // Add a current + desired instance via v3 commitInstanceAdd.
+      const curRes = commitInstanceAdd({
+        state: "current", layerId: LayerIds[0], environmentId: envId,
+        label: "Survivor-server", vendorGroup: "dell"
+      });
+      assertEqual(curRes.ok, true, "commitInstanceAdd(current) succeeded");
+      const desRes = commitInstanceAdd({
+        state: "desired", layerId: LayerIds[0], environmentId: envId,
+        label: "Survivor-platform", vendorGroup: "dell"
+      });
+      assertEqual(desRes.ok, true, "commitInstanceAdd(desired) succeeded");
+      const eng1 = getActiveEngagement();
+      const curId = eng1.instances.allIds[0];
+      const desId = eng1.instances.allIds[1];
+      // Add a Replace gap linking both, then delete it.
+      const gapAddRes = commitGapAdd({
+        description: "Will be deleted",
+        layerId: LayerIds[0], gapType: "replace",
+        relatedCurrentInstanceIds: [curId],
+        relatedDesiredInstanceIds: [desId],
+        reviewed: false
+      });
+      assertEqual(gapAddRes.ok, true, "commitGapAdd(original) succeeded");
+      const originalGapId = getActiveEngagement().gaps.allIds.at(-1);
+      const gapRemoveRes = commitGapRemove(originalGapId);
+      assertEqual(gapRemoveRes.ok, true, "commitGapRemove succeeded");
+      // Instances MUST still exist (no cascade-delete).
+      const eng2 = getActiveEngagement();
+      const stillCur = eng2.instances.byId[curId];
+      const stillDes = eng2.instances.byId[desId];
+      assert(stillCur, "current instance MUST survive gap deletion (no cascade)");
+      assert(stillDes, "desired instance MUST survive gap deletion (no cascade)");
+      // Add a fresh enhance gap and re-link both instances via the v3
+      // gap-link helpers; neither should throw.
+      const freshAddRes = commitGapAdd({
+        description: "Re-link target",
+        layerId: LayerIds[0], gapType: "enhance",
+        reviewed: false
+      });
+      assertEqual(freshAddRes.ok, true, "commitGapAdd(fresh) succeeded");
+      const freshGapId = getActiveEngagement().gaps.allIds.at(-1);
+      doesNotThrow(
+        () => {
+          const r = commitGapLinkCurrentInstance(freshGapId, curId);
+          if (r && r.ok === false) throw new Error("commitGapLinkCurrentInstance failed: " + JSON.stringify(r));
+        },
+        "current instance must be re-linkable after parent gap deletion"
+      );
+      doesNotThrow(
+        () => {
+          const r = commitGapLinkDesiredInstance(freshGapId, desId);
+          if (r && r.ok === false) throw new Error("commitGapLinkDesiredInstance failed: " + JSON.stringify(r));
+        },
+        "desired instance must be re-linkable after parent gap deletion"
+      );
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   it("T8.5 · roadmap project linked-tech count dedupes multi-linked instances (no double counting)", () => {
@@ -8584,6 +8655,12 @@ import {
   commitEnvAdd,
   // rc.7 / 7e-4 · v3-pure gap fixture surface.
   commitGapAdd,
+  // rc.7 / 7e-8 redo Step I Phase I-B-12 · gap remove + link helpers
+  // exposed for the T8.4 v3-direct rewrite (no-cascade-on-remove +
+  // re-linkable contract).
+  commitGapRemove,
+  commitGapLinkCurrentInstance,
+  commitGapLinkDesiredInstance,
   // rc.7 / 7e-8b' · v3-pure driver fixture surface for Suite 12.
   commitDriverAdd
 } from "../state/adapter.js";
