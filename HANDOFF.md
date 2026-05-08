@@ -2,7 +2,7 @@
 
 **🔴 READ FIRST · Principal-architect discipline (LOCKED 2026-05-08, R11 added evening)**: every session, every commit, every handover. Full text in [`docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md`](docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md) (R0..R11) + tier-1 memory anchor `feedback_principal_architect_discipline.md`. Core rules: **R0** acknowledge "what would a principal architect do?" before non-trivial action · **R1** own-grep before delete · **R2** migrate consumers FIRST, delete LAST · **R3** Chrome MCP browser smoke at every commit boundary (test banner alone is NOT sufficient) · **R4** no v3-store backward-compat hacks · **R5** no fig-leaf test fixtures hiding v2 logic · **R6** rewrite tests to assert v3 contracts (never retire-with-negative) · **R7** per-commit revertibility · **R8** surface scope balloons · **R9** every handover references this · **R10** acknowledge in every action out loud · **R11 (HARDEST · LOCKED 2026-05-08 evening)** Recite + Answer + Execute + Pledge-Smoke-Screenshot at EVERY step boundary; every commit message ends with a `Browser smoke evidence:` block. **Test banner alone is a discipline violation.**
 
-**Last session end**: 2026-05-09 · `v3.0.0-rc.7-dev` on `v3.0-data-architecture` · HEAD `6abd74f` · **Banner 1139/1144 GREEN** with 5 expected RED (FS3, V-FLOW-V3-PURE-1/3/4/5). Phase I-B-9..22 advanced through 14 commits this session; `_v2TestFixtures.js` shim slimmed 28 → 11 re-exports (17 names dropped). **MILESTONE: entire desiredStateSync re-export block RETIRED** at Phase I-B-20 (`0b33543`). 4 R8 awareness items collected for a future v3-invariant-enforcement arc. Steps H/J/K + rc.7 / 7e-post + tag still pending. **R11 LOCKED at `96e8a16`**.
+**Last session end**: 2026-05-09 · `v3.0.0-rc.7-dev` on `v3.0-data-architecture` · HEAD `07c8424` · **Banner 1139/1144 GREEN** with 5 expected RED (FS3, V-FLOW-V3-PURE-1/3/4/5). Phase I-B-9..23 advanced through 16 commits this session; `_v2TestFixtures.js` shim slimmed 28 → 9 re-exports (19 names dropped). **MILESTONES**: entire desiredStateSync re-export block RETIRED at Phase I-B-20 (`0b33543`); test-runner afterRestore migrated to v3-pure at Phase I-B-23 (`07c8424`). 4 R8 awareness items + new lesson from Phase I-B-24a revert (see "Lessons from this session" below). Steps H/J/K + rc.7 / 7e-post + tag still pending. **R11 LOCKED at `96e8a16`**.
 
 **rc.7 dev log (full arc since rc.6 tag, in order)**:
 
@@ -53,34 +53,46 @@
 | **7e-8 redo Step I-B-20** | `0b33543` | **🔴 MILESTONE: ENTIRE desiredStateSync re-export block RETIRED.** T6.4 + RH16/17/18 rewritten v3-direct (`buildGapFromDispositionV3` aliased) + **`buildGapFromDisposition` shim re-export dropped**. RH17 contract delta documented (v3 ASCII arrow `->` + layer suffix `[Compute]` vs v2 Unicode arrow `→`). RH16 uses `engagementToV2Session` for still-v2-shape `services/roadmapService.js buildProjects`. | 1139/1144 |
 | 7e-8 redo Step I-B-21 | `d63a9d0` | drop dead `updateInstance` shim re-export (zero `updateInstance(` call sites in `*.js`; only the v3-aliased `updateInstanceV3` import + V-SEL-INVAL-4 consumer remain, both unaffected) | 1139/1144 |
 | 7e-8 redo Step I-B-22 | `6abd74f` | **Suite 17 'engagement structure stable across reset' rewritten v3-direct** (test-body modernization without shim drop; `resetSession` remains in shim because the test-runner afterRestore at line 17149 still consumes it as a v2 sessionStore restoration fallback — that migration couples to Step H lifecycle). | 1139/1144 |
+| **7e-8 redo Step I-B-23** | `07c8424` | **🔴 Path C step 1: test-runner afterRestore migrated to v3-pure** + **`resetSession` + `loadFromLocalStorage` shim re-exports dropped**. v2 sessionStore restoration path retired (defensive carryover; `_rehydrateEngagementFromStorage` covers the contract). saveStatus indicator block migrated to read v3 `getActiveEngagement().customer.name` + `.meta.isDemo`. | 1139/1144 |
+| 7e-8 redo Step I-B-24a (REVERTED) | `(uncommitted)` | **Attempted: drop `session` global from shim**. 12 NEW RED — naive grep missed many bare `session` references in view-renderer test args (e.g. `renderSummaryHealthView(l, r, session)`) + 1 functional regression in `computeMixByLayer` (RA3 mutation was NOT vestigial after all). Per R7 reverted. **Lesson: `session` global has wider scope than `session.X` reads — bare references in renderViews call sites must be audited too.** | (reverted) |
 
-## Phase I-B-23+ (next session entry point · 2026-05-09 evening)
+## Phase I-B-24+ (next session entry point · 2026-05-09 late evening)
 
-`_v2TestFixtures.js` shim shrunk **35 → 11 re-exports** total across the rc.7 / 7e-8 redo arc (24 dropped). Latest 14-commit session (Phase I-B-9..22) dropped 17 names: `approveGap`, `setGapDriverId`, `moveInstance`, `unlinkDesiredInstance`, `getDesiredCounterpart`, `getCurrentSource`, `linkCurrentInstance`, `syncGapFromDesired`, `syncGapsFromCurrentCriticality`, `syncDesiredFromGap`, `confirmPhaseOnLink`, `deleteInstance`, `deleteGap`, `DISPOSITION_ACTIONS`, `ACTION_TO_GAP_TYPE`, `proposeCriticalityUpgrades`, `buildGapFromDisposition`, `updateInstance`. **MILESTONE: entire desiredStateSync re-export block RETIRED at Phase I-B-20.**
+`_v2TestFixtures.js` shim shrunk **35 → 9 re-exports** total across the rc.7 / 7e-8 redo arc (26 dropped). Latest 16-commit session (Phase I-B-9..23) dropped 19 names. **MILESTONES**: entire desiredStateSync re-export block RETIRED at Phase I-B-20; test-runner afterRestore migrated to v3-pure at Phase I-B-23.
 
-**Remaining 11 shim re-exports**:
-- **sessionStore (4)**: `session` (250 usages · v2 singleton), `createEmptySession` (56 usages · v2 fixture builder), `resetSession` (1 usage · test-runner afterRestore line 17149), `loadFromLocalStorage` (1 usage · same afterRestore line 17123)
+**Remaining 9 shim re-exports**:
+- **sessionStore (2)**: `session` (250+ identifier matches · v2 singleton), `createEmptySession` (51 usages · v2 fixture builder)
 - **matrixCommands (3)**: `addInstance` (129 usages · high-usage), `mapAsset` (12 usages · partly R8-blocked), `unmapAsset` (1 usage · R8-blocked)
 - **gapsCommands (4)**: `createGap` (134 usages · high-usage), `updateGap` (31 usages · high-usage), `linkDesiredInstance` (4 usages · paired with RH10 R8-blocked), `unlinkCurrentInstance` (2 usages · RH20 R8-blocked)
 - **desiredStateSync (0)**: ✅ block fully retired
 
-**Strategic crossroads** — the easy wins are exhausted. Every remaining shim drop falls into one of three categories:
+## Lessons from this session (Phase I-B-24a revert)
 
-1. **R8-blocked targets** (need v3-invariant-enforcement arc first): `mapAsset`/`unmapAsset` (mapWorkloadAssets invariants), `unlinkCurrentInstance` (RH20 AL-rule), `linkDesiredInstance` (RH10 phase-conflict-ack). Three of these four R8 findings are now collected — see "Open R8 backlog" section.
+**Phase I-B-24a attempted dropping `session` global from shim** by migrating the only test-body `session.X` read (T5.2 line 3683) to v3 + dropping the RA3/RA4 `session.instances` mutations as "vestigial". Result: **12 NEW RED + 1 functional regression**. Per R7 reverted (no commit pushed).
 
-2. **Infrastructure (Step H lifecycle)**: `resetSession` + `loadFromLocalStorage` retire when the test-runner afterRestore migrates from v2 sessionStore restoration to v3-only. `session` + `createEmptySession` retire when all 250+/56 v2-fixture call sites migrate. These couple to Step H (DELETE `state/sessionStore.js`).
+**Lesson 1 — naive `session.X` grep is insufficient**: many tests pass bare `session` as the 3rd arg to renderViews (`renderSummaryHealthView(l, r, session)`, etc.). Those calls reference `session` as an identifier without a `.X` suffix, so the audit grep missed them. A proper audit needs to grep for `\bsession\b` (word-boundary) and exclude string-literal/comment matches.
 
-3. **High-usage bulk rewrites**: `addInstance` (129), `createGap` (134), `updateGap` (31). Each requires a multi-commit incremental migration OR a single big-bang commit with aggressive scope.
+**Lesson 2 — RA3/RA4 mutations were NOT vestigial**: while `services/vendorMixService.js computeMixByLayer` reads v3 engagement (per Step D commit `805bb92`), the RA3/RA4 tests *also* test other v2 contracts that DO depend on session.instances. Removing the mutation broke the "computeMixByLayer stateFilter='current' excludes desired instances" test (expected: 0, actual: 4) — the test relied on the v2 session.instances being CONSTRAINED to a known set for the assertion to hold.
+
+**Strategic implication**: Path C step 2 (drop `session` + `createEmptySession` from shim) is **structurally indistinguishable from Path B** (bulk addInstance/createGap/updateGap rewrites) because the same tests use both. The 250+ `session` references and 51 `createEmptySession` calls are scattered across ~40+ test files that ALSO use addInstance/createGap/updateGap. There is no surgical "Path C only" path that avoids touching the high-usage helpers.
+
+**Confirmed strategic crossroads** (sharper than before):
+
+Every remaining shim drop falls into one of three categories:
+
+1. **R8-blocked targets** (need v3-invariant-enforcement arc first): `mapAsset`/`unmapAsset` (mapWorkloadAssets invariants), `unlinkCurrentInstance` (RH20 AL-rule), `linkDesiredInstance` (RH10 phase-conflict-ack). Four R8 findings now collected — see "Open R8 backlog" section.
+
+2. **High-usage helpers tied to fixture-singleton tests**: `addInstance` (129), `createGap` (134), `updateGap` (31), `createEmptySession` (51), `session` (~250 identifier matches). These are interlocked: each test using one usually uses several. Cannot be migrated in isolation; must be rewritten test-by-test as v3-direct fixtures.
 
 **Recommended next-session strategic decision** — pick ONE of:
 
-- **Path A: v3-invariant-enforcement arc** (R8 findings consolidation). Add invariant enforcement to `mapWorkloadAssets`/`updateGap`(reviewed-flip)/`_gapLinkInstance`(phase-conflict)/`_gapUnlinkInstance`(AL-rule). Production-code change; gates 4 deferred tests.
+- **Path A: v3-invariant-enforcement arc** (R8 findings consolidation). Add invariant enforcement to `mapWorkloadAssets`/`updateGap`(reviewed-flip)/`_gapLinkInstance`(phase-conflict)/`_gapUnlinkInstance`(AL-rule). Production-code change; gates 4 deferred tests. **Per `feedback_no_patches_flag_first.md` this requires explicit user approval BEFORE coding.**
 
-- **Path B: Bulk addInstance rewrite arc**. Migrate the 129 addInstance call sites in batches of ~10-15 per commit. Drops `addInstance` from shim. ~10 commits.
+- **Path B: Bulk test-rewrite arc** (the *real* path forward for shim retirement). Rewrite ~40+ test bodies (Suite 12 / Suite 17 / RA / many others) from v2 fixtures (`s = freshSession()` + `addInstance(s,...)` + `createGap(s,...)`) to v3 fixtures (`setActiveEngagement(createEmptyEngagement())` + `commitInstanceAdd` + `commitGapAdd` + snapshot+restore wrapper). Estimate: ~10-15 commits batching 3-5 tests each. Drops `addInstance` + `createGap` + `updateGap` + `createEmptySession` + `session` cascade.
 
-- **Path C: Step H + afterRestore migration arc**. Migrate the test-runner afterRestore to v3-only restoration. Drops `resetSession` + `loadFromLocalStorage` + makes `state/sessionStore.js` deletable. Then `session` + `createEmptySession` migrations cascade.
+- **Path C (REVISED)**: Step H direct-cut. Inline the v2-shape literal `createEmptySession()` factory body into `_v2TestFixtures.js` as a local function (not a re-export). Inline a stable empty `session` literal that gets reset between describe blocks by a beforeEach hook. This is **fig-leaf per R5 strict** but **pragmatically unblocks Step H** (DELETE state/sessionStore.js) without a 40-test rewrite gate. **Requires explicit R5-fig-leaf-acknowledgment from user.**
 
-The optimal order is likely **Path C → Path A → Path B**: Step H unlocks the v3-pure architecture; then R8 findings are addressed in a focused arc; then the bulk rewrites can proceed without legacy session-singleton entanglement.
+The optimal order is likely **Path A → Path B**: address R8 invariants first (a focused arc on production-code v3 hardening), then the bulk test-rewrites can proceed without R8-blocked tests hanging in the backlog. Path C is a pragmatic shortcut available IF the user prefers velocity over architectural purity.
 
 **Standing pattern (Phase I-B-9..22 template)**:
 ```js
