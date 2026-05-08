@@ -1317,102 +1317,195 @@ describe("09 · services/gapsService", () => {
 // ============================================================================
 describe("10 · services/vendorMixService", () => {
 
-  it("computeMixByLayer returns an entry for every requested layerId", () => {
-    const ids = LAYERS.map(l => l.id);
-    const mix = computeMixByLayer({ stateFilter:"combined", layerIds: ids });
-    ids.forEach(id => assert(id in mix, `mix must have key '${id}'`));
+  // rc.7 / 7e-8 redo Step I Phase I-B-30 · Suite 10 v3-direct rewrite.
+  // services/vendorMixService.js is v3-native post-Step D (commit
+  // 805bb92): computeMixByLayer + computeMixByEnv + computeVendorTableData
+  // read getActiveEngagement().instances directly. Pre-rewrite, tests
+  // built v2-shape `s` via freshSession + addInstance(s, ...) -- but
+  // those mutations were VESTIGIAL because the v3 services ignore the
+  // v2 session. The tests passed trivially on an empty v3 engagement.
+  //
+  // Phase I-B-30 makes the tests EXERCISE THE V3 CONTRACT: build v3
+  // engagement via setActiveEngagement(createEmptyEngagement()) +
+  // commitEnvAdd + commitInstanceAdd. Snapshot+restore _active per
+  // Phase I-B-9 pattern.
+  //
+  // Helper to build a v3 engagement with N instances.
+  function v3InstancesEng(instances) {
+    setActiveEngagement(createEmptyEngagement());
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    const envId = getActiveEngagement().environments.allIds[0];
+    instances.forEach(i => {
+      commitInstanceAdd(Object.assign({
+        layerId: i.layerId || LayerIds[0],
+        environmentId: envId,
+        label: i.label || "Inst",
+        vendorGroup: i.vendorGroup || "dell"
+      }, i));
+    });
+  }
+
+  it("computeMixByLayer returns an entry for every requested layerId (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      v3InstancesEng([]);
+      const ids = LAYERS.map(l => l.id);
+      const mix = computeMixByLayer({ stateFilter: "combined", layerIds: ids });
+      ids.forEach(id => assert(id in mix, "mix must have key '" + id + "'"));
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("computeMixByLayer each entry has dell, nonDell, custom, total as numbers", () => {
-    const mix = computeMixByLayer({ stateFilter:"combined", layerIds: LAYERS.map(l => l.id) });
-    LAYERS.forEach(layer => {
-      ["dell","nonDell","custom","total"].forEach(k =>
-        assert(typeof mix[layer.id][k] === "number", `mix['${layer.id}'].${k} must be number`)
+  it("computeMixByLayer each entry has dell, nonDell, custom, total as numbers (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      v3InstancesEng([]);
+      const mix = computeMixByLayer({ stateFilter: "combined", layerIds: LAYERS.map(l => l.id) });
+      LAYERS.forEach(layer => {
+        ["dell", "nonDell", "custom", "total"].forEach(k =>
+          assert(typeof mix[layer.id][k] === "number", "mix['" + layer.id + "']." + k + " must be number")
+        );
+      });
+    } finally { setActiveEngagement(savedEng); }
+  });
+
+  it("computeMixByLayer: total = dell + nonDell + custom (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      v3InstancesEng([
+        { state: "current", label: "D", vendorGroup: "dell" },
+        { state: "current", label: "N", vendorGroup: "nonDell" }
+      ]);
+      const mix = computeMixByLayer({ stateFilter: "current", layerIds: [LayerIds[0]] });
+      const entry = mix[LayerIds[0]];
+      assertEqual(entry.total, entry.dell + entry.nonDell + entry.custom,
+        "total must equal sum of vendor groups");
+      assertEqual(entry.total, 2, "total must reflect 2 added instances");
+    } finally { setActiveEngagement(savedEng); }
+  });
+
+  it("computeMixByLayer stateFilter='current' excludes desired instances (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      v3InstancesEng([
+        { state: "desired", label: "D", vendorGroup: "dell" }
+      ]);
+      const mix = computeMixByLayer({ stateFilter: "current", layerIds: [LayerIds[0]] });
+      assertEqual(mix[LayerIds[0]].total, 0, "current filter must exclude desired instances");
+    } finally { setActiveEngagement(savedEng); }
+  });
+
+  it("computeMixByLayer stateFilter='desired' excludes current instances (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      v3InstancesEng([
+        { state: "current", label: "C", vendorGroup: "dell" }
+      ]);
+      const mix = computeMixByLayer({ stateFilter: "desired", layerIds: [LayerIds[0]] });
+      assertEqual(mix[LayerIds[0]].total, 0, "desired filter must exclude current instances");
+    } finally { setActiveEngagement(savedEng); }
+  });
+
+  it("computeMixByEnv returns an entry for every environment (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      v3InstancesEng([]);
+      const mix = computeMixByEnv({ stateFilter: "combined", environments: ENVIRONMENTS });
+      ENVIRONMENTS.forEach(env =>
+        assert(env.id in mix, "mix must have key '" + env.id + "'")
       );
-    });
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("computeMixByLayer: total = dell + nonDell + custom", () => {
-    const s = freshSession();
-    addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[0], label:"D", vendorGroup:"dell" });
-    addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[0], label:"N", vendorGroup:"nonDell" });
-    const mix = computeMixByLayer({ stateFilter:"current", layerIds:[LayerIds[0]] });
-    const entry = mix[LayerIds[0]];
-    assertEqual(entry.total, entry.dell + entry.nonDell + entry.custom,
-      "total must equal sum of vendor groups");
+  it("computeMixByEnv each entry has required numeric keys (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      v3InstancesEng([]);
+      const mix = computeMixByEnv({ stateFilter: "combined", environments: ENVIRONMENTS });
+      ENVIRONMENTS.forEach(env =>
+        ["dell", "nonDell", "custom", "total"].forEach(k =>
+          assert(typeof mix[env.id][k] === "number", "mixByEnv['" + env.id + "']." + k + " must be number")
+        )
+      );
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("computeMixByLayer stateFilter='current' excludes desired instances", () => {
-    const s = freshSession();
-    addInstance(s, { state:"desired", layerId:LayerIds[0], environmentId:EnvironmentIds[0], label:"D", vendorGroup:"dell" });
-    const mix = computeMixByLayer({ stateFilter:"current", layerIds:[LayerIds[0]] });
-    assertEqual(mix[LayerIds[0]].total, 0, "current filter must exclude desired instances");
+  it("computeVendorTableData returns an array (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      v3InstancesEng([]);
+      assert(Array.isArray(computeVendorTableData({})), "must return an array");
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("computeMixByLayer stateFilter='desired' excludes current instances", () => {
-    const s = freshSession();
-    addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[0], label:"C", vendorGroup:"dell" });
-    const mix = computeMixByLayer({ stateFilter:"desired", layerIds:[LayerIds[0]] });
-    assertEqual(mix[LayerIds[0]].total, 0, "desired filter must exclude current instances");
+  it("computeVendorTableData each row has vendor, vendorGroup, current, desired, total (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      v3InstancesEng([
+        { state: "current", label: "Dell PowerEdge", vendor: "Dell", vendorGroup: "dell" },
+        { state: "desired", label: "Dell PowerStore", vendor: "Dell", vendorGroup: "dell" }
+      ]);
+      const rows = computeVendorTableData({});
+      rows.forEach((r, i) => {
+        assert(typeof r.vendor      === "string", "row[" + i + "].vendor must be string");
+        assert(typeof r.vendorGroup === "string", "row[" + i + "].vendorGroup must be string");
+        assert(typeof r.current     === "number", "row[" + i + "].current must be number");
+        assert(typeof r.desired     === "number", "row[" + i + "].desired must be number");
+        assert(typeof r.total       === "number", "row[" + i + "].total must be number");
+      });
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("computeMixByEnv returns an entry for every environment", () => {
-    const mix = computeMixByEnv({ stateFilter:"combined", environments: ENVIRONMENTS });
-    ENVIRONMENTS.forEach(env =>
-      assert(env.id in mix, `mix must have key '${env.id}'`)
-    );
+  it("computeVendorTableData: row.total = row.current + row.desired (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      v3InstancesEng([
+        { state: "current", label: "X", vendor: "Dell", vendorGroup: "dell" }
+      ]);
+      computeVendorTableData({}).forEach((r, i) =>
+        assertEqual(r.total, r.current + r.desired,
+          "row[" + i + "].total must equal current + desired")
+      );
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("computeMixByEnv each entry has required numeric keys", () => {
-    const mix = computeMixByEnv({ stateFilter:"combined", environments: ENVIRONMENTS });
-    ENVIRONMENTS.forEach(env =>
-      ["dell","nonDell","custom","total"].forEach(k =>
-        assert(typeof mix[env.id][k] === "number", `mixByEnv['${env.id}'].${k} must be number`)
-      )
-    );
+  it("computeVendorTableData sorted by total descending (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      v3InstancesEng([
+        { state: "current", label: "A1", vendor: "Dell",    vendorGroup: "dell" },
+        { state: "current", label: "A2", vendor: "Dell",    vendorGroup: "dell" },
+        { state: "current", label: "B1", vendor: "Cisco",   vendorGroup: "nonDell" }
+      ]);
+      const rows = computeVendorTableData({});
+      for (let i = 0; i < rows.length - 1; i++)
+        assert(rows[i].total >= rows[i + 1].total, "rows must be sorted by total descending");
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("computeVendorTableData returns an array", () => {
-    assert(Array.isArray(computeVendorTableData({})), "must return an array");
+  it("vendor service functions do not mutate engagement.instances (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      v3InstancesEng([
+        { state: "current", label: "X", vendorGroup: "dell" }
+      ]);
+      const snap = JSON.stringify(getActiveEngagement().instances);
+      computeMixByLayer({ stateFilter: "combined", layerIds: LAYERS.map(l => l.id) });
+      computeMixByEnv({ stateFilter: "combined", environments: ENVIRONMENTS });
+      computeVendorTableData({});
+      assertEqual(JSON.stringify(getActiveEngagement().instances), snap,
+        "vendor services must not mutate engagement.instances");
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("computeVendorTableData each row has vendor, vendorGroup, current, desired, total", () => {
-    const rows = computeVendorTableData({});
-    rows.forEach((r, i) => {
-      assert(typeof r.vendor      === "string", `row[${i}].vendor must be string`);
-      assert(typeof r.vendorGroup === "string", `row[${i}].vendorGroup must be string`);
-      assert(typeof r.current     === "number", `row[${i}].current must be number`);
-      assert(typeof r.desired     === "number", `row[${i}].desired must be number`);
-      assert(typeof r.total       === "number", `row[${i}].total must be number`);
-    });
-  });
-
-  it("computeVendorTableData: row.total = row.current + row.desired", () => {
-    computeVendorTableData({}).forEach((r, i) =>
-      assertEqual(r.total, r.current + r.desired,
-        `row[${i}].total must equal current + desired`)
-    );
-  });
-
-  it("computeVendorTableData sorted by total descending", () => {
-    const rows = computeVendorTableData({});
-    for (let i = 0; i < rows.length - 1; i++)
-      assert(rows[i].total >= rows[i+1].total, "rows must be sorted by total descending");
-  });
-
-  it("vendor service functions do not mutate session", () => {
-    const snap = JSON.stringify(session);
-    computeMixByLayer({ stateFilter:"combined", layerIds: LAYERS.map(l=>l.id) });
-    computeMixByEnv({ stateFilter:"combined", environments: ENVIRONMENTS });
-    computeVendorTableData({});
-    assertEqual(JSON.stringify(session), snap, "vendor services must not mutate session");
-  });
-
-  it("vendorMixService returns serialisable plain objects", () => {
-    doesNotThrow(() => JSON.stringify(computeMixByLayer({ stateFilter:"combined", layerIds:[] })),
-      "computeMixByLayer must be serialisable");
-    doesNotThrow(() => JSON.stringify(computeVendorTableData({})),
-      "computeVendorTableData must be serialisable");
+  it("vendorMixService returns serialisable plain objects (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      v3InstancesEng([]);
+      doesNotThrow(() => JSON.stringify(computeMixByLayer({ stateFilter: "combined", layerIds: [] })),
+        "computeMixByLayer must be serialisable");
+      doesNotThrow(() => JSON.stringify(computeVendorTableData({})),
+        "computeVendorTableData must be serialisable");
+    } finally { setActiveEngagement(savedEng); }
   });
 
 });
