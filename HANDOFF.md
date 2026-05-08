@@ -85,6 +85,30 @@ Phase I-B-24 + I-B-25 demonstrated the high-density principal-architect pattern:
 
 **Estimate to clear remaining 5 helpers**: 5-8 high-density commits if Suites are batched well. Then Step H + Step J + Step K mechanical deletes (3-5 more commits). **rc.7 tag in ~10-15 more commits at this density.**
 
+## Lessons from Phase I-B-28 attempt + revert (2026-05-09 night)
+
+**Phase I-B-28 attempt: Suite 09 (gapsService) v3-direct rewrite + T5.20 self-contained fix.**
+
+Suite 09's 11 tests all use `freshSession()` + `createGap()`. I migrated them to v3-direct (commitGapAdd via the same `v3GapsEng()` helper pattern as Suite 11 in Phase I-B-27). The rewrite itself made all 11 Suite-09 tests pass. **However** — the rewrite broke test pollution downstream:
+
+- **T5.20** (Suite 35 line 3089, "roadmap view renders 3 phase-column headers") was relying on test pollution leaving v3 engagement with at least 1 gap. `renderSummaryRoadmapView` (line 45-53 of `ui/views/SummaryRoadmapView.js`) returns early with the empty-state card when `gapsCount === 0` and never renders `.roadmap-phase-head` elements.
+
+- After Suite 09 + Suite 11 v3-direct rewrites with snapshot+restore wrappers, the engagement state at T5.20's run time has 0 gaps. T5.20 fails.
+
+- I attempted a self-contained-setup fix on T5.20 (build engagement explicitly via `commitEnvAdd` + `commitGapAdd` before render). **The test became FLAKY**: passed once at 4:48:48, failed again at 4:52:53 in a subsequent runIsolated iteration. Root cause unclear — possibly the testRunner's runIsolated wraps the whole pass and runs multiple iterations, with state interactions I haven't fully traced.
+
+Per R7, **reverted twice**: once for the bare Suite 09 rewrite, once for the Suite 09 + T5.20-self-contained-fix attempt. Both reverts restored banner to 1130/1135 GREEN.
+
+**Strategic implication for Path B**: each Suite migration may break downstream tests via pollution dependencies that aren't visible until rebuild + smoke. The remaining Suites (10, 12, 13+) likely have similar interactions. Per principal-architect, the safe path forward requires:
+
+1. **Audit downstream dependencies BEFORE rewriting**: grep for which views/tests read engagement state and trace the implicit setup chain. Time-consuming.
+2. **OR rewrite ALL fixture-singleton-dependent tests in one big-bang commit** so downstream tests see fully-migrated upstream + don't rely on any pollution. Risky single commit but cleaner.
+3. **OR introduce a per-Suite "ensureV3Fixture" helper** that's called at Suite start (beforeEach equivalent) so each Suite's downstream renderer tests have a known engagement state. Semi-fig-leaf but pragmatic.
+
+Per the user's "no patching, principal-architect practices" direction, the right move is **#1 (audit-first)** before further bulk rewrites. This needs careful tracing, not high-density batching. The user should be informed before continuing.
+
+**Phase I-B-27 (Suite 11) shipped clean** because Suite 11's tests don't have downstream dependents — they're pure roadmapService function tests. Suite 09 was different.
+
 ## Lessons from this session (Phase I-B-24a revert)
 
 **Phase I-B-24a attempted dropping `session` global from shim** by migrating the only test-body `session.X` read (T5.2 line 3683) to v3 + dropping the RA3/RA4 `session.instances` mutations as "vestigial". Result: **12 NEW RED + 1 functional regression**. Per R7 reverted (no commit pushed).
