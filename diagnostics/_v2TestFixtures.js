@@ -131,51 +131,29 @@ export {
   unlinkCurrentInstance
 } from "../interactions/gapsCommands.js";
 
-// ─── from interactions/desiredStateSync.js ─────────────────────────
-// rc.7 / 7e-8 redo Step I Phase I-B-11 · getDesiredCounterpart +
-// getCurrentSource dropped. Pure dead re-exports -- own-grep returns
-// the canonical exports in interactions/desiredStateSync.js + the
-// appSpec.js import line that this commit also trimmed + the v3
-// successors in state/dispositionLogic.js (consumed by ui/views/
-// MatrixView.js directly, NOT through this shim). Zero call sites in
-// *.js elsewhere for the v2 shim path.
+// ─── from interactions/desiredStateSync.js ─── ENTIRE BLOCK RETIRED ─
 //
-// rc.7 / 7e-8 redo Step I Phase I-B-13 · syncGapFromDesired dropped.
-// Its only test consumer (RH9 in Suite 28 of appSpec.js) was rewritten
-// v3-direct in the same commit using commitSyncGapFromDesired from
-// state/dispositionLogic.js. v3 architecture explicitly drops the v2
-// closeReason / closedAt fields per dispositionLogic.js line 199-203
-// comment ("v3-pure drops the v2 closeReason / closedAt fields . not
-// in v3 GapSchema; status:'closed' alone is the signal"); RH9's v2-only
-// sub-assertions on those fields were dropped per Step I plan.
+// rc.7 / 7e-8 redo Step I Phase I-B-20 · the desiredStateSync
+// re-export block FULLY RETIRES. buildGapFromDisposition was the
+// last surviving member; its 4 test consumers (T6.4 line 2300, RH16
+// line 6167, RH17 line 6181, RH18 line 6192) were all rewritten
+// v3-direct in this commit using buildGapFromDispositionV3 (aliased
+// import from state/dispositionLogic.js). RH16 additionally uses
+// engagementToV2Session at the boundary to feed the still-v2-shape
+// services/roadmapService.js buildProjects (separate migration arc).
 //
-// rc.7 / 7e-8 redo Step I Phase I-B-14 · syncGapsFromCurrentCriticality
-// dropped. Its only test consumer (RH13 in Suite 28 of appSpec.js) was
-// rewritten v3-direct in the same commit using commitSyncGapsFromCurrent-
-// Criticality from state/dispositionLogic.js. v3 preserves the
-// urgencyOverride invariant via the filter at line 250 of
-// syncGapsFromCurrentCriticalityAction; the contract holds.
+// Phase-by-phase ledger:
+//   Phase I-B-11: getDesiredCounterpart + getCurrentSource dropped.
+//   Phase I-B-13: syncGapFromDesired dropped (RH9 v3-direct).
+//   Phase I-B-14: syncGapsFromCurrentCriticality dropped (RH13 v3-direct).
+//   Phase I-B-15: syncDesiredFromGap dropped (T4.5 + T6.3 v3-direct).
+//   Phase I-B-16: confirmPhaseOnLink dropped (T6.1 + T6.2 v3-direct).
+//   Phase I-B-18: DISPOSITION_ACTIONS + ACTION_TO_GAP_TYPE dropped
+//                 (import-source switch, no test rewrites).
+//   Phase I-B-20: buildGapFromDisposition dropped (T6.4 + RH16/17/18
+//                 v3-direct). BLOCK RETIRES.
 //
-// rc.7 / 7e-8 redo Step I Phase I-B-15 · syncDesiredFromGap dropped.
-// Its 2 test consumers (T4.5 line 2066, T6.3 line 2431) were rewritten
-// v3-direct in the same commit using commitSyncDesiredFromGap from
-// state/dispositionLogic.js. T6.3's v2-only acknowledged-arg contract
-// was scoped out (not enforced by v3 _gapLinkInstance; covered by RH10
-// directly); T6.3's v3-direct form focuses on the sync-propagation
-// contract (gap.phase -> linked desired.priority via phaseToPriority).
-//
-// rc.7 / 7e-8 redo Step I Phase I-B-16 · confirmPhaseOnLink dropped.
-// Its 2 test consumers (T6.1 line 2444 + T6.2 line 2458) were
-// rewritten v3-direct in the same commit using confirmPhaseOnLinkV3
-// (aliased import from state/dispositionLogic.js -- v3 successor
-// shares signature shape (engagement, gapId, desiredInstanceId) and
-// status-return contract).
-//
-// rc.7 / 7e-8 redo Step I Phase I-B-18 · DISPOSITION_ACTIONS +
-// ACTION_TO_GAP_TYPE dropped. These are constants (not functions);
-// state/dispositionLogic.js re-exports them from core/taxonomy.js
-// with identical values. The appSpec.js import-line was switched in
-// the same commit; zero test rewrites required.
-export {
-  buildGapFromDisposition
-} from "../interactions/desiredStateSync.js";
+// V-FLOW-V3-PURE-5 (interactions/desiredStateSync.js MUST NOT exist)
+// remains expected-RED until Step J deletes the canonical file --
+// every shim path consumer is now retired so Step J unblocks once
+// the matrixCommands + gapsCommands consumers also clear.

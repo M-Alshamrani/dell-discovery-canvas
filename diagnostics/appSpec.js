@@ -2297,16 +2297,43 @@ describe("22 · services/programsService", () => {
 
   // ── v2.1 · reviewed flag (T6.4-9) ────────────────────────
 
-  it("Auto-drafted gaps via buildGapFromDisposition start reviewed=false (T6.4)", () => {
-    const s = freshSession();
-    const cur = addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[0],
-      label:"Src", vendorGroup:"dell", criticality:"High" });
-    const des = addInstance(s, { state:"desired", layerId:LayerIds[0], environmentId:EnvironmentIds[0],
-      label:"Tgt", vendorGroup:"dell", disposition:"replace", priority:"Now", originId: cur.id });
-    const props = buildGapFromDisposition(s, des);
-    assertEqual(props.reviewed, false, "auto-drafted props carry reviewed: false");
-    const gap = createGap(s, props);
-    assertEqual(gap.reviewed, false, "persisted gap carries reviewed: false");
+  it("Auto-drafted gaps via buildGapFromDisposition start reviewed=false (T6.4 · v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-20 · v3-direct rewrite.
+    // The contract -- "buildGapFromDisposition produces a gap-input
+    // with reviewed:false; commitGapAdd persists that flag" -- is
+    // v3-applicable. v3 buildGapFromDisposition (state/dispositionLogic
+    // .js line 77) takes (engagement, desiredInstance) and returns the
+    // same gap-input shape.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const envId = getActiveEngagement().environments.allIds[0];
+      const curRes = commitInstanceAdd({
+        state: "current", layerId: LayerIds[0], environmentId: envId,
+        label: "Src", vendorGroup: "dell", criticality: "High"
+      });
+      assertEqual(curRes.ok, true, "commitInstanceAdd(current) succeeded");
+      const curId = getActiveEngagement().instances.byState.current[0];
+      const desRes = commitInstanceAdd({
+        state: "desired", layerId: LayerIds[0], environmentId: envId,
+        label: "Tgt", vendorGroup: "dell",
+        disposition: "replace", priority: "Now", originId: curId
+      });
+      assertEqual(desRes.ok, true, "commitInstanceAdd(desired) succeeded");
+      const desId = getActiveEngagement().instances.byState.desired[0];
+      const desInst = getActiveEngagement().instances.byId[desId];
+      const props = buildGapFromDispositionV3(getActiveEngagement(), desInst);
+      assertEqual(props.reviewed, false, "auto-drafted props carry reviewed: false");
+      const gapAddRes = commitGapAdd(props);
+      assertEqual(gapAddRes.ok, true, "commitGapAdd succeeded");
+      const gapId = getActiveEngagement().gaps.allIds.at(-1);
+      assertEqual(getActiveEngagement().gaps.byId[gapId].reviewed, false,
+        "persisted gap carries reviewed: false");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   it("Manually-created gaps default reviewed=true (T6.5)", () => {
@@ -3207,38 +3234,24 @@ describe("17 · AI integration readiness", () => {
 import {
   DISPOSITION_ACTIONS, ACTION_TO_GAP_TYPE
 } from "../state/dispositionLogic.js";
-import {
-  // rc.7 / 7e-8 redo Step I Phase I-B-11 · getDesiredCounterpart +
-  // getCurrentSource dropped (zero call sites in *.js post-audit; the
-  // v3 successors live in state/dispositionLogic.js with the same names
-  // and are consumed directly by ui/views/MatrixView.js).
-  buildGapFromDisposition,
-  // rc.7 / 7e-8 redo Step I Phase I-B-13 · syncGapFromDesired dropped.
-  // Its only test consumer (RH9 in Suite 28 of appSpec.js) was rewritten
-  // v3-direct in the same commit using commitSyncGapFromDesired from
-  // state/dispositionLogic.js. v3 architecture explicitly drops the
-  // v2 closeReason / closedAt fields (per dispositionLogic.js line 199-
-  // 203 comment); RH9's v2-only sub-assertions on those fields were
-  // dropped per the docs/V2_DELETION_ARCHITECTURE.md Step I plan.
-  //
-  // rc.7 / 7e-8 redo Step I Phase I-B-14 · syncGapsFromCurrentCriticality
-  // dropped. Its only test consumer (RH13 in Suite 28 of appSpec.js) was
-  // rewritten v3-direct in the same commit using commitSyncGapsFromCurrent-
-  // Criticality from state/dispositionLogic.js. v3 preserves the
-  // urgencyOverride invariant.
-  //
-  // rc.7 / 7e-8 redo Step I Phase I-B-15 · syncDesiredFromGap dropped.
-  // Its 2 test consumers (T4.5 line 2066, T6.3 line 2431) were rewritten
-  // v3-direct in the same commit using commitSyncDesiredFromGap from
-  // state/dispositionLogic.js.
-  //
-  // rc.7 / 7e-8 redo Step I Phase I-B-16 · confirmPhaseOnLink dropped.
-  // Its 2 test consumers (T6.1 line 2444 + T6.2 line 2458) were
-  // rewritten v3-direct in the same commit using confirmPhaseOnLinkV3
-  // (aliased import from state/dispositionLogic.js) — the v3 successor
-  // has the same signature shape (engagement, gapId, desiredInstanceId)
-  // and identical status-return contract.
-} from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed via test-fixture shim (was: ../interactions/desiredStateSync.js)
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-20 · ENTIRE desiredStateSync shim
+// import block RETIRED. buildGapFromDisposition was the last consumer
+// here; its 4 test consumers (T6.4 line 2300, RH16 line 6167, RH17
+// line 6181, RH18 line 6192) were all rewritten v3-direct in this
+// commit using buildGapFromDispositionV3 (aliased from state/
+// dispositionLogic.js). The shim's desiredStateSync re-export block
+// fully drops in the same commit.
+//
+// Phase I-B-11 dropped getDesiredCounterpart + getCurrentSource (zero
+// call sites in *.js post-audit; the v3 successors live in state/
+// dispositionLogic.js with the same names and are consumed directly
+// by ui/views/MatrixView.js).
+  // Phase I-B-13: syncGapFromDesired dropped (RH9 v3-direct).
+  // Phase I-B-14: syncGapsFromCurrentCriticality dropped (RH13 v3-direct).
+  // Phase I-B-15: syncDesiredFromGap dropped (T4.5 + T6.3 v3-direct).
+  // Phase I-B-16: confirmPhaseOnLink dropped (T6.1 + T6.2 v3-direct
+  //               via confirmPhaseOnLinkV3 aliased import).
 
 
 // ============================================================================
@@ -6164,46 +6177,126 @@ describe("42 · Phase 19k · v2.4.11 rules hardening + relationships polish", ()
       "migrator must default urgencyOverride to false on legacy gaps");
   });
 
-  it("RH16 · D3 · roadmap project verb becomes 'Retirement' when ALL constituent gaps are retire-action", () => {
-    var s = createEmptySession();
-    var cur = addInstance(s, { state:"current", layerId:"storage", environmentId:"coreDc",
-      label:"Old", vendorGroup:"dell", criticality:"Medium" });
-    var des = addInstance(s, { state:"desired", layerId:"storage", environmentId:"coreDc",
-      label:"Out", vendorGroup:"dell", disposition:"retire", priority:"Later", originId: cur.id });
-    createGap(s, buildGapFromDisposition(s, des));
-    var projects = buildProjects(s, {}).projects;
-    var p = projects.find(pr => pr.envId === "coreDc" && pr.layerId === "storage" && pr.gapType === "ops");
-    assert(p, "retire→ops project must exist");
-    assert(/Retirement/.test(p.name),
-      "project name must include 'Retirement' when all constituent gaps are retire-action (got: " + p.name + ")");
+  it("RH16 · D3 · roadmap project verb becomes 'Retirement' when ALL constituent gaps are retire-action (v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-20 · v3-direct rewrite.
+    // The contract -- "all retire-action gaps in a (env, layer, ops)
+    // project bucket get a 'Retirement' verb" -- is v3-applicable.
+    // services/roadmapService.js buildProjects still reads v2 session
+    // shape (a separate migration arc); use engagementToV2Session
+    // (v3->v2 adapter at the file boundary) to feed it from the v3
+    // engagement.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const envId = getActiveEngagement().environments.allIds[0];
+      const curRes = commitInstanceAdd({
+        state: "current", layerId: "storage", environmentId: envId,
+        label: "Old", vendorGroup: "dell", criticality: "Medium"
+      });
+      assertEqual(curRes.ok, true, "commitInstanceAdd(current) succeeded");
+      const curId = getActiveEngagement().instances.byState.current[0];
+      const desRes = commitInstanceAdd({
+        state: "desired", layerId: "storage", environmentId: envId,
+        label: "Out", vendorGroup: "dell",
+        disposition: "retire", priority: "Later", originId: curId
+      });
+      assertEqual(desRes.ok, true, "commitInstanceAdd(desired) succeeded");
+      const desId = getActiveEngagement().instances.byState.desired[0];
+      const desInst = getActiveEngagement().instances.byId[desId];
+      const gapInput = buildGapFromDispositionV3(getActiveEngagement(), desInst);
+      const gapAddRes = commitGapAdd(gapInput);
+      assertEqual(gapAddRes.ok, true, "commitGapAdd succeeded");
+      // buildProjects is v2-shape; project from v3 to v2 at the boundary.
+      const v2shape = engagementToV2Session(getActiveEngagement());
+      const projects = buildProjects(v2shape, {}).projects;
+      const p = projects.find(pr => pr.envId === "coreDc" && pr.layerId === "storage" && pr.gapType === "ops");
+      assert(p, "retire→ops project must exist");
+      assert(/Retirement/.test(p.name),
+        "project name must include 'Retirement' when all constituent gaps are retire-action (got: " + p.name + ")");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
-  it("RH17 · C3 · auto-draft description uses arrow template when both source + desired labels present", () => {
-    var s = createEmptySession();
-    var cur = addInstance(s, { state:"current", layerId:"compute", environmentId:"coreDc",
-      label:"PowerEdge old", vendorGroup:"dell" });
-    var des = addInstance(s, { state:"desired", layerId:"compute", environmentId:"coreDc",
-      label:"PowerEdge new", vendorGroup:"dell", disposition:"replace", originId: cur.id });
-    var props = buildGapFromDisposition(s, des);
-    assert(/PowerEdge old → PowerEdge new/.test(props.description),
-      "description must read 'Replace PowerEdge old → PowerEdge new' (got: " + props.description + ")");
+  it("RH17 · C3 · auto-draft description uses arrow template when both source + desired labels present (v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-20 · v3-direct rewrite.
+    // Asserts the v3 buildGapFromDisposition description-formatting
+    // contract (arrow template "X → Y" for replace gaps).
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const envId = getActiveEngagement().environments.allIds[0];
+      const curRes = commitInstanceAdd({
+        state: "current", layerId: "compute", environmentId: envId,
+        label: "PowerEdge old", vendorGroup: "dell"
+      });
+      assertEqual(curRes.ok, true, "commitInstanceAdd(current) succeeded");
+      const curId = getActiveEngagement().instances.byState.current[0];
+      const desRes = commitInstanceAdd({
+        state: "desired", layerId: "compute", environmentId: envId,
+        label: "PowerEdge new", vendorGroup: "dell",
+        disposition: "replace", originId: curId
+      });
+      assertEqual(desRes.ok, true, "commitInstanceAdd(desired) succeeded");
+      const desId = getActiveEngagement().instances.byState.desired[0];
+      const desInst = getActiveEngagement().instances.byId[desId];
+      const props = buildGapFromDispositionV3(getActiveEngagement(), desInst);
+      // v3 buildGapFromDisposition uses ASCII arrow "->" (vs v2 unicode
+      // arrow "→") and appends a layer-name suffix ("[Compute]").
+      // Contract preserved: description includes both source and
+      // desired labels in arrow-template form.
+      assert(/PowerEdge old\s*->\s*PowerEdge new/.test(props.description),
+        "description must contain 'PowerEdge old -> PowerEdge new' arrow template (got: " + props.description + ")");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
-  it("RH18 · C4 · auto-draft pre-fills notes for every action (not just ops)", () => {
-    var s = createEmptySession();
-    var cur = addInstance(s, { state:"current", layerId:"storage", environmentId:"coreDc",
-      label:"X", vendorGroup:"dell" });
-    var des = addInstance(s, { state:"desired", layerId:"storage", environmentId:"coreDc",
-      label:"Y", vendorGroup:"dell", disposition:"replace", originId: cur.id });
-    var props = buildGapFromDisposition(s, des);
-    assert(props.notes && props.notes.length > 0,
-      "Replace auto-draft must have non-empty notes (got: " + JSON.stringify(props.notes) + ")");
-    // Introduce path
-    var introDes = addInstance(s, { state:"desired", layerId:"workload", environmentId:"coreDc",
-      label:"AI Pilot", vendorGroup:"dell", disposition:"introduce" });
-    var introProps = buildGapFromDisposition(s, introDes);
-    assert(/Net-new/i.test(introProps.notes),
-      "Introduce auto-draft notes must mention 'Net-new' (got: " + introProps.notes + ")");
+  it("RH18 · C4 · auto-draft pre-fills notes for every action (not just ops) (v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-20 · v3-direct rewrite.
+    // Asserts the v3 buildGapFromDisposition notes-prefilling contract
+    // for both Replace (origin-based) + Introduce (net-new) paths.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const envId = getActiveEngagement().environments.allIds[0];
+      const curRes = commitInstanceAdd({
+        state: "current", layerId: "storage", environmentId: envId,
+        label: "X", vendorGroup: "dell"
+      });
+      assertEqual(curRes.ok, true, "commitInstanceAdd(current) succeeded");
+      const curId = getActiveEngagement().instances.byState.current[0];
+      const desRes = commitInstanceAdd({
+        state: "desired", layerId: "storage", environmentId: envId,
+        label: "Y", vendorGroup: "dell",
+        disposition: "replace", originId: curId
+      });
+      assertEqual(desRes.ok, true, "commitInstanceAdd(desired) succeeded");
+      const desId = getActiveEngagement().instances.byState.desired[0];
+      const desInst = getActiveEngagement().instances.byId[desId];
+      const props = buildGapFromDispositionV3(getActiveEngagement(), desInst);
+      assert(props.notes && props.notes.length > 0,
+        "Replace auto-draft must have non-empty notes (got: " + JSON.stringify(props.notes) + ")");
+      // Introduce path
+      const introRes = commitInstanceAdd({
+        state: "desired", layerId: "workload", environmentId: envId,
+        label: "AI Pilot", vendorGroup: "dell", disposition: "introduce"
+      });
+      assertEqual(introRes.ok, true, "commitInstanceAdd(introduce) succeeded");
+      const introId = getActiveEngagement().instances.byState.desired[1];
+      const introInst = getActiveEngagement().instances.byId[introId];
+      const introProps = buildGapFromDispositionV3(getActiveEngagement(), introInst);
+      assert(/Net-new/i.test(introProps.notes),
+        "Introduce auto-draft notes must mention 'Net-new' (got: " + introProps.notes + ")");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   it("RH19 · B2 · setPrimaryLayer keeps invariant when called from updateGap with new layerId", () => {
