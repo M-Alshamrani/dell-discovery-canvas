@@ -59,17 +59,21 @@ import {
 } from "../core/models.js";
 
 import {
-  session, createEmptySession, resetSession,
+  session, createEmptySession
   // rc.7 / 7e-8 redo Step I Phase I-B-7 · saveToLocalStorage dropped
   // (was a dead import; zero call sites in *.js post-audit).
-  loadFromLocalStorage
   // rc.7 / 7e-8 redo Step I Phase I-B-5 · applyContextSave dropped.
   // Was used only by PR1.a + PR1.b which were dropped this commit
   // (v2-only contract; v3 path goes through commitContextEdit per
   // V-FLOW-MIGRATE-TAB1-CUSTOMER-1).
-  // Note: `replaceSession` is imported separately lower in the file
-  // (line ~4195) for VT26 -- migration to v3-direct deferred to
-  // Phase I-B-6 (its own commit per R8).
+  //
+  // rc.7 / 7e-8 redo Step I Phase I-B-23 (Path C) · resetSession +
+  // loadFromLocalStorage dropped. Their only consumer was the
+  // test-runner afterRestore at line ~17147, which was migrated to
+  // a v3-pure path (v3 _rehydrateEngagementFromStorage() handles
+  // restore; v2 sessionStore singleton refresh is redundant in v3-
+  // pure architecture). Test-body resetSession usage was migrated
+  // in Phase I-B-22.
 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../state/sessionStore.js)
 // rc.7 / 7e-8 redo Step I-B-1 · migrateLegacySession sourced directly
 // from state/runtimeMigrate.js (its canonical home post-Step B). Was
@@ -17144,10 +17148,18 @@ export function runAllTests() {
       delete document.body.dataset.runningTests;
     } catch (_e) { /* best-effort */ }
 
-    if (!loadFromLocalStorage()) {
-      // No saved session in localStorage → fresh-start state.
-      resetSession();
-    }
+    // rc.7 / 7e-8 redo Step I Phase I-B-23 (Path C) · v2 sessionStore
+    // restoration path RETIRED. Pre-rewrite the afterRestore called
+    // loadFromLocalStorage() to refresh the v2 session singleton from
+    // the (just-restored-by-runIsolated) localStorage, falling back to
+    // resetSession() if the snapshot was empty. Both calls were
+    // defensive carryovers from before Step G when the v2 session was
+    // the source of truth. Post-Step-G the v3 engagement is the source
+    // of truth (subscribeActiveEngagement-driven shell rendering); the
+    // v3 _rehydrateEngagementFromStorage() call below already restores
+    // _active from the same restored localStorage. The v2 singleton
+    // refresh is redundant in v3-pure architecture.
+    //
     // v2.4.15 . FB test cleanup also resets filterState in-memory; after
     // localStorage restore, re-load the filter snapshot so the body
     // data attributes match the user's pre-test filter view.
@@ -17166,10 +17178,17 @@ export function runAllTests() {
     // indicator back to its true status: idle when fresh, saved/demo
     // when the user has data on disk. Keeps the topbar honest after a
     // page reload that runs tests.
+    //
+    // rc.7 / 7e-8 redo Step I Phase I-B-23 (Path C) · v2 session.* reads
+    // migrated to v3 getActiveEngagement(). After
+    // _rehydrateEngagementFromStorage() above, _active reflects the
+    // restored snapshot (or stays null if localStorage was empty).
     try {
-      var hasName = !!(session.customer && session.customer.name && session.customer.name.trim());
-      if (hasName || session.isDemo) {
-        _markSaved({ isDemo: !!session.isDemo });
+      var eng = getActiveEngagement();
+      var hasName = !!(eng && eng.customer && eng.customer.name && eng.customer.name.trim());
+      var isDemo = !!(eng && eng.meta && eng.meta.isDemo);
+      if (hasName || isDemo) {
+        _markSaved({ isDemo: isDemo });
       } else {
         _markIdle();
       }

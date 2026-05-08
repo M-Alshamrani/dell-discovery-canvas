@@ -37,28 +37,21 @@
 // architecturally correct one.
 export {
   session,
-  createEmptySession,
+  createEmptySession
   // rc.7 / 7e-8 redo Step I Phase I-B-8 · createDemoSession + resetToDemo
-  // dropped from this shim. createDemoSession is consumed via direct
-  // imports from ../state/demoSession.js (lines 5209 + 7793 in appSpec
-  // pre-cleanup, aliased as createDemoSessionForSF + txCreateDemoSession).
-  // resetToDemo had ZERO call sites in *.js post-audit.
-  resetSession,
+  // dropped from this shim.
   // rc.7 / 7e-8 redo Step I Phase I-B-6 · replaceSession dropped.
-  // V3 successor is state/engagementStore.js setActiveEngagement. The v2
-  // helper's last test consumer (VT26) was rewritten v3-direct in the
-  // same commit (createEmptyEngagement + commitContextEdit +
-  // engagementToV2Session for renderer signatures).
   // rc.7 / 7e-8 redo Step I Phase I-B-5 · applyContextSave dropped.
-  // V3 successor is state/adapter.js commitContextEdit (asserted by
-  // V-FLOW-MIGRATE-TAB1-CUSTOMER-1 in §T36 source-grep). The v2 helper's
-  // only test consumers (PR1.a + PR1.b) were dropped in the same commit.
-  // rc.7 / 7e-8 redo Step I Phase I-B-7 · saveToLocalStorage dropped
-  // (was a dead re-export; zero call sites in appSpec.js *.js).
-  loadFromLocalStorage
+  // rc.7 / 7e-8 redo Step I Phase I-B-7 · saveToLocalStorage dropped.
   // rc.7 / 7e-8 redo Step I Phase I-B-3 · isFreshSession dropped.
-  // V3 successor is ui/views/ContextView.js _isFreshEngagement (covered
-  // end-to-end by FS3 + FS4 in appSpec).
+  //
+  // rc.7 / 7e-8 redo Step I Phase I-B-23 (Path C) · resetSession +
+  // loadFromLocalStorage dropped. Their only consumer was the test-
+  // runner afterRestore in appSpec.js, migrated to a v3-pure path
+  // in the same commit (v3 _rehydrateEngagementFromStorage handles
+  // restoration; v2 sessionStore singleton refresh is redundant
+  // post-Step-G). Test-body resetSession usage was migrated in
+  // Phase I-B-22 (commit 6abd74f).
 } from "../state/sessionStore.js";
 
 // ─── from interactions/matrixCommands.js ───────────────────────────
