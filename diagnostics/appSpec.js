@@ -2063,19 +2063,57 @@ describe("14 · ui/views/GapsEditView — DOM contract", () => {
     assert(card.classList.contains("crit-high"), "gap card must carry .crit-high when urgency=High");
   });
 
-  it("Drag-drop to new column triggers bidirectional phase sync (T4.5)", () => {
-    const s = freshSession();
-    const cur = addInstance(s, { state:"current", layerId:LayerIds[0], environmentId:EnvironmentIds[0],
-      label:"Src", vendorGroup:"dell", criticality:"High" });
-    const des = addInstance(s, { state:"desired", layerId:LayerIds[0], environmentId:EnvironmentIds[0],
-      label:"Tgt", vendorGroup:"dell", disposition:"replace", priority:"Now", originId: cur.id });
-    createGap(s, { description:"G", layerId:LayerIds[0], phase:"now",
-      relatedCurrentInstanceIds:[cur.id], relatedDesiredInstanceIds:[des.id] });
-    // Mirror what the drop handler does: updateGap + syncDesiredFromGap.
-    updateGap(s, s.gaps[0].id, { phase:"later" });
-    syncDesiredFromGap(s, s.gaps[0].id);
-    assertEqual(s.gaps[0].phase, "later", "gap phase must update");
-    assertEqual(des.priority, "Later", "linked desired instance priority must sync to 'Later'");
+  it("Drag-drop to new column triggers bidirectional phase sync (T4.5 · v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-15 · v3-direct rewrite.
+    // Pre-rewrite used v2 syncDesiredFromGap. The contract -- "after a
+    // gap's phase updates, the linked desired-instance priority must
+    // sync to match the new phase via the phaseToPriority mapping
+    // {now:'Now', next:'Next', later:'Later'}" -- is v3-applicable:
+    // state/dispositionLogic.js syncDesiredFromGapAction (line 272-292)
+    // implements this exactly. v3 commitSyncDesiredFromGap (line 294)
+    // wraps it via commitAction.
+    //
+    // Snapshot+restore _active per Phase I-B-9 pollution-prevention pattern.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const envId = getActiveEngagement().environments.allIds[0];
+      const curRes = commitInstanceAdd({
+        state: "current", layerId: LayerIds[0], environmentId: envId,
+        label: "Src", vendorGroup: "dell", criticality: "High"
+      });
+      assertEqual(curRes.ok, true, "commitInstanceAdd(current) succeeded");
+      const curId = getActiveEngagement().instances.byState.current[0];
+      const desRes = commitInstanceAdd({
+        state: "desired", layerId: LayerIds[0], environmentId: envId,
+        label: "Tgt", vendorGroup: "dell",
+        disposition: "replace", priority: "Now", originId: curId
+      });
+      assertEqual(desRes.ok, true, "commitInstanceAdd(desired) succeeded");
+      const desId = getActiveEngagement().instances.byState.desired[0];
+      const gapAddRes = commitGapAdd({
+        description: "G", layerId: LayerIds[0],
+        gapType: "replace", phase: "now",
+        relatedCurrentInstanceIds: [curId], relatedDesiredInstanceIds: [desId],
+        reviewed: false
+      });
+      assertEqual(gapAddRes.ok, true, "commitGapAdd succeeded");
+      const gapId = getActiveEngagement().gaps.allIds.at(-1);
+      // Mirror what the drop handler does: commitGapEdit (phase change) +
+      // commitSyncDesiredFromGap (propagate to linked desired).
+      const editRes = commitGapEdit(gapId, { phase: "later" });
+      assertEqual(editRes.ok, true, "commitGapEdit(phase=later) succeeded");
+      const syncRes = commitSyncDesiredFromGap(gapId);
+      assertEqual(syncRes.ok, true, "commitSyncDesiredFromGap succeeded");
+      const eng = getActiveEngagement();
+      assertEqual(eng.gaps.byId[gapId].phase, "later", "gap phase must update");
+      assertEqual(eng.instances.byId[desId].priority, "Later",
+        "linked desired instance priority must sync to 'Later'");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   it("Needs-review filter hides cards where reviewed === true (T6.8 · replaces T4.15)", () => {
@@ -2428,17 +2466,55 @@ describe("22 · services/programsService", () => {
     assertEqual(out.targetPriority, "Later");
   });
 
-  it("Link-flow: after confirming a conflict, desired priority is updated to match gap (T6.3)", () => {
-    const s = freshSession();
-    const des = addInstance(s, { state:"desired", layerId:LayerIds[0], environmentId:EnvironmentIds[0],
-      label:"Tgt", vendorGroup:"dell", priority:"Now" });
-    const gap = createGap(s, { description:"G", layerId:LayerIds[0], phase:"later" });
-    // v2.4.11 · A4 · linkDesiredInstance now requires { acknowledged: true }
-    // when there's a phase conflict (Now → Later here). UI calls
-    // confirmPhaseOnLink first; on user confirm, passes acknowledged: true.
-    linkDesiredInstance(s, gap.id, des.id, { acknowledged: true });
-    syncDesiredFromGap(s, gap.id);
-    assertEqual(des.priority, "Later", "gap wins on link: desired priority becomes Later");
+  it("Link-flow: after linking a desired instance to a phase-mismatched gap, sync propagates (T6.3 · v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-15 · v3-direct rewrite. Pre-
+    // rewrite asserted both:
+    //   (a) v2 linkDesiredInstance throws PHASE_CONFLICT_NEEDS_ACK
+    //       without acknowledged:true when phases mismatch (v2 A4
+    //       invariant)
+    //   (b) syncDesiredFromGap propagates gap.phase to the linked
+    //       desired's priority
+    //
+    // (a) is V2-CONTRACT-ONLY (acknowledged-arg machinery). v3
+    // commitGapLinkDesiredInstance (state/adapter.js _gapLinkInstance)
+    // does NOT enforce phase-conflict acknowledgment -- same R8 shape
+    // as the AL10/mapWorkloadAssets findings. RH10 (Suite 28 line ~5644)
+    // covers the v2 acknowledged-arg contract directly; T6.3 in v3-
+    // direct form focuses on the (b) sync propagation.
+    //
+    // Snapshot+restore _active per Phase I-B-9 pattern.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const envId = getActiveEngagement().environments.allIds[0];
+      const desRes = commitInstanceAdd({
+        state: "desired", layerId: LayerIds[0], environmentId: envId,
+        label: "Tgt", vendorGroup: "dell", priority: "Now"
+      });
+      assertEqual(desRes.ok, true, "commitInstanceAdd(desired) succeeded");
+      const desId = getActiveEngagement().instances.byState.desired[0];
+      const gapAddRes = commitGapAdd({
+        description: "G", layerId: LayerIds[0],
+        gapType: "replace", phase: "later",
+        reviewed: false
+      });
+      assertEqual(gapAddRes.ok, true, "commitGapAdd succeeded");
+      const gapId = getActiveEngagement().gaps.allIds.at(-1);
+      // Link the desired to the gap via v3 helper (no phase-conflict ack
+      // gate in v3 -- see comment block above).
+      const linkRes = commitGapLinkDesiredInstance(gapId, desId);
+      assertEqual(linkRes.ok, true, "commitGapLinkDesiredInstance succeeded");
+      // Sync gap.phase to linked desired's priority.
+      const syncRes = commitSyncDesiredFromGap(gapId);
+      assertEqual(syncRes.ok, true, "commitSyncDesiredFromGap succeeded");
+      const eng = getActiveEngagement();
+      assertEqual(eng.instances.byId[desId].priority, "Later",
+        "gap wins on link: desired priority becomes Later");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   // ── v2.1 · Phase 11 · Vendor picker on custom add (T6.10-12) ─
@@ -3043,7 +3119,12 @@ import {
   // rewritten v3-direct in the same commit using commitSyncGapsFromCurrent-
   // Criticality from state/dispositionLogic.js. v3 preserves the
   // urgencyOverride invariant.
-  syncDesiredFromGap, confirmPhaseOnLink
+  //
+  // rc.7 / 7e-8 redo Step I Phase I-B-15 · syncDesiredFromGap dropped.
+  // Its 2 test consumers (T4.5 line 2066, T6.3 line 2431) were rewritten
+  // v3-direct in the same commit using commitSyncDesiredFromGap from
+  // state/dispositionLogic.js.
+  confirmPhaseOnLink
 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed via test-fixture shim (was: ../interactions/desiredStateSync.js)
 
 
@@ -8774,7 +8855,11 @@ import {
 import {
   buildGapFromDisposition as buildGapFromDispositionV3,
   commitSyncGapFromDesired,
-  commitSyncGapsFromCurrentCriticality
+  commitSyncGapsFromCurrentCriticality,
+  // rc.7 / 7e-8 redo Step I Phase I-B-15 · commitSyncDesiredFromGap
+  // added for the T4.5 + T6.3 v3-direct rewrites (gap-phase change
+  // propagates to linked desired-instance priority).
+  commitSyncDesiredFromGap
 } from "../state/dispositionLogic.js";
 import {
   getActiveEngagement,

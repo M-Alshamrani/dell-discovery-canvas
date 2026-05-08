@@ -141,10 +141,17 @@ export {
 // Criticality from state/dispositionLogic.js. v3 preserves the
 // urgencyOverride invariant via the filter at line 250 of
 // syncGapsFromCurrentCriticalityAction; the contract holds.
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-15 · syncDesiredFromGap dropped.
+// Its 2 test consumers (T4.5 line 2066, T6.3 line 2431) were rewritten
+// v3-direct in the same commit using commitSyncDesiredFromGap from
+// state/dispositionLogic.js. T6.3's v2-only acknowledged-arg contract
+// was scoped out (not enforced by v3 _gapLinkInstance; covered by RH10
+// directly); T6.3's v3-direct form focuses on the sync-propagation
+// contract (gap.phase -> linked desired.priority via phaseToPriority).
 export {
   DISPOSITION_ACTIONS,
   ACTION_TO_GAP_TYPE,
   buildGapFromDisposition,
-  syncDesiredFromGap,
   confirmPhaseOnLink
 } from "../interactions/desiredStateSync.js";
