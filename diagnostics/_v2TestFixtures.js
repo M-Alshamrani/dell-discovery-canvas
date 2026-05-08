@@ -134,11 +134,17 @@ export {
 // comment ("v3-pure drops the v2 closeReason / closedAt fields . not
 // in v3 GapSchema; status:'closed' alone is the signal"); RH9's v2-only
 // sub-assertions on those fields were dropped per Step I plan.
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-14 · syncGapsFromCurrentCriticality
+// dropped. Its only test consumer (RH13 in Suite 28 of appSpec.js) was
+// rewritten v3-direct in the same commit using commitSyncGapsFromCurrent-
+// Criticality from state/dispositionLogic.js. v3 preserves the
+// urgencyOverride invariant via the filter at line 250 of
+// syncGapsFromCurrentCriticalityAction; the contract holds.
 export {
   DISPOSITION_ACTIONS,
   ACTION_TO_GAP_TYPE,
   buildGapFromDisposition,
   syncDesiredFromGap,
-  confirmPhaseOnLink,
-  syncGapsFromCurrentCriticality
+  confirmPhaseOnLink
 } from "../interactions/desiredStateSync.js";

@@ -3037,7 +3037,12 @@ import {
   // v2 closeReason / closedAt fields (per dispositionLogic.js line 199-
   // 203 comment); RH9's v2-only sub-assertions on those fields were
   // dropped per the docs/V2_DELETION_ARCHITECTURE.md Step I plan.
-  syncGapsFromCurrentCriticality,
+  //
+  // rc.7 / 7e-8 redo Step I Phase I-B-14 · syncGapsFromCurrentCriticality
+  // dropped. Its only test consumer (RH13 in Suite 28 of appSpec.js) was
+  // rewritten v3-direct in the same commit using commitSyncGapsFromCurrent-
+  // Criticality from state/dispositionLogic.js. v3 preserves the
+  // urgencyOverride invariant.
   syncDesiredFromGap, confirmPhaseOnLink
 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed via test-fixture shim (was: ../interactions/desiredStateSync.js)
 
@@ -5796,27 +5801,67 @@ describe("42 · Phase 19k · v2.4.11 rules hardening + relationships polish", ()
     assertEqual(none.driverId, null);
   });
 
-  it("RH13 · A6 · gap.urgencyOverride blocks propagation from current criticality", () => {
-    var s = createEmptySession();
-    var cur = addInstance(s, { state:"current", layerId:"storage", environmentId:"coreDc",
-      label:"X", vendorGroup:"dell", criticality:"High" });
-    var pinnedGap = createGap(s, {
-      description:"Pinned urgency", layerId:"storage",
-      gapType:"replace",
-      relatedCurrentInstanceIds:[cur.id], relatedDesiredInstanceIds:["d-x"],
-      urgency:"Low", urgencyOverride:true, reviewed:false
-    });
-    syncGapsFromCurrentCriticality(s, cur.id);
-    assertEqual(pinnedGap.urgency, "Low", "urgencyOverride must block propagation (urgency stays Low)");
-    // Same setup without override → urgency follows current.
-    var unpinned = createGap(s, {
-      description:"Auto urgency", layerId:"storage",
-      gapType:"replace",
-      relatedCurrentInstanceIds:[cur.id], relatedDesiredInstanceIds:["d-y"],
-      urgency:"Low", urgencyOverride:false, reviewed:false
-    });
-    syncGapsFromCurrentCriticality(s, cur.id);
-    assertEqual(unpinned.urgency, "High", "without override, urgency syncs to current's criticality");
+  it("RH13 · A6 · gap.urgencyOverride blocks propagation from current criticality (v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-14 · v3-direct rewrite. Pre-rewrite
+    // used v2 syncGapsFromCurrentCriticality. The contract -- "gap with
+    // urgencyOverride:true does NOT receive urgency propagation; gap
+    // without override DOES receive propagation matching the linked
+    // current's criticality" -- is v3-applicable: state/dispositionLogic
+    // .js syncGapsFromCurrentCriticalityAction (line 240-262) explicitly
+    // preserves the urgencyOverride invariant via the filter at line 250
+    // (`g.urgencyOverride !== true`). v3 commitSyncGapsFromCurrentCriticality
+    // (line 264) wraps it via commitAction.
+    //
+    // Snapshot+restore _active per Phase I-B-9 pollution-prevention pattern.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const envId = getActiveEngagement().environments.allIds[0];
+      const curRes = commitInstanceAdd({
+        state: "current", layerId: "storage", environmentId: envId,
+        label: "X", vendorGroup: "dell", criticality: "High"
+      });
+      assertEqual(curRes.ok, true, "commitInstanceAdd(current) succeeded");
+      const curId = getActiveEngagement().instances.byState.current[0];
+      // Add a real desired instance so the linked gaps can reference UUIDs
+      // (v3 GapSchema validates relatedDesiredInstanceIds .uuid() format).
+      const desRes = commitInstanceAdd({
+        state: "desired", layerId: "storage", environmentId: envId,
+        label: "Des", vendorGroup: "dell"
+      });
+      assertEqual(desRes.ok, true, "commitInstanceAdd(desired) succeeded");
+      const desId = getActiveEngagement().instances.byState.desired[0];
+      // Pinned gap: urgencyOverride:true should block propagation.
+      const pinnedAddRes = commitGapAdd({
+        description: "Pinned urgency", layerId: "storage",
+        gapType: "replace",
+        relatedCurrentInstanceIds: [curId], relatedDesiredInstanceIds: [desId],
+        urgency: "Low", urgencyOverride: true, reviewed: false
+      });
+      assertEqual(pinnedAddRes.ok, true, "commitGapAdd(pinned) succeeded");
+      const pinnedId = getActiveEngagement().gaps.allIds.at(-1);
+      // Unpinned gap: urgencyOverride:false should follow propagation.
+      const unpinnedAddRes = commitGapAdd({
+        description: "Auto urgency", layerId: "storage",
+        gapType: "replace",
+        relatedCurrentInstanceIds: [curId], relatedDesiredInstanceIds: [desId],
+        urgency: "Low", urgencyOverride: false, reviewed: false
+      });
+      assertEqual(unpinnedAddRes.ok, true, "commitGapAdd(unpinned) succeeded");
+      const unpinnedId = getActiveEngagement().gaps.allIds.at(-1);
+      // Run the v3 sync action. Override invariant must hold.
+      const syncRes = commitSyncGapsFromCurrentCriticality(curId);
+      assertEqual(syncRes.ok, true, "commitSyncGapsFromCurrentCriticality succeeded");
+      const eng = getActiveEngagement();
+      assertEqual(eng.gaps.byId[pinnedId].urgency, "Low",
+        "urgencyOverride must block propagation (urgency stays Low)");
+      assertEqual(eng.gaps.byId[unpinnedId].urgency, "High",
+        "without override, urgency syncs to current's criticality");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   it("RH14 · A6 · validateGap rejects non-boolean urgencyOverride", () => {
@@ -8720,9 +8765,16 @@ import {
 // desiredInstance) and returns a gap-input suitable for commitGapAdd;
 // commitSyncGapFromDesired commits the gap-status sync action via
 // commitAction. Both are v3-pure (no v2 session shape).
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-14 · commitSyncGapsFromCurrentCriticality
+// added for the RH13 v3-direct rewrite (urgency propagation blocked by
+// urgencyOverride invariant). v3 syncGapsFromCurrentCriticalityAction
+// (state/dispositionLogic.js line 240-262) preserves the
+// urgencyOverride !== true filter, so the v2-era contract holds in v3.
 import {
   buildGapFromDisposition as buildGapFromDispositionV3,
-  commitSyncGapFromDesired
+  commitSyncGapFromDesired,
+  commitSyncGapsFromCurrentCriticality
 } from "../state/dispositionLogic.js";
 import {
   getActiveEngagement,
