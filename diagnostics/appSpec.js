@@ -3911,18 +3911,49 @@ describe("19 * ui/views/MatrixView -- disposition workflow", () => {
 // ============================================================================
 describe("20 * services/roadmapService -- project grouping", () => {
 
+  // rc.7 / 7e-8 redo Step I Phase I-B-34 · Suite 20 shim-free rewrite via
+  // v2-shape literals (proven pattern from Phase I-B-31 / I-B-33). All 16
+  // tests are pure-function (buildProjects + computeAccountHealthScore +
+  // generateExecutiveSummary, all v2-shape services in services/roadmap
+  // Service.js); no engagement state touched, no DOM, no pollution risk.
+
+  let _idCounter20 = 0;
+  function gap20(props) {
+    return Object.assign({
+      id: "g20-" + (++_idCounter20),
+      gapType: "ops",
+      notes: "",
+      reviewed: true,
+      affectedEnvironments: [],
+      relatedCurrentInstanceIds: [],
+      relatedDesiredInstanceIds: []
+    }, props);
+  }
+  function v2Sess20(opts) {
+    return {
+      sessionId:    "test-sess",
+      isDemo:       false,
+      customer:     Object.assign({ name: "", drivers: [] }, (opts && opts.customer) || {}),
+      sessionMeta:  { date: "2026-05-08", presalesOwner: "", status: "Draft", version: "2.0" },
+      environments: [],
+      instances:    (opts && opts.instances) || [],
+      gaps:         (opts && opts.gaps)      || []
+    };
+  }
+
   it("buildProjects returns { projects: [] } shape", () => {
-    var s = freshSession();
+    var s = v2Sess20({});
     var result = buildProjects(s, {});
     assert("projects" in result, "must return object with projects key");
     assert(Array.isArray(result.projects), "projects must be array");
   });
 
   it("each project has required fields", () => {
-    var s = freshSession();
-    // v2.4.8 · Phase 17 · reviewed:false bypasses the action-link rule
-    // so downstream service tests can focus on service behaviour.
-    createGap(s, { description:"Test gap", layerId:LayerIds[0], urgency:"High", phase:"now", gapType:"replace", relatedCurrentInstanceIds:["x"], reviewed:false });
+    var s = v2Sess20({
+      // v2.4.8 · Phase 17 · reviewed:false bypasses the action-link rule
+      // so downstream service tests can focus on service behaviour.
+      gaps: [gap20({ description: "Test gap", layerId: LayerIds[0], urgency: "High", phase: "now", gapType: "replace", relatedCurrentInstanceIds: ["x"], reviewed: false })]
+    });
     var result = buildProjects(s, {});
     if (!result.projects.length) return; // no projects if no gaps group
     var proj = result.projects[0];
@@ -3936,40 +3967,37 @@ describe("20 * services/roadmapService -- project grouping", () => {
   });
 
   it("gaps with matching (env, layer, gapType) group into one project (T5.9)", () => {
-    var s = freshSession();
-    createGap(s, { description:"Replace A", layerId:LayerIds[0], urgency:"High", phase:"now",
-      gapType:"replace", affectedEnvironments:["coreDc"], relatedCurrentInstanceIds:["x"], reviewed:false });
-    createGap(s, { description:"Replace B", layerId:LayerIds[0], urgency:"Medium", phase:"now",
-      gapType:"replace", affectedEnvironments:["coreDc"], relatedCurrentInstanceIds:["y"], reviewed:false });
+    var s = v2Sess20({ gaps: [
+      gap20({ description: "Replace A", layerId: LayerIds[0], urgency: "High",   phase: "now", gapType: "replace", affectedEnvironments: ["coreDc"], relatedCurrentInstanceIds: ["x"], reviewed: false }),
+      gap20({ description: "Replace B", layerId: LayerIds[0], urgency: "Medium", phase: "now", gapType: "replace", affectedEnvironments: ["coreDc"], relatedCurrentInstanceIds: ["y"], reviewed: false })
+    ] });
     var result = buildProjects(s, {});
     assertEqual(result.projects.length, 1, "same (env, layer, gapType) → exactly one project");
     assertEqual(result.projects[0].initiatives.length, 2, "project must contain both gaps");
   });
 
   it("gaps with different environments produce separate projects (T5.10)", () => {
-    var s = freshSession();
-    createGap(s, { description:"A", layerId:LayerIds[0], phase:"now", gapType:"replace",
-      affectedEnvironments:["coreDc"], reviewed:false });
-    createGap(s, { description:"B", layerId:LayerIds[0], phase:"now", gapType:"replace",
-      affectedEnvironments:["publicCloud"], reviewed:false });
+    var s = v2Sess20({ gaps: [
+      gap20({ description: "A", layerId: LayerIds[0], phase: "now", gapType: "replace", affectedEnvironments: ["coreDc"],      reviewed: false }),
+      gap20({ description: "B", layerId: LayerIds[0], phase: "now", gapType: "replace", affectedEnvironments: ["publicCloud"], reviewed: false })
+    ] });
     var result = buildProjects(s, {});
     assertEqual(result.projects.length, 2, "different envs → 2 projects");
   });
 
   it("gaps of different types produce separate projects within same env+layer", () => {
-    var s = freshSession();
-    createGap(s, { description:"Replace X", layerId:LayerIds[0], urgency:"High", phase:"now",
-      gapType:"replace", affectedEnvironments:["coreDc"], reviewed:false });
-    createGap(s, { description:"Introduce Y", layerId:LayerIds[0], urgency:"Low", phase:"now",
-      gapType:"introduce", affectedEnvironments:["coreDc"], reviewed:false });
+    var s = v2Sess20({ gaps: [
+      gap20({ description: "Replace X",   layerId: LayerIds[0], urgency: "High", phase: "now", gapType: "replace",   affectedEnvironments: ["coreDc"], reviewed: false }),
+      gap20({ description: "Introduce Y", layerId: LayerIds[0], urgency: "Low",  phase: "now", gapType: "introduce", affectedEnvironments: ["coreDc"], reviewed: false })
+    ] });
     var result = buildProjects(s, {});
     assert(result.projects.length >= 2, "different gap types must produce separate projects");
   });
 
   it("Project name contains environment label, layer label, and action verb (T5.11)", () => {
-    var s = freshSession();
-    createGap(s, { description:"X", layerId:"storage", phase:"now", gapType:"replace",
-      affectedEnvironments:["coreDc"], reviewed:false });
+    var s = v2Sess20({ gaps: [
+      gap20({ description: "X", layerId: "storage", phase: "now", gapType: "replace", affectedEnvironments: ["coreDc"], reviewed: false })
+    ] });
     var proj = buildProjects(s, {}).projects[0];
     assert(proj.name.indexOf("Primary Data Center") >= 0, "name must include env label (v2.4.15: 'Primary Data Center', was 'Core DC')");
     assert(proj.name.indexOf("Data Storage") >= 0, "name must include layer label 'Data Storage'");
@@ -3977,79 +4005,82 @@ describe("20 * services/roadmapService -- project grouping", () => {
   });
 
   it("Project urgency equals max urgency among constituent gaps (T5.12)", () => {
-    var s = freshSession();
-    createGap(s, { description:"A", layerId:LayerIds[0], phase:"now", gapType:"replace",
-      urgency:"Low", affectedEnvironments:["coreDc"], reviewed:false });
-    createGap(s, { description:"B", layerId:LayerIds[0], phase:"now", gapType:"replace",
-      urgency:"High", affectedEnvironments:["coreDc"], reviewed:false });
+    var s = v2Sess20({ gaps: [
+      gap20({ description: "A", layerId: LayerIds[0], phase: "now", gapType: "replace", urgency: "Low",  affectedEnvironments: ["coreDc"], reviewed: false }),
+      gap20({ description: "B", layerId: LayerIds[0], phase: "now", gapType: "replace", urgency: "High", affectedEnvironments: ["coreDc"], reviewed: false })
+    ] });
     var proj = buildProjects(s, {}).projects[0];
     assertEqual(proj.urgency, "High", "project urgency = max of gaps");
   });
 
   it("Cross-cutting project for gaps with no env and no linked instances (T5.14)", () => {
-    var s = freshSession();
-    // v2.4.11 · A9 · ops gaps need substance at review time. This test
-    // is shape-only (project bucketing); use reviewed:false to bypass.
-    createGap(s, { description:"Process gap", layerId:LayerIds[0], phase:"next", gapType:"ops", reviewed:false });
+    // v2.4.11 · A9 · ops gaps need substance at review time. This test is
+    // shape-only (project bucketing); use reviewed:false to bypass.
+    var s = v2Sess20({ gaps: [
+      gap20({ description: "Process gap", layerId: LayerIds[0], phase: "next", gapType: "ops", reviewed: false })
+    ] });
     var proj = buildProjects(s, {}).projects[0];
     assertEqual(proj.envId, "crossCutting", "envId must be 'crossCutting'");
     assert(proj.name.indexOf("Cross-cutting") >= 0, "name must include 'Cross-cutting'");
   });
 
   it("Project driverId is mode of constituent gaps' effective driver (T5.19)", () => {
-    var s = freshSession();
-    s.customer.drivers = [
-      { id:"cyber_resilience", priority:"High", outcomes:"" },
-      { id:"ops_simplicity",   priority:"Medium", outcomes:"" }
-    ];
-    createGap(s, { description:"DP gap 1", layerId:"dataProtection", phase:"now", gapType:"replace",
-      affectedEnvironments:["coreDc"], reviewed:false });
-    createGap(s, { description:"DP gap 2", layerId:"dataProtection", phase:"now", gapType:"replace",
-      affectedEnvironments:["coreDc"], reviewed:false });
+    var s = v2Sess20({
+      customer: { drivers: [
+        { id: "cyber_resilience", priority: "High",   outcomes: "" },
+        { id: "ops_simplicity",   priority: "Medium", outcomes: "" }
+      ] },
+      gaps: [
+        gap20({ description: "DP gap 1", layerId: "dataProtection", phase: "now", gapType: "replace", affectedEnvironments: ["coreDc"], reviewed: false }),
+        gap20({ description: "DP gap 2", layerId: "dataProtection", phase: "now", gapType: "replace", affectedEnvironments: ["coreDc"], reviewed: false })
+      ]
+    });
     var proj = buildProjects(s, {}).projects[0];
     assertEqual(proj.driverId, "cyber_resilience", "both gaps map to cyber_resilience (layer rule)");
   });
 
   it("computeAccountHealthScore returns null for empty session", () => {
-    var s = freshSession();
+    var s = v2Sess20({});
     var score = computeAccountHealthScore(s);
     assert(score === null, "empty session must return null score");
   });
 
   it("computeAccountHealthScore returns 0-100 integer", () => {
-    var s = freshSession();
-    createGap(s, { description:"High gap", layerId:LayerIds[0], urgency:"High", phase:"now" });
+    var s = v2Sess20({ gaps: [
+      gap20({ description: "High gap", layerId: LayerIds[0], urgency: "High", phase: "now" })
+    ] });
     var score = computeAccountHealthScore(s);
     assert(typeof score === "number" && score >= 0 && score <= 100 && Number.isInteger(score),
       "score must be integer 0-100, got: " + score);
   });
 
   it("generateExecutiveSummary returns non-empty string", () => {
-    var s = freshSession();
-    s.customer.name = "Test Corp";
-    createGap(s, { description:"Critical gap", layerId:LayerIds[0], urgency:"High", phase:"now" });
+    var s = v2Sess20({
+      customer: { name: "Test Corp", drivers: [] },
+      gaps: [ gap20({ description: "Critical gap", layerId: LayerIds[0], urgency: "High", phase: "now" }) ]
+    });
     var text = generateExecutiveSummary(s);
     assert(typeof text === "string" && text.length > 20, "must return a meaningful summary string");
   });
 
   it("generateExecutiveSummary mentions customer name when set", () => {
-    var s = freshSession();
-    s.customer.name = "AcmeCorp123";
-    createGap(s, { description:"Some gap", layerId:LayerIds[0], urgency:"Medium", phase:"later" });
+    var s = v2Sess20({
+      customer: { name: "AcmeCorp123", drivers: [] },
+      gaps: [ gap20({ description: "Some gap", layerId: LayerIds[0], urgency: "Medium", phase: "later" }) ]
+    });
     var text = generateExecutiveSummary(s);
     assert(text.indexOf("AcmeCorp123") >= 0, "summary must mention customer name");
   });
 
   it("buildProjects is pure -- does not mutate session", () => {
-    var s = freshSession();
-    createGap(s, { description:"D", layerId:LayerIds[0] });
+    var s = v2Sess20({ gaps: [ gap20({ description: "D", layerId: LayerIds[0] }) ] });
     var snap = JSON.stringify(s);
     buildProjects(s, {});
     assertEqual(JSON.stringify(s), snap, "buildProjects must not mutate session");
   });
 
   it("buildProjects and new service functions are JSON-serialisable", () => {
-    var s = freshSession();
+    var s = v2Sess20({});
     doesNotThrow(function() { JSON.stringify(buildProjects(s, {})); }, "buildProjects result must be serialisable");
     doesNotThrow(function() { JSON.stringify(computeAccountHealthScore(s)); }, "health score must be serialisable");
     doesNotThrow(function() { JSON.stringify(generateExecutiveSummary(s)); }, "exec summary must be serialisable");
