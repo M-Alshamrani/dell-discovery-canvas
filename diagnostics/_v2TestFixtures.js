@@ -125,11 +125,19 @@ export {
 // successors in state/dispositionLogic.js (consumed by ui/views/
 // MatrixView.js directly, NOT through this shim). Zero call sites in
 // *.js elsewhere for the v2 shim path.
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-13 · syncGapFromDesired dropped.
+// Its only test consumer (RH9 in Suite 28 of appSpec.js) was rewritten
+// v3-direct in the same commit using commitSyncGapFromDesired from
+// state/dispositionLogic.js. v3 architecture explicitly drops the v2
+// closeReason / closedAt fields per dispositionLogic.js line 199-203
+// comment ("v3-pure drops the v2 closeReason / closedAt fields . not
+// in v3 GapSchema; status:'closed' alone is the signal"); RH9's v2-only
+// sub-assertions on those fields were dropped per Step I plan.
 export {
   DISPOSITION_ACTIONS,
   ACTION_TO_GAP_TYPE,
   buildGapFromDisposition,
-  syncGapFromDesired,
   syncDesiredFromGap,
   confirmPhaseOnLink,
   syncGapsFromCurrentCriticality

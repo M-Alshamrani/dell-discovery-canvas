@@ -3030,7 +3030,14 @@ import {
   // v3 successors live in state/dispositionLogic.js with the same names
   // and are consumed directly by ui/views/MatrixView.js).
   buildGapFromDisposition,
-  syncGapFromDesired, syncGapsFromCurrentCriticality,
+  // rc.7 / 7e-8 redo Step I Phase I-B-13 · syncGapFromDesired dropped.
+  // Its only test consumer (RH9 in Suite 28 of appSpec.js) was rewritten
+  // v3-direct in the same commit using commitSyncGapFromDesired from
+  // state/dispositionLogic.js. v3 architecture explicitly drops the
+  // v2 closeReason / closedAt fields (per dispositionLogic.js line 199-
+  // 203 comment); RH9's v2-only sub-assertions on those fields were
+  // dropped per the docs/V2_DELETION_ARCHITECTURE.md Step I plan.
+  syncGapsFromCurrentCriticality,
   syncDesiredFromGap, confirmPhaseOnLink
 } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed via test-fixture shim (was: ../interactions/desiredStateSync.js)
 
@@ -5680,22 +5687,66 @@ describe("42 · Phase 19k · v2.4.11 rules hardening + relationships polish", ()
       "structural patch with valid resulting shape auto-flips reviewed");
   });
 
-  it("RH9 · A2 · syncGapFromDesired flips linked gaps to status:closed when disposition becomes 'keep'", () => {
-    var s = createEmptySession();
-    var cur = addInstance(s, { state:"current", layerId:"storage", environmentId:"coreDc",
-      label:"Cur", vendorGroup:"dell", criticality:"Medium" });
-    var des = addInstance(s, { state:"desired", layerId:"storage", environmentId:"coreDc",
-      label:"Des", vendorGroup:"dell", disposition:"replace", priority:"Now", originId: cur.id });
-    var gap = createGap(s, buildGapFromDisposition(s, des));
-    assertEqual(gap.status, "open", "baseline open");
-    des.disposition = "keep";
-    syncGapFromDesired(s, des.id);
-    var afterGap = s.gaps.find(g => g.id === gap.id);
-    assert(afterGap, "gap MUST still exist (no delete)");
-    assertEqual(afterGap.status, "closed", "gap.status must flip to 'closed' on Keep");
-    assert(/disposition changed to keep/i.test(afterGap.closeReason || ""),
-      "closeReason must explain the auto-close");
-    assert(typeof afterGap.closedAt === "string", "closedAt must be set as ISO timestamp");
+  it("RH9 · A2 · commitSyncGapFromDesired flips linked gaps to status:closed when disposition becomes 'keep' (v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-13 · v3-direct rewrite.
+    // Pre-rewrite this asserted v2 syncGapFromDesired with 3 sub-checks:
+    //   (a) gap.status === "closed"
+    //   (b) gap.closeReason matches /disposition changed to keep/i
+    //   (c) gap.closedAt is an ISO timestamp string
+    //
+    // (a) is preserved -- the v3 contract still flips status to "closed"
+    //     when a linked desired instance's disposition becomes "keep".
+    // (b) and (c) are DROPPED per docs/V2_DELETION_ARCHITECTURE.md Step I
+    //     plan ("Tests that asserted no longer-applicable contracts DROP").
+    //     state/dispositionLogic.js syncGapFromDesiredAction (line 199-203)
+    //     explicitly comments: "v3-pure drops the v2 closeReason / closedAt
+    //     fields (not in v3 GapSchema; status:'closed' alone is the
+    //     signal)." This is a deliberate v3 simplification, not a v3
+    //     contract gap. Per feedback_no_patches_flag_first.md, we don't
+    //     bend v3 schema to preserve v2 fields.
+    //
+    // Snapshot+restore _active per Phase I-B-9 pollution-prevention pattern.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const envRes = commitEnvAdd({ envCatalogId: "coreDc" });
+      assertEqual(envRes.ok, true, "commitEnvAdd succeeded");
+      const envId = getActiveEngagement().environments.allIds[0];
+      const curRes = commitInstanceAdd({
+        state: "current", layerId: "storage", environmentId: envId,
+        label: "Cur", vendorGroup: "dell", criticality: "Medium"
+      });
+      assertEqual(curRes.ok, true, "commitInstanceAdd(current) succeeded");
+      const curId = getActiveEngagement().instances.byState.current[0];
+      const desRes = commitInstanceAdd({
+        state: "desired", layerId: "storage", environmentId: envId,
+        label: "Des", vendorGroup: "dell",
+        disposition: "replace", priority: "Now", originId: curId
+      });
+      assertEqual(desRes.ok, true, "commitInstanceAdd(desired) succeeded");
+      const desId = getActiveEngagement().instances.byState.desired[0];
+      // buildGapFromDispositionV3 is the v3 pure function (aliased from
+      // state/dispositionLogic.js to avoid name collision with the v2
+      // shim re-export). It takes (engagement, desiredInstance) and
+      // returns a gap-input object suitable for commitGapAdd.
+      const desInst = getActiveEngagement().instances.byId[desId];
+      const gapInput = buildGapFromDispositionV3(getActiveEngagement(), desInst);
+      const gapAddRes = commitGapAdd(gapInput);
+      assertEqual(gapAddRes.ok, true, "commitGapAdd succeeded");
+      const gapId = getActiveEngagement().gaps.allIds.at(-1);
+      assertEqual(getActiveEngagement().gaps.byId[gapId].status, "open", "baseline open");
+      // Flip the desired-instance disposition to "keep" via commitInstanceEdit.
+      const editRes = commitInstanceEdit(null, null, { id: desId, disposition: "keep" });
+      assertEqual(editRes.ok, true, "commitInstanceEdit(disposition=keep) succeeded");
+      // Run the v3 sync action.
+      const syncRes = commitSyncGapFromDesired(desId);
+      assertEqual(syncRes.ok, true, "commitSyncGapFromDesired succeeded");
+      const afterGap = getActiveEngagement().gaps.byId[gapId];
+      assert(afterGap, "gap MUST still exist (no delete)");
+      assertEqual(afterGap.status, "closed", "gap.status must flip to 'closed' on Keep");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   it("RH10 · A4 · linkDesiredInstance throws PHASE_CONFLICT_NEEDS_ACK when conflict + no acknowledged", () => {
@@ -8664,6 +8715,15 @@ import {
   // rc.7 / 7e-8b' · v3-pure driver fixture surface for Suite 12.
   commitDriverAdd
 } from "../state/adapter.js";
+// rc.7 / 7e-8 redo Step I Phase I-B-13 · v3 dispositionLogic helpers for
+// the RH9 v3-direct rewrite. buildGapFromDispositionV3 takes (engagement,
+// desiredInstance) and returns a gap-input suitable for commitGapAdd;
+// commitSyncGapFromDesired commits the gap-status sync action via
+// commitAction. Both are v3-pure (no v2 session shape).
+import {
+  buildGapFromDisposition as buildGapFromDispositionV3,
+  commitSyncGapFromDesired
+} from "../state/dispositionLogic.js";
 import {
   getActiveEngagement,
   setActiveEngagement,
