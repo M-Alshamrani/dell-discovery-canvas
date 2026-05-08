@@ -87,6 +87,12 @@ export {
 // the same AL10 "I'm done" gate (RULES TX13.10) expressed as a caller
 // call-sequence rather than an atomic v2 helper. Pattern is VT26 template
 // (commit 2b28c01).
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-10 · setGapDriverId dropped. Pure
+// dead re-export -- own-grep across the entire repo (`grep -rnE
+// "setGapDriverId" --include="*.js"`) returns ZERO consumers (the only
+// references are doc strings in README.md, SPEC.md, RULES.md). Same
+// shape as Phase I-B-7's saveToLocalStorage drop.
 export {
   createGap,
   updateGap,
@@ -94,8 +100,7 @@ export {
   linkCurrentInstance,
   linkDesiredInstance,
   unlinkCurrentInstance,
-  unlinkDesiredInstance,
-  setGapDriverId
+  unlinkDesiredInstance
 } from "../interactions/gapsCommands.js";
 
 // ─── from interactions/desiredStateSync.js ─────────────────────────
