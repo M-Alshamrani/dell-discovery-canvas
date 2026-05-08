@@ -2,7 +2,7 @@
 
 **🔴 READ FIRST · Principal-architect discipline (LOCKED 2026-05-08, R11 added evening)**: every session, every commit, every handover. Full text in [`docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md`](docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md) (R0..R11) + tier-1 memory anchor `feedback_principal_architect_discipline.md`. Core rules: **R0** acknowledge "what would a principal architect do?" before non-trivial action · **R1** own-grep before delete · **R2** migrate consumers FIRST, delete LAST · **R3** Chrome MCP browser smoke at every commit boundary (test banner alone is NOT sufficient) · **R4** no v3-store backward-compat hacks · **R5** no fig-leaf test fixtures hiding v2 logic · **R6** rewrite tests to assert v3 contracts (never retire-with-negative) · **R7** per-commit revertibility · **R8** surface scope balloons · **R9** every handover references this · **R10** acknowledge in every action out loud · **R11 (HARDEST · LOCKED 2026-05-08 evening)** Recite + Answer + Execute + Pledge-Smoke-Screenshot at EVERY step boundary; every commit message ends with a `Browser smoke evidence:` block. **Test banner alone is a discipline violation.**
 
-**Last session end**: 2026-05-09 · `v3.0.0-rc.7-dev` on `v3.0-data-architecture` · HEAD `07c8424` · **Banner 1139/1144 GREEN** with 5 expected RED (FS3, V-FLOW-V3-PURE-1/3/4/5). Phase I-B-9..23 advanced through 16 commits this session; `_v2TestFixtures.js` shim slimmed 28 → 9 re-exports (19 names dropped). **MILESTONES**: entire desiredStateSync re-export block RETIRED at Phase I-B-20 (`0b33543`); test-runner afterRestore migrated to v3-pure at Phase I-B-23 (`07c8424`). 4 R8 awareness items + new lesson from Phase I-B-24a revert (see "Lessons from this session" below). Steps H/J/K + rc.7 / 7e-post + tag still pending. **R11 LOCKED at `96e8a16`**.
+**Last session end**: 2026-05-09 · `v3.0.0-rc.7-dev` on `v3.0-data-architecture` · HEAD `502ce39` · **Banner 1135/1140 GREEN** with 5 expected RED (FS3, V-FLOW-V3-PURE-1/3/4/5). Phase I-B-9..25 advanced through **19 commits this session**; `_v2TestFixtures.js` shim slimmed **28 → 5 re-exports** (23 names dropped + 4 R8-deferred tests retired per Step I plan). **MILESTONES**: entire desiredStateSync re-export block RETIRED at Phase I-B-20 (`0b33543`); test-runner afterRestore migrated to v3-pure at Phase I-B-23 (`07c8424`); R8-blocked Suite-26 + RH cluster retired at Phase I-B-24/25 (`1e4c07f`/`502ce39`). All 4 R8 invariant findings now scheduled for rc.8 v3-invariant-enforcement arc. **Remaining 5 shim members** (`session`, `createEmptySession`, `addInstance`, `createGap`, `updateGap`) are the high-usage core (~600+ call sites) blocking Step H + Step J. **R11 LOCKED at `96e8a16`**.
 
 **rc.7 dev log (full arc since rc.6 tag, in order)**:
 
@@ -55,16 +55,35 @@
 | 7e-8 redo Step I-B-22 | `6abd74f` | **Suite 17 'engagement structure stable across reset' rewritten v3-direct** (test-body modernization without shim drop; `resetSession` remains in shim because the test-runner afterRestore at line 17149 still consumes it as a v2 sessionStore restoration fallback — that migration couples to Step H lifecycle). | 1139/1144 |
 | **7e-8 redo Step I-B-23** | `07c8424` | **🔴 Path C step 1: test-runner afterRestore migrated to v3-pure** + **`resetSession` + `loadFromLocalStorage` shim re-exports dropped**. v2 sessionStore restoration path retired (defensive carryover; `_rehydrateEngagementFromStorage` covers the contract). saveStatus indicator block migrated to read v3 `getActiveEngagement().customer.name` + `.meta.isDemo`. | 1139/1144 |
 | 7e-8 redo Step I-B-24a (REVERTED) | `(uncommitted)` | **Attempted: drop `session` global from shim**. 12 NEW RED — naive grep missed many bare `session` references in view-renderer test args (e.g. `renderSummaryHealthView(l, r, session)`) + 1 functional regression in `computeMixByLayer` (RA3 mutation was NOT vestigial after all). Per R7 reverted. **Lesson: `session` global has wider scope than `session.X` reads — bare references in renderViews call sites must be audited too.** | (reverted) |
+| **7e-8 redo Step I-B-24** | `1e4c07f` | **🔴 Path B high-density Suite 26: W1 + W1b v3-direct + W2 + W6 RETIRED** + **`mapAsset` + `unmapAsset` shim re-exports dropped**. v2 helper-layer invariants (5 mapWorkloadAssets gates: dedupe / self-map / workload-to-workload / cross-state / cross-environment) preserved in HANDOFF R8 backlog #2 for rc.8. | 1137/1142 with 5 RED |
+| **7e-8 redo Step I-B-25** | `502ce39` | **🔴 Path B high-density RH cluster: RH11 v3-direct + RH10 + RH20 RETIRED** + **`linkDesiredInstance` + `unlinkCurrentInstance` shim re-exports dropped**. 2 v2 helper-layer invariants (PHASE_CONFLICT_NEEDS_ACK on link + AL-rule on unlink) preserved in HANDOFF R8 backlog #3 + #4 for rc.8. | 1135/1140 with 5 RED |
 
-## Phase I-B-24+ (next session entry point · 2026-05-09 late evening)
+## Phase I-B-26+ (next session entry point · 2026-05-09 night)
 
-`_v2TestFixtures.js` shim shrunk **35 → 9 re-exports** total across the rc.7 / 7e-8 redo arc (26 dropped). Latest 16-commit session (Phase I-B-9..23) dropped 19 names. **MILESTONES**: entire desiredStateSync re-export block RETIRED at Phase I-B-20; test-runner afterRestore migrated to v3-pure at Phase I-B-23.
+`_v2TestFixtures.js` shim shrunk **35 → 5 re-exports** total across the rc.7 / 7e-8 redo arc (30 dropped + 4 R8-deferred tests retired). Latest 19-commit session (Phase I-B-9..25) dropped 23 names. **MILESTONES**: entire desiredStateSync re-export block RETIRED at Phase I-B-20; test-runner afterRestore migrated to v3-pure at Phase I-B-23; **all 4 R8 invariant findings retired-not-patched** at Phase I-B-24/25 (preserved in HANDOFF backlog for rc.8 v3-invariant-enforcement arc).
 
-**Remaining 9 shim re-exports**:
-- **sessionStore (2)**: `session` (250+ identifier matches · v2 singleton), `createEmptySession` (51 usages · v2 fixture builder)
-- **matrixCommands (3)**: `addInstance` (129 usages · high-usage), `mapAsset` (12 usages · partly R8-blocked), `unmapAsset` (1 usage · R8-blocked)
-- **gapsCommands (4)**: `createGap` (134 usages · high-usage), `updateGap` (31 usages · high-usage), `linkDesiredInstance` (4 usages · paired with RH10 R8-blocked), `unlinkCurrentInstance` (2 usages · RH20 R8-blocked)
+**Remaining 5 shim re-exports** (the high-usage core):
+- **sessionStore (2)**: `session` (~250 identifier matches · v2 singleton), `createEmptySession` (51 usages · v2 fixture builder)
+- **matrixCommands (1)**: `addInstance` (129 usages · high-usage)
+- **gapsCommands (2)**: `createGap` (134 usages · high-usage), `updateGap` (31 usages · high-usage)
 - **desiredStateSync (0)**: ✅ block fully retired
+
+**Total remaining call sites**: ~600+ across ~40+ test bodies. These are all interlocked (most tests use 3-4 of these helpers together). The Path B bulk rewrite path forward is per-Suite migration: rewrite each Suite's tests v3-direct in one high-density commit, drop helpers when all consumers clear.
+
+## Path B bulk rewrite progress (this session)
+
+Phase I-B-24 + I-B-25 demonstrated the high-density principal-architect pattern:
+- **Suite 26 (workload mapping)**: W1 + W1b rewritten v3-direct (commitInstanceAdd + InstanceSchema.superRefine); W2 + W6 retired per Step I plan (R8 invariants → rc.8 backlog #2). Shim 9 → 7.
+- **RH cluster (Suite 28)**: RH11 rewritten v3-direct (commitGapLinkDesiredInstance); RH10 + RH20 retired per Step I plan (R8 invariants → rc.8 backlog #3 + #4). Shim 7 → 5.
+
+**The same pattern applies to the remaining 5 helpers:**
+1. Audit a Suite's tests by helper usage (addInstance / createGap / updateGap heavy clusters).
+2. For each test: rewrite v3-direct (commitInstanceAdd / commitGapAdd / commitGapEdit) OR retire per Step I plan (with R8 backlog preservation if invariant-asserting).
+3. Drop the helper from shim when last consumer clears.
+4. Rebuild + Chrome MCP smoke + screenshot at every commit boundary (R3 + R11).
+5. Browser smoke evidence block in every commit message (R11).
+
+**Estimate to clear remaining 5 helpers**: 5-8 high-density commits if Suites are batched well. Then Step H + Step J + Step K mechanical deletes (3-5 more commits). **rc.7 tag in ~10-15 more commits at this density.**
 
 ## Lessons from this session (Phase I-B-24a revert)
 
@@ -126,9 +145,11 @@ Four related findings, all the same shape: v2 enforced an invariant atomically; 
 
 ## Brief prompt to continue (next session)
 
-> Continue rc.7 / 7e-8 v2 deletion arc per `docs/V2_DELETION_ARCHITECTURE.md` and `docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md` (LOCKED R0..R11). Last session ended at HEAD `6abd74f`; banner 1139/1144 GREEN with 5 expected RED (FS3 + V-FLOW-V3-PURE-1/3/4/5). Apply principal-architect persona + R11 four-block ritual (Recite + Answer + Execute + Pledge-Smoke-Screenshot) at every step boundary. Walk standing regression flow (boot empty → "New customer" 0 collections; load demo → Acme Healthcare 3/4/23/8; 5 stepper tabs render; AI Assist overlay opens; Settings → Skills builder mounts; +New session → engagementId rotates + chat 1→0 messages BUG-029 contract). Capture Chrome MCP screenshots inline. Every commit message ends with `Browser smoke evidence:` block. Test banner alone is a discipline violation per R11.
+> Continue rc.7 / 7e-8 v2 deletion arc per `docs/V2_DELETION_ARCHITECTURE.md` and `docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md` (LOCKED R0..R11). Last session ended at HEAD `502ce39`; banner 1135/1140 GREEN with 5 expected RED (FS3 + V-FLOW-V3-PURE-1/3/4/5). Apply principal-architect persona + R11 four-block ritual (Recite + Answer + Execute + Pledge-Smoke-Screenshot) at every step boundary. Walk standing regression flow (boot empty → "New customer" 0 collections; load demo → Acme Healthcare 3/4/23/8; 5 stepper tabs render; AI Assist overlay opens; Settings → Skills builder mounts; +New session → engagementId rotates + chat 1→0 messages BUG-029 contract). Capture Chrome MCP screenshots inline. Every commit message ends with `Browser smoke evidence:` block. Test banner alone is a discipline violation per R11.
 >
-> **The easy wins are exhausted** — shim slimmed 35 → 11 re-exports across 24 phases (last 14 commits this session). Remaining 11 fall into 3 categories: R8-blocked (4) · infrastructure tied to Step H (4) · high-usage bulk rewrites (3). Pick a strategic path (A/B/C — see "Phase I-B-23+ next session entry point" section above) BEFORE jumping to a target. Recommended order: **Path C** (afterRestore migration → Step H unlock) → **Path A** (R8 invariant arc) → **Path B** (bulk addInstance/createGap/updateGap rewrites).
+> **All 4 R8-blocked tests retired per Step I plan** (not patched; v3 invariants are rc.8 work). Remaining 5 shim members (`session`, `createEmptySession`, `addInstance`, `createGap`, `updateGap`) are the high-usage core (~600+ call sites across ~40+ tests). **Path B bulk rewrites** — per-Suite migration in high-density commits — is the path forward. Pattern is Phase I-B-24/25 (`1e4c07f`/`502ce39`): pick Suite, rewrite v3-direct OR retire per Step I plan, drop helpers when last consumer clears.
+>
+> **Estimate**: 5-8 high-density commits to clear remaining 5 helpers → Step H + Step J + Step K mechanical deletes (3-5 commits) → rc.7 / 7e-post (FS3 + BUG-042) + rc.7 tag (PREFLIGHT 5b real-LLM smoke gated to user). **~10-15 commits to rc.7 tag at current density.**
 >
 > Authority: `docs/V2_DELETION_ARCHITECTURE.md` · `docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md` R0..R11 · `memory/feedback_principal_architect_discipline.md` (tier-1; loads first) · `HANDOFF.md`.
 
