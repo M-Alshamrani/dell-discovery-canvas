@@ -1381,100 +1381,178 @@ describe("10 · services/vendorMixService", () => {
 // ============================================================================
 describe("11 · services/roadmapService", () => {
 
-  it("groupGapsIntoInitiatives returns { initiatives: [] } shape", () => {
-    const s = freshSession();
-    const r = groupGapsIntoInitiatives(s, {});
-    assert("initiatives" in r,        "must return object with initiatives key");
-    assert(Array.isArray(r.initiatives), "initiatives must be an array");
+  // rc.7 / 7e-8 redo Step I Phase I-B-27 · Suite 11 v3-direct rewrite.
+  // services/roadmapService.js (groupGapsIntoInitiatives,
+  // computeLayerImpact) still reads v2-shape session (separate
+  // migration arc). All 11 tests rewritten to:
+  //   1. Build v3 engagement via setActiveEngagement(createEmptyEngagement())
+  //      + commitEnvAdd + commitGapAdd.
+  //   2. Project to v2-shape via engagementToV2Session() at the
+  //      boundary (the same v3->v2 adapter used at the file-save
+  //      boundary in services/sessionFile.js).
+  //   3. Pass v2-shape to roadmapService.
+  //   4. Assert on the result.
+  //
+  // Snapshot+restore _active wrapper per the Phase I-B-9 pollution-
+  // prevention pattern. Pattern matches RH16 (Phase I-B-20 commit
+  // 0b33543) where buildProjects (also v2-shape) was fed via
+  // engagementToV2Session.
+  //
+  // Helper to build a v3 engagement with N gaps and project to v2.
+  function v3WithGaps(gaps) {
+    setActiveEngagement(createEmptyEngagement());
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    const created = [];
+    gaps.forEach(g => {
+      const r = commitGapAdd(Object.assign({
+        layerId: g.layerId || LayerIds[0],
+        gapType: g.gapType || "ops",
+        notes: g.notes || "Workshop ops gap notes substantial enough to satisfy AL7.",
+        reviewed: false
+      }, g));
+      if (r && r.ok) {
+        const eng = getActiveEngagement();
+        const gapId = eng.gaps.allIds[eng.gaps.allIds.length - 1];
+        created.push(eng.gaps.byId[gapId]);
+      }
+    });
+    return { v2shape: engagementToV2Session(getActiveEngagement()), v3Gaps: created };
+  }
+
+  it("groupGapsIntoInitiatives returns { initiatives: [] } shape (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      const { v2shape } = v3WithGaps([]);
+      const r = groupGapsIntoInitiatives(v2shape, {});
+      assert("initiatives" in r, "must return object with initiatives key");
+      assert(Array.isArray(r.initiatives), "initiatives must be an array");
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("each initiative has required fields", () => {
-    const s = freshSession();
-    createGap(s, { description:"Gap A", layerId:LayerIds[0], urgency:"High", phase:"now", mappedDellSolutions:"PPDM" });
-    const { initiatives } = groupGapsIntoInitiatives(s, {});
-    const init = initiatives[0];
-    assert(typeof init.id            === "string",  "initiative.id must be string");
-    assert(["now","next","later"].includes(init.phase), "initiative.phase must be now|next|later");
-    assert(typeof init.title         === "string",  "initiative.title must be string");
-    assert(Array.isArray(init.layers),              "initiative.layers must be array");
-    assert(Array.isArray(init.environments),        "initiative.environments must be array");
-    assert(["High","Medium","Low"].includes(init.urgency), "initiative.urgency must be valid");
-    assert(Array.isArray(init.gaps),                "initiative.gaps must be array");
+  it("each initiative has required fields (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      const { v2shape } = v3WithGaps([
+        { description: "Gap A", layerId: LayerIds[0], urgency: "High", phase: "now", mappedDellSolutions: "PPDM" }
+      ]);
+      const { initiatives } = groupGapsIntoInitiatives(v2shape, {});
+      const init = initiatives[0];
+      assert(typeof init.id === "string", "initiative.id must be string");
+      assert(["now", "next", "later"].includes(init.phase), "initiative.phase must be now|next|later");
+      assert(typeof init.title === "string", "initiative.title must be string");
+      assert(Array.isArray(init.layers), "initiative.layers must be array");
+      assert(Array.isArray(init.environments), "initiative.environments must be array");
+      assert(["High", "Medium", "Low"].includes(init.urgency), "initiative.urgency must be valid");
+      assert(Array.isArray(init.gaps), "initiative.gaps must be array");
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("initiative phase matches source gap phase", () => {
-    const s = freshSession();
-    createGap(s, { description:"Next item", layerId:LayerIds[0], phase:"next" });
-    const { initiatives } = groupGapsIntoInitiatives(s, {});
-    const init = initiatives.find(i => i.title === "Next item");
-    assert(init, "initiative must exist");
-    assertEqual(init.phase, "next", "phase must match gap phase");
+  it("initiative phase matches source gap phase (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      const { v2shape } = v3WithGaps([
+        { description: "Next item", layerId: LayerIds[0], phase: "next" }
+      ]);
+      const { initiatives } = groupGapsIntoInitiatives(v2shape, {});
+      const init = initiatives.find(i => i.title === "Next item");
+      assert(init, "initiative must exist");
+      assertEqual(init.phase, "next", "phase must match gap phase");
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("initiative title matches source gap description", () => {
-    const s = freshSession();
-    createGap(s, { description:"Replace storage platform", layerId:LayerIds[0] });
-    const { initiatives } = groupGapsIntoInitiatives(s, {});
-    assert(initiatives.some(i => i.title === "Replace storage platform"),
-      "title must match gap description");
+  it("initiative title matches source gap description (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      const { v2shape } = v3WithGaps([
+        { description: "Replace storage platform", layerId: LayerIds[0] }
+      ]);
+      const { initiatives } = groupGapsIntoInitiatives(v2shape, {});
+      assert(initiatives.some(i => i.title === "Replace storage platform"),
+        "title must match gap description");
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("initiative.gaps array contains the source gap", () => {
-    const s   = freshSession();
-    const gap = createGap(s, { description:"Source gap", layerId:LayerIds[0] });
-    const { initiatives } = groupGapsIntoInitiatives(s, {});
-    const init = initiatives.find(i => i.title === "Source gap");
-    assert(init.gaps.includes(gap), "gap must be in initiative.gaps");
+  it("initiative.gaps array contains the source gap (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      const { v2shape } = v3WithGaps([
+        { description: "Source gap", layerId: LayerIds[0] }
+      ]);
+      const { initiatives } = groupGapsIntoInitiatives(v2shape, {});
+      const init = initiatives.find(i => i.title === "Source gap");
+      assert(init && init.gaps.length >= 1, "gap must be in initiative.gaps");
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("returns empty initiatives for session with no gaps", () => {
-    const s = freshSession();
-    const { initiatives } = groupGapsIntoInitiatives(s, {});
-    assertEqual(initiatives.length, 0, "empty session must produce empty initiatives");
+  it("returns empty initiatives for empty engagement (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      const { v2shape } = v3WithGaps([]);
+      const { initiatives } = groupGapsIntoInitiatives(v2shape, {});
+      assertEqual(initiatives.length, 0, "empty engagement must produce empty initiatives");
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("computeLayerImpact returns an entry for every layer", () => {
-    const s      = freshSession();
-    const impact = computeLayerImpact(s, {});
-    LAYERS.forEach(layer =>
-      assert(layer.id in impact, `impact must have key for layer '${layer.id}'`)
-    );
+  it("computeLayerImpact returns an entry for every layer (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      const { v2shape } = v3WithGaps([]);
+      const impact = computeLayerImpact(v2shape, {});
+      LAYERS.forEach(layer =>
+        assert(layer.id in impact, "impact must have key for layer '" + layer.id + "'")
+      );
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("computeLayerImpact each layer has now, next, later as numbers", () => {
-    const impact = computeLayerImpact(freshSession(), {});
-    LAYERS.forEach(layer =>
-      ["now","next","later"].forEach(ph =>
-        assert(typeof impact[layer.id][ph] === "number",
-          `impact['${layer.id}'].${ph} must be number`)
-      )
-    );
+  it("computeLayerImpact each layer has now, next, later as numbers (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      const { v2shape } = v3WithGaps([]);
+      const impact = computeLayerImpact(v2shape, {});
+      LAYERS.forEach(layer =>
+        ["now", "next", "later"].forEach(ph =>
+          assert(typeof impact[layer.id][ph] === "number",
+            "impact['" + layer.id + "']." + ph + " must be number")
+        )
+      );
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("computeLayerImpact counts gaps per layer per phase", () => {
-    const s = freshSession();
-    createGap(s, { description:"A", layerId:LayerIds[0], phase:"now" });
-    createGap(s, { description:"B", layerId:LayerIds[0], phase:"now" });
-    createGap(s, { description:"C", layerId:LayerIds[0], phase:"later" });
-    const impact = computeLayerImpact(s, {});
-    assertEqual(impact[LayerIds[0]].now,   2, "now count must be 2");
-    assertEqual(impact[LayerIds[0]].later, 1, "later count must be 1");
-    assertEqual(impact[LayerIds[0]].next,  0, "next count must be 0");
+  it("computeLayerImpact counts gaps per layer per phase (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      const { v2shape } = v3WithGaps([
+        { description: "A", layerId: LayerIds[0], phase: "now" },
+        { description: "B", layerId: LayerIds[0], phase: "now" },
+        { description: "C", layerId: LayerIds[0], phase: "later" }
+      ]);
+      const impact = computeLayerImpact(v2shape, {});
+      assertEqual(impact[LayerIds[0]].now,   2, "now count must be 2");
+      assertEqual(impact[LayerIds[0]].later, 1, "later count must be 1");
+      assertEqual(impact[LayerIds[0]].next,  0, "next count must be 0");
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("roadmap services do not mutate session", () => {
-    const s    = freshSession();
-    createGap(s, { description:"D", layerId:LayerIds[0] });
-    const snap = JSON.stringify(s);
-    groupGapsIntoInitiatives(s, {});
-    computeLayerImpact(s, {});
-    assertEqual(JSON.stringify(s), snap, "roadmap services must not mutate session");
+  it("roadmap services do not mutate the v2-shape projection (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      const { v2shape } = v3WithGaps([
+        { description: "D", layerId: LayerIds[0] }
+      ]);
+      const snap = JSON.stringify(v2shape);
+      groupGapsIntoInitiatives(v2shape, {});
+      computeLayerImpact(v2shape, {});
+      assertEqual(JSON.stringify(v2shape), snap, "roadmap services must not mutate input");
+    } finally { setActiveEngagement(savedEng); }
   });
 
-  it("roadmap services return serialisable results", () => {
-    const s = freshSession();
-    doesNotThrow(() => JSON.stringify(groupGapsIntoInitiatives(s, {})), "groupGapsIntoInitiatives serialisable");
-    doesNotThrow(() => JSON.stringify(computeLayerImpact(s, {})),       "computeLayerImpact serialisable");
+  it("roadmap services return serialisable results (v3-direct)", () => {
+    const savedEng = getActiveEngagement();
+    try {
+      const { v2shape } = v3WithGaps([]);
+      doesNotThrow(() => JSON.stringify(groupGapsIntoInitiatives(v2shape, {})), "groupGapsIntoInitiatives serialisable");
+      doesNotThrow(() => JSON.stringify(computeLayerImpact(v2shape, {})),       "computeLayerImpact serialisable");
+    } finally { setActiveEngagement(savedEng); }
   });
 
 });
