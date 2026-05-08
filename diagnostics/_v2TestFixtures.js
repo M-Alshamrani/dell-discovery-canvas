@@ -79,9 +79,16 @@ export {
 // stay PRIVATE inside state/runtimeMigrate.js (where they were inlined
 // during Step B); after Step J deletes interactions/gapsCommands.js,
 // nothing in the codebase imports these helpers any more.
+//
+// rc.7 / 7e-8 redo Step I Phase I-B-9 · approveGap dropped. Its two test
+// consumers (T6.7 + RH6 in Suite 22 of appSpec.js) were rewritten v3-
+// direct in the same commit: validateActionLinks(probe-with-reviewed:true)
+// gate + commitGapEdit({reviewed:true}) persistence. The v3 contract is
+// the same AL10 "I'm done" gate (RULES TX13.10) expressed as a caller
+// call-sequence rather than an atomic v2 helper. Pattern is VT26 template
+// (commit 2b28c01).
 export {
   createGap,
-  approveGap,
   updateGap,
   deleteGap,
   linkCurrentInstance,

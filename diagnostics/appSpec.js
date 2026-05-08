@@ -2132,7 +2132,19 @@ import {
 import {
   computeDiscoveryCoverage, computeRiskPosture
 } from "../services/roadmapService.js";
-import { approveGap as approveGapCmd } from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed via test-fixture shim
+// rc.7 / 7e-8 redo Step I Phase I-B-9 · `approveGap` shim re-export RETIRED.
+// The two consumers (T6.7 + RH6 in this same Suite-22 region) were rewritten
+// v3-direct in this commit: validateActionLinks(probe) gate + commitGapEdit
+// (gapId, {reviewed:true}) persistence. Pattern is VT26 template (2b28c01).
+//
+// Latent v3 observation surfaced (R8 awareness · NOT in this commit's scope):
+// state/collections/gapActions.js updateGap currently runs GapSchema.safeParse
+// (shape) but NOT validateActionLinks (per-Action link rule per RULES TX13.10
+// /AL10). v2's approveGap enforced this internally via probe + throw; v3's
+// commitGapEdit({reviewed:true}) does NOT. The rewritten tests below assert
+// the same call-sequence contract a v3 caller (UI gap-approval gate) must
+// follow. A future principal-architect pass may consolidate via a v3
+// commitGapApprove helper or by adding AL10 enforcement to v3 updateGap.
 
 describe("22 · services/programsService", () => {
 
@@ -2264,14 +2276,53 @@ describe("22 · services/programsService", () => {
     assertEqual(s.gaps[0].reviewed, true, "structural edit on a valid gap auto-flips reviewed");
   });
 
-  it("approveGap flips reviewed to true with no other edits (T6.7)", () => {
-    const s = freshSession();
-    const gap = createGap(s, { description:"G", layerId:LayerIds[0], reviewed:false });
-    const before = JSON.stringify({ ...gap, reviewed: undefined });
-    approveGapCmd(s, gap.id);
-    assertEqual(s.gaps[0].reviewed, true, "reviewed flips to true");
-    const after = JSON.stringify({ ...s.gaps[0], reviewed: undefined });
-    assertEqual(after, before, "no other fields changed by approveGap");
+  it("commitGapEdit({reviewed:true}) flips reviewed on a v3 gap with no other persisted edits (T6.7 · v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-9 · v3-direct rewrite. Pre-rewrite
+    // this asserted the v2 atomic `approveGap(s, gapId)` helper (validate
+    // + flip). The v3 contract is the same gate, expressed as a call
+    // sequence at the caller: validateActionLinks(probe-with-reviewed:true)
+    // throws first if shape is invalid; commitGapEdit(gapId, {reviewed:true})
+    // persists the flip. Here we exercise the GREEN path with gapType "ops"
+    // + notes >= 10 chars (RULES AL7 satisfied, AL3-AL6 silently skip per
+    // RULES T1 because "ops" maps to multiple actions), so the probe
+    // passes validation, commitGapEdit succeeds, and reviewed flips.
+    // Other fields (excluding the v3 updatedAt bump) are unchanged.
+    //
+    // testRunner.runIsolated wraps the WHOLE pass, not per-test, so this
+    // test snapshots+restores _active itself to avoid v3 engagement
+    // pollution leaking into downstream tests (e.g. Suite 43 U1, which
+    // calls renderGapsEditView and is sensitive to _active state). We
+    // use setActiveEngagement (NOT _resetEngagementStoreForTests) so the
+    // engagement-store subscribers stay alive for the rest of the pass.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const addRes = commitGapAdd({
+        description: "Ops gap for approve gate test",
+        layerId: LayerIds[0],
+        gapType: "ops",
+        notes: "Workshop ops gap notes substantial enough to satisfy AL7.",
+        reviewed: false
+      });
+      assertEqual(addRes.ok, true, "commitGapAdd succeeded");
+      const gapId = getActiveEngagement().gaps.allIds.at(-1);
+      const before = getActiveEngagement().gaps.byId[gapId];
+      assertEqual(before.reviewed, false, "starts unreviewed");
+      const beforeStable = JSON.stringify({ ...before, reviewed: undefined, updatedAt: undefined });
+      // The v3 "I'm done" gate: probe with reviewed:true through validateActionLinks
+      // first (AL10 · throws atomically before persistence if shape invalid).
+      // Shape is valid here, so it does not throw.
+      const probe = { ...before, reviewed: true };
+      validateActionLinks(probe);
+      const editRes = commitGapEdit(gapId, { reviewed: true });
+      assertEqual(editRes.ok, true, "commitGapEdit succeeded");
+      const after = getActiveEngagement().gaps.byId[gapId];
+      assertEqual(after.reviewed, true, "reviewed flips to true");
+      const afterStable = JSON.stringify({ ...after, reviewed: undefined, updatedAt: undefined });
+      assertEqual(afterStable, beforeStable, "no other fields changed by the approve gate");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   it("Gap card renders .gap-needs-review class + review dot when unreviewed (T6.9)", () => {
@@ -5450,21 +5501,59 @@ describe("42 · Phase 19k · v2.4.11 rules hardening + relationships polish", ()
       "auto-draft ops gap bypasses the substance rule");
   });
 
-  it("RH6 · A1 · approveGap throws with friendly message for shape-invalid gaps", () => {
-    const s = createEmptySession();
-    const draft = createGap(s, {
-      description: "Bad replace",
-      layerId: "compute", gapType: "replace",
-      relatedCurrentInstanceIds: ["i-x"],
-      // missing desired link — Replace requires 1 desired
-      reviewed: false   // auto-draft bypasses on create
-    });
-    let msg = "";
-    try { approveGapCmd(s, draft.id); } catch (e) { msg = e.message || String(e); }
-    assert(/Replace needs the new technology/i.test(msg),
-      "approveGap must surface the friendly Replace error (got: " + msg + ")");
-    // gap.reviewed must STILL be false — not flipped on a failed approve.
-    assertEqual(draft.reviewed, false, "approveGap failure must NOT flip reviewed:true");
+  it("RH6 · A1 · approve gate throws friendly Replace error for shape-invalid gaps + reviewed stays false (v3-direct)", () => {
+    // rc.7 / 7e-8 redo Step I Phase I-B-9 · v3-direct rewrite. Pre-rewrite
+    // this asserted v2's atomic `approveGap(s, gapId)` (validate + flip,
+    // throws atomically). The v3 contract is the same AL10 gate expressed
+    // as a call sequence at the caller: validateActionLinks(probe-with-
+    // reviewed:true) throws FIRST with the friendly Replace message; the
+    // caller MUST gate commitGapEdit({reviewed:true}) on its success so
+    // that on failure the gap's persisted reviewed stays false. This test
+    // exercises the RED path: an auto-draft Replace gap with a current
+    // link but NO desired link (the same shape the pre-rewrite v2 test
+    // used, preserving the AL2 "Replace needs the new technology"
+    // friendly-message assertion). The probe-validation throws; the
+    // gated commitGapEdit does not run; persisted reviewed remains false.
+    //
+    // Snapshot+restore _active per the same rationale as T6.7 (avoid
+    // pollution into downstream tests sensitive to _active state).
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const addRes = commitGapAdd({
+        description: "Bad replace",
+        layerId: "compute", gapType: "replace",
+        // 1 current present (UUID-shaped placeholder; GapSchema validates
+        // .uuid() format only, FK existence is not enforced here), 0 desired
+        // -- Replace requires 1 of each (AL2).
+        relatedCurrentInstanceIds: ["00000000-0000-4000-8000-0000000000ab"],
+        reviewed: false   // auto-draft bypasses validateActionLinks on add
+      });
+      assertEqual(addRes.ok, true, "commitGapAdd succeeded for the auto-draft");
+      const gapId = getActiveEngagement().gaps.allIds.at(-1);
+      const draft = getActiveEngagement().gaps.byId[gapId];
+      assertEqual(draft.reviewed, false, "auto-draft starts unreviewed");
+      // The v3 "I'm done" gate: caller probes validateActionLinks BEFORE
+      // commitGapEdit. Failure throws atomically; commitGapEdit must NOT run.
+      let msg = "";
+      let edited = false;
+      try {
+        const probe = { ...draft, reviewed: true };
+        validateActionLinks(probe);
+        // Only reached if probe passed -- gated commit.
+        commitGapEdit(gapId, { reviewed: true });
+        edited = true;
+      } catch (e) {
+        msg = e.message || String(e);
+      }
+      assertEqual(edited, false, "approve gate must NOT persist reviewed:true on shape failure");
+      assert(/Replace needs the new technology/i.test(msg),
+        "approve gate must surface the friendly Replace error (got: " + msg + ")");
+      const after = getActiveEngagement().gaps.byId[gapId];
+      assertEqual(after.reviewed, false, "persisted reviewed must STILL be false after failed approve");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   it("RH7 · A1 · updateGap implicit reviewed-flip skips when shape is invalid", () => {
