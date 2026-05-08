@@ -58,6 +58,61 @@
 >
 > Authority: `docs/V2_DELETION_ARCHITECTURE.md` · `docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md` R0..R11 · `memory/feedback_principal_architect_discipline.md` (tier-1; loads first) · `HANDOFF.md`.
 
+---
+
+## 🔍 Session α audit amendment · 2026-05-08 late evening (READ-ONLY · architect revisit on Sessions β..ζ output)
+
+**Audit author**: this section is signed by **Session α** — the agent that closed `v3.0.0-rc.4` and `v3.0.0-rc.5` and pushed both to origin. Brought back by user direction 2026-05-08 late evening to look at what Sessions β through ζ shipped on top of the rc.5 stopping point and surface an architect-revisit perspective. **Additive only** — no edits to Session ζ's rc.7 dev log, Brief prompt, Phase I-B-9 entry point, or any other prior section. The intent is dual coverage: whichever session continues from here gets Session ζ's canonical "do this next" instructions above PLUS this rc.5-era voice as a sanity check.
+
+### Session α's stopping point (= the boundary this audit measures from)
+
+| Commit | What |
+|---|---|
+| `30ff765` | `v3.0.0-rc.4` tag commit on origin (PREFLIGHT 1-8 verified · 1157/1157 GREEN) |
+| `842632a` | Hotfix #4 — v2 seed-library auto-install retired · APP_VERSION → `3.0.0-rc.5-dev` |
+| `2a53be1` / `1d31bb7` / `8f7a90a` | rc.5 Group B Arc 4 (SPEC §S35 LOCK + evolved Skill Builder + opener retirement + v3SeedSkills.js DELETED) |
+| `3c1d4a7` | SPEC §S36 LOCK + RULES CH32 + §T37 RED scaffold for rc.5 UX consolidation arc |
+| `302a4c4` | rc.5 impl 5a+5b+5c+5d (side-panel · AiAssist retire · BUG-027 cloak · BUG-022 polish) |
+| `36a87fe` | `v3.0.0-rc.5` tag commit on origin (PREFLIGHT 1-8 verified · 1169/1169 GREEN) |
+| (BUG_LOG amendment) | Logged BUG-027/028 mid-rc.5; logged BUG-029..035 from the user's 2026-05-05 office workshop test |
+
+**Session α did NOT do**: rc.6 closure (workshop-bug arc · grounding recast · `feedback_no_mocks.md` lock); rc.7-arc-1 (mock purge); rc.7 7e-1..7 (full v3-pure migration); rc.7 7e-8a..8c'-fix2 (NoEnvsCard + SPEC §S41 + BUG-041); rc.7 7e-8d-3..5 boot-break + revert; R0..R10 lock; redo Steps A..G; Step I-A + I-B-1..8; R11 lock; BUG-042. **All of that is Sessions β through ζ work.**
+
+### What Session α notices, looking at Sessions β..ζ output
+
+**The discipline lock is the right answer to the right problem.** R0..R11 + `docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md` + `docs/V2_DELETION_ARCHITECTURE.md` are the kind of artifacts I would have wanted at rc.5 close but didn't have. The trigger event (rc.7 / 7e-8d-3..5 broke app boot because a scope-limited grep test was trusted instead of an own audit) is exactly the failure mode I would have predicted but didn't pre-empt. Session ε's response — REVERT first, LOCK the discipline second, redo properly via own-grep + manifest-scoped V-ANTI-V2-IMPORT-1/2/3 — is the principal-architect move. Session ζ's R11 lock (Recite + Answer + Execute + Pledge-Smoke-Screenshot at every step boundary, with `Browser smoke evidence:` mandatory in every commit message) is the durable forcing function I would have asked for if I'd seen the boot-break in real time.
+
+**The shape of the v3-pure migration looks correct.** Steps A..G follow the audit-consumer-graph → migrate-consumers → delete-module sequence (R1 + R2). The blast-radius monotone — V-ANTI-V2-IMPORT-1 violators 6 → 5 → 4 → 3 → 2 → 1 → 0 across Steps B..G — is the pattern an architect wants to see. The post-Step-G work (Phase I-A + I-B-1..8 shim slim) keeps the deletion sequence revertable per R7. VT26's v3-direct rewrite (`2b28c01`) as the template for remaining Phase I-B exports is sound — fewer commits is not the goal; revertibility is.
+
+### Three risks Session α surfaces (flag-only · not blocking)
+
+These are observations from reading the current HANDOFF.md + cross-checking against `git log` + `git ls-files`. Session ζ's operational handover above correctly names "Phase I-B-9+ next session entry point" as the priority — these risks are awareness items the next session can act on if/when scope permits.
+
+1. **The rc.6 frozen-state stretch in this same HANDOFF.md (lines below this section, starting at "rc.6 frozen state") lists deleted files as if they exist.** Specifically: `services/mockChatProvider.js` + `services/mockLLMProvider.js` (deleted in rc.7-arc-1), `ui/views/AiAssistOverlay.js` (deleted Step E `2e9268e`), `ui/views/SkillAdmin.js` (deleted Step F `4789cd2`), `state/sessionBridge.js` (deleted Step G `ec06d34`). A session that scrolls past the operational top-of-file and reads §6 file pointers will be misled. Recommended scope (deferrable): trim those file pointers OR move the rc.6 archaeology to `docs/RELEASE_NOTES_rc.6.md` (which already exists). Top-of-file is correct; the archaeology is the trap.
+
+2. **The 6 expected RED tests (FS3, VT29, V-FLOW-V3-PURE-1/3/4/5) are named without inline rationale.** R11's standing-regression flow needs a baseline; "1138/1144 GREEN with 6 expected RED" is a count, not a contract. A one-sentence-per-test "Expected RED roster" would let the next session verify against a baseline rather than trust the assertion. Without it, a session that observes one fewer or one more RED can't tell whether that's progress or regression without re-deriving the rationale.
+
+3. **The Brief prompt and the "Then unblocks" sequence don't agree on Phase I-B cadence.** Brief prompt names `approveGapCmd` as the next concrete step (one of ~25 remaining shim exports). "Then unblocks" reads like Step H follows that single commit. Without an explicit cadence sentence ("Phase I-B = ~25 one-rewrite-per-commit before Step H unlocks; VT26 `2b28c01` is the template"), the next session may try to batch the shim work and trip R8 (scope balloon). The VT26 template reference IS named — what's missing is the count + cadence.
+
+### Smaller observations (non-blocking · hygiene)
+
+- R3 says "Chrome MCP screenshot"; R11 says "`mcp__Claude_Preview__preview_screenshot`". Both tools exist. Consider naming both with use-cases (Preview = in-loop fast iteration; Chrome MCP = canonical at tag boundaries per `feedback_browser_smoke_required.md`).
+- BUG-041 entry header in `docs/BUG_LOG.md` says "CLOSED — rc.7 / 7e-8c'-fix3" but the rc.7 dev log table records the BUG-041 fix at commit `709e778`, slotted between 7e-8c'-fix2 (`324b37a`) and 7e-8b (`1c55b95`). Worth a sanity-check on the sub-arc label.
+
+### What Session α explicitly is NOT doing in this amendment
+
+- Editing Session ζ's rc.7 dev log, Brief prompt, Phase I-B-9 entry point, or any other prior section.
+- Trimming the rc.6 archaeology (Risk #1) — separate decision the user has not approved.
+- Adding the Expected-RED roster (Risk #2) — same.
+- Editing the Brief prompt for cadence (Risk #3) — same.
+- Touching `docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md`, `docs/V2_DELETION_ARCHITECTURE.md`, `docs/BUG_LOG.md`, or any code/test file.
+
+This is read-only audit voice in `HANDOFF.md` only. The next session reads Session ζ's operational handover above + this Session α amendment, and decides what (if anything) to act on.
+
+**Session α signing off**: 2026-05-08 late evening. The work between `36a87fe` (my stopping point) and the current HEAD is significant, sound, and shipped under the right discipline. **Continue per Session ζ's Brief prompt; treat my three risks as awareness items, not blockers.** R11 governs whichever step boundary you cross next.
+
+---
+
 **rc.6 frozen state** (still authoritative for the rc.6 release; last tag on origin = `v3.0.0-rc.6`):
 
 **STATE**: rc.6 closes the workshop-bug arc surfaced 2026-05-05. Six of seven workshop bugs (BUG-029, 030, 031, 033, 034, 035) closed with regression tests; BUG-032 deferred to rc.6.1/rc.7 pending user-side repro. Centerpiece is the **grounding contract recast** (SPEC §S37): RAG-by-construction architecture replaces the count-based threshold + LLM-decides-to-ground hope. Two locked memories ratified this release — `feedback_no_mocks.md` (NEW · tier-1) + `project_grounding_recast.md` (NEW).
