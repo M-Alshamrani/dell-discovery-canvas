@@ -1,15 +1,19 @@
 # Session Log — 2026-05-09 — rc.7 v2-deletion + bug-closure marathon
 
-**Branch**: `v3.0-data-architecture` · **Push range**: `495cead..63be1fb` (14 commits) · **Final banner**: 1141/1141 GREEN ✅ · **APP_VERSION**: `3.0.0-rc.7-dev` (rc.7 tag gated on user PREFLIGHT 5b)
+**Branch**: `v3.0-data-architecture` · **Push range**: `495cead..6e1d6e0` (18 commits + 1 doc-update) · **Final banner**: 1142/1142 GREEN ✅ · **APP_VERSION**: `3.0.0-rc.7-dev` (rc.7 tag gated on user PREFLIGHT 5b)
 
-## Headline outcomes
+> Live ledger — extends through to the v3-prefix purge + BUG-051 (root cause of BUG-032) + envLabel polish + doc sweep. The earlier "14 commits" snapshot was the first push; this section captures everything through `6e1d6e0`.
+
+## Headline outcomes (final)
 
 1. **v2 architecture DELETED entirely** — Steps A through K complete. 5 production modules removed (929 LOC). v3-pure architecture is now the sole runtime source of truth.
-2. **13 bugs closed** with verified-live fixes + regression tests: BUG-001, BUG-002, BUG-019, BUG-027, BUG-028, BUG-041, BUG-042, BUG-043, BUG-044 (gap-tile + chat halves), BUG-045, BUG-047, BUG-048, BUG-049.
+2. **14 bugs closed** with verified-live fixes + regression tests: BUG-001, BUG-002, BUG-019, BUG-027, BUG-028, BUG-032 (via BUG-051 root cause), BUG-041, BUG-042, BUG-043, BUG-044 (gap-tile + chat halves), BUG-045, BUG-047, BUG-048, BUG-049, BUG-051. Plus 1 minor polish (envLabel sovereignCloud canonical-catalog lookup).
 3. **2 bugs logged** for v3.1 / NEEDS-REPRO: BUG-046 (chat enhancement, 6-item plan with 2 user chat samples), BUG-050 (propagate-disabled — couldn't reproduce in test, awaiting user repro detail).
-4. **Banner climbed**: 1129/1134 (5 RED) → **1141/1141 GREEN ✅** (zero RED).
-5. **5 new regression tests added**: V-FLOW-SHELL-SUBSCRIBER-1, V-FLOW-DEMO-BANNER-GAPS-1, V-FLOW-DRIVER-LABEL-V3UUID-1, V-CHAT-39, V-FLOW-SETTINGS-SAVE-1, V-FLOW-MATRIX-SELECTION-PERSIST-1, V-FLOW-PROJECTION-ENV-UUID-1.
+4. **Banner climbed**: 1129/1134 (5 RED) → **1142/1142 GREEN ✅** (zero RED, 13 net new tests).
+5. **6 new regression tests added**: V-FLOW-SHELL-SUBSCRIBER-1, V-FLOW-DEMO-BANNER-GAPS-1, V-FLOW-DRIVER-LABEL-V3UUID-1, V-CHAT-39, V-FLOW-SETTINGS-SAVE-1, V-FLOW-MATRIX-SELECTION-PERSIST-1, V-FLOW-PROJECTION-ENV-UUID-1, V-FLOW-GAPS-SELECTION-PERSIST-1.
 6. **Discipline deepened**: `feedback_chrome_mcp_for_smoke.md` LOCKED tier-1 alongside `feedback_browser_smoke_required.md` (use user's actual Chrome MCP for verification, not preview server).
+7. **v3-prefix purge shipped** (option 2 mechanical refactor): `state/v3Projection.js` → `state/projection.js`; `state/v3ToV2DemoAdapter.js` → `state/legacySessionAdapter.js`. 8 importers + manifest + V-NAME-1 list updated. `state/v3SkillStore.js` deferred to v3.1 polish arc (path collision with `core/skillStore.js` — different concept, needs consolidation not just rename).
+8. **Anti-pattern identified**: closure-local view-selection state in subscribe-driven shell architectures. THREE instances surfaced + fixed in 2 days (BUG-043 / BUG-048 / BUG-051). v3.1 audit candidate added: every view holding edit-cycle selection must lift to module scope.
 
 ## Commit ledger (chronological)
 
@@ -26,7 +30,12 @@
 | 9 | `d48d56e` | 1138→1139 | BUG-045 fix: Settings Save handler scopes lookup to .settings-body (not .overlay-body wrap) + V-FLOW-SETTINGS-SAVE-1 + log BUG-046 chat enhancement |
 | 10 | `1b5963c` | 1139/1139 | BUG-046 chat sample #2 (auto-draft rules transparency) + fix plan item #6 |
 | 11 | `d6d74b8` | 1139→1140 | BUG-047 (provider chip dot color distinction) + BUG-048 (right-pane selection survives re-render) + V-PILLS-3 update + V-FLOW-MATRIX-SELECTION-PERSIST-1 + VT20 em-dash sweep |
-| 12 | `63be1fb` | 1140→**1141** | BUG-049 fix: env UUID→envCatalogId in v3Projection + V-FLOW-PROJECTION-ENV-UUID-1 + log BUG-050 NEEDS-REPRO |
+| 12 | `63be1fb` | 1140→1141 | BUG-049 fix: env UUID→envCatalogId in v3Projection + V-FLOW-PROJECTION-ENV-UUID-1 + log BUG-050 NEEDS-REPRO |
+| 13 | `f1f2907` | 1141/1141 | docs: SESSION_LOG_2026-05-09 (initial) + HANDOFF refresh |
+| 14 | `6b5660f` | 1141/1141 | refactor: v3-prefix purge (state/projection.js + state/legacySessionAdapter.js) + V-NAME-1 list update |
+| 15 | `60be9a0` | 1141→**1142** | **BUG-051 (root cause of BUG-032)**: GapsEditView selectedGapId lifted to module scope + V-FLOW-GAPS-SELECTION-PERSIST-1; closes BUG-032 |
+| 16 | `6e1d6e0` | 1142/1142 | polish: envLabel reads ENV_CATALOG (full 8-entry catalog) so non-default-4 envs (sovereignCloud, archiveSite, coLo, managedHosting) resolve their human label |
+| 17 | (this) | 1142/1142 | docs: SESSION_LOG live-ledger update + SPEC §S40 stale ref update |
 
 ## Bug closures (in detail)
 
@@ -166,8 +175,31 @@ User reported. Live Chrome MCP test of the exact described sequence (lower asset
 - BUG-050 propagate-disabled (if user can repro)
 - R8 invariant arc — 6 items in HANDOFF.md "Open R8 backlog"; defense-in-depth helper-layer enforcement (caller-layer enforcement covers gates today)
 
-## Ledger
+## Ledger (final)
 
-**Origin push range**: `495cead..63be1fb` · **14 commits** · **1129/1134 RED → 1141/1141 GREEN** · **929 LOC v2 deleted** · **13 bugs closed** · **2 logged** · **6 new regression tests**.
+**Origin push range**: `495cead..6e1d6e0` · **18 commits + 1 doc update** · **1129/1134 RED → 1142/1142 GREEN** · **929 LOC v2 deleted** · **14 bugs closed** · **2 logged for v3.1 / NEEDS-REPRO** · **8 new regression tests** · **2 v3-prefix renames** (preserves git history) · **1 anti-pattern identified + closed for the 3 known instances**.
 
 **Status**: rc.7 tag-ready. PREFLIGHT 5b is the gate.
+
+---
+
+## Anti-pattern: "view-local state lost across re-mount" (locked 2026-05-09)
+
+In a subscribe-driven shell architecture (post-Step-G v3-pure), every commit* operation triggers `subscribeActiveEngagement` → `renderStage` → fresh view closure. Closure-local selection state (`var selectedX = null` inside the render function) is reset to null on every re-mount. The user's edit-in-progress focus disappears.
+
+**The pattern surfaces as**:
+- "the button stopped working" (the WHOLE detail panel disappeared; the buttons inside it are absent, not disabled)
+- "I have to reselect the same item to keep editing"
+- "my work disappears after I save"
+
+**Closed instances (2026-05-09)**:
+1. **BUG-043** (`af2c26a`) — shell-render subscriber wiped by test-runner `_resetEngagementStoreForTests()`. Fix: re-register via `window.__shellRenderSubscriber` in testRunner afterRestore.
+2. **BUG-048** (`d6d74b8`) — `MatrixView.selectedInstId` closure-local. Fix: lifted to module-scope `_selectedInstIdByState[stateFilter]`.
+3. **BUG-051** (`60be9a0`) — `GapsEditView.selectedGapId` closure-local. Fix: lifted to module-scope `_selectedGapIdInGapsView`. **Closes long-standing BUG-032** (workshop-2026-05-05 deferred-for-repro).
+
+**Audit candidates verified clean**:
+- `ContextView` — `_selectedDriverUuid` + `_selectedEnvUuid` are already module-scope (lines 58-59).
+- `SkillBuilder` — uses explicit form-mounting model (no selection-state-across-re-mount shape).
+- `CanvasChatOverlay` — state object module-scope per existing architecture.
+
+**v3.1 polish-arc audit prescription**: any new view that holds user-edit-in-progress selection MUST lift to module scope. Closure-local selection vars are an explicit anti-pattern in subscribe-driven shells.
