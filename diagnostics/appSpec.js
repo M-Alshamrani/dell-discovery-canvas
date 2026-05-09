@@ -9038,6 +9038,152 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
       "BUG-D: isAutoDrafted MUST NOT use the legacy `relatedDesiredInstanceIds.length > 0` shape proxy (mis-classifies manual gaps the user later linked)");
   });
 
+  // ─── BUG-E closure · projection.js gap.driverId remap ───────────────────
+  // Pre-fix state/projection.js getEngagementAsSession did NOT remap
+  // gap.driverId from v3 UUID to v2 typeId. session.customer.drivers[].id
+  // was already typeId (line 61). groupProjectsByProgram (programsService)
+  // checks Set(addedDriverIds).has(project.driverId) — the addedIds set
+  // contains typeIds while project.driverId carried UUIDs → miss every
+  // project → all projects fell into the 'unassigned' swimlane on the
+  // Reporting Roadmap (Tab 5). Sister adapter state/legacySessionAdapter.js
+  // does this remap; projection.js had drifted.
+  it("V-FLOW-DRIVER-PROJECTION-1 · BUG-E closure · projection.js getEngagementAsSession remaps gap.driverId from v3 UUID to v2 typeId", async () => {
+    const { getEngagementAsSession } = await import("/state/projection.js");
+    _resetEngagementStoreForTests();
+    const eng = createEmptyEngagement({ meta: { isDemo: false } });
+    setActiveEngagement(eng);
+    commitDriverAdd({ businessDriverId: "modernize_infra", priority: "High", outcomes: "Test" });
+    var driverUuid = getActiveEngagement().drivers.allIds[0];
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var envId = getActiveEngagement().environments.allIds[0];
+    commitGapAdd({
+      description: "BUG-E driver-mapped gap",
+      layerId: "compute", affectedLayers: ["compute"],
+      affectedEnvironments: [envId],
+      gapType: "ops",
+      notes: "ops gap with sufficient notes for AL7 substance check.",
+      reviewed: false,
+      driverId: driverUuid
+    });
+    var session = getEngagementAsSession();
+    assert(Array.isArray(session.gaps) && session.gaps.length === 1,
+      "BUG-E precondition: 1 gap in projected session");
+    var gap = session.gaps[0];
+    assertEqual(gap.driverId, "modernize_infra",
+      "BUG-E: projected gap.driverId MUST be the v2 typeId 'modernize_infra' (was v3 UUID pre-fix; got: " + JSON.stringify(gap.driverId) + ")");
+    assertEqual(session.customer.drivers[0].id, "modernize_infra",
+      "BUG-E sanity: projected drivers[].id is also typeId (matches gap.driverId post-remap)");
+  });
+
+  it("V-FLOW-DRIVER-PROJECTION-2 · BUG-E closure · gap with NO driverId stays null after projection (no false-positive remap)", async () => {
+    const { getEngagementAsSession } = await import("/state/projection.js");
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var envId = getActiveEngagement().environments.allIds[0];
+    commitGapAdd({
+      description: "BUG-E driverless gap",
+      layerId: "compute", affectedLayers: ["compute"],
+      affectedEnvironments: [envId],
+      gapType: "ops",
+      notes: "ops gap with sufficient notes for AL7 substance check.",
+      reviewed: false
+    });
+    var session = getEngagementAsSession();
+    assertEqual(session.gaps[0].driverId, null,
+      "BUG-E: gap with no driverId stays null (no false-positive typeId remap)");
+  });
+
+  it("V-FLOW-ROADMAP-DRIVER-GROUPING-1 · BUG-E closure · groupProjectsByProgram resolves projects under their drivers (Northstar demo: every driver has ≥1 project)", async () => {
+    const { getEngagementAsSession } = await import("/state/projection.js");
+    const { buildProjects } = await import("/services/roadmapService.js");
+    const { groupProjectsByProgram } = await import("/services/programsService.js");
+    const { loadDemo } = await import("/core/demoEngagement.js");
+    _resetEngagementStoreForTests();
+    setActiveEngagement(loadDemo());
+    var session = getEngagementAsSession();
+    var projects = buildProjects(session, {}).projects;
+    var grouped = groupProjectsByProgram(projects, session);
+    var driverIds = session.customer.drivers.map(function(d) { return d.id; });
+    driverIds.forEach(function(did) {
+      assert(Array.isArray(grouped[did]) && grouped[did].length > 0,
+        "BUG-E: driver '" + did + "' MUST have ≥1 project after grouping (pre-fix all fell into 'unassigned'; got grouped[" + did + "].length=" + (grouped[did] || []).length + ")");
+    });
+    // Negative: unassigned bucket should NOT swallow every project
+    var totalGrouped = driverIds.reduce(function(n, did) { return n + (grouped[did] || []).length; }, 0);
+    assert(totalGrouped > 0,
+      "BUG-E: at least one project MUST be grouped under a driver (got 0; all in unassigned)");
+  });
+
+  // ─── BUG-F closure · Review all banner UX ────────────────────────────────
+  it("V-FLOW-REVIEW-ALL-HIGHLIGHT-1 · BUG-F closure · clicking the 'Review all' button HIGHLIGHTS all unreviewed auto-drafted gap cards (was: walkthrough-one-at-a-time; now: scan + pick)", async () => {
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitContextEdit({ customer: { name: "BUG-F Co", vertical: "Enterprise", region: "EMEA" } });
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var envId = getActiveEngagement().environments.allIds[0];
+    // Add 2 unreviewed auto-drafted gaps (the kind the banner counts).
+    commitGapAdd({
+      description: "BUG-F autoDraft gap 1",
+      layerId: "compute", affectedLayers: ["compute"],
+      affectedEnvironments: [envId],
+      gapType: "ops",
+      notes: "ops gap with sufficient notes for AL7 substance check.",
+      reviewed: false,
+      origin: "autoDraft"
+    });
+    commitGapAdd({
+      description: "BUG-F autoDraft gap 2",
+      layerId: "compute", affectedLayers: ["compute"],
+      affectedEnvironments: [envId],
+      gapType: "ops",
+      notes: "ops gap with sufficient notes for AL7 substance check.",
+      reviewed: false,
+      origin: "autoDraft"
+    });
+    var leftWrap = document.createElement("div");
+    var rightWrap = document.createElement("div");
+    document.body.appendChild(leftWrap);
+    document.body.appendChild(rightWrap);
+    try {
+      renderGapsEditView(leftWrap, rightWrap, null, {});
+      // Pre-condition: 2 gap cards exist
+      var cards = leftWrap.querySelectorAll(".gap-card");
+      assert(cards.length >= 2, "BUG-F precondition: ≥2 gap cards rendered (got " + cards.length + ")");
+      // Pre-condition: NO cards highlighted yet
+      var preHighlighted = leftWrap.querySelectorAll(".gap-card-highlighted-review");
+      assertEqual(preHighlighted.length, 0, "BUG-F precondition: no cards highlighted before Review all click");
+      // Click "Review all" button
+      var reviewAllBtn = leftWrap.querySelector(".auto-gap-review-all");
+      assert(reviewAllBtn, "BUG-F: '.auto-gap-review-all' button MUST exist when there are autoDraft unreviewed gaps");
+      reviewAllBtn.click();
+      // Post-condition: BOTH unreviewed cards now have the highlight class
+      var postHighlighted = leftWrap.querySelectorAll(".gap-card-highlighted-review");
+      assertEqual(postHighlighted.length, 2,
+        "BUG-F: clicking Review all MUST highlight all unreviewed autoDraft gap cards (got " + postHighlighted.length + " of 2)");
+    } finally {
+      leftWrap.remove();
+      rightWrap.remove();
+    }
+  });
+
+  it("V-FLOW-REVIEW-ALL-LAYOUT-1 · BUG-F closure · .auto-gap-notice CSS uses flex layout with space-between (button right-aligns; was inline pre-fix)", async () => {
+    var src;
+    try { src = await (await fetch("/styles.css")).text(); }
+    catch (e) { throw new Error("V-FLOW-REVIEW-ALL-LAYOUT-1: failed to fetch styles.css: " + (e && e.message || e)); }
+    // Source-grep: the .auto-gap-notice rule must declare flex + space-between.
+    var ruleMatch = src.match(/\.auto-gap-notice\s*\{[\s\S]*?\}/);
+    assert(ruleMatch, "BUG-F: .auto-gap-notice CSS rule must be present");
+    var rule = ruleMatch[0];
+    assert(/display:\s*flex/.test(rule),
+      "BUG-F: .auto-gap-notice MUST use display: flex (button right-alignment)");
+    assert(/justify-content:\s*space-between/.test(rule),
+      "BUG-F: .auto-gap-notice MUST use justify-content: space-between (text left, button right)");
+    // Highlight class must be defined for the BUG-F highlight feature.
+    assert(/\.gap-card\.gap-card-highlighted-review/.test(src),
+      "BUG-F: .gap-card.gap-card-highlighted-review CSS rule MUST be present (animation/outline for Review-all click)");
+  });
+
   it("V-FLOW-MANUAL-ADD-1 · R8 #6 · BUG-052 closure · GapsEditView manual-add dialog creates gap AND auto-selects it; commitGapAdd result-envelope handled (was broken pre-fix; selection lost on every manual-add)", async () => {
     _resetEngagementStoreForTests();
     setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));

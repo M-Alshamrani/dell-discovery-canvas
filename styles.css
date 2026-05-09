@@ -2250,10 +2250,31 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 }
 .btn-ghost-sm:hover { background: var(--dell-blue-faint); }
 
-/* Auto-gap notice */
+/* Auto-gap notice
+ * BUG-F fix (rc.7 / 7e-9d - 2026-05-09 PM) - flex layout so the message
+ * text sits left + the Review all button right-aligns within the banner.
+ * Pre-fix the button was inline with the text via appendChild; on wide
+ * panels it floated awkwardly mid-sentence. */
 .auto-gap-notice {
   background: #F5F3FF; border: 1px solid #DDD6FE; border-radius: var(--radius-sm);
   padding: 8px 12px; font-size: 12px; color: #5B21B6; margin-top: 8px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.auto-gap-notice-msg { flex: 1; }
+
+/* BUG-F fix - highlight class for unreviewed gaps when "Review all"
+ * is clicked. Glows the card without selecting it (was: walkthrough-
+ * one-at-a-time which forced sequential review). User can now scan +
+ * pick which to tackle first. */
+.gap-card.gap-card-highlighted-review {
+  outline: 2px solid var(--brand, #0078D4);
+  outline-offset: 2px;
+  animation: review-highlight-pulse 2.4s ease-out 1;
+}
+@keyframes review-highlight-pulse {
+  0%   { box-shadow: 0 0 0 6px rgba(0,120,212,0.35); }
+  60%  { box-shadow: 0 0 0 6px rgba(0,120,212,0.15); }
+  100% { box-shadow: 0 0 0 0 rgba(0,120,212,0); }
 }
 
 /* AI future card */

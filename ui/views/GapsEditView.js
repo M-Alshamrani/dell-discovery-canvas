@@ -326,34 +326,40 @@ export function renderGapsEditView(left, right, session) {
   });
   left._unsubFilter = unsubFilter;
 
-  // Auto-gap notice + v2.4.11 · C2 · "Review all" guided walkthrough button.
+  // Auto-gap notice + v2.4.11 · C2 + rc.7 / 7e-9d · "Review all" button.
   // rc.7 / 7e-9b · BUG-D closure · message tone matched to the Desired
   // State unreviewed-banner pattern (subtle + accurate; no bold weight,
-  // no marketing flourish). Reads "N of M auto-drafted gap(s) from
-  // Desired State dispositions not yet reviewed -- click below to walk
-  // through them." Counts only origin==="autoDraft" + reviewed===false.
+  // no marketing flourish). Counts only origin==="autoDraft" + reviewed===false.
+  // rc.7 / 7e-9d · BUG-F · button right-aligns inside the banner (flex
+  // layout per .auto-gap-notice CSS) and now HIGHLIGHTS all unreviewed
+  // gap cards instead of walking-one-at-a-time. User can scan + choose
+  // review order themselves.
   var autoGaps = getAutoGaps();
   if (autoGaps.length > 0) {
     var notice = mk("div", "auto-gap-notice");
     var totalGaps = (_v3GapsArray() || []).length;
     var msg = autoGaps.length + " of " + totalGaps + " gap" + (totalGaps > 1 ? "s" : "") +
-      " auto-drafted from Desired State dispositions not yet reviewed -- walk through each in the board below.";
-    notice.textContent = msg + " ";
+      " auto-drafted from Desired State dispositions not yet reviewed.";
+    var msgEl = mk("span", "auto-gap-notice-msg");
+    msgEl.textContent = msg;
+    notice.appendChild(msgEl);
     var reviewAllBtn = mkt("button", "btn-primary auto-gap-review-all", "Review all →");
-    reviewAllBtn.title = "Walk through each unreviewed gap in sequence so you can approve, edit, or delete it.";
+    reviewAllBtn.title = "Highlight all unreviewed auto-drafted gaps in the board below so you can pick which to review first.";
     reviewAllBtn.addEventListener("click", function() {
-      // Walkthrough: select unreviewed gaps one at a time. Clicking the
-      // button each time advances to the next; when none remain, it
-      // auto-disables. Lightweight first cut , doesn't need a full
-      // wizard chrome to be useful.
-      var nextUnreviewed = (_v3GapsArray() || []).find(function(g) {
-        return g.reviewed === false && g.status !== "closed";
+      // BUG-F fix · highlight (don't auto-select). Add the highlight
+      // class to every unreviewed-autoDraft gap card so the user can
+      // scan them in the kanban + click whichever they want first.
+      // Animation auto-fades after ~2.4s; clicking any gap card clears
+      // its highlight as a side-effect (the card click triggers
+      // selectedGapId update + re-render, dropping the class).
+      var unreviewedIds = autoGaps.map(function(g) { return g.id; });
+      var cards = left.querySelectorAll(".gap-card");
+      cards.forEach(function(card) {
+        var gid = card.getAttribute("data-gap-id");
+        if (unreviewedIds.indexOf(gid) >= 0) {
+          card.classList.add("gap-card-highlighted-review");
+        }
       });
-      if (nextUnreviewed) {
-        selectedGapId = nextUnreviewed.id;
-        setSelectedGapId(selectedGapId);
-        renderAll();
-      }
     });
     notice.appendChild(reviewAllBtn);
     header.appendChild(notice);
@@ -521,6 +527,12 @@ export function renderGapsEditView(left, right, session) {
     if (gap.urgency) cls += " crit-" + gap.urgency.toLowerCase();
     var card = mk("div", cls);
     card.draggable = true;
+    // BUG-F (rc.7 / 7e-9d) · gap.id on the card so the "Review all"
+    // button can target unreviewed gaps for the highlight class. Pre-fix
+    // the card had layer/urgency/gapType/environment data attrs but no
+    // gap-id surface, so the highlight pass had to fall back to label
+    // matching. Explicit id attribute is cleaner + faster.
+    card.setAttribute("data-gap-id", gap.id);
     // v2.4.14 CD3 . carry the gap's domain (derived from its services'
     // dominant domain) on a data attribute so .gap-card::before paints
     // the muted-hue left bar via CSS.

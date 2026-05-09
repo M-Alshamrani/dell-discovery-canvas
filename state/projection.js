@@ -55,13 +55,27 @@ export function getEngagementAsSession() {
   }
 
   // Drivers (v2 shape: { id (= businessDriverId), priority, outcomes }).
+  // BUG-E fix (rc.7 / 7e-9d · 2026-05-09 PM) · also build a UUID→typeId
+  // map so gap.driverId can be remapped below. Pre-fix the v2-shape
+  // session carried gap.driverId verbatim from v3 (a UUID), but the
+  // session.customer.drivers[].id was already a typeId — so
+  // services/programsService.groupProjectsByProgram (which checks Set
+  // membership of session.customer.drivers ids against project.driverId)
+  // missed every project, dropping all gaps into the "unassigned"
+  // swimlane on the Reporting Roadmap. Sister adapter
+  // state/legacySessionAdapter.js (file save) was already doing this
+  // remap (line ~123); projection.js had drifted. Same shape as the
+  // BUG-049 envUuidToCatalogId remap below.
+  const driverUuidToTypeId = {};
   const drivers = (eng.drivers && eng.drivers.allIds) ? eng.drivers.allIds.map(id => {
     const d = eng.drivers.byId[id];
-    return d ? {
+    if (!d) return null;
+    if (d.id && d.businessDriverId) driverUuidToTypeId[d.id] = d.businessDriverId;
+    return {
       id:       d.businessDriverId,
       priority: d.priority || "Medium",
       outcomes: typeof d.outcomes === "string" ? d.outcomes : ""
-    } : null;
+    };
   }).filter(Boolean) : [];
 
   // Environments (v2 shape: { id (= envCatalogId), hidden, alias?, location?, ... }).
@@ -117,6 +131,11 @@ export function getEngagementAsSession() {
 
   // Gaps (v2 shape: pass-through; v3 gaps have all v2-relevant fields).
   // BUG-049 fix · affectedEnvironments remapped from v3 UUIDs to v2 envCatalogIds.
+  // BUG-E fix (rc.7 / 7e-9d) · driverId remapped from v3 UUID to v2 typeId
+  // so groupProjectsByProgram can match the v2-shape session.customer.drivers
+  // (which carry typeId ids per the drivers projection above). Sister adapter
+  // state/legacySessionAdapter.js does the same remap; projection.js had
+  // drifted, dropping all projects into the 'Unassigned' swimlane on Tab 5.
   // gap.id + relatedCurrent/DesiredInstanceIds stay UUID (downstream
   // selectors look those up against the projected instances which keep UUID id).
   const gaps = (eng.gaps && eng.gaps.allIds) ? eng.gaps.allIds.map(id => {
@@ -125,6 +144,10 @@ export function getEngagementAsSession() {
     const out = { ...g };
     if (Array.isArray(g.affectedEnvironments)) {
       out.affectedEnvironments = g.affectedEnvironments.map(envId => envUuidToCatalogId[envId] || envId);
+    }
+    // BUG-E remap: driverId UUID → typeId. null preserved when gap has no driver.
+    if (g.driverId && driverUuidToTypeId[g.driverId]) {
+      out.driverId = driverUuidToTypeId[g.driverId];
     }
     return out;
   }).filter(Boolean) : [];
