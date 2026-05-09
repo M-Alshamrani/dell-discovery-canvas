@@ -2,7 +2,25 @@
 
 **🔴 READ FIRST · Principal-architect discipline (LOCKED 2026-05-08, R11 added evening)**: every session, every commit, every handover. Full text in [`docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md`](docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md) (R0..R11) + tier-1 memory anchor `feedback_principal_architect_discipline.md`. Core rules: **R0** acknowledge "what would a principal architect do?" before non-trivial action · **R1** own-grep before delete · **R2** migrate consumers FIRST, delete LAST · **R3** Chrome MCP browser smoke at every commit boundary (test banner alone is NOT sufficient) · **R4** no v3-store backward-compat hacks · **R5** no fig-leaf test fixtures hiding v2 logic · **R6** rewrite tests to assert v3 contracts (never retire-with-negative) · **R7** per-commit revertibility · **R8** surface scope balloons · **R9** every handover references this · **R10** acknowledge in every action out loud · **R11 (HARDEST · LOCKED 2026-05-08 evening)** Recite + Answer + Execute + Pledge-Smoke-Screenshot at EVERY step boundary; every commit message ends with a `Browser smoke evidence:` block. **Test banner alone is a discipline violation.**
 
-**Last session end**: 2026-05-09 (rc.7 work COMPLETE + v3-prefix purge + post-push polish · pushed to origin `495cead..6e1d6e0` · awaiting PREFLIGHT 5b real-LLM smoke from user) · `v3.0.0-rc.7-dev` on `v3.0-data-architecture` · **Banner 1142/1142 GREEN ✅** · 18 commits this session · v2 architecture DELETED · 14 bugs CLOSED (incl. long-standing BUG-032 finally root-caused via BUG-051), 2 logged for v3.1/NEEDS-REPRO. Anti-pattern "view-local state lost across re-mount" identified + closed for all 3 known instances (BUG-043/048/051). Full session detail in [`docs/SESSION_LOG_2026-05-09.md`](docs/SESSION_LOG_2026-05-09.md).
+**Last session end**: 2026-05-09 (rc.7 work COMPLETE + v3-prefix purge + post-push polish + **R8 invariant arc CLOSED** · pushed to origin through `886dbd6`; commits `3184043..6a6b94f` (R8 arc) **NOT YET PUSHED** awaiting user "push") · `v3.0.0-rc.7-dev` on `v3.0-data-architecture` · **Banner 1166/1166 GREEN ✅** · 24 commits this session · v2 architecture DELETED · R8 arc closed (6/6 backlog items) · 15 bugs CLOSED (incl. BUG-052 selection-lost-on-manual-add). Anti-pattern "view-local state lost across re-mount" identified + closed for all 3 known instances (BUG-043/048/051). Full session detail in [`docs/SESSION_LOG_2026-05-09.md`](docs/SESSION_LOG_2026-05-09.md).
+
+## 🟢 R8 invariant-enforcement arc CLOSED (2026-05-09 PM session)
+
+| Commit | Banner Δ | R8 # | Theme |
+|---|---|---|---|
+| `3184043` | 1142→1145 | #1 | `updateGap` AL10/TX13.10 gate on reviewed-flip + structural-patch-when-reviewed (V-INV-UPDATEGAP-AL10-1/2/3) |
+| `8ad0219` | 1145→1154 | #2 | `mapWorkloadAssets` I1..I8 invariants (workload-source / dedupe / asset-exists / no-self-map / no-workload-to-workload / state-match / env-match / **BUG-040** retired-asset gate) (V-INV-MAPWORKLOAD ×9) |
+| `4ab0a77` | 1154→1157 | #3 | `_gapUnlinkInstance` inherits R8 #1 gate atomically; explicit integration tests (V-INV-UNLINK-AL10-1/2/3) |
+| `4a8f8dc` | 1157→1161 | #4 | `_gapLinkInstance` `PHASE_CONFLICT_NEEDS_ACK` (L8 footgun-killer at v3 helper layer; UI already passes `acknowledged` correctly) (V-INV-LINK-PHASE-1/2/3/4 + T6.3 acknowledged-true rewrite) |
+| `ad8e919` | 1161→1165 | #5 partial | `updateGap` setPrimaryLayer auto-rebalance (G6 ergonomics; auto-flip-reviewed half **DEFERRED** to v3.1 polish per R8 flag-first) (V-INV-PRIMARY-LAYER-REBALANCE-1/2/3/4) |
+| `6a6b94f` | 1165→1166 | #6 | GapsEditView manual-add dialog **BUG-052 fix** (commitGapAdd-result-envelope-deref → addRes.id was undefined → selection lost on every successful manual-add) + UI contract test (V-FLOW-MANUAL-ADD-1) |
+
+**Total**: +24 invariant-enforcement assertions across 6 commits (banner 1142 → 1166 GREEN).
+
+**Deferred items (flagged-NOT-shipped per R8 NEVER-patch-flag-first)**:
+- R8 #5 auto-flip-reviewed: v2 contract auto-flipped reviewed=true on structural edits. UX-level behavior change, not data-integrity invariant. Risk of premature flip mid-edit. Move to v3.1 polish.
+- addGap AL10 parallel-path: `addGap` doesn't enforce AL10 when `input.reviewed === true` (R8 #1 only fires on `updateGap`). A manual-add with reviewed:true on shape-invalid gap creates G2-violating reviewed gap. UI dialog avoids this by NOT passing reviewed:true (R8 #6 closure). For tighter coverage, extend R8 #1 to addGap in v3.1.
+- v2 manual-add reviewed=true UX expectation: requires dialog redesign to also collect links AL10 demands for non-ops gap types. Move to v3.1 polish.
 
 ## 🟢 rc.7 tag-ready summary (2026-05-09 EOD)
 
