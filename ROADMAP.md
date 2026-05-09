@@ -76,7 +76,6 @@
 | BUG-021 | Medium | AI performance — Gemini slow, OpenAI prompt caching not wired | rc.8 |
 | BUG-022 | Medium | Chat UI polish (button + skills tabs + spacing + status UX) | v3.1 crown-jewel |
 | BUG-025 | Low | Cmd+K shortcut opens legacy AiAssistOverlay instead of CanvasChat (deleted in Step E — re-verify) | rc.7 (auto-resolved?) |
-| BUG-032 | Medium | Gaps tab desired-state asset linking button greyed-out (DEFERRED — needs user repro) | rc.6.1 / rc.7 |
 | BUG-036 | High | Canvas AI reports "empty" when user entered data via v2 UI tabs (v2-v3 sync gap) | likely auto-resolves with rc.7 view migration |
 | BUG-037 | Low | Chat lacks visual differentiation between user / assistant messages | v3.1 crown-jewel |
 | BUG-038 | Medium | Skill Builder UI is text-heavy / primitive | v3.1 crown-jewel |
@@ -98,6 +97,7 @@
 - `2026-05-09` BUG-047 (AI provider chip dots all green — visual + label distinction shipped: configured-but-inactive = blue dot + "Configured" label; active = green dot + "Active" label)
 - `2026-05-09` BUG-048 (right-pane detail panel disappears on Save — selection lifted to module scope + restored on re-mount)
 - `2026-05-09` BUG-049 (UUIDs leak in Reporting Initiative pipeline — env UUID→envCatalogId remap added to v3Projection.getEngagementAsSession)
+- `2026-05-09` BUG-051 + BUG-032 (closes the "linked state button deactivated" workshop bug — root cause was selectedGapId closure-locality in GapsEditView; fixed by lifting to module scope per the BUG-048 pattern)
 
 ---
 

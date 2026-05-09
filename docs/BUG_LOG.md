@@ -1039,9 +1039,15 @@ Identify the toast call site; bind the message to the actual level applied. Add 
 
 ---
 
-## BUG-032 · Gaps tab desired-state asset linking button grayed out / not clickable (regression of an older fix)
+## BUG-032 · Gaps tab desired-state asset linking button grayed out / not clickable (CLOSED 2026-05-09 — root cause was selectedGapId closure-locality, fixed by BUG-051)
 
-**Status**: DEFERRED to rc.6.1 / rc.7 · Investigated 2026-05-05 / 6i; could not reproduce against the v3 demo session on this dev machine. Code path inspected end-to-end; no conditional disable predicate found. Needs user hands-on repro to identify the specific greyed-out element + the workshop preconditions that triggered it. · v3.0.0-rc.5 → rc.6 (deferred)
+**Status**: **CLOSED 2026-05-09** · Root cause finally identified + fixed in BUG-051 (commit shipped 2026-05-09). The user perception of "the link button is deactivated / not clickable" was actually the WHOLE detail panel disappearing because `selectedGapId` was closure-local inside `renderGapsEditView`. Each successful link/edit fired the engagement subscriber chain → fresh closure → `selectedGapId = null` → right pane reverted to the gap-empty hint. The link buttons weren't disabled; they were absent. See BUG-051 for the fix detail + V-FLOW-GAPS-SELECTION-PERSIST-1 regression test.
+
+**Original investigation note** (2026-05-05 / 6i) preserved below for context — the hypotheses were close but missed the closure-locality root cause; could not reproduce against v3 demo because the prior dev cycle's test rebuild didn't capture the post-Step-G subscriber flow that exposes the bug.
+
+---
+
+**Status (original)**: DEFERRED to rc.6.1 / rc.7 · Investigated 2026-05-05 / 6i; could not reproduce against the v3 demo session on this dev machine. Code path inspected end-to-end; no conditional disable predicate found. Needs user hands-on repro to identify the specific greyed-out element + the workshop preconditions that triggered it. · v3.0.0-rc.5 → rc.6 (deferred)
 
 ### Investigation note (2026-05-05 · 6i)
 
@@ -1833,6 +1839,51 @@ The bug may surface only under one of:
 
 ### Memory anchor
 Reported in same session as BUG-049 + BUG-047 + BUG-048. Both BUG-047 (cosmetic dot color) and BUG-048 (selection persistence) had clean reproductions; BUG-050 specifically did not. Could be tied to the BUG-048 fix's behavior under some specific timing — flag if user re-hits and confirm BUG-048 commit (`d6d74b8`) timing is involved.
+
+---
+
+## BUG-051 · GapsEditView selectedGapId is closure-local; gap detail panel + link buttons disappear after every commitGapLink* / commitGapEdit (this is the root cause of BUG-032) (CLOSED 2026-05-09)
+
+**Status**: **CLOSED 2026-05-09** · Reported by user 2026-05-09 — *"when i try to click on the linked state to link more assets for ecample, at times the linked state button is deactivated. this is an old bug that was claimed fixed but it is still showing up"*. Root cause identified + fixed same day. **This closes BUG-032 (workshop-2026-05-05 deferred-for-repro).**
+**Reporter**: User
+**Severity**: Medium-High (workshop flow disrupted — every link cycle dropped the user out of their gap context, requiring a re-click to continue editing the same gap)
+**Regression**: Yes — pre-existing since the v3-pure shell-render subscriber chain landed (Step G area). Same shape as BUG-048 (MatrixView). Both surfaced when `commitX` flows triggered `subscribeActiveEngagement` → `renderStage` → fresh view closure with `var selectedX = null`.
+
+### Repro
+1. Tab 4 Gaps. Select a gap by clicking its card.
+2. Right pane shows the gap detail panel including "+ Link current instance" + "+ Link desired instance" buttons.
+3. Click "+ Link desired instance" → picker opens → click an unlinked desired instance.
+4. Picker closes; commitGapLinkDesiredInstance fires.
+5. → Gap detail panel disappears; right pane reverts to "[gap] Select a gap" placeholder hint.
+6. To continue editing the same gap, user must re-click the gap card.
+
+### Root cause
+`ui/views/GapsEditView.js` line 174 (pre-fix): `var selectedGapId = null;` was a closure-local variable inside `renderGapsEditView`. The link flow:
+1. `commitGapLinkDesiredInstance(gap.id, instId)` mutates engagement
+2. engagementStore `_emit()` fires `subscribeActiveEngagement` listeners
+3. app.js shell-render listener fires `renderHeaderMeta + renderStepper + renderStage`
+4. `renderStage()` re-calls `renderGapsEditView(left, right, null)` from scratch
+5. NEW closure starts with `selectedGapId = null` → right pane renders `gap-empty hint` instead of the detail panel
+
+The user's mental model: "I clicked a button to link an asset, and the button stopped working." The button was correct; it just disappeared along with the rest of the panel. BUG-032's hypothesis #3 (event-listener-not-attached due to render-order race) was directionally right; the actual mechanism was simpler (closure scope vs module scope), not a race.
+
+### Fix
+Same pattern as BUG-048 (MatrixView):
+1. **Lift `_selectedGapIdInGapsView` to module scope**.
+2. **Sync local var to map** at all 4 write sites: gap card click, auto-advance to next unreviewed, gap-removed clear, manual-add gap selection.
+3. **Read at render-start**: `var selectedGapId = getSelectedGapId();` so the local var picks up the persisted value across re-mounts.
+4. The detail-panel re-render path automatically picks up the live gap (existing `_v3GapsArray().find(g.id === selectedGapId)` continues to work; only its closure source changed).
+
+### Regression test
+**V-FLOW-GAPS-SELECTION-PERSIST-1**: drives v3-direct fixture (engagement + 1 instance + 1 gap), renders GapsEditView, simulates gap card click, re-renders GapsEditView (simulates engagement subscriber chain after a commit), asserts right pane re-mounts with the gap detail panel including link buttons. The pre-fix closure-local pattern would NOT have caught this — only checked single-render state.
+
+### Memory anchor
+THIRD instance of the "view-local state lost across re-mount" pattern in 2 days:
+- BUG-043 (shell-render subscriber wiped by test reset)
+- BUG-048 (MatrixView selectedInstId closure-local)
+- BUG-051 (GapsEditView selectedGapId closure-local — this entry)
+
+**Pattern to add to v3.1 spec audit**: every view that holds user-selection state across edit cycles must lift that state to module scope (or to a state-store module). Closure-local selection variables are an anti-pattern in subscribe-driven shell architectures. Audit candidates for the same shape: `ui/views/CanvasChatOverlay.js` (state object IS module-scope already, OK), `ui/views/ContextView.js` (driver-detail selection?), `ui/views/SkillBuilder.js` (skill-edit selection?). Schedule the audit pass for v3.1 polish arc.
 
 ---
 

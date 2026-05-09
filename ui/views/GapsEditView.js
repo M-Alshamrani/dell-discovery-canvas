@@ -163,6 +163,19 @@ function _v3Customer() {
   return Object.assign({}, eng.customer, { drivers: _v3DriversV2Shape() });
 }
 
+// BUG-051 (closes BUG-032 root cause) · selectedGapId lifted to module scope
+// so it survives the engagement subscriber chain re-render that fires after
+// commitGapLinkCurrentInstance / commitGapLinkDesiredInstance / commitGapEdit /
+// commitGapRemove. Pre-fix: closure-local var -> fresh closure -> null ->
+// detail panel disappeared -> user perceived "the link button is deactivated"
+// (the panel was gone; the buttons inside it weren't disabled, they were
+// just absent because the panel reverted to the "select a gap" hint).
+//
+// Same pattern as BUG-048's MatrixView fix (commit d6d74b8). After re-render,
+// if the persisted selectedGapId still matches a live gap, the right pane
+// re-mounts the gap detail panel automatically.
+var _selectedGapIdInGapsView = null;
+
 export function renderGapsEditView(left, right, session) {
   var activeLayerIds        = new Set(LAYERS.map(function(l) { return l.id; }));
   // v2.4.15-polish iter-4 . multi-select active sets. Empty set = no
@@ -171,7 +184,12 @@ export function renderGapsEditView(left, right, session) {
   var activeEnvIds          = new Set();
   var activeGapTypes        = new Set();
   var activeUrgencies       = new Set();
-  var selectedGapId         = null;
+  // BUG-051 · accessor over module-scope state. Reads return the persisted
+  // selection; writes mutate the map so subsequent re-renders see the same
+  // selection. The local var stays for read-friendliness inside this closure.
+  function getSelectedGapId() { return _selectedGapIdInGapsView || null; }
+  function setSelectedGapId(id) { _selectedGapIdInGapsView = id || null; }
+  var selectedGapId         = getSelectedGapId();
   var dragGapId             = null;
   var showNeedsReviewOnly   = false;
   // v2.4.11 · A2 · "Show closed gaps" filter. Default off , closed gaps
@@ -323,6 +341,7 @@ export function renderGapsEditView(left, right, session) {
       });
       if (nextUnreviewed) {
         selectedGapId = nextUnreviewed.id;
+        setSelectedGapId(selectedGapId);
         renderAll();
       }
     });
@@ -581,6 +600,7 @@ export function renderGapsEditView(left, right, session) {
 
     card.addEventListener("click", function() {
       selectedGapId = gap.id;
+      setSelectedGapId(gap.id);
       renderAll();
     });
     card.addEventListener("dragstart", function(e) {
@@ -1027,6 +1047,7 @@ export function renderGapsEditView(left, right, session) {
         try {
           commitGapRemove(gap.id);
           selectedGapId = null;
+          setSelectedGapId(null);
           renderAll();
         } catch (e) {
           delBtn.classList.remove("is-loading");
@@ -1327,6 +1348,7 @@ export function renderGapsEditView(left, right, session) {
           // reviewed defaults to true for manual creation per createGap.
         });
         selectedGapId = newGap.id;
+        setSelectedGapId(newGap.id);
         overlay.remove();
         renderAll();
       } catch(e) { notifyError({ title: "Validation error", body: e.message || String(e) }); }

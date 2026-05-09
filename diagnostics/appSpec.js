@@ -7928,6 +7928,55 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
       "BUG-049: session.gaps[].affectedEnvironments[] MUST contain the v2 envCatalogId 'coreDc'; got: " + JSON.stringify(gapEnvs));
   });
 
+  it("V-FLOW-GAPS-SELECTION-PERSIST-1 · BUG-051 (closes BUG-032 root cause) guard: GapsEditView selectedGapId persists across commitGapLink*-driven re-render; gap detail panel + link buttons survive add-link / unlink / edit cycles", async () => {
+    // User report 2026-05-09: clicking + Link desired instance / + Link
+    // current instance after a successful link cycle felt like the buttons
+    // were "deactivated" — really the WHOLE detail panel disappeared
+    // because selectedGapId was closure-local in renderGapsEditView.
+    // commitGapLinkDesiredInstance / commitGapLinkCurrentInstance fired the
+    // engagement subscriber chain → renderStage → fresh renderGapsEditView
+    // closure → selectedGapId = null → right pane reverted to gap-empty hint.
+    // Same shape as BUG-048 (MatrixView). Fix: lift to module scope.
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitContextEdit({ customer: { name: "BUG-051 Co", vertical: "Enterprise", region: "EMEA" } });
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var envId = getActiveEngagement().environments.allIds[0];
+    var instAddRes = commitInstanceAdd({
+      state: "current", layerId: "compute", environmentId: envId,
+      label: "BUG-051 instance", vendor: "Dell", vendorGroup: "dell",
+      criticality: "Medium", disposition: "keep"
+    });
+    var gapAddRes = commitGapAdd({
+      description: "BUG-051 test gap",
+      layerId: "compute",
+      affectedLayers: ["compute"],
+      affectedEnvironments: [envId],
+      gapType: "replace",
+      relatedCurrentInstanceIds: [],
+      relatedDesiredInstanceIds: [],
+      reviewed: true
+    });
+    var gapId = gapAddRes && gapAddRes.engagement && gapAddRes.engagement.gaps.allIds[0];
+    assert(gapId, "test setup needs a gap");
+    // First render — no selection → no detail panel.
+    var l1 = document.createElement("div"); var r1 = document.createElement("div");
+    renderGapsEditView(l1, r1, null);
+    assert(!r1.querySelector(".gap-detail-panel, .link-section"),
+      "BUG-051 setup: with no selection, right pane shows no detail panel");
+    // Simulate user clicking the gap card.
+    var card = l1.querySelector('.gap-card');
+    if (card) card.click();
+    // Re-render (simulates engagement subscriber firing after a commit).
+    var l2 = document.createElement("div"); var r2 = document.createElement("div");
+    renderGapsEditView(l2, r2, null);
+    // After re-render, the right pane should restore the gap detail panel
+    // including the link buttons (because selectedGapId was persisted).
+    var hasLinkButtons = !![...r2.querySelectorAll('button')].find(b => /link (current|desired) instance/i.test(b.textContent));
+    assert(hasLinkButtons,
+      "BUG-051: after re-render with persisted gap selection, right pane should restore the gap detail panel including link buttons (got innerHTML.length=" + r2.innerHTML.length + ")");
+  });
+
   it("V-FLOW-MATRIX-SELECTION-PERSIST-1 · BUG-048 guard: MatrixView selection survives commitInstanceUpdate-driven re-render; right-pane detail panel restored on re-mount", async () => {
     // User report 2026-05-09: select an instance tile in current/desired
     // state, change criticality, click Save → right-pane detail panel
