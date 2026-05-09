@@ -5785,44 +5785,48 @@ describe("38 · Phase 19h · v2.4.7 fresh-start UX — empty default + welcome c
   // FS1 + FS2 dropped per Step I Phase I-B-3 (pure-helper unit tests of
   // v2 isFreshSession predicate; v3 _isFreshEngagement covered by FS3 + FS4).
 
-  it("FS3 · ContextView renders the fresh-start welcome card on an empty session", () => {
-    const emptySession = {
-      sessionId: "sess-fs3",
-      isDemo: false,
-      customer: { name: "", vertical: "", region: "", drivers: [] },
-      sessionMeta: { date: "2026-04-24", presalesOwner: "", status: "Draft", version: "2.0" },
-      instances: [],
-      gaps: []
-    };
-    const l = document.createElement("div");
-    const r = document.createElement("div");
-    _installSessionAsV3Engagement(emptySession);
-    renderContextView(l, r, emptySession);
-    const card = l.querySelector(".fresh-start-card");
-    assert(card, "fresh-start card must render for empty session");
-    // Card must expose BOTH CTAs: Load demo (primary) + Start fresh (secondary).
-    const btns = [...card.querySelectorAll("button")];
-    assert(btns.some(b => /load demo/i.test(b.textContent)),
-      "welcome card must include 'Load demo' primary CTA");
-    assert(btns.some(b => /start fresh/i.test(b.textContent)),
-      "welcome card must include 'Start fresh' dismiss CTA");
+  it("FS3 · ContextView renders the fresh-start welcome card on an empty engagement", () => {
+    // rc.7 / 7e-8 Step H+J+K aftermath · v3-direct rewrite per the
+    // Phase I-B-9/12/15 pattern (snapshot+restore _active wrapper).
+    // The retired _installSessionAsV3Engagement bridge fell back to 4
+    // default environments when the v2 session had none, which tripped
+    // _isFreshEngagement's "envs > 0 = not fresh" predicate. v3-direct
+    // construction is honest -- the engagement IS genuinely empty.
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      const l = document.createElement("div");
+      const r = document.createElement("div");
+      renderContextView(l, r, null);
+      const card = l.querySelector(".fresh-start-card");
+      assert(card, "fresh-start card must render for empty engagement");
+      // Card must expose BOTH CTAs: Load demo (primary) + Start fresh (secondary).
+      const btns = [...card.querySelectorAll("button")];
+      assert(btns.some(b => /load demo/i.test(b.textContent)),
+        "welcome card must include 'Load demo' primary CTA");
+      assert(btns.some(b => /start fresh/i.test(b.textContent)),
+        "welcome card must include 'Start fresh' dismiss CTA");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   it("FS4 · ContextView does NOT render the fresh-start card once the user has data", () => {
-    const populatedSession = {
-      sessionId: "sess-fs4",
-      isDemo: false,
-      customer: { name: "Started Co", vertical: "Enterprise", region: "EMEA", drivers: [] },
-      sessionMeta: { date: "2026-04-24", presalesOwner: "", status: "Draft", version: "2.0" },
-      instances: [],
-      gaps: []
-    };
-    const l = document.createElement("div");
-    const r = document.createElement("div");
-    _installSessionAsV3Engagement(populatedSession);
-    renderContextView(l, r, populatedSession);
-    assert(!l.querySelector(".fresh-start-card"),
-      "fresh-start card must hide as soon as any data exists (customer name alone is enough)");
+    // rc.7 / 7e-8 Step H+J+K aftermath · v3-direct rewrite. Populate the
+    // engagement with a real customer name (which also flips it past
+    // _isFreshEngagement's "name is default" check).
+    const savedEng = getActiveEngagement();
+    try {
+      setActiveEngagement(createEmptyEngagement());
+      commitContextEdit({ customer: { name: "Started Co", vertical: "Enterprise", region: "EMEA" } });
+      const l = document.createElement("div");
+      const r = document.createElement("div");
+      renderContextView(l, r, null);
+      assert(!l.querySelector(".fresh-start-card"),
+        "fresh-start card must hide as soon as any data exists (customer name alone is enough)");
+    } finally {
+      setActiveEngagement(savedEng);
+    }
   });
 
   it("FS5 · Footer Load-demo button still exists as a persistent affordance", () => {
