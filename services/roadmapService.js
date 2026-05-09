@@ -34,6 +34,17 @@
 import { LAYERS, ENVIRONMENTS, ENV_CATALOG, BUSINESS_DRIVERS } from "../core/config.js";
 import { effectiveDriverId, effectiveDellSolutions } from "./programsService.js";
 import { computeBucketMetrics } from "./healthMetrics.js";
+// rc.7 / 7e-9 · Z2 closure (2026-05-09 PM) · SPEC §S43.3 · centralized
+// label resolvers. envLabel / layerLabel below were leak-vulnerable
+// (returned raw envId / layerId for unresolved input). Now delegate to
+// core/labelResolvers.js which returns structured placeholders. v2-
+// shape sessions (down-converted from engagement) still pass typeIds
+// (e.g. "coreDc") that resolve via ENV_CATALOG; v3 UUIDs resolve via
+// active engagement. Either input path → real label or placeholder.
+import {
+  envLabel as _resolveEnvLabel,
+  layerLabel as _resolveLayerLabel
+} from "../core/labelResolvers.js";
 
 // Action-verb map for project naming (SPEC §7.5.5).
 // v2.4.8 · Phase 17 · rationalize dropped from the taxonomy. Any session
@@ -62,25 +73,14 @@ function urgencyRank(u) {
   return u === "High" ? 3 : u === "Medium" ? 2 : u === "Low" ? 1 : 0;
 }
 
-function envLabel(envId) {
-  if (envId === "crossCutting") return "Cross-cutting";
-  // BUG-049 follow-up · ENVIRONMENTS is filtered to the default-4 subset
-  // (coreDc / drDc / publicCloud / edge); ENV_CATALOG is the full 8-entry
-  // canonical list (adds archiveSite, coLo, managedHosting, sovereignCloud).
-  // The pipeline chips on Tab 5 Reporting were leaking the typeId for any
-  // env outside the default-4 (e.g. "sovereignCloud" instead of
-  // "Sovereign Cloud"). Look up ENV_CATALOG first; fall back to ENVIRONMENTS
-  // for completeness; final fallback to envId is the legitimate "unknown
-  // env id" path.
-  var e = (typeof ENV_CATALOG !== "undefined") ? ENV_CATALOG.find(function(x) { return x.id === envId; }) : null;
-  if (!e && typeof ENVIRONMENTS !== "undefined") e = ENVIRONMENTS.find(function(x) { return x.id === envId; });
-  return e ? e.label : envId;
-}
-
-function layerLabel(layerId) {
-  var l = LAYERS.find(function(x) { return x.id === layerId; });
-  return l ? l.label : layerId;
-}
+// rc.7 / 7e-9 · Z2 closure · delegate to core/labelResolvers (SPEC §S43.3).
+// Pre-fix returned raw envId / layerId for unresolved input (UUID-leak
+// risk if a v3 UUID slipped past the down-converter). The centralized
+// resolver returns structured placeholders ("(unknown environment)",
+// "(unknown layer)") and walks BOTH v3 active-engagement collections
+// AND v2 catalogs, so either input shape resolves correctly.
+function envLabel(envId) { return _resolveEnvLabel(envId); }
+function layerLabel(layerId) { return _resolveLayerLabel(layerId); }
 
 function resolvePrimaryEnv(session, gap) {
   var envs = gap.affectedEnvironments || [];

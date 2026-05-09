@@ -4128,18 +4128,37 @@ Pure function. Idempotent (clean engagement is a fixed point). Reference-equal p
 
 **Wiring**: invoked once inside `state/engagementStore.js _rehydrateFromStorage` after schema parse, before installing as `_active`. Not called on every commit (commit path already validates via schema).
 
-### S43.3 · Layer 2 contract — UI label resolvers
+### S43.3 · Layer 2 contract — UI label resolvers (centralized in core/labelResolvers.js)
 
-Every UI helper that resolves a UUID-keyed reference to a human label MUST return a structured placeholder string for orphans -- NEVER the raw UUID.
+Every UI helper that resolves a UUID-keyed reference to a human label MUST return a structured placeholder string for orphans -- NEVER the raw UUID. **All resolvers live in `core/labelResolvers.js`** (single source of truth, post-Z2 closure 2026-05-09 PM).
 
-Resolvers covered (rc.7 / 7e-9):
-- `ui/views/GapsEditView.js envName(uuidOrCatalogId)` -- returns `"(unknown environment)"` for orphans (was: returned raw UUID via `: uuidOrCatalogId` fallback).
-- `services/programsService.js driverLabel(driverId)` -- returns `"(unknown driver)"` for orphans (was: returned `null`, leaving callers free to fall back to raw UUID via `|| effDid`).
+**Module exports** (`core/labelResolvers.js`):
 
-Caller-side cleanup (rc.7 / 7e-9):
-- `ui/views/GapsEditView.js` line 572 program-badge -- removed the `|| effDid` fallback. `driverLabelFor(effDid)` is now self-contained (resolves to label or structured placeholder; never null/undefined for a non-empty input).
+| Function | Resolves | Placeholder for orphan |
+|---|---|---|
+| `envLabel(idOrUuid)` | env UUID OR envCatalogId typeId; "crossCutting" sentinel; alias takes precedence | `"(unknown environment)"` (export `PLACEHOLDER_ENV`) |
+| `layerLabel(typeId)` | LAYERS catalog typeId | `"(unknown layer)"` (export `PLACEHOLDER_LAYER`) |
+| `driverLabel(idOrUuid)` | driver UUID via engagement.drivers.byId → businessDriverId → BUSINESS_DRIVERS catalog; OR direct catalog typeId | `"(unknown driver)"` (export `PLACEHOLDER_DRIVER`) |
+| `instanceLabel(uuid)` | engagement.instances.byId[uuid].label | `"(unknown instance)"` (export `PLACEHOLDER_INSTANCE`) |
 
-Future resolvers (when added) MUST follow the same contract per F43.1.
+**Resolution order** (envLabel + driverLabel):
+1. v3 path -- walk `getActiveEngagement()` collections (UUID-keyed)
+2. v2 path -- walk static catalogs in `core/config.js` (typeId-keyed)
+3. Placeholder string
+
+Each resolver is **defensive**: never throws on bad input (resolvers run on the render path; an exception would crash the view). Tolerates null/undefined/empty/wrong-type inputs by returning the placeholder.
+
+**Sites migrated to centralized resolver** (Z2 closure):
+- `ui/views/GapsEditView.js envName` -- thin delegate to `_resolveEnvLabel` (was inline implementation duplicating v3-walk + ENV_CATALOG fallback).
+- `services/programsService.js driverLabel` -- thin delegate to `_resolveDriverLabel`. Preserves legacy "falsy input returns null" contract at the entry point (back-compat with selectors/gapsKanban + V-CHAT-21 tests that distinguish absent-vs-unknown); orphan UUIDs return placeholder via the central resolver.
+- `services/roadmapService.js envLabel + layerLabel` -- thin delegates (were leak-vulnerable: returned raw envId/layerId for unresolved input; latent risk if v3 UUID slipped past the down-converter).
+- `ui/views/MatrixView.js` cmd-palette context line -- now `layerLabelResolver(layerId) + " -- " + envLabelResolver(envCatalogId || envUuid)`.
+- `ui/views/SummaryVendorView.js` layer-slice subtitle -- now `layerLabelResolver(layerId) + " . layer slice"`.
+
+**Caller-side cleanup** (Z1 closure carried into Z2):
+- `ui/views/GapsEditView.js` line 572 program-badge -- removed the `|| effDid` fallback. `driverLabelFor(effDid)` self-contained (returns label or placeholder; never null for non-empty input via the central resolver, except the documented legacy-null entry-point contract preserved in programsService.driverLabel).
+
+**Future resolvers** (when added: skill labels, service labels, etc.) MUST live in `core/labelResolvers.js` and follow the same defensive + placeholder contract per F43.1.
 
 ### S43.4 · Rules
 

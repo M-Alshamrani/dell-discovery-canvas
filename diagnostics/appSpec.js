@@ -8792,20 +8792,150 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
       "BUG-A / S43.3: driverLabel('cyber_resilience') MUST resolve to the catalog label");
   });
 
-  it("V-FLOW-LABEL-RESOLVER-2 · BUG-A / SPEC §S43.3 · GapsEditView envName returns '(unknown environment)' for orphan UUIDs (NEVER raw UUID fallback) — source-grep guard", async () => {
+  it("V-FLOW-LABEL-RESOLVER-2 · BUG-A / SPEC §S43.3 · GapsEditView envName delegates to centralized core/labelResolvers (post-Z2 closure 2026-05-09 PM) — source-grep guard", async () => {
     var src;
     try { src = await (await fetch("/ui/views/GapsEditView.js")).text(); }
     catch (e) { throw new Error("V-FLOW-LABEL-RESOLVER-2: failed to fetch GapsEditView: " + (e && e.message || e)); }
-    // Source-grep guard: envName must contain the structured placeholder
-    // string + must NOT contain the legacy raw-UUID fallback pattern.
-    assert(/return\s+["']\(unknown environment\)["']/.test(src),
-      "BUG-A / S43.3: envName MUST return '(unknown environment)' for orphan UUIDs");
-    // Negative match: the legacy `: uuidOrCatalogId;` fallback inside envName must be gone.
-    var envNameBlockMatch = src.match(/function envName\(uuidOrCatalogId\)\s*\{[\s\S]*?\n\}/);
-    assert(envNameBlockMatch, "BUG-A: envName function block must be findable in GapsEditView source");
-    var envNameBlock = envNameBlockMatch[0];
-    assert(!/return\s+uuidOrCatalogId\s*;\s*\}/.test(envNameBlock),
-      "BUG-A / S43.3: envName MUST NOT have a `return uuidOrCatalogId;` raw-UUID fallback (legacy pre-fix pattern)");
+    // Post-Z2: envName is a thin delegate to _resolveEnvLabel (the central
+    // labelResolvers import). Source-grep:
+    //   (a) labelResolvers import exists
+    //   (b) envName function delegates (single-line return)
+    //   (c) legacy raw-UUID `return uuidOrCatalogId;` fallback is GONE
+    assert(/from ["']\.\.\/\.\.\/core\/labelResolvers\.js["']/.test(src),
+      "Z2 / S43.3: GapsEditView MUST import from core/labelResolvers.js (post-Z2 centralization)");
+    assert(/function envName\(uuidOrCatalogId\)\s*\{\s*return\s+_resolveEnvLabel\(uuidOrCatalogId\)/.test(src),
+      "Z2 / S43.3: envName MUST be a thin delegate to _resolveEnvLabel (centralized resolver)");
+    // Negative match: the legacy multi-line implementation should be gone.
+    assert(!/return\s+uuidOrCatalogId\s*;/.test(src),
+      "Z2 / S43.3: GapsEditView MUST NOT contain `return uuidOrCatalogId;` (legacy pre-fix raw-UUID fallback pattern)");
+  });
+
+  // ─── Z2 closure · core/labelResolvers.js centralized label resolvers ────
+  // Per SPEC §S43.3 post-Z2 amendment (2026-05-09 PM). Single source of
+  // truth for env / layer / driver / instance label resolution. All
+  // views + services delegate. Tests assert:
+  //   1. each resolver returns the structured placeholder for unknown input
+  //   2. each resolver resolves real catalog/engagement entries
+  //   3. defensive: never throws on null/undefined/wrong-type
+  //   4. v3 UUID resolution walks engagement.<collection>.byId
+  //   5. v2 typeId resolution walks core/config.js catalogs
+  it("V-FLOW-LABEL-CENTRAL-1 · Z2 / SPEC §S43.3 · core/labelResolvers exports envLabel/layerLabel/driverLabel/instanceLabel + PLACEHOLDER_* constants", async () => {
+    const mod = await import("/core/labelResolvers.js");
+    assertEqual(typeof mod.envLabel, "function", "Z2: envLabel exported as function");
+    assertEqual(typeof mod.layerLabel, "function", "Z2: layerLabel exported as function");
+    assertEqual(typeof mod.driverLabel, "function", "Z2: driverLabel exported as function");
+    assertEqual(typeof mod.instanceLabel, "function", "Z2: instanceLabel exported as function");
+    assertEqual(mod.PLACEHOLDER_ENV, "(unknown environment)", "Z2: PLACEHOLDER_ENV constant");
+    assertEqual(mod.PLACEHOLDER_LAYER, "(unknown layer)", "Z2: PLACEHOLDER_LAYER constant");
+    assertEqual(mod.PLACEHOLDER_DRIVER, "(unknown driver)", "Z2: PLACEHOLDER_DRIVER constant");
+    assertEqual(mod.PLACEHOLDER_INSTANCE, "(unknown instance)", "Z2: PLACEHOLDER_INSTANCE constant");
+  });
+
+  it("V-FLOW-LABEL-CENTRAL-2 · Z2 / SPEC §S43.3 · envLabel resolves v2 typeIds (ENV_CATALOG path), v3 UUIDs (active engagement path), 'crossCutting' sentinel, AND returns placeholder for unknown input", async () => {
+    const { envLabel, PLACEHOLDER_ENV } = await import("/core/labelResolvers.js");
+    // v2 typeId path
+    assertEqual(envLabel("coreDc"), "Primary Data Center", "Z2: envLabel(typeId) resolves via ENV_CATALOG");
+    // crossCutting sentinel
+    assertEqual(envLabel("crossCutting"), "Cross-cutting", "Z2: envLabel('crossCutting') sentinel resolves");
+    // v3 UUID path: build an engagement with a real env, query by UUID
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitEnvAdd({ envCatalogId: "drDc" });
+    var envUuid = getActiveEngagement().environments.allIds[0];
+    assertEqual(envLabel(envUuid), "Disaster Recovery Site", "Z2: envLabel(uuid) resolves via active engagement → ENV_CATALOG");
+    // v3 UUID path with alias override
+    var engWithAlias = JSON.parse(JSON.stringify(getActiveEngagement()));
+    engWithAlias.environments.byId[envUuid].alias = "Tokyo Backup";
+    setActiveEngagement(engWithAlias);
+    assertEqual(envLabel(envUuid), "Tokyo Backup", "Z2: env.alias takes precedence over ENV_CATALOG label");
+    // Unknown input → placeholder (NEVER raw input)
+    assertEqual(envLabel("deadbeef-abcd-4000-8000-000000000fff"), PLACEHOLDER_ENV,
+      "Z2: orphan UUID returns placeholder, NEVER raw UUID");
+    assertEqual(envLabel("not-a-real-typeid"), PLACEHOLDER_ENV, "Z2: unknown typeId returns placeholder");
+    // Defensive: bad input
+    assertEqual(envLabel(null), PLACEHOLDER_ENV, "Z2: null input returns placeholder (no throw)");
+    assertEqual(envLabel(undefined), PLACEHOLDER_ENV, "Z2: undefined input returns placeholder");
+    assertEqual(envLabel(""), PLACEHOLDER_ENV, "Z2: empty string returns placeholder");
+    assertEqual(envLabel(42), PLACEHOLDER_ENV, "Z2: non-string input returns placeholder");
+  });
+
+  it("V-FLOW-LABEL-CENTRAL-3 · Z2 / SPEC §S43.3 · layerLabel resolves LAYERS catalog typeIds + returns placeholder for unknown", async () => {
+    const { layerLabel, PLACEHOLDER_LAYER } = await import("/core/labelResolvers.js");
+    assertEqual(layerLabel("compute"), "Compute", "Z2: layerLabel('compute') resolves");
+    assertEqual(layerLabel("storage"), "Data Storage", "Z2: layerLabel('storage') resolves");
+    assertEqual(layerLabel("workload"), "Workloads & Business Apps", "Z2: layerLabel('workload') resolves");
+    assertEqual(layerLabel("not-a-layer"), PLACEHOLDER_LAYER, "Z2: unknown typeId returns placeholder, NEVER raw input");
+    assertEqual(layerLabel(null), PLACEHOLDER_LAYER, "Z2: null input defensive");
+    assertEqual(layerLabel(undefined), PLACEHOLDER_LAYER, "Z2: undefined input defensive");
+  });
+
+  it("V-FLOW-LABEL-CENTRAL-4 · Z2 / SPEC §S43.3 · driverLabel resolves v2 typeIds (BUSINESS_DRIVERS) + v3 UUIDs (engagement.drivers.byId → businessDriverId)", async () => {
+    const { driverLabel, PLACEHOLDER_DRIVER } = await import("/core/labelResolvers.js");
+    // v2 typeId path
+    assertEqual(driverLabel("cyber_resilience"), "Cyber Resilience", "Z2: driverLabel(typeId) via BUSINESS_DRIVERS");
+    // v3 UUID path: build engagement with a real driver, query by UUID
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitDriverAdd({ businessDriverId: "modernize_infra", priority: "High", outcomes: "Test" });
+    var driverUuid = getActiveEngagement().drivers.allIds[0];
+    assertEqual(driverLabel(driverUuid), "Modernize Aging Infrastructure",
+      "Z2: driverLabel(uuid) via engagement → businessDriverId → catalog");
+    // Orphan UUID
+    assertEqual(driverLabel("deadbeef-bbbb-4000-8000-000000000fff"), PLACEHOLDER_DRIVER,
+      "Z2: orphan driver UUID returns placeholder");
+    // Defensive (NOTE: this is the centralized resolver; programsService.driverLabel
+    // wraps with the legacy null-for-falsy contract preserved at the wrapper layer)
+    assertEqual(driverLabel(""), PLACEHOLDER_DRIVER, "Z2: empty string returns placeholder");
+    assertEqual(driverLabel(null), PLACEHOLDER_DRIVER, "Z2: null returns placeholder");
+  });
+
+  it("V-FLOW-LABEL-CENTRAL-5 · Z2 / SPEC §S43.3 · instanceLabel resolves engagement.instances.byId[uuid].label + returns placeholder for orphan", async () => {
+    const { instanceLabel, PLACEHOLDER_INSTANCE } = await import("/core/labelResolvers.js");
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var envId = getActiveEngagement().environments.allIds[0];
+    commitInstanceAdd({
+      state: "current", layerId: "compute", environmentId: envId,
+      label: "Z2-test-instance", vendor: "X", vendorGroup: "custom",
+      criticality: "Medium", disposition: "keep"
+    });
+    var instUuid = getActiveEngagement().instances.allIds.at(-1);
+    assertEqual(instanceLabel(instUuid), "Z2-test-instance",
+      "Z2: instanceLabel(uuid) returns inst.label");
+    assertEqual(instanceLabel("deadbeef-cccc-4000-8000-000000000fff"), PLACEHOLDER_INSTANCE,
+      "Z2: orphan UUID returns placeholder");
+    assertEqual(instanceLabel(null), PLACEHOLDER_INSTANCE, "Z2: null defensive");
+  });
+
+  it("V-FLOW-LABEL-CENTRAL-6 · Z2 / SPEC §S43.3 · resolvers NEVER throw on the render path (every error path returns the placeholder)", async () => {
+    const { envLabel, layerLabel, driverLabel, instanceLabel } = await import("/core/labelResolvers.js");
+    // Wrong types, edge cases — must never throw
+    var weirdInputs = [{}, [], 0, NaN, true, false];
+    weirdInputs.forEach(function(input) {
+      doesNotThrow(function() { envLabel(input); }, "Z2: envLabel(" + typeof input + ") MUST NOT throw");
+      doesNotThrow(function() { layerLabel(input); }, "Z2: layerLabel(" + typeof input + ") MUST NOT throw");
+      doesNotThrow(function() { driverLabel(input); }, "Z2: driverLabel(" + typeof input + ") MUST NOT throw");
+      doesNotThrow(function() { instanceLabel(input); }, "Z2: instanceLabel(" + typeof input + ") MUST NOT throw");
+    });
+  });
+
+  it("V-FLOW-LABEL-CENTRAL-7 · Z2 / SPEC §S43.3 · migrated call sites import from core/labelResolvers.js (source-grep across services + views)", async () => {
+    // Source-grep guard: every site I migrated in Z2 must import from
+    // the centralized module. Catches future PRs that re-introduce
+    // inline label-resolution logic per F43.1.
+    var sites = [
+      { path: "/ui/views/GapsEditView.js",      mustHave: "core/labelResolvers" },
+      { path: "/ui/views/MatrixView.js",        mustHave: "core/labelResolvers" },
+      { path: "/ui/views/SummaryVendorView.js", mustHave: "core/labelResolvers" },
+      { path: "/services/roadmapService.js",    mustHave: "core/labelResolvers" },
+      { path: "/services/programsService.js",   mustHave: "core/labelResolvers" }
+    ];
+    for (const s of sites) {
+      const src = await (await fetch(s.path)).text();
+      assert(src.indexOf(s.mustHave) >= 0,
+        "Z2 / S43.3: " + s.path + " MUST import from " + s.mustHave + " (post-Z2 centralization contract)");
+    }
   });
 
   it("V-FLOW-MANUAL-ADD-1 · R8 #6 · BUG-052 closure · GapsEditView manual-add dialog creates gap AND auto-selects it; commitGapAdd result-envelope handled (was broken pre-fix; selection lost on every manual-add)", async () => {

@@ -30,6 +30,13 @@ import {
 } from "../../state/dispositionLogic.js";
 import { helpButton } from "./HelpModal.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
+// rc.7 / 7e-9 · Z2 closure · SPEC §S43.3 · centralized label resolvers.
+// Aliased imports (envLabelResolver / layerLabelResolver) to avoid name
+// collisions with any local helpers + make call sites read intentionally.
+import {
+  envLabel as envLabelResolver,
+  layerLabel as layerLabelResolver
+} from "../../core/labelResolvers.js";
 
 // BUG-048 fix · selection state lifted to module scope so it survives
 // re-renders triggered by commitInstanceUpdate (which fires the engagement
@@ -450,11 +457,17 @@ export function renderMatrixView(left, right, _legacySession, opts) {
     var overlay = mk("div", "cmd-overlay"); overlay.id = "cmd-palette";
     var box     = mk("div", "cmd-box");
 
-    var layerObj = LAYERS.find(function(l) { return l.id === layerId; });
+    // envCatalogId still needed downstream at line ~486 for the
+    // catalog-filter (CATALOG entries opt into specific env catalogs by
+    // envCatalogId, not env-UUID).
     var envCatalogId = _envCatalogIdFromUuid(envUuid);
-    var envCatalogObj = ENV_CATALOG.find(function(e) { return e.id === envCatalogId; });
+    // rc.7 / 7e-9 · Z2 closure (SPEC §S43.3) · centralized label
+    // resolvers · pre-fix the `: layerId` and `: envCatalogId` fallbacks
+    // could leak typeIds (or UUIDs if _envCatalogIdFromUuid returned
+    // null on a v3 lookup miss). Centralized resolvers return structured
+    // placeholders ("(unknown layer)", "(unknown environment)").
     var ctx = mk("div", "cmd-context");
-    ctx.textContent = (layerObj ? layerObj.label : layerId) + " -- " + (envCatalogObj ? envCatalogObj.label : envCatalogId);
+    ctx.textContent = layerLabelResolver(layerId) + " -- " + envLabelResolver(envCatalogId || envUuid);
     box.appendChild(ctx);
 
     var srch = document.createElement("input");

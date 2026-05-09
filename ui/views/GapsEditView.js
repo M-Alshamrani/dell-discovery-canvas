@@ -24,6 +24,10 @@ import { helpButton } from "./HelpModal.js";
 import { validateActionLinks, actionById } from "../../core/taxonomy.js";
 import { SERVICE_TYPES, SUGGESTED_SERVICES_BY_GAP_TYPE, suggestedFor, serviceLabel, serviceDomain } from "../../core/services.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
+// rc.7 / 7e-9 · Z2 closure · SPEC §S43.3 · centralized label resolver.
+// Aliased import to keep call sites reading intentionally + avoid name
+// collision with the local envName wrapper below.
+import { envLabel as _resolveEnvLabel } from "../../core/labelResolvers.js";
 import { getActiveValue as getFilter, getActiveValues as getFilterValues,
          toggleValue as toggleFilter, subscribe as subscribeFilter,
          getToggles, setToggle } from "../../state/filterState.js";
@@ -1432,26 +1436,16 @@ function layerName(id) { var l = (typeof LAYERS !== "undefined") ? LAYERS.find(f
 // rc.7 / 7e-4 - v3-pure: envName takes a v3 env UUID (the v3-canonical
 // identifier used in gap.affectedEnvironments + instance.environmentId).
 // Falls back to catalog-ref lookup for any straggling v2-shape data.
-function envName(uuidOrCatalogId) {
-  var eng = getActiveEngagement();
-  if (eng && eng.environments && eng.environments.byId[uuidOrCatalogId]) {
-    var e = eng.environments.byId[uuidOrCatalogId];
-    if (e.alias && e.alias.length > 0) return e.alias;
-    var cat = ENV_CATALOG.find(function(c) { return c.id === e.envCatalogId; });
-    return cat ? cat.label : e.envCatalogId;
-  }
-  var cat2 = ENV_CATALOG.find(function(c) { return c.id === uuidOrCatalogId; });
-  if (cat2) return cat2.label;
-  // BUG-A / SPEC §S43.3 closure · NEVER fall back to raw UUID. Pre-fix
-  // returned uuidOrCatalogId verbatim, leaking sentinel UUIDs (e.g.
-  // schema placeholder "00000000-0000-4000-8000-000000000001") into
-  // gap-card meta lines. UI label resolvers MUST return a structured
-  // placeholder; the engagementIntegrity scrubber repairs orphan refs
-  // at engagement-load (layer 1), this is layer 2 (render-time fallback
-  // for any orphan that survives - e.g. a gap pointing at an env that
-  // was removed mid-session before the next reload triggers a re-scrub).
-  return "(unknown environment)";
-}
+// rc.7 / 7e-9 · Z2 closure (SPEC §S43.3) · envName delegates to the
+// centralized labelResolvers module so all UUID-leak protection lives
+// in one place. Pre-Z2 this was an inline implementation duplicating
+// logic that also lived in services/roadmapService.envLabel and several
+// view-local helpers. Per the user's "scalable and maintainable
+// structured work" direction (2026-05-09 PM), the centralized module
+// is the single source of truth; views import from there and never
+// reimplement label resolution. Behavior unchanged: returns
+// "(unknown environment)" placeholder for any orphan input.
+function envName(uuidOrCatalogId) { return _resolveEnvLabel(uuidOrCatalogId); }
 function phaseLabel(p) { return p==="now" ? "Now (0-12 months)" : p==="next" ? "Next (12-24 months)" : "Later (>24 months)"; }
 
 // A gap is "auto-drafted" when it came from a Desired-State disposition, i.e.

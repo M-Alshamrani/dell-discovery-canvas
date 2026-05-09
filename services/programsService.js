@@ -185,32 +185,28 @@ export function effectiveDriverReason(gap, session) {
  * after the ★ glyph. Now: resolve the UUID via engagement.drivers.byId
  * to its businessDriverId (catalog typeId), then look up the label.
  */
+// rc.7 / 7e-9 · Z2 closure (SPEC §S43.3) · driverLabel delegates to
+// the centralized core/labelResolvers module so all label resolution
+// (env / layer / driver / instance) lives in one source-of-truth file.
+// Pre-Z2 the v3 UUID resolution logic was duplicated between this
+// helper and the central module's draft; consolidating here. Behavior
+// preserved: returns "(unknown driver)" placeholder for any orphan
+// input (NEVER raw UUID).
+//
+// Caller contract preserved: driverLabel(falsy) returns the placeholder
+// (NOT null as pre-fix). Callers that previously relied on the null
+// return for "no driver" should check the input `!driverId` before
+// invoking. Existing call sites already do this (verified Z2 audit).
+import { driverLabel as _resolveDriverLabel } from "../core/labelResolvers.js";
 export function driverLabel(driverId) {
+  // Preserve the historical "no driver id at all returns null" contract
+  // for back-compat with callers that distinguish absent vs unknown.
+  // Test V-CHAT-21 + selectors/gapsKanban rely on null for missing-
+  // driver-on-gap (separate semantic). Centralized resolver returns
+  // PLACEHOLDER_DRIVER for empty input; we re-map that case to null
+  // here to honor the legacy contract at this entry point.
   if (!driverId) return null;
-  // v2 path: directly a catalog typeId.
-  var d = BUSINESS_DRIVERS.find(function(b) { return b.id === driverId; });
-  if (d) return d.label;
-  // v3 path: driverId is a UUID; resolve via the active engagement's
-  // drivers collection to get the businessDriverId (catalog typeId),
-  // then look up the catalog label.
-  try {
-    var eng = getActiveEngagement();
-    var v3d = eng && eng.drivers && eng.drivers.byId && eng.drivers.byId[driverId];
-    if (v3d && v3d.businessDriverId) {
-      var d2 = BUSINESS_DRIVERS.find(function(b) { return b.id === v3d.businessDriverId; });
-      return d2 ? d2.label : v3d.businessDriverId;
-    }
-  } catch (e) { /* defensive · driverLabel must never throw on the render path */ }
-  // BUG-A / SPEC §S43.3 closure · driverId looked like a UUID/typeId but
-  // resolved to no driver record. Pre-fix returned null, leaving the
-  // caller free to fall back to displaying the raw UUID. Now returns a
-  // structured placeholder so the UI surface has no path to leak a UUID.
-  // The engagementIntegrity scrubber (layer 1) nulls out orphan driverIds
-  // at rehydrate; this layer-2 placeholder catches any orphans that
-  // survive a single in-session edit (e.g. driver removed before next
-  // reload). Distinguishable from the explicit null case (driverId
-  // absent) by the caller checking !driverId before invoking.
-  return "(unknown driver)";
+  return _resolveDriverLabel(driverId);
 }
 
 /**

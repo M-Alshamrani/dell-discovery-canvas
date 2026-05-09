@@ -1,6 +1,9 @@
 // ui/views/SummaryVendorView.js — vendor & platform mix analytics
 
 import { LAYERS, getEnvLabel } from "../../core/config.js";
+// rc.7 / 7e-9 · Z2 closure · SPEC §S43.3 · centralized layerLabel
+// resolver (aliased to layerLabelResolver to avoid local shadowing).
+import { layerLabel as layerLabelResolver } from "../../core/labelResolvers.js";
 import { computeMixByLayer, computeMixByEnv, computeVendorTableData } from "../../services/vendorMixService.js";
 import { helpButton } from "./HelpModal.js";
 // rc.7 / 7e-6 · v3-pure (per SPEC §S40 + RULES §16 CH34).
@@ -573,8 +576,10 @@ export function renderSummaryVendorView(left, right, sessionArg) {
         matching = (liveSession.instances || []).filter(i => i.vendorGroup === "dell");
       } else if (sliceKey.indexOf("layer:") === 0) {
         const layerId = sliceKey.slice(6);
-        const lay = LAYERS.find(l => l.id === layerId);
-        title = (lay ? lay.label : layerId) + " . layer slice";
+        // rc.7 / 7e-9 · Z2 closure (SPEC §S43.3) · was: `(lay ? lay.label : layerId)`
+        // which leaked the typeId when LAYERS catalog lookup missed.
+        // Centralized resolver returns "(unknown layer)" placeholder.
+        title = layerLabelResolver(layerId) + " . layer slice";
         matching = (liveSession.instances || []).filter(i => i.layerId === layerId);
       } else if (sliceKey.indexOf("env:") === 0) {
         const envId = sliceKey.slice(4);
