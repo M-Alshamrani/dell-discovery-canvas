@@ -81,7 +81,28 @@ export function updateGap(engagement, gapId, patch) {
     return { ok: false, errors: [{ path: "gapId", message: "Gap not found", code: "not_found" }] };
   }
   const now = new Date().toISOString();
-  const merged = { ...existing, ...patch,
+
+  // R8 #5 · setPrimaryLayer auto-rebalance (RULES G6 · 2026-05-09)
+  // When caller patches layerId WITHOUT also patching affectedLayers,
+  // auto-derive affectedLayers so:
+  //   - new layerId moves to index 0 (G6: affectedLayers[0] === layerId)
+  //   - old primary demoted to non-primary entry (preserved at later index)
+  //   - no duplicates (filter then prepend)
+  // Pre-fix v3 callers that updated layerId alone hit a G6 schema error
+  // (caller had to also rewrite affectedLayers manually). This was a v3
+  // ergonomics regression vs. v2 setPrimaryLayer; R8 #5 closes it. If
+  // the caller passes BOTH layerId AND affectedLayers, we respect the
+  // caller's intent (no auto-derivation) — schema still enforces G6.
+  let effectivePatch = patch;
+  if (typeof patch.layerId === "string" && patch.layerId.length > 0
+      && !Array.isArray(patch.affectedLayers)) {
+    const newPrimary = patch.layerId;
+    const existingLayers = Array.isArray(existing.affectedLayers) ? existing.affectedLayers : [];
+    const rest = existingLayers.filter(l => l !== newPrimary);
+    effectivePatch = { ...patch, affectedLayers: [newPrimary, ...rest] };
+  }
+
+  const merged = { ...existing, ...effectivePatch,
                    id: existing.id, engagementId: existing.engagementId,
                    createdAt: existing.createdAt, updatedAt: now };
   const result = GapSchema.safeParse(merged);

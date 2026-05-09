@@ -8403,6 +8403,106 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
       "R8 #4: current-side link MUST NOT be gated by phase-conflict (got: " + JSON.stringify(r) + ")");
   });
 
+  // ─── R8 #5 · v3 updateGap setPrimaryLayer auto-rebalance (G6 invariant) ──
+  // R8 #5 partial: setPrimaryLayer-rebalance closure (the auto-flip-reviewed
+  // half of HANDOFF "Open R8 backlog" #5 stays DEFERRED to v3.1 polish since
+  // it's a UX-level behavior change, not a data-integrity invariant — flagged
+  // per feedback_no_patches_flag_first.md). Pre-fix v3 callers that updated
+  // layerId WITHOUT also rewriting affectedLayers hit a G6 schema error
+  // (affectedLayers[0] !== layerId). v2 setPrimaryLayer auto-rebalanced;
+  // v3-pure didn't. R8 #5 closes the ergonomics regression.
+  //
+  // Contract (RULES G6):
+  //   updateGap(eng, gapId, { layerId }) where caller does NOT also pass
+  //   affectedLayers MUST auto-derive affectedLayers = [newLayerId, ...rest]
+  //   with rest preserving order minus newLayerId (no duplicates). When
+  //   caller passes BOTH layerId AND affectedLayers, no auto-derivation
+  //   (caller intent respected; schema still enforces G6 passively).
+  function _r8_5_setupGapWithLayers(initialLayerId, affectedLayers) {
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitContextEdit({ customer: { name: "R8-5 Co", vertical: "Enterprise", region: "EMEA" } });
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var envId = getActiveEngagement().environments.allIds[0];
+    commitGapAdd({
+      description: "R8-5 multi-layer gap",
+      layerId: initialLayerId,
+      affectedLayers: affectedLayers,
+      affectedEnvironments: [envId],
+      gapType: "ops",
+      notes: "ops gap with sufficient notes for AL7 substance check.",
+      reviewed: false
+    });
+    var gapId = getActiveEngagement().gaps.allIds[0];
+    return { envId, gapId };
+  }
+
+  it("V-INV-PRIMARY-LAYER-REBALANCE-1 · R8 #5 · updateGap with new layerId only (no affectedLayers patch) auto-rebalances; affectedLayers[0] === new layerId", async () => {
+    // gap starts with layerId='compute', affectedLayers=['compute', 'storage']
+    // patch only layerId='storage'. Helper auto-rebalances:
+    //   affectedLayers = ['storage', 'compute']  (storage prepended; compute demoted)
+    var f = _r8_5_setupGapWithLayers("compute", ["compute", "storage"]);
+    var r = commitGapEdit(f.gapId, { layerId: "storage" });
+    assertEqual(r.ok, true,
+      "R8 #5: updateGap with new layerId alone MUST succeed (got: " + JSON.stringify(r) + ")");
+    var post = getActiveEngagement().gaps.byId[f.gapId];
+    assertEqual(post.layerId, "storage", "R8 #5: layerId committed");
+    assertEqual(post.affectedLayers[0], "storage",
+      "R8 #5 / G6: affectedLayers[0] MUST equal new layerId after auto-rebalance (got: " + JSON.stringify(post.affectedLayers) + ")");
+    assertEqual(post.affectedLayers.length, 2,
+      "R8 #5: dedupe MUST collapse affectedLayers (no duplicate 'storage')");
+    assertEqual(post.affectedLayers[1], "compute",
+      "R8 #5: old primary 'compute' MUST be demoted to non-primary (got: " + JSON.stringify(post.affectedLayers) + ")");
+  });
+
+  it("V-INV-PRIMARY-LAYER-REBALANCE-2 · R8 #5 · updateGap with new layerId NOT in existing affectedLayers prepends it (existing entries preserved)", async () => {
+    // gap starts with layerId='compute', affectedLayers=['compute']. Patch
+    // layerId='network'. Auto-rebalance:
+    //   affectedLayers = ['network', 'compute']  (network prepended; compute kept)
+    var f = _r8_5_setupGapWithLayers("compute", ["compute"]);
+    var r = commitGapEdit(f.gapId, { layerId: "network" });
+    assertEqual(r.ok, true, "R8 #5: layer change MUST succeed");
+    var post = getActiveEngagement().gaps.byId[f.gapId];
+    assertEqual(post.affectedLayers.length, 2,
+      "R8 #5: rebalance preserves existing layer (got: " + JSON.stringify(post.affectedLayers) + ")");
+    assertEqual(post.affectedLayers[0], "network",
+      "R8 #5: new layerId MUST be at index 0");
+    assertEqual(post.affectedLayers[1], "compute",
+      "R8 #5: pre-existing layer MUST be preserved at later index");
+  });
+
+  it("V-INV-PRIMARY-LAYER-REBALANCE-3 · R8 #5 · updateGap with BOTH layerId AND affectedLayers respects caller's intent (no auto-derivation)", async () => {
+    // gap starts with layerId='compute', affectedLayers=['compute', 'storage'].
+    // Patch both layerId='network' AND affectedLayers=['network', 'data-protection'].
+    // Helper does NOT auto-derive — caller's affectedLayers wins.
+    var f = _r8_5_setupGapWithLayers("compute", ["compute", "storage"]);
+    var r = commitGapEdit(f.gapId, {
+      layerId: "network",
+      affectedLayers: ["network", "data-protection"]
+    });
+    assertEqual(r.ok, true, "R8 #5: explicit affectedLayers patch MUST succeed");
+    var post = getActiveEngagement().gaps.byId[f.gapId];
+    assertEqual(post.affectedLayers.length, 2,
+      "R8 #5: caller's affectedLayers wins (got: " + JSON.stringify(post.affectedLayers) + ")");
+    assertEqual(post.affectedLayers[0], "network", "R8 #5: caller's primary preserved");
+    assertEqual(post.affectedLayers[1], "data-protection",
+      "R8 #5: caller's non-primary preserved (NOT auto-derived 'storage')");
+  });
+
+  it("V-INV-PRIMARY-LAYER-REBALANCE-4 · R8 #5 · updateGap with affectedLayers patch BUT no layerId patch is unaffected (no auto-derivation; caller is responsible for G6)", async () => {
+    // gap starts with layerId='compute', affectedLayers=['compute', 'storage'].
+    // Patch only affectedLayers=['compute', 'network']. No layerId change.
+    // Auto-derivation does NOT fire; merged gap.layerId still 'compute'
+    // and affectedLayers[0]='compute' so G6 passes. The caller might
+    // want to add/reorder secondary layers without changing primary.
+    var f = _r8_5_setupGapWithLayers("compute", ["compute", "storage"]);
+    var r = commitGapEdit(f.gapId, { affectedLayers: ["compute", "network"] });
+    assertEqual(r.ok, true, "R8 #5: affectedLayers-only patch MUST succeed");
+    var post = getActiveEngagement().gaps.byId[f.gapId];
+    assertEqual(post.layerId, "compute", "R8 #5: layerId unchanged");
+    assertEqual(post.affectedLayers[1], "network", "R8 #5: caller's non-primary patch wins");
+  });
+
   it("V-FLOW-GAPS-SELECTION-PERSIST-1 · BUG-051 (closes BUG-032 root cause) guard: GapsEditView selectedGapId persists across commitGapLink*-driven re-render; gap detail panel + link buttons survive add-link / unlink / edit cycles", async () => {
     // User report 2026-05-09: clicking + Link desired instance / + Link
     // current instance after a successful link cycle felt like the buttons
