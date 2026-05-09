@@ -932,6 +932,78 @@ Est ~2 hr. Detailed migration plan drafted alongside v2.4.6.
 
 ---
 
+## v3.0.0 · Data architecture rebuild · RC.7 R8 invariant arc — IMPLEMENTED 2026-05-09 PM
+
+**Status**: rc.7-dev. APP_VERSION = `"3.0.0-rc.7-dev"`. Branch `v3.0-data-architecture` HEAD = `fb42a52`. **NOT pushed** (origin still on `886dbd6`). 7 commits ahead locally; awaiting user "push" / "tag rc.7" instruction.
+
+**Banner**: 1142/1142 → **1166/1166** GREEN ✅ (+24 invariant-enforcement assertions).
+
+**Authority**: HANDOFF "Open R8 backlog" #1..#6 (all six items closed). Per locked rule R8 (NEVER-patch-flag-first), three deferred items called out explicitly in commit messages + HANDOFF (auto-flip-reviewed; addGap AL10 parallel-path; v2 manual-add reviewed=true UX expectation). All three move to v3.1 polish backlog.
+
+### R8 #1 — `updateGap` AL10/TX13.10 atomic gate (commit `3184043`, +3 tests)
+
+- `state/collections/gapActions.js updateGap` enforces `validateActionLinks` atomically when caller flips `reviewed:true` OR patches a structural field on an already-reviewed gap.
+- Pure metadata patches (urgency, notes, phase, status, driverId, urgencyOverride, services, mappedDellSolutions, description) on a reviewed-but-AL10-violating gap STILL succeed — preserves the v2.4.11 A1 contract.
+- Pre-fix: caller-layer-only enforcement was the workaround (validateActionLinks(probe-with-reviewed:true) before commitGapEdit). Worked for hand-coded UI flows; left the gate optional for any future caller (AI write paths, integrations).
+- Tests: V-INV-UPDATEGAP-AL10-1 (invalid-shape reviewed-flip), -2 (structural patch dropping link below AL10 minimum on reviewed gap), -3 (metadata patch on reviewed-but-AL10-violating gap succeeds).
+- Banner: 1142 → 1145.
+
+### R8 #2 — `mapWorkloadAssets` I1..I8 invariants + BUG-040 (commit `8ad0219`, +9 tests)
+
+- `state/collections/instanceActions.js mapWorkloadAssets` enforces 8 invariants atomically: I1 source-must-be-workload-layer, I2 silent-dedupe, I3 asset-existence, I4 self-map-forbidden, I5 workload→workload-forbidden, I6 state-match, I7 env-match, **I8 retired-asset-gate (closes BUG-040)**.
+- Pre-fix: thin updateInstance wrapper with NO enforcement; ANY caller (UI, AI write paths, integrations) could violate the v2.3.1 5-rule contract or map to a retired asset (BUG-040).
+- Stable error codes: MAP_NOT_WORKLOAD_SOURCE, MAP_ASSET_NOT_FOUND, MAP_SELF, MAP_WORKLOAD_TO_WORKLOAD, MAP_STATE_MISMATCH, MAP_ENV_MISMATCH, MAP_TO_RETIRED_ASSET — UI can surface specific guidance.
+- Tests: V-INV-MAPWORKLOAD-NOT-WORKLOAD-SOURCE / -DEDUPE / -ASSET-NOT-FOUND / -SELF / -WORKLOAD-TO-WORKLOAD / -STATE-MISMATCH / -ENV-MISMATCH / -RETIRED-ASSET / -HAPPY-1.
+- Banner: 1145 → 1154.
+
+### R8 #3 — `_gapUnlinkInstance` integration tests (commit `4ab0a77`, +3 tests)
+
+- v3 `_gapUnlinkInstance` is a thin helper routing through `commitAction(updateGap, ...)`. R8 #1's structural-patch gate (relatedCurrentInstanceIds / relatedDesiredInstanceIds are STRUCTURAL fields) fires "for free" through unlink.
+- These integration tests make the contract observable at the unlink call surface so view-layer + AI write-path callers can rely on it without knowing updateGap is the gate.
+- Tests: V-INV-UNLINK-AL10-1 (last current link on reviewed 'replace' → AL10_VIOLATION), -2 (last current link on UNreviewed 'replace' succeeds — A1 bypass), -3 (last desired link on reviewed 'replace' → AL10_VIOLATION).
+- No production code change; pure regression-test addition.
+- Banner: 1154 → 1157.
+
+### R8 #4 — `_gapLinkInstance` PHASE_CONFLICT_NEEDS_ACK (commit `4a8f8dc`, +4 tests)
+
+- `state/adapter.js _gapLinkInstance` accepts `opts` parameter; when side==='desired' and `confirmPhaseOnLink` returns conflict AND `opts.acknowledged !== true`, refuses the link with `PHASE_CONFLICT_NEEDS_ACK` error code + conflict details (currentPriority, targetPriority, gapPhase, desiredLabel).
+- `commitGapLinkDesiredInstance(gapId, instanceId, opts)` signature widens to pass opts through. Backward-compatible (opts default undefined).
+- Existing GapsEditView UI already passed `{ acknowledged: true }` correctly after user confirmed via modal — zero UI changes needed.
+- Closes the v2.4.12 L8 / P6 footgun-killer at the v3 helper layer (was caller-layer-only post-rc.7).
+- Tests: V-INV-LINK-PHASE-1 (refuse without acknowledged), -2 (commit with acknowledged), -3 (no-conflict succeeds without acknowledged), -4 (current-side NOT gated). Plus T6.3 rewrite to pass acknowledged:true (was failing post-gate).
+- Banner: 1157 → 1161.
+
+### R8 #5 partial — `setPrimaryLayer` auto-rebalance (commit `ad8e919`, +4 tests)
+
+- `state/collections/gapActions.js updateGap` auto-derives `affectedLayers` when caller patches `layerId` without also patching `affectedLayers`: prepend new primary, dedupe, preserve order of remaining layers (G6 invariant maintained).
+- When caller passes BOTH layerId AND affectedLayers, no auto-derivation (caller intent respected; schema still enforces G6).
+- Closes the v2-vs-v3 ergonomics regression (v2 setPrimaryLayer auto-rebalanced; v3-pure didn't).
+- **PARTIAL**: the auto-flip-reviewed half of HANDOFF #5 stays DEFERRED to v3.1. UX-level behavior change, not data-integrity invariant; risks premature flip mid-edit. Per R8 NEVER-patch-flag-first.
+- Tests: V-INV-PRIMARY-LAYER-REBALANCE-1 (multi-layer, dedupe, demote), -2 (new layer not in existing, prepend), -3 (caller's both-patch wins), -4 (affectedLayers-only patch unaffected).
+- Banner: 1161 → 1165.
+
+### R8 #6 — manual-add dialog + BUG-052 fix (commit `6a6b94f`, +1 test)
+
+- `ui/views/GapsEditView.js` Add gap dialog: BUG-052 fix. Pre-fix `var newGap = commitGapAdd({...})` then `newGap.id` was always undefined (commitGapAdd returns `{ ok, engagement, errors }`, NOT the gap). `setSelectedGapId(undefined)` reset module-scope to null on every successful manual-add. Detail panel reverted to empty hint.
+- Post-fix: read `newGapId` from `getActiveEngagement().gaps.allIds.at(-1)`. Surfaces `addRes.ok===false` errors via notifyError. Corrects misleading "reviewed defaults to true for manual creation" comment (v3 schema defaults reviewed:false).
+- Closes the v2 reviewed=true UX expectation gracefully — documented in-code as v3.1 polish (would need dialog redesign to also collect links AL10 demands for non-ops gap types).
+- Test: V-FLOW-MANUAL-ADD-1 — exercises actual GapsEditView dialog flow; click '+ Add gap' → fill description → click 'Create gap' → assert gap added + auto-selected in detail panel.
+- Banner: 1165 → 1166.
+
+### Doc-debt closures + deferred items
+
+- HANDOFF.md refreshed with R8 ledger (commit `fb42a52`).
+- `docs/TAXONOMY.md` v2-shape language flagged for v3-pure rewrite (deferred to v3.1; out of R8 scope).
+- Auto-flip-reviewed (R8 #5 second half) → v3.1.
+- addGap AL10 parallel-path (gap in R8 #1 coverage; addGap doesn't enforce AL10 on reviewed:true input) → v3.1.
+- v2 manual-add reviewed=true UX expectation (requires dialog redesign for AL10 link collection on non-ops types) → v3.1.
+
+### Backfill notice (2026-05-09)
+
+Per `feedback_docs_inline.md` lock: this entry was authored inline alongside R8 commits (per the locked discipline). Earlier rc.5 + rc.6 arc entries are NOT backfilled here — those are pre-existing doc-debt outside R8 scope. Future arcs land inline per the lock.
+
+---
+
 ## v3.0.0 · Data architecture rebuild · RC.4-DEV — IN PROGRESS (2026-05-04, mid-arc)
 
 **Status**: **rc.4-dev is mid-arc.** APP_VERSION = `"3.0.0-rc.4-dev"`. Branch `v3.0-data-architecture` HEAD = `3938458`. **NOT pushed.** Origin still on rc.3 tag commit (`d60efbf`); 19 commits ahead locally.

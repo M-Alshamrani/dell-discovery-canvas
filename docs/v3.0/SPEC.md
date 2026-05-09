@@ -4029,4 +4029,53 @@ Vectors live in TESTS.md §T41 V-FLOW-EMPTY-ENVS-1..7. Summary:
 - **Sections**: §S40 (v3-pure architecture; the auto-materialize-default-4 retirement enables the empty-env state) · §S19 (read-side adapter; views consume engagement via memoized selectors) · §S31 (engagement persistence; the localStorage `envFirstAddAck_v1` key follows the same pattern as `v3_engagement_v1` for boot-survivability).
 - **Memory anchors**: `feedback_spec_and_test_first.md` (this annex IS the redo of a violation), `feedback_no_patches_flag_first.md` (the patch was caught + flagged by the user; this redo is the proper response), `project_v3_pure_arc.md` (rc.7 / 7e overall arc).
 
+---
+
+## §S42 · v3 invariant-enforcement arc — atomic helper-layer gates (rc.7 R8 backlog; LOCKED 2026-05-09)
+
+### S42.0 · Status + authority
+
+**Status**: SHIPPED 2026-05-09 PM session. Six R8 backlog items closed across 6 commits (`3184043`, `8ad0219`, `4ab0a77`, `4a8f8dc`, `ad8e919`, `6a6b94f`). Banner climbed 1142 → 1166 GREEN (+24 invariant-enforcement assertions). One half of R8 #5 (auto-flip-reviewed) deliberately deferred to v3.1 polish per locked rule R8 (NEVER-patch-flag-first).
+
+**Authority**: HANDOFF "Open R8 backlog" #1..#6 (preserved post-rc.7 v2-deletion arc as the contracts that needed v3 helper-layer enforcement work). Each item was a v2 helper-layer contract that survived as caller-layer-only enforcement post-Step I (v2 helpers deleted, contracts preserved as TODO). §S42 closes the gap: every contract is now atomic in v3 helpers, so any caller (UI, AI write paths, integrations) gets the same gate.
+
+### S42.1 · Lifted contracts (atomic at v3 helper layer)
+
+| R8 # | v3 helper | Contract | Error code | Tests |
+|---|---|---|---|---|
+| #1 | `state/collections/gapActions.js updateGap` | AL10/TX13.10: validateActionLinks fires on reviewed-flip OR structural-patch-when-reviewed | `AL10_VIOLATION` | V-INV-UPDATEGAP-AL10-1/2/3 |
+| #2 | `state/collections/instanceActions.js mapWorkloadAssets` | I1..I8 (workload-source / silent-dedupe / asset-existence / no-self-map / no-workload-to-workload / state-match / env-match / **BUG-040 retired-asset gate**) | `MAP_NOT_WORKLOAD_SOURCE`, `MAP_ASSET_NOT_FOUND`, `MAP_SELF`, `MAP_WORKLOAD_TO_WORKLOAD`, `MAP_STATE_MISMATCH`, `MAP_ENV_MISMATCH`, `MAP_TO_RETIRED_ASSET` | V-INV-MAPWORKLOAD-* (×9) |
+| #3 | `state/adapter.js _gapUnlinkInstance` (integration) | Inherits R8 #1 gate via structural-patch path; explicit integration tests | `AL10_VIOLATION` (inherited) | V-INV-UNLINK-AL10-1/2/3 |
+| #4 | `state/adapter.js _gapLinkInstance` (`commitGapLinkDesiredInstance` widened to `(gapId, instId, opts)`) | L8 / P6: refuse desired-side link when `confirmPhaseOnLink` returns conflict AND `opts.acknowledged !== true` | `PHASE_CONFLICT_NEEDS_ACK` (with details: currentPriority, targetPriority, gapPhase, desiredLabel) | V-INV-LINK-PHASE-1/2/3/4 |
+| #5 (rebalance half) | `state/collections/gapActions.js updateGap` | G6: when patch.layerId is present without patch.affectedLayers, auto-derive [layerId, ...rest] preserving order minus duplicates | (no error; auto-derived) | V-INV-PRIMARY-LAYER-REBALANCE-1/2/3/4 |
+| #6 | `ui/views/GapsEditView.js` Add gap dialog | Dialog reads `commitGapAdd` result envelope correctly + auto-selects new gap (BUG-052 closure) | (UI fix; surfaces `addRes.errors` via notifyError) | V-FLOW-MANUAL-ADD-1 |
+
+### S42.2 · Rules
+
+- **R42.1** (HARD) — Every contract listed in S42.1 MUST be atomic at the v3 helper layer. No "caller-layer enforcement is sufficient" comments allowed in production code; if a future PR introduces such a comment, it MUST add a regression test that proves the helper rejects the violating shape.
+- **R42.2** (HARD) — Stable error codes (S42.1 column 4) are the contract surface for callers (UI, AI write paths). Renaming a code is a breaking change requiring a SPEC amendment + downstream caller update.
+- **R42.3** (HARD) — Pure metadata patches on a reviewed-but-AL10-violating gap MUST still succeed (R8 #1 / v2.4.11 A1 contract). Side notes, urgency changes, phase changes don't trip the gate; only structural patches + explicit reviewed-flip do.
+- **R42.4** (HARD) — Phase-conflict gate (R8 #4) fires on side==='desired' only. Current-side links carry no priority semantics (R3.5.a); gating them on phase would be incorrect.
+- **R42.5** (AUTO) — setPrimaryLayer rebalance (R8 #5) only fires when patch.layerId present AND patch.affectedLayers absent. When caller passes both, caller intent wins (schema still enforces G6 passively).
+
+### S42.3 · Forbidden patterns
+
+- **F42.1** — A v3 helper that delegates to schema-only validation when an action-link rule applies. Pre-fix v3 `mapWorkloadAssets` was a thin `updateInstance` wrapper; that pattern is now FORBIDDEN for any helper whose contract includes invariants beyond schema shape.
+- **F42.2** — Caller-layer-only enforcement of L8 / P6 (phase-conflict-acknowledgment). The UI may still call `confirmPhaseOnLink` to populate the modal pre-emptively, but the helper-layer gate is the canonical defense. AI write paths cannot bypass.
+- **F42.3** — Reading `commitGapAdd` / `commitInstanceAdd` / similar return values as if they were the entity directly. The result is `{ ok, engagement, errors }`. Read the new id via `getActiveEngagement().<collection>.allIds.at(-1)` after a successful commit. Pre-fix BUG-052 in GapsEditView read `addRes.id` (always undefined) and lost selection on every successful manual-add.
+
+### S42.4 · Deferred (v3.1 polish · flagged per R8 NEVER-patch-flag-first)
+
+The following contracts were identified during the R8 arc but NOT shipped:
+
+1. **Auto-flip-reviewed (R8 #5 second half)** -- v2 contract auto-flipped `reviewed:true` on any structural edit when the merged shape was AL10-valid. UX-level behavior change, not data-integrity invariant. Risks premature flip while the user is mid-edit. Defer.
+2. **`addGap` AL10 parallel-path** -- R8 #1's gate is on `updateGap` only. `addGap` with `input.reviewed === true` on a shape-invalid gap creates a G2-violating reviewed gap. R8 #6's manual-add fix sidesteps this by NOT passing `reviewed:true`. Closing the parallel path requires either (a) extend R8 #1 to addGap (forces UI redesign for replace/enhance/consolidate/introduce manual-add to also collect links), or (b) accept the gap and mark as documented behavior. Defer pending user direction.
+3. **v2 manual-add reviewed=true UX expectation** -- v2 createGap defaulted `reviewed:true`. v3 schema defaults `reviewed:false`. Preserving v2 UX requires dialog redesign per (2). Defer.
+
+### S42.5 · Trace
+
+- **Principles**: P5 (atomic operations) -- every gate aborts the commit on first violation, no partial state mutation. P7 (caller-agnostic) -- UI, AI, integrations all pass through the same helper.
+- **Sections**: §S40 (v3-pure architecture; v2 helper-layer enforcement deleted in 7e-8 Step I, contracts preserved as R8 backlog) · §S19 (adapter; helpers route through `commitAction(actionFn, ...)`) · §S25 (data contract; invariant ids surfaced to grounding meta-model).
+- **Memory anchors**: `feedback_no_patches_flag_first.md` (deferred items called out explicitly per the R8 / NEVER-patch-flag-first lock), `feedback_test_or_it_didnt_ship.md` (every gate ships with a regression test; +24 assertions), `feedback_principal_architect_discipline.md` (R8 invariant arc closure is a principal-architect-quality refactor: surface scope honestly, defer non-invariant UX behavior, atomic helper enforcement).
+
 End of SPEC.
