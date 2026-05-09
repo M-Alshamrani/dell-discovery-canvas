@@ -224,7 +224,36 @@ document.addEventListener("DOMContentLoaded", function() {
       }
     });
   }
-  setTimeout(runAllTests, 150);
+  // BUG-C closure (rc.7 / 7e-9 · 2026-05-09) · test-runner opt-in gate.
+  // Pre-fix tests auto-ran on every page load (~70-80s, mutates
+  // engagementStore via _resetEngagementStoreForTests + setActiveEngagement).
+  // Production users clicking Load demo / interacting mid-run got race
+  // conditions ("2 errors during Load demo" reported 2026-05-09). Per
+  // user direction "all validations can be monitored somehow without
+  // disturbing production": tests now require explicit opt-in.
+  //
+  // Three triggers (any one suffices):
+  //   1. URL query param ?runTests=1     . single-session opt-in
+  //   2. localStorage.runTestsOnBoot=="1" . persistent opt-in (QA workflow)
+  //   3. window.runDellDiscoveryTests()  . manual trigger from console
+  //
+  // Production users see no test pass; QA explicit opt-in via either
+  // mechanism. window export always available so a stuck-state user can
+  // run the suite from devtools without rebuilding.
+  window.runDellDiscoveryTests = runAllTests;
+  var _testsOptIn = false;
+  try {
+    var _url = new URL(location.href);
+    if (_url.searchParams.get("runTests") === "1") _testsOptIn = true;
+  } catch (_e) { /* defensive */ }
+  try {
+    if (localStorage.getItem("runTestsOnBoot") === "1") _testsOptIn = true;
+  } catch (_e) { /* defensive · private-mode / disabled storage */ }
+  if (_testsOptIn) {
+    setTimeout(runAllTests, 150);
+  } else {
+    console.log("[diagnostics] tests skipped on boot. Run with ?runTests=1 in URL, or call window.runDellDiscoveryTests() from devtools, or set localStorage.setItem('runTestsOnBoot','1') to opt in persistently.");
+  }
 });
 
 function wireSettingsBtn() {

@@ -8550,6 +8550,52 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
       "BUG-B: setActiveEngagement on a demo engagement MUST transition status to 'demo' (got: " + _getSaveStatus().status + ")");
   });
 
+  // ─── BUG-C closure · test-runner opt-in gate ────────────────────────────
+  // Pre-fix the test runner auto-ran on every page load (~70-80s). User
+  // clicking Load demo / interacting mid-run hit race conditions because
+  // tests mutate the engagementStore via _resetEngagementStoreForTests +
+  // setActiveEngagement. Production users got "2 errors" when clicking
+  // Load demo while the test pass was still running.
+  //
+  // Now opt-in via:
+  //   - URL query ?runTests=1
+  //   - localStorage.runTestsOnBoot === "1"
+  //   - window.runDellDiscoveryTests() console call
+  //
+  // This is a source-grep guard (we can't easily test the URL flow inside
+  // the test runner itself — chicken-and-egg). The grep asserts the gate
+  // code is present + the window export survives.
+  it("V-FLOW-TEST-OPT-IN-1 · BUG-C closure · app.js gates auto-run-on-boot behind ?runTests=1 URL query OR localStorage.runTestsOnBoot OR window.runDellDiscoveryTests() manual trigger (production users see no auto-run)", async () => {
+    var src;
+    try { src = await (await fetch("/app.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-TEST-OPT-IN-1: failed to fetch app.js: " + (e && e.message || e)); }
+    // Gate 1: URL query check
+    assert(/searchParams\.get\(["']runTests["']\)\s*===\s*["']1["']/.test(src),
+      "BUG-C: app.js MUST gate setTimeout(runAllTests, ...) on ?runTests=1 URL query");
+    // Gate 2: localStorage check
+    assert(/localStorage\.getItem\(["']runTestsOnBoot["']\)\s*===\s*["']1["']/.test(src),
+      "BUG-C: app.js MUST gate auto-run on localStorage.runTestsOnBoot === '1'");
+    // Gate 3: window export for manual trigger
+    assert(/window\.runDellDiscoveryTests\s*=\s*runAllTests/.test(src),
+      "BUG-C: app.js MUST expose runAllTests on window.runDellDiscoveryTests for console-driven QA");
+    // Negative: setTimeout(runAllTests, ...) MUST be inside an if-block
+    // (the literal pattern WITHOUT the gate condition above must NOT exist
+    // as a top-level call). Strict regex: setTimeout(runAllTests must be
+    // preceded within ~50 chars by the gate variable check.
+    var setTimeoutMatch = src.match(/setTimeout\(runAllTests/);
+    assert(setTimeoutMatch, "BUG-C: app.js MUST still call setTimeout(runAllTests, ...) under the opt-in gate");
+    // Find the 50 chars before the setTimeout call; should include the
+    // gate variable (e.g. "_testsOptIn" or similar conditional).
+    var ctx = src.slice(Math.max(0, setTimeoutMatch.index - 100), setTimeoutMatch.index);
+    assert(/if\s*\([^)]*OptIn[^)]*\)/.test(ctx) || /if\s*\([^)]*runTests[^)]*\)/i.test(ctx),
+      "BUG-C: setTimeout(runAllTests, ...) MUST be wrapped in an opt-in conditional (got context: " + ctx.slice(-150) + ")");
+  });
+
+  it("V-FLOW-TEST-OPT-IN-2 · BUG-C closure · console-trigger flow: window.runDellDiscoveryTests is callable as a function (devtools-driven test run survives without rebuilding)", async () => {
+    assertEqual(typeof window.runDellDiscoveryTests, "function",
+      "BUG-C: window.runDellDiscoveryTests MUST be exposed as a callable function for console-driven QA (got typeof: " + typeof window.runDellDiscoveryTests + ")");
+  });
+
   it("V-FLOW-SAVE-STATUS-COMMIT-1 · BUG-B closure · commitAction-driven engagement updates ALSO call _persist + markSaved (every state mutation transitions out of 'saving')", async () => {
     // Tighter contract: not just setActiveEngagement, but every commitAction
     // that mutates state should drive the status transition. _persist is
