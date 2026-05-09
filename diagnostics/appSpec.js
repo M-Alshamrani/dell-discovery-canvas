@@ -5839,6 +5839,24 @@ describe("38 · Phase 19h · v2.4.7 fresh-start UX — empty default + welcome c
       "footer Load-demo button retains its label");
   });
 
+  it("V-FLOW-SHELL-SUBSCRIBER-1 · BUG-043 guard: app.js's shell-render subscriber survives _resetEngagementStoreForTests across the test pass", async () => {
+    // Per BUG-043 + the testRunner afterRestore re-registration: after
+    // the test pass completes (and runs through this test, which is
+    // *during* the pass), window.__shellRenderSubscriber MUST be exposed
+    // by app.js so afterRestore can re-add it to engagementStore._subs
+    // (which test isolation has already wiped). Without this, demo-load
+    // / file-open / +New session paths mutate engagement but the UI
+    // never repaints.
+    assert(typeof window.__shellRenderSubscriber === "function",
+      "app.js MUST expose window.__shellRenderSubscriber so afterRestore can re-attach it to engagementStore subscribers post-test-wipe");
+    // The function should be safe to call repeatedly with no args
+    // (it reads getActiveEngagement() internally).
+    let threw = null;
+    try { window.__shellRenderSubscriber(); } catch (e) { threw = e; }
+    assert(threw === null,
+      "window.__shellRenderSubscriber() must be callable without args; threw: " + (threw && threw.message));
+  });
+
 });
 
 // ── Phase 17 / v2.4.8 · Taxonomy unification (TX1-TX10) ────────────────
@@ -17795,6 +17813,24 @@ export function runAllTests() {
     // skip-list. Direct markIdle (after rehydrate the engagement is in
     // its "saved" steady state) keeps the topbar honest without the
     // bus.
+    //
+    // BUG-043 fix · _resetEngagementStoreForTests() (called by various
+    // tests for clean-slate isolation) wipes _subs.clear() — including
+    // app.js's boot-time shell-render listener. After the test pass,
+    // any subsequent setActiveEngagement (e.g. user clicks welcome-card
+    // "Load demo session") fires _emit() into an EMPTY _subs Set, so the
+    // UI never repaints despite the engagement state being correctly
+    // mutated. Symptom: drivers/instances/gaps update under the hood
+    // but Tab 1 stays stuck on the welcome card. Fix: re-register
+    // app.js's render hook (exposed as window.__shellRenderSubscriber)
+    // and trigger one render to bring the UI into sync with the
+    // restored engagement. Set add of same reference is idempotent.
+    try {
+      if (typeof window.__shellRenderSubscriber === "function") {
+        subscribeActiveEngagement(window.__shellRenderSubscriber);
+        window.__shellRenderSubscriber();
+      }
+    } catch (e) { /* best-effort */ }
     // v2.4.13 S2A · the test pass leaves the saveStatus bus in whatever
     // state the last test landed (often "saving" because every emit goes
     // through markSaving). After restoring real session state, snap the

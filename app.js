@@ -153,11 +153,22 @@ document.addEventListener("DOMContentLoaded", function() {
   // re-mount on engagement change per SPEC §S19.3.
   // rc.7 / 7e-8c'-impl carry-over · stepper re-renders so Tab 4/5
   // disabled state stays in sync with visibleEnvCount changes.
-  subscribeActiveEngagement(function() {
+  //
+  // rc.7 / 7e-8 post-Step-K · expose the shell-render function as
+  // window.__shellRenderSubscriber so the testRunner afterRestore can
+  // re-register it after _resetEngagementStoreForTests() has wiped
+  // _subs between tests. Without this re-registration, BUG-043 surfaces:
+  // welcome-card "Load demo session" click mutates engagement state,
+  // but no subscriber is alive to repaint the shell, so Tab 1 shows
+  // the stale empty-canvas welcome card on top of Acme demo data.
+  // subscribeActiveEngagement uses a Set, so re-adding the same fn
+  // reference from afterRestore is idempotent.
+  window.__shellRenderSubscriber = function() {
     renderHeaderMeta();
     renderStepper();
     renderStage();
-  });
+  };
+  subscribeActiveEngagement(window.__shellRenderSubscriber);
   // rc.7 / 7e-8c'-fix · the original 7e-8c'-impl shipped a CTA button
   // inside the NoEnvsCard that emitted "dell-canvas:navigate-to-tab"
   // for the app shell to consume. The button was dropped (Tab 1 is one
