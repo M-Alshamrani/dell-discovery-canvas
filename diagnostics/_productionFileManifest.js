@@ -39,7 +39,9 @@ export const PRODUCTION_FILES = [
   "/core/saveStatus.js",
   "/core/seedSkills.js",
   "/core/services.js",
-  "/core/sessionEvents.js",
+  // /core/sessionEvents.js DELETED in rc.7 / 7e-8 Step K
+  // (was: legacy session-changed bus; v3-pure replacement is
+  // subscribeActiveEngagement on state/engagementStore.js).
   "/core/skillStore.js",
   "/core/skillsEvents.js",
   "/core/taxonomy.js",
@@ -47,9 +49,11 @@ export const PRODUCTION_FILES = [
 
   // ─── interactions/ ─────────────────────────────────────────────────
   "/interactions/aiCommands.js",
-  "/interactions/desiredStateSync.js",   // deletion target
-  "/interactions/gapsCommands.js",       // deletion target
-  "/interactions/matrixCommands.js",     // deletion target
+  // /interactions/desiredStateSync.js DELETED in rc.7 / 7e-8 Step J
+  // /interactions/gapsCommands.js DELETED in rc.7 / 7e-8 Step J
+  // /interactions/matrixCommands.js DELETED in rc.7 / 7e-8 Step J
+  // (the v2 helper modules; data-shape factories addInstance + createGap
+  // inlined into diagnostics/_v2TestFixtures.js per Step H+J+K plan).
   "/interactions/skillCommands.js",
 
   // ─── selectors/ ────────────────────────────────────────────────────
@@ -113,7 +117,11 @@ export const PRODUCTION_FILES = [
   // clear inlined at app.js newSessionBtn handler. V-FLOW-MIGRATE-TAB1-
   // DRIVERS-3 + ENVS-3 + CUSTOMER-2 retired with vector-id preservation
   // since they pinned the cutover-window mirror that no longer exists).
-  "/state/sessionStore.js",      // deletion target
+  // /state/sessionStore.js DELETED in rc.7 / 7e-8 Step H
+  // (was: v2 live session singleton + persistence + 220 LOC of
+  // sessionState helpers. Production importers all migrated through
+  // Steps B-G; tests now use the inlined factories in
+  // diagnostics/_v2TestFixtures.js).
   "/state/v3Projection.js",
   "/state/v3SkillStore.js",
   "/state/v3ToV2DemoAdapter.js",

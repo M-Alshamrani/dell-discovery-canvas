@@ -5,10 +5,10 @@
 | Field | Value |
 |---|---|
 | Current branch | `v3.0-data-architecture` |
-| Current HEAD | `5deb05c` (or later — run `git log -1`) |
+| Current HEAD | run `git log -1` |
 | Current APP_VERSION | `3.0.0-rc.7-dev` ([core/version.js](core/version.js)) |
 | Latest tag on origin | `v3.0.0-rc.6` (2026-05-05) |
-| Test banner | **1128 / 1134 GREEN** (6 RED — see §3) |
+| Test banner | **1133 / 1134 GREEN** (1 RED — FS3 only; V-FLOW-V3-PURE-1/3/4/5 flipped GREEN with Step H+J+K mega-commit) |
 
 > Detailed history: [HANDOFF.md](HANDOFF.md) · [docs/BUG_LOG.md](docs/BUG_LOG.md) · [docs/V2_DELETION_ARCHITECTURE.md](docs/V2_DELETION_ARCHITECTURE.md) · [docs/RELEASE_NOTES_rc.6.md](docs/RELEASE_NOTES_rc.6.md)
 
@@ -48,36 +48,23 @@
 | E · DELETE `ui/views/AiAssistOverlay.js` | dormant since rc.4 · Cmd+K → openCanvasChat | ✅ done |
 | F · DELETE `ui/views/SkillAdmin.js` | 608 LOC · superseded by SkillBuilder | ✅ done |
 | G · DELETE `state/sessionBridge.js` | 398 LOC · listener flipped to `subscribeActiveEngagement` | ✅ done |
-| **I (in progress)** · Test-fixture shim retire | `_v2TestFixtures.js` shim · 35 → 4 re-exports · 49 tests rewritten this session | 🔵 ~50% |
-| H · DELETE `state/sessionStore.js` | 220 LOC · gated on Step I shim retirement | ⬜ blocked |
-| J · DELETE `interactions/{matrixCommands,gapsCommands,desiredStateSync}.js` | 643 LOC · gated on Step I | ⬜ blocked |
-| K · engagementStore cleanup | drop legacy `emitSessionChanged` bus | ⬜ blocked |
+| **H + J + K · Path (c) mega-commit** | Inline 4 v2-shape factories into shim · DELETE 5 modules (sessionStore + 3 interaction modules + sessionEvents) · 929 LOC removed | ✅ **done** |
 
-**Step I status (the active work):**
-- Shim re-exports remaining: `session`, `createEmptySession`, `addInstance`, `createGap`
-- Shim consumption: 213 call sites (down from 295 · -28% this session)
-- All 213 remaining sites are in **DOM-coupled Suites** (Suites 12, 13, 14, 15, 17, 19, 23, 24, 25-30, 36-47)
-- Pure-function migration paths exhausted via the v2-shape-literal pattern (HANDOFF "Phase I-B-31..34 LOCKED" section)
+**What just shipped (Path (c) mega-commit)**:
+- 4 v2-shape data factories (`session`, `createEmptySession`, `addInstance`, `createGap`) inlined into `diagnostics/_v2TestFixtures.js` — Phase I-B-31..34 v2-literal pattern extended to the shim's last 4 members.
+- DELETED `state/sessionStore.js` (220 LOC), `interactions/matrixCommands.js` (143), `interactions/gapsCommands.js` (263), `interactions/desiredStateSync.js` (237), `core/sessionEvents.js` (66) = **929 LOC removed**.
+- `app.js`, `interactions/aiCommands.js`, `state/aiUndoStack.js`: 5 `emitSessionChanged()` calls replaced with direct `markSaving()` (the only side-effect that didn't ride the engagementStore subscriber chain) — legacy bus retired.
+- `appSpec.js` V-FLOW-CHAT-DEMO-1 retired vector-id-preserving (its v2-emit-doesn't-clobber-v3 contract is satisfied by the v2 emit no longer existing).
+- `demoSpec.js` DS16/DS17 rewritten to assert `subscribeActiveEngagement` listeners fire (R6: rewrite to v3 contract, never retire-with-negative).
+- **V-FLOW-V3-PURE-1/3/4/5 all flipped GREEN** (4 RED → 0 RED).
 
-**Decision pending (next agent picks up here):**
+**Estimate to rc.7 tag**: 7e-post (FS3 + BUG-042 + VT29 viewport investigation) → tag (PREFLIGHT 5b real-LLM smoke gated to user).
 
-| Path | Approach | Estimate to Step H unlock |
-|---|---|---|
-| (a) DOM Suite per-Suite | Replace `_installSessionAsV3Engagement` + `freshSession` per Suite, audit-before-rewrite, snapshot+restore wrapper | 7-10 mega-commits |
-| (b) `freshEng()` fixture replacement | Replace `freshSession` + `_installSessionAsV3Engagement` with one v3-native fixture helper, migrate all DOM Suites in 1-2 sweeps | 3-5 commits |
-
-**Estimate to rc.7 tag**: Step I (~7-10 commits) → Steps H/J/K (~3-5 commits) → 7e-post (FS3 + BUG-042 + VT29 viewport) → tag (PREFLIGHT 5b real-LLM smoke gated to user).
-
-### Standing test RED roster (6 tests · all expected · NOT regressions)
+### Standing test RED roster (1 test · expected · NOT regression)
 
 | ID | Reason | Resolves at |
 |---|---|---|
 | FS3 | ContextView fresh-start card on empty session | rc.7 / 7e-post |
-| VT29 | App-shell layout viewport-flake (browser-window-height-dependent) | rc.7 / 7e-post (investigate) |
-| V-FLOW-V3-PURE-1 | `state/sessionStore.js` MUST not exist (RED until Step H) | Step H |
-| V-FLOW-V3-PURE-3 | `interactions/matrixCommands.js` MUST not exist | Step J |
-| V-FLOW-V3-PURE-4 | `interactions/gapsCommands.js` MUST not exist | Step J |
-| V-FLOW-V3-PURE-5 | `interactions/desiredStateSync.js` MUST not exist | Step J |
 
 ---
 

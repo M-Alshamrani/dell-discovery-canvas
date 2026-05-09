@@ -13,7 +13,13 @@
 import * as undoStack from "../state/aiUndoStack.js";
 import { applyResolver, isWritablePath } from "../core/bindingResolvers.js";
 import { getActiveEngagement } from "../state/engagementStore.js";
-import { emitSessionChanged } from "../core/sessionEvents.js";
+// rc.7 / 7e-8 Step K · core/sessionEvents.js DELETED. The legacy
+// emitSessionChanged("ai-apply", label) call was reason-tagging a
+// re-render notification that v3-pure engagementStore already emits
+// via its subscriber chain on every setActiveEngagement / commitAction
+// success. The only side-effect that didn't ride through the v3 path
+// was the topbar Saving... pulse — kept by calling markSaving() directly.
+import { markSaving } from "../core/saveStatus.js";
 
 // Parse the AI response for a json-scalars skill. Tolerates code-fences
 // around the JSON (some models add them despite instructions) and
@@ -96,7 +102,7 @@ export function applyProposal(proposal, opts) {
     else if (result.error) msg += result.error;
     throw new Error(msg);
   }
-  emitSessionChanged("ai-apply", label);
+  markSaving(); // Step K · was: emitSessionChanged("ai-apply", label)
 }
 
 // Apply every proposal in a list under one undo entry. Each proposal
@@ -121,7 +127,7 @@ export function applyAllProposals(proposals, opts) {
         }
       }
     });
-    emitSessionChanged("ai-apply", label);
+    markSaving(); // Step K · was: emitSessionChanged("ai-apply", label)
   } catch (e) {
     undoStack.undoLast();
     throw e;

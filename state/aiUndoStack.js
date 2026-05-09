@@ -18,7 +18,11 @@
 
 import { getActiveEngagement, setActiveEngagement } from "./engagementStore.js";
 import { EngagementSchema } from "../schema/engagement.js";
-import { emitSessionChanged } from "../core/sessionEvents.js";
+// rc.7 / 7e-8 Step K · core/sessionEvents.js DELETED. setActiveEngagement
+// above already emits to subscribeActiveEngagement listeners; the only
+// thing the legacy emitSessionChanged("ai-undo", ...) did beyond that
+// was pulse markSaving() for the topbar — kept via direct call below.
+import { markSaving } from "../core/saveStatus.js";
 
 var MAX_DEPTH   = 10;
 var STORAGE_KEY = "ai_undo_v1";
@@ -65,7 +69,7 @@ export function undoLast() {
       }
     }
     persistToStorage();
-    emitSessionChanged("ai-undo", entry.label || "");
+    markSaving(); // Step K · was: emitSessionChanged("ai-undo", entry.label || "")
   } catch (e) {
     console.error("[aiUndoStack] undoLast failed:", e);
   }
@@ -91,7 +95,7 @@ export function undoAll() {
     }
     stack = [];
     persistToStorage();
-    emitSessionChanged("ai-undo", "Undo all (" + count + ")");
+    markSaving(); // Step K · was: emitSessionChanged("ai-undo", "Undo all (...)")
   } catch (e) {
     console.error("[aiUndoStack] undoAll failed:", e);
   }

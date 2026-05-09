@@ -2,7 +2,49 @@
 
 **🔴 READ FIRST · Principal-architect discipline (LOCKED 2026-05-08, R11 added evening)**: every session, every commit, every handover. Full text in [`docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md`](docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md) (R0..R11) + tier-1 memory anchor `feedback_principal_architect_discipline.md`. Core rules: **R0** acknowledge "what would a principal architect do?" before non-trivial action · **R1** own-grep before delete · **R2** migrate consumers FIRST, delete LAST · **R3** Chrome MCP browser smoke at every commit boundary (test banner alone is NOT sufficient) · **R4** no v3-store backward-compat hacks · **R5** no fig-leaf test fixtures hiding v2 logic · **R6** rewrite tests to assert v3 contracts (never retire-with-negative) · **R7** per-commit revertibility · **R8** surface scope balloons · **R9** every handover references this · **R10** acknowledge in every action out loud · **R11 (HARDEST · LOCKED 2026-05-08 evening)** Recite + Answer + Execute + Pledge-Smoke-Screenshot at EVERY step boundary; every commit message ends with a `Browser smoke evidence:` block. **Test banner alone is a discipline violation.**
 
-**Last session end**: 2026-05-09 (Phase I-B-31..35) · `v3.0.0-rc.7-dev` on `v3.0-data-architecture` · HEAD `75ab58a` · **Banner 1128/1134 GREEN** with 6 RED (5 expected: FS3 + V-FLOW-V3-PURE-1/3/4/5; +1 viewport-flake VT29 surfaced post-Phase-I-B-30). Phase I-B-31..34 advanced through **4 commits this session** with no reverts. **NEW PATTERN PROVEN**: for v2-only pure-function services (healthMetrics, programsService, computeDiscoveryCoverage, computeRiskPosture, effectiveDellSolutions, roadmapService project-grouping), **v2-shape object literals beat the v3 boundary-projection approach** — no schema gymnastics, no engagement state, no pollution risk, simpler test bodies. Used for Suites 08 + 22-pure-half + 20 = 49 tests rewritten. **MILESTONES**: T6.5 retired per Step I plan (v2 createGap default-true contract no-longer-applicable in v3); R8 backlog item #6 added (manual-add-dialog reviewed:true UI-contract test). **Remaining 4 shim members** (`session`, `createEmptySession`, `addInstance`, `createGap`) still high-usage (213 total call sites · down from 295 = -28% this session); shim's `session` re-export drop is R8-blocked by Suite 15+20 bare-`session` references in mount helpers (separate multi-Suite audit commit pending). **R11 LOCKED at `96e8a16`** governs every commit.
+**Last session end**: 2026-05-09 (Step H+J+K mega-commit · v2 deletion arc COMPLETE) · `v3.0.0-rc.7-dev` on `v3.0-data-architecture` · **Banner 1133/1134 GREEN** (FS3 only RED, expected, scheduled for rc.7/7e-post).
+
+## 🔴 rc.7 / 7e-8 Path (c) shipped — v2 architecture DELETED
+
+**Decision**: Path (c) — inline 4 v2-shape data factories into `_v2TestFixtures.js` shim, delete 5 v2 modules in one mega-commit. Architectural rationale: the shim was DESIGNED for inlining (header comment at lines 11-13 explicitly anticipated this end-state); R5 fig-leaf concern resolved by the Phase I-B-31..34 v2-shape-literal precedent (49 tests already use v2-shape literal factories) — the shim's 4 functions are pure data-shape factories with no v2 BEHAVIOR, only v3-shared validators (`validateInstance`, `validateGap`, `validateActionLinks`).
+
+**What got deleted (929 LOC)**:
+- `state/sessionStore.js` (220 LOC) — Step H
+- `interactions/matrixCommands.js` (143 LOC) — Step J
+- `interactions/gapsCommands.js` (263 LOC) — Step J
+- `interactions/desiredStateSync.js` (237 LOC) — Step J
+- `core/sessionEvents.js` (66 LOC) — Step K
+
+**Production migrations (caught the second sweep)**:
+- `interactions/aiCommands.js` + `state/aiUndoStack.js` were importing `emitSessionChanged` from the about-to-be-deleted `core/sessionEvents.js` — initial Grep tool sweep MISSED them via underscore-prefixed-glob inconsistency. **Lesson: bash `grep -rn` is the authoritative consumer audit; the Grep tool's `**/*.js` glob is unreliable for some path shapes.** The 2 production files migrated to direct `markSaving()` calls (the only sessionEvents side-effect not already handled by engagementStore's subscriber chain).
+- `app.js` 3 `emitSessionChanged()` call sites replaced with `markSaving()`.
+
+**Test migrations (R6 rewrite, never retire-with-negative)**:
+- `demoSpec.js` DS16/DS17 rewritten to assert `subscribeActiveEngagement` listeners fire (the v3-pure analogue of the legacy reason-tagged emit).
+- `appSpec.js` V-FLOW-CHAT-DEMO-1 retired vector-id-preserving — its "v2 emit doesn't clobber v3" contract is satisfied by the v2 emit ceasing to exist (same shape as V-FLOW-CHAT-DEMO-2 retirement in Step G).
+- testRunner afterRestore: `emitSessionChanged("session-replace", "Tests complete")` dropped — `setActiveEngagement` (from rehydrate) already triggers subscribers; the legacy emit's only extra was markSaving's skip-list logic that's no longer relevant.
+
+**The earlier boot-break (caught and recovered)**: first reload showed empty stepper + "Canvas v." version-chip placeholder = app.js failed at module-import time. Per R7, did NOT fix-forward — diagnosed with bash grep, found the missed consumers, fixed them, rebuilt, re-verified. **Banner: 1133/1134 GREEN. App boots cleanly.**
+
+**Browser smoke evidence (in user's PC Chrome via Chrome MCP per `feedback_chrome_mcp_for_smoke.md`)**:
+- Tab 1 Context — Discovery context card / Vertical "Healthcare" / 3 drivers (Cyber/AI&Data/Compliance) / Environments
+- Tab 2 Current state — 4×5 matrix / 23 instances visible
+- Tab 3 Desired state — disposition badges (REVIEW/CONSOLIDATE/INTRODUCE/REPLACE) / "8 of 14 not yet reviewed" banner
+- Tab 4 Gaps — 3-column kanban (Now 2 / Next 4 / Later 2 = 8 gaps confirmed)
+- Tab 5 Reporting — Overview sub-tab / Discovery Coverage 45% / Risk High / 14/9/8/4 metrics / Session brief right-rail
+- AI Assist overlay — Canvas AI Assistant opens, Anthropic Claude provider, ready state
+- Settings → Skills builder — modal + Skills tab + "+ Add skill" CTA + empty state
+- +New session reset — engagement wipes (drivers=0, gaps=0), Tabs 4+5 grey-out, "SAVING..." pulse fires (markSaving substitution works), chat transcript clears
+- Load demo restore — engagement state returns to Acme (3/8/23 confirmed via probe; Tab 1 stale-render is BUG-042 pre-existing)
+
+**Pre-existing bugs reproduced (NOT regressions; scheduled for follow-up)**:
+- BUG-042 — demo banner missing on Tab 4 Gaps + Tab 1 stale-render-on-active-tab when demo loaded.
+
+---
+
+## Prior session entries
+
+ Phase I-B-31..34 advanced through **4 commits this session** with no reverts. **NEW PATTERN PROVEN**: for v2-only pure-function services (healthMetrics, programsService, computeDiscoveryCoverage, computeRiskPosture, effectiveDellSolutions, roadmapService project-grouping), **v2-shape object literals beat the v3 boundary-projection approach** — no schema gymnastics, no engagement state, no pollution risk, simpler test bodies. Used for Suites 08 + 22-pure-half + 20 = 49 tests rewritten. **MILESTONES**: T6.5 retired per Step I plan (v2 createGap default-true contract no-longer-applicable in v3); R8 backlog item #6 added (manual-add-dialog reviewed:true UI-contract test). **Remaining 4 shim members** (`session`, `createEmptySession`, `addInstance`, `createGap`) still high-usage (213 total call sites · down from 295 = -28% this session); shim's `session` re-export drop is R8-blocked by Suite 15+20 bare-`session` references in mount helpers (separate multi-Suite audit commit pending). **R11 LOCKED at `96e8a16`** governs every commit.
 
 **rc.7 dev log (full arc since rc.6 tag, in order)**:
 

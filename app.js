@@ -40,13 +40,11 @@ import { openSettingsModal }         from "./ui/views/SettingsModal.js";
 import * as aiUndoStack              from "./state/aiUndoStack.js";
 // rc.7 / 7e-8 redo Step G · onSessionChanged dropped (shell repaint
 // migrated to subscribeActiveEngagement on the v3 engagementStore).
-// emitSessionChanged retained: it pulses markSaving() in core/
-// sessionEvents.js for the topbar Saving... indicator on the 3
-// session-replace transitions (demo / reset / file-open). Step K
-// finishes the cleanup -- audits remaining onSessionChanged callers
-// (interactions/aiCommands.js, state/aiUndoStack.js) and decides
-// whether core/sessionEvents.js itself retires.
-import { emitSessionChanged } from "./core/sessionEvents.js";
+// rc.7 / 7e-8 Step K · core/sessionEvents.js DELETED. The only role
+// emitSessionChanged still played in app.js was pulsing markSaving()
+// on demo / reset / file-open. setActiveEngagement(eng) handles
+// re-render via subscribeActiveEngagement (Step G); markSaving() is
+// called directly at each of those 3 sites for the topbar pulse.
 // rc.7 / 7e-8c'-impl · stepper greys Tabs 4/5 when visibleEnvCount===0 per SPEC §S41.2.
 // rc.7 / 7e-8d-1 · setActiveEngagement also imported here (file-open path).
 import { getActiveEngagement, setActiveEngagement, subscribeActiveEngagement } from "./state/engagementStore.js";
@@ -54,7 +52,7 @@ import { visibleEnvCount } from "./ui/components/NoEnvsCard.js";
 import { APP_VERSION }               from "./core/version.js";
 import { loadAiConfig, saveAiConfig } from "./core/aiConfig.js";
 import { loadSkills, saveSkills }    from "./core/skillStore.js";
-import { getStatus as getSaveStatus, onStatusChange as onSaveStatusChange } from "./core/saveStatus.js";
+import { getStatus as getSaveStatus, onStatusChange as onSaveStatusChange, markSaving } from "./core/saveStatus.js";
 // v2.4.15 . eagerly load filterState so its module-init applyToBody()
 // restores the user's saved body[data-filter-<dim>] attributes on app
 // boot, before the user navigates to a tab that uses FilterBar.
@@ -732,10 +730,11 @@ function wireFooter() {
           // anymore -- the v2 mirror is dead weight. v3 engagementStore.
           // setActiveEngagement IS the authoritative write.
           storeMod.setActiveEngagement(v3eng);
-          // Emit AFTER both stores are coherent so subscribers see the
-          // matched pair. The bridge's shallow-merge is a no-op here
-          // (v2 customer already mirrors v3 customer).
-          emitSessionChanged("session-demo", "Loaded demo session");
+          // Pulse the topbar "Saving..." indicator briefly. setActiveEngagement
+          // already triggers subscribeActiveEngagement listeners (re-render);
+          // markSaving is the visual feedback that the engagement just
+          // changed (Step K replaced the legacy emitSessionChanged bus).
+          markSaving();
         } catch (e) {
           console.error("[demo] v3-native demo failed to load:", e);
         }
@@ -770,7 +769,7 @@ function wireFooter() {
         } catch (_e) { /* defensive -- never let chat-memory cleanup block reset */ }
         setActiveEngagement(createEmptyEngagement());
         try { aiUndoStack.clear(); } catch (_e) { /* AI undo not loaded -- harmless */ }
-        emitSessionChanged("session-reset", "New session");
+        markSaving(); // Step K · was: emitSessionChanged("session-reset", ...)
         currentStep = "context"; currentReportingTab = "overview";
         renderHeaderMeta(); renderStepper(); renderStage();
       });
@@ -866,7 +865,7 @@ function wireFooter() {
         setActiveEngagement(res.engagement);
         saveSkills(res.skills);
         if (res.providerConfig) saveAiConfig(res.providerConfig);
-        emitSessionChanged("session-replace", "Opened " + (file.name || "file"));
+        markSaving(); // Step K · was: emitSessionChanged("session-replace", "Opened " + ...)
         var body = "Saved by Canvas v" + res.savedAppVersion +
           (res.savedAt ? " at " + res.savedAt : "");
         if (res.warnings.length) body += " · " + res.warnings.length + " note" + (res.warnings.length === 1 ? "" : "s");

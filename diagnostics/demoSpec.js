@@ -20,14 +20,18 @@
 
 import { validateInstance, validateGap } from "../core/models.js";
 import { createDemoSession, DEMO_PERSONAS } from "../state/demoSession.js";
-import { session as liveSession, replaceSession } from "../state/sessionStore.js";
+// rc.7 / 7e-8 Step H+J+K · session + replaceSession routed through the
+// inlined shim. state/sessionStore.js DELETED in this commit.
+import { session as liveSession, replaceSession } from "./_v2TestFixtures.js";
 import { seedSkills, SEED_SKILL_IDS } from "../core/seedSkills.js";
 import { loadSkills, saveSkills, RESPONSE_FORMATS } from "../core/skillStore.js";
 import { FIELD_MANIFEST } from "../core/fieldManifest.js";
 import { WRITE_RESOLVERS, isWritablePath } from "../core/bindingResolvers.js";
 import { applyProposal, applyAllProposals } from "../interactions/aiCommands.js";
 import * as aiUndoStack from "../state/aiUndoStack.js";
-import { onSessionChanged } from "../core/sessionEvents.js";
+// rc.7 / 7e-8 Step K · onSessionChanged retired with core/sessionEvents.js;
+// DS16/DS17 migrated to subscribeActiveEngagement (v3-pure bus).
+import { subscribeActiveEngagement } from "../state/engagementStore.js";
 import { ACTION_IDS, GAP_TYPES as DEMO_GAP_TYPES } from "../core/taxonomy.js";
 import { SERVICE_TYPES } from "../core/services.js";
 
@@ -440,11 +444,17 @@ export function registerDemoSuite(api) {
   });
 
   // ──────────────────────────────────────────────────────────────
-  // Suite 35 · session-changed bus wiring
+  // Suite 35 · engagement-changed bus wiring (post-Step-K v3-pure)
+  // rc.7 / 7e-8 Step K · core/sessionEvents.js DELETED. Reason-tagged
+  // emits ("ai-apply", "ai-undo") were a v2 contract; v3-pure bus
+  // (subscribeActiveEngagement) emits the new engagement reference
+  // without a reason. The principal-architect rewrite asserts the
+  // v3 contract: subscribers fire on apply + undo (the underlying
+  // re-render guarantee). Per R6 (rewrite-not-retire-with-negative).
   // ──────────────────────────────────────────────────────────────
-  describe("35 · Phase 19e · session-changed bus · apply & undo emit", function() {
+  describe("35 · Phase 19e · engagement-changed bus · apply & undo emit", function() {
 
-    it("DS16 · applyProposal emits reason='ai-apply' (post-7e-5 v3-pure)", function() {
+    it("DS16 · applyProposal triggers subscribeActiveEngagement listeners (post-Step-K v3-pure)", function() {
       aiUndoStack._resetForTests();
       var s = createDemoSession();
       s.customer = { name: "Bus Co", vertical: "Enterprise", region: "EMEA", drivers: [] };
@@ -457,20 +467,20 @@ export function registerDemoSuite(api) {
                   status: "open", reviewed: true }];
       _installSessionAsV3Engagement(s);
       var v3GapId = s.gaps[0].id;
-      var seen = [];
-      var off = onSessionChanged(function(evt) { seen.push(evt.reason); });
+      var fireCount = 0;
+      var off = subscribeActiveEngagement(function(_eng) { fireCount++; });
       try {
         applyProposal(
           { path: "context.selectedGap.urgency", label: "u", kind: "scalar",
             before: "Low", after: "High" },
           { context: { selectedGap: { id: v3GapId } } }
         );
-        assert(seen.indexOf("ai-apply") >= 0,
-          "applyProposal must emit a session-changed event with reason='ai-apply'");
+        assert(fireCount >= 1,
+          "applyProposal must trigger subscribeActiveEngagement listeners (got fireCount=" + fireCount + ")");
       } finally { off(); aiUndoStack._resetForTests(); }
     });
 
-    it("DS17 · undoLast emits reason='ai-undo' (post-7e-5 v3-pure)", function() {
+    it("DS17 · undoLast triggers subscribeActiveEngagement listeners (post-Step-K v3-pure)", function() {
       aiUndoStack._resetForTests();
       var s = createDemoSession();
       s.customer = { name: "Bus Co", vertical: "Enterprise", region: "EMEA", drivers: [] };
@@ -488,12 +498,12 @@ export function registerDemoSuite(api) {
           before: "Low", after: "High" },
         { context: { selectedGap: { id: v3GapId } } }
       );
-      var seen = [];
-      var off = onSessionChanged(function(evt) { seen.push(evt.reason); });
+      var fireCount = 0;
+      var off = subscribeActiveEngagement(function(_eng) { fireCount++; });
       try {
         aiUndoStack.undoLast();
-        assert(seen.indexOf("ai-undo") >= 0,
-          "undoLast must emit a session-changed event with reason='ai-undo'");
+        assert(fireCount >= 1,
+          "undoLast must trigger subscribeActiveEngagement listeners (got fireCount=" + fireCount + ")");
       } finally { off(); aiUndoStack._resetForTests(); }
     });
   });

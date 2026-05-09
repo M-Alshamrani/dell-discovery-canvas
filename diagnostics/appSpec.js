@@ -31,7 +31,14 @@
 // ============================================================================
 
 import { createTestRunner, runIsolated } from "./testRunner.js";
-import { emitSessionChanged, onSessionChanged } from "../core/sessionEvents.js";
+// rc.7 / 7e-8 Step K · core/sessionEvents.js DELETED. The legacy
+// session-changed bus is retired; v3-pure subscribers go through
+// subscribeActiveEngagement in state/engagementStore.js. The single
+// remaining producer — testRunner afterRestore — used it to pulse
+// markSaving + ensure listeners re-render after a localStorage restore.
+// Post-Step-K: setActiveEngagement(eng) on rehydrate triggers the
+// engagement subscriber chain (v3 path). Direct markSaving() calls
+// preserve the topbar-pulse UX where it was load-bearing.
 // SPEC §S31 · post-test in-memory rehydrate for the v3 engagement store.
 // The afterRestore callback below uses this to keep _active in sync with
 // the restored localStorage snapshot — without it, BUG-019 would surface
@@ -14563,7 +14570,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
           "/ui/components/Overlay.js",
           "/interactions/skillCommands.js",
           "/interactions/aiCommands.js",
-          "/interactions/desiredStateSync.js",
+          // /interactions/desiredStateSync.js DELETED in rc.7 / 7e-8 Step J.
           "/core/skillStore.js",
           "/core/aiConfig.js",
           "/core/seedSkills.js",
@@ -16963,29 +16970,18 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     // then truthfully reported "canvas is empty."
     // -----------------------------------------------------------------
 
-    it("V-FLOW-CHAT-DEMO-1 · BUG-010 guard: emitting v2 session-changed AFTER setActiveEngagement(v3demo) does NOT clobber v3 gaps/instances", async () => {
-      const sessionMod = await import("../state/sessionStore.js");
-      const storeMod   = await import("../state/engagementStore.js");
-      const eventsMod  = await import("../core/sessionEvents.js");
-
-      // Set the v3 demo as active engagement.
-      const demoEng = loadV3Demo();
-      storeMod.setActiveEngagement(demoEng);
-      const beforeGapCount      = storeMod.getActiveEngagement().gaps.allIds.length;
-      const beforeInstanceCount = storeMod.getActiveEngagement().instances.allIds.length;
-      const beforeDriverCount   = storeMod.getActiveEngagement().drivers.allIds.length;
-
-      // Simulate ANY v2 session-changed event (a save, an edit, the bridge
-      // boot, etc.). Pre-fix this clobbered the engagement back to 0 gaps.
-      eventsMod.emitSessionChanged("v-flow-chat-demo-1-probe", "regression test");
-
-      const after = storeMod.getActiveEngagement();
-      assertEqual(after.gaps.allIds.length, beforeGapCount,
-        "v3 engagement gaps SHALL NOT be clobbered by a v2 session-changed emit (got " + after.gaps.allIds.length + ", expected " + beforeGapCount + ")");
-      assertEqual(after.instances.allIds.length, beforeInstanceCount,
-        "v3 engagement instances SHALL NOT be clobbered (got " + after.instances.allIds.length + ", expected " + beforeInstanceCount + ")");
-      assertEqual(after.drivers.allIds.length, beforeDriverCount,
-        "v3 engagement drivers SHALL NOT be clobbered (got " + after.drivers.allIds.length + ", expected " + beforeDriverCount + ")");
+    it("V-FLOW-CHAT-DEMO-1 · RETIRED rc.7 / 7e-8 Step K per project_v3_pure_arc.md — was: v2 session-changed emit after setActiveEngagement(v3demo) MUST NOT clobber v3 gaps/instances; sessionEvents.js DELETED, no v2 emit can fire", async () => {
+      // Vector id preserved per TESTS §T1.2. The contract this asserted
+      // — that a v2 session-changed event can't clobber v3 engagement
+      // state — was a cutover-window invariant. Post-Step-K, the bus
+      // (core/sessionEvents.js) is DELETED, so a v2 emit is structurally
+      // impossible. The "clobber" failure mode lived in the deleted
+      // state/sessionBridge.js (Step G); with both the bridge AND the
+      // bus retired, BUG-010's regression surface is closed at the
+      // architecture level. v3 engagement integrity is now asserted
+      // by V-FLOW-MIGRATE-TAB1-CUSTOMER-1 + V-ADP-9 (commitAction
+      // produces a new engagement reference; immutable update).
+      assert(true, "V-FLOW-CHAT-DEMO-1 retired; bus + bridge deleted in Steps G + K; see V-FLOW-MIGRATE-TAB1-CUSTOMER-1 + V-ADP-9");
     });
 
     it("V-FLOW-CHAT-DEMO-2 · RETIRED rc.7 / 7e-8 Step G per project_v3_pure_arc.md — was: bridge SHALL shallow-merge v2 customer changes into v3 engagement (preserves v3 gaps/instances/drivers); bridge DELETED, v2->v3 customer merge transport gone", async () => {
@@ -17227,7 +17223,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "core/demoEngagement.js",
         "core/aiConfig.js",
         "core/version.js",
-        "core/sessionEvents.js",
+        // core/sessionEvents.js DELETED in rc.7 / 7e-8 Step K.
         "services/aiService.js",
         "services/canvasFile.js",
         "services/catalogLoader.js",
@@ -17788,7 +17784,13 @@ export function runAllTests() {
     // engagement (matches how _resetForTests is intended to be a
     // test-scoped reset, not a user-facing wipe).
     try { _rehydrateEngagementFromStorage(); } catch (e) { /* best-effort */ }
-    emitSessionChanged("session-replace", "Tests complete");
+    // rc.7 / 7e-8 Step K · sessionEvents.js DELETED. The previous
+    // emitSessionChanged("session-replace", "Tests complete") served two
+    // jobs: (1) tell v2 listeners to re-render — those listeners no
+    // longer exist post-Step-G; (2) gate markSaving via sessionEvents'
+    // skip-list. Direct markIdle (after rehydrate the engagement is in
+    // its "saved" steady state) keeps the topbar honest without the
+    // bus.
     // v2.4.13 S2A · the test pass leaves the saveStatus bus in whatever
     // state the last test landed (often "saving" because every emit goes
     // through markSaving). After restoring real session state, snap the
