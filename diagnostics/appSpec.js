@@ -8205,6 +8205,86 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
     assertEqual(post.mappedAssetIds[0], f.computeA, "R8 #2: mappedAssetIds[0] === target");
   });
 
+  // ─── R8 #3 · v3 _gapUnlinkInstance + R8 #1 structural-patch gate ──────────
+  // R8 #3 of the rc.7-deferred invariant arc. v3 _gapUnlinkInstance is a
+  // thin helper that routes through updateGap; the AL10 enforcement comes
+  // from R8 #1's structural-patch gate (relatedCurrentInstanceIds /
+  // relatedDesiredInstanceIds are STRUCTURAL fields). These tests prove
+  // the integration is solid: unlinking the last required link on a
+  // reviewed gap aborts atomically with AL10_VIOLATION; the gap state
+  // is unchanged. This makes the contract explicit at the unlink call
+  // surface (callers shouldn't need to know that updateGap is the gate).
+  function _r8_3_setupReplaceGapFixture(reviewed) {
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitContextEdit({ customer: { name: "R8-3 Co", vertical: "Enterprise", region: "EMEA" } });
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var envId = getActiveEngagement().environments.allIds[0];
+    commitInstanceAdd({
+      state: "current", layerId: "compute", environmentId: envId,
+      label: "R8-3 cur", vendor: "X", vendorGroup: "custom",
+      criticality: "Medium", disposition: "keep"
+    });
+    var curId = getActiveEngagement().instances.allIds.at(-1);
+    commitInstanceAdd({
+      state: "desired", layerId: "compute", environmentId: envId,
+      label: "R8-3 des", vendor: "X", vendorGroup: "custom"
+    });
+    var desId = getActiveEngagement().instances.allIds.at(-1);
+    commitGapAdd({
+      description: "R8-3 replace gap",
+      layerId: "compute",
+      affectedLayers: ["compute"],
+      affectedEnvironments: [envId],
+      gapType: "replace",
+      relatedCurrentInstanceIds: [curId],
+      relatedDesiredInstanceIds: [desId],
+      reviewed: !!reviewed
+    });
+    var gapId = getActiveEngagement().gaps.allIds[0];
+    return { envId, curId, desId, gapId };
+  }
+
+  it("V-INV-UNLINK-AL10-1 · R8 #3 · commitGapUnlinkCurrentInstance on the last current link of a REVIEWED 'replace' gap returns ok:false + AL10_VIOLATION (unlink helper inherits R8 #1 structural-patch gate)", async () => {
+    var f = _r8_3_setupReplaceGapFixture(true);
+    var r = commitGapUnlinkCurrentInstance(f.gapId, f.curId);
+    assertEqual(r.ok, false,
+      "R8 #3: unlinking the last required current link on a reviewed gap MUST return ok:false (got: " + JSON.stringify(r) + ")");
+    assert(r.errors && r.errors[0] && r.errors[0].code === "AL10_VIOLATION",
+      "R8 #3: error code MUST be AL10_VIOLATION (got: " + JSON.stringify(r.errors) + ")");
+    // Atomic abort: gap.relatedCurrentInstanceIds still contains the link.
+    var post = getActiveEngagement().gaps.byId[f.gapId];
+    assertEqual(post.relatedCurrentInstanceIds.length, 1,
+      "R8 #3: failed unlink MUST NOT mutate gap.relatedCurrentInstanceIds (got: " + JSON.stringify(post.relatedCurrentInstanceIds) + ")");
+    assertEqual(post.relatedCurrentInstanceIds[0], f.curId,
+      "R8 #3: failed unlink MUST preserve the original link");
+  });
+
+  it("V-INV-UNLINK-AL10-2 · R8 #3 · commitGapUnlinkCurrentInstance on the last required link of an UNREVIEWED 'replace' gap succeeds (AL10 bypassed for unreviewed gaps · A1 contract preserved)", async () => {
+    // Mirror of V-INV-UPDATEGAP-AL10-3: unreviewed gaps can have any
+    // shape (the user is mid-authoring). AL10 only fires on reviewed
+    // gaps. Per validateActionLinks bypass-when-not-reviewed.
+    var f = _r8_3_setupReplaceGapFixture(false);
+    var r = commitGapUnlinkCurrentInstance(f.gapId, f.curId);
+    assertEqual(r.ok, true,
+      "R8 #3: unlinking on an unreviewed gap MUST succeed (got: " + JSON.stringify(r) + ")");
+    var post = getActiveEngagement().gaps.byId[f.gapId];
+    assertEqual(post.relatedCurrentInstanceIds.length, 0,
+      "R8 #3: unlink on unreviewed gap committed (got: " + JSON.stringify(post.relatedCurrentInstanceIds) + ")");
+  });
+
+  it("V-INV-UNLINK-AL10-3 · R8 #3 · commitGapUnlinkDesiredInstance on the last required desired link of a REVIEWED 'replace' gap returns ok:false + AL10_VIOLATION (the desired-side mirror of -1)", async () => {
+    var f = _r8_3_setupReplaceGapFixture(true);
+    var r = commitGapUnlinkDesiredInstance(f.gapId, f.desId);
+    assertEqual(r.ok, false,
+      "R8 #3: unlinking the last required desired link on a reviewed gap MUST return ok:false (got: " + JSON.stringify(r) + ")");
+    assert(r.errors && r.errors[0] && r.errors[0].code === "AL10_VIOLATION",
+      "R8 #3: error code MUST be AL10_VIOLATION (got: " + JSON.stringify(r.errors) + ")");
+    var post = getActiveEngagement().gaps.byId[f.gapId];
+    assertEqual(post.relatedDesiredInstanceIds.length, 1,
+      "R8 #3: failed unlink MUST NOT mutate gap.relatedDesiredInstanceIds");
+  });
+
   it("V-FLOW-GAPS-SELECTION-PERSIST-1 · BUG-051 (closes BUG-032 root cause) guard: GapsEditView selectedGapId persists across commitGapLink*-driven re-render; gap detail panel + link buttons survive add-link / unlink / edit cycles", async () => {
     // User report 2026-05-09: clicking + Link desired instance / + Link
     // current instance after a successful link cycle felt like the buttons
@@ -10340,7 +10420,13 @@ import {
   // rc.7 R8 #2 (v3-invariant-enforcement arc · 2026-05-09) · v3-pure
   // workload→asset mapping with helper-layer invariant enforcement.
   // Used by V-INV-MAPWORKLOAD-* tests to assert I1..I8 gates fire atomically.
-  commitWorkloadMap
+  commitWorkloadMap,
+  // rc.7 R8 #3 (v3-invariant-enforcement arc · 2026-05-09) · v3-pure
+  // gap unlink helpers. Route through updateGap → R8 #1 structural-patch
+  // gate fires AL10 enforcement when unlink would drop a reviewed gap
+  // below required link counts.
+  commitGapUnlinkCurrentInstance,
+  commitGapUnlinkDesiredInstance
 } from "../state/adapter.js";
 // rc.7 / 7e-8 redo Step I Phase I-B-13 · v3 dispositionLogic helpers for
 // the RH9 v3-direct rewrite. buildGapFromDispositionV3 takes (engagement,
