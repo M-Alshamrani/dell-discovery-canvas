@@ -7880,6 +7880,63 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
     });
   });
 
+  it("V-FLOW-MATRIX-SELECTION-PERSIST-1 · BUG-048 guard: MatrixView selection survives commitInstanceUpdate-driven re-render; right-pane detail panel restored on re-mount", async () => {
+    // User report 2026-05-09: select an instance tile in current/desired
+    // state, change criticality, click Save → right-pane detail panel
+    // disappears + user has to re-select. Root cause: selectedInstId was
+    // a closure-local var inside renderMatrixView. commitInstanceUpdate
+    // fires the engagement subscriber chain → renderStage → fresh
+    // renderMatrixView closure → selectedInstId = null. Right pane
+    // reverts to showHint(). Fix: lifted selectedInstId to module scope
+    // (keyed by stateFilter) so it survives re-mount + restore detail
+    // panel at end of render if persisted instance still exists.
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitContextEdit({ customer: { name: "BUG-048 Co", vertical: "Enterprise", region: "EMEA" } });
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var addRes = commitInstanceAdd({
+      state: "current",
+      layerId: "compute",
+      environmentId: getActiveEngagement().environments.allIds[0],
+      label: "BUG-048 instance",
+      vendor: "Dell",
+      vendorGroup: "dell",
+      criticality: "Medium",
+      disposition: "keep"
+    });
+    var instUuid = addRes && addRes.engagement && addRes.engagement.instances.allIds[0];
+    assert(instUuid, "test setup needs an instance");
+
+    // First render: simulate user clicking a tile (no selection yet).
+    var l1 = document.createElement("div"); var r1 = document.createElement("div");
+    renderMatrixView(l1, r1, null, { stateFilter: "current" });
+    // Initially no selection → right pane should show the hint placeholder, not a detail panel.
+    assert(!r1.querySelector(".instance-detail-panel"),
+      "BUG-048 setup: with no selection, right pane shows hint (no detail panel)");
+
+    // Simulate the user clicking the tile by directly writing to the
+    // module-level state via a tile click. Easier: import the showDetailPanel
+    // path by clicking the tile element if present.
+    var tile = l1.querySelector('.instance-tile[data-instance-id="' + instUuid + '"]');
+    if (tile) tile.click();
+
+    // Now the right pane should have the detail panel for this instance.
+    var l2 = document.createElement("div"); var r2 = document.createElement("div");
+    // Re-render (simulates the engagement subscriber chain firing after a commit).
+    renderMatrixView(l2, r2, null, { stateFilter: "current" });
+    // After re-render, the right pane should restore the detail panel
+    // because selectedInstId was persisted to module scope. The actual
+    // class produced by showDetailPanel is `.detail-panel` (line 610 of
+    // ui/views/MatrixView.js). Also assert the detail-title contains the
+    // instance label so we know the RIGHT instance was restored.
+    var detailPanel = r2.querySelector(".detail-panel");
+    assert(detailPanel,
+      "BUG-048: after re-render with persisted selection, right pane should restore the .detail-panel (got innerHTML.length=" + r2.innerHTML.length + ")");
+    var titleEl = r2.querySelector(".detail-title");
+    assert(titleEl && /BUG-048 instance/.test(titleEl.textContent),
+      "BUG-048: restored detail panel should show the persisted instance's label (got: '" + (titleEl && titleEl.textContent) + "')");
+  });
+
   it("V-FLOW-SETTINGS-SAVE-1 · BUG-045 guard: SettingsModal Save handler resolves _settings via .settings-body (not .overlay-body) so initial-open path saves correctly without first tab-switching", async () => {
     // User report 2026-05-09 · screenshot of "Couldn't save — reopen
     // Settings" red error after entering Local A API key + clicking Save
@@ -15395,7 +15452,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         _resetOverlayForTests();
       });
 
-      it("V-PILLS-3 · Popover rows: active row .is-active + Dell-blue-soft bg; ready inactive row carries a green dot; needs-key inactive row carries an amber dot (per R33.2)", async () => {
+      it("V-PILLS-3 · Popover rows: active row .is-active + Dell-blue-soft bg; ready inactive row carries a Dell-blue dot (BUG-047 fix · NOT green); needs-key inactive row carries an amber dot (per R33.2)", async () => {
         _resetOverlayForTests();
         closeOverlay();
         const aiCfgMod = await import("../core/aiConfig.js");
@@ -15425,7 +15482,11 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         assertEqual(aStyle.backgroundColor, hexToRgb("#E8F2FB"),
           "V-PILLS-3: active row background MUST be var(--dell-blue-soft) = #E8F2FB");
 
-        // Inactive ready row (gemini) carries a green dot.
+        // BUG-047 fix · inactive ready row (gemini) carries a Dell-blue
+        // dot (NOT green). Pre-fix every .is-ready row painted a green
+        // dot regardless of active state, so the user couldn't visually
+        // distinguish "currently active" from "configured but inactive".
+        // Now: active = green, inactive-but-ready = dell-blue, warn = amber.
         const ready = popover.querySelector(".canvas-chat-provider-row[data-provider-key='gemini']");
         assert(ready && !ready.classList.contains("is-active"),
           "V-PILLS-3: gemini row exists + is inactive");
@@ -15433,8 +15494,8 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
           "V-PILLS-3: gemini row must carry .is-ready (has key)");
         const dotReady = ready.querySelector(".canvas-chat-provider-row-dot");
         assert(dotReady, "V-PILLS-3: ready row must contain a status dot");
-        assertEqual(getComputedStyle(dotReady).backgroundColor, hexToRgb("#00843D"),
-          "V-PILLS-3: ready row dot MUST be var(--green) = #00843D");
+        assertEqual(getComputedStyle(dotReady).backgroundColor, hexToRgb("#0076CE"),
+          "V-PILLS-3 (BUG-047 fix): inactive-ready row dot MUST be var(--dell-blue) = #0076CE (NOT green); green is reserved for the currently-active provider");
 
         // Inactive needs-key row (dellSalesChat) carries an amber dot.
         const warn = popover.querySelector(".canvas-chat-provider-row[data-provider-key='dellSalesChat']");

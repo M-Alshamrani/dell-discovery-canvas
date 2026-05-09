@@ -765,9 +765,14 @@ function paintProviderPills(slot) {
       (ready ? " is-ready" : " is-warn");
     const meta = row.querySelector(".canvas-chat-provider-row-meta");
     if (meta) {
+      // BUG-047 fix · "Ready" implied connectivity but really means
+      // CONFIGURED (baseUrl + apiKey present). Renamed to "Configured"
+      // to be honest about what the dot signals; "Active" is the only
+      // state that means "live + currently in use". True reachability
+      // probing is queued for v3.1 chat polish (BUG-046 #6).
       meta.textContent = isActive
         ? "Active"
-        : (ready ? "Ready" : "Needs key");
+        : (ready ? "Configured" : "Needs key");
     }
   }
 

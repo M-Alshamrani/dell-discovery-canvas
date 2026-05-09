@@ -94,6 +94,8 @@
 - `2026-05-09` BUG-028 (side-panel stacking per SPEC §S36.1; chat persists when Skills opens)
 - `2026-05-09` BUG-001 + BUG-002 (v2 root path deleted in Step J; v3 propagate-criticality flow correctly reads `applied[0].newCrit` for toast + creates fresh button on each panel re-mount)
 - `2026-05-09` BUG-045 (SettingsModal "Couldn't save" — initial-open path missed `_settings` because Save lookup scoped to `.overlay-body` wrap instead of `.settings-body` inner)
+- `2026-05-09` BUG-047 (AI provider chip dots all green — visual + label distinction shipped: configured-but-inactive = blue dot + "Configured" label; active = green dot + "Active" label)
+- `2026-05-09` BUG-048 (right-pane detail panel disappears on Save — selection lifted to module scope + restored on re-mount)
 
 ---
 

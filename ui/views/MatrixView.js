@@ -31,12 +31,26 @@ import {
 import { helpButton } from "./HelpModal.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
 
+// BUG-048 fix · selection state lifted to module scope so it survives
+// re-renders triggered by commitInstanceUpdate (which fires the engagement
+// subscriber chain → renderStage → fresh renderMatrixView closure). Pre-fix,
+// selection lived as a closure-local var inside renderMatrixView; every
+// re-mount started with selectedInstId=null, wiping the right-pane detail
+// panel the user was editing. Indexed by stateFilter so Tab 2 (current) and
+// Tab 3 (desired) keep independent selections.
+var _selectedInstIdByState = { current: null, desired: null };
+
 export function renderMatrixView(left, right, _legacySession, opts) {
   // _legacySession is ignored in v3-pure mode -- kept in the signature
   // so existing callers (app.js, Suite 13 tests) don't break. Every
   // read in this view resolves against getActiveEngagement().
   var stateFilter    = (opts && opts.stateFilter) || "current";
-  var selectedInstId = null;
+  // BUG-048 fix · accessor over module-scope state for the active stateFilter.
+  // Reads return the persisted selection across re-mounts; writes mutate the
+  // map so subsequent re-renders see the same selection.
+  function getSelectedInstId() { return _selectedInstIdByState[stateFilter] || null; }
+  function setSelectedInstId(id) { _selectedInstIdByState[stateFilter] = id || null; }
+  var selectedInstId = getSelectedInstId();
 
   // Demo banner -- v3 engagement carries isDemo on engagement.meta.
   // Falls back to false if meta missing (defensive).
@@ -150,7 +164,25 @@ export function renderMatrixView(left, right, _legacySession, opts) {
 
   wrap.appendChild(grid);
   left.appendChild(wrap);
-  showHint(right);
+
+  // BUG-048 fix · restore the right-pane detail panel if a previous
+  // selection persisted across re-mount (commitInstanceUpdate fires the
+  // engagement subscriber chain → renderStage → fresh renderMatrixView
+  // closure). Pre-fix the right pane reverted to showHint() and the user
+  // had to re-click the tile they were just editing. Now: if there's a
+  // persisted selectedInstId AND the instance still exists in the live
+  // engagement (delete-during-edit edge case), re-mount the detail panel.
+  // Otherwise fall back to the hint placeholder.
+  var _restoreEng = getActiveEngagement();
+  var _restoreInst = (selectedInstId && _restoreEng && _restoreEng.instances && _restoreEng.instances.byId)
+    ? _restoreEng.instances.byId[selectedInstId]
+    : null;
+  if (_restoreInst && _restoreInst.state === stateFilter) {
+    showDetailPanel(right, _restoreInst);
+  } else {
+    if (!_restoreInst) setSelectedInstId(null);   // stale selection (instance deleted) → clear it
+    showHint(right);
+  }
 
   // ---- Cell renderer (v3-pure) ----
   function renderCell(cell, layerId, envUuid) {
@@ -272,13 +304,14 @@ export function renderMatrixView(left, right, _legacySession, opts) {
       if (!confirm("Remove " + inst.label + "?")) return;
       var r = commitInstanceRemove(inst.id);
       if (r && r.ok === false) { showToast(r.errors ? "Remove failed: " + r.errors[0].message : "Remove failed", "err"); return; }
-      if (selectedInstId === inst.id) { selectedInstId = null; showHint(right); }
+      if (selectedInstId === inst.id) { selectedInstId = null; setSelectedInstId(null); showHint(right); }
       refreshCell(inst.layerId, inst.environmentId);
     });
     tile.appendChild(del);
 
     tile.addEventListener("click", function() {
       selectedInstId = inst.id;
+      setSelectedInstId(inst.id);
       grid.querySelectorAll(".instance-tile").forEach(function(t) {
         t.classList.toggle("selected", t.getAttribute("data-instance-id") === inst.id);
       });
@@ -572,6 +605,7 @@ export function renderMatrixView(left, right, _legacySession, opts) {
   // ---- Detail panel ----
   function showDetailPanel(right, inst) {
     selectedInstId = inst.id;
+    setSelectedInstId(inst.id);
     right.innerHTML = "";
     var panel = mk("div", "detail-panel");
 
@@ -666,6 +700,7 @@ export function renderMatrixView(left, right, _legacySession, opts) {
       var r = commitInstanceRemove(inst.id);
       if (r && r.ok === false) { showToast("Remove failed", "err"); return; }
       selectedInstId = null;
+      setSelectedInstId(null);
       refreshCell(inst.layerId, inst.environmentId);
       showHint(right);
     });

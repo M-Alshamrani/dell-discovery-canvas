@@ -6266,7 +6266,18 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
   border-radius: 50%;
   background: var(--ink-faint);
 }
+/* BUG-047 fix . visual distinction between currently-active provider
+   (solid green dot, "you're using this") vs configured-but-inactive
+   (neutral blue dot, "switchable"). Pre-fix every .is-ready row painted
+   a green dot regardless of active state, so the user couldn't tell
+   which provider was actually live. Active stays green; ready-only goes
+   to dell-blue. Warn (no key) stays amber. Note: "ready" here means
+   CONFIGURED (baseUrl + apiKey present), not REACHABLE - true
+   reachability probing is BUG-046's #6 fix item for v3.1. */
 .canvas-chat-provider-row.is-ready .canvas-chat-provider-row-dot {
+  background: var(--dell-blue);
+}
+.canvas-chat-provider-row.is-active.is-ready .canvas-chat-provider-row-dot {
   background: var(--green);
 }
 .canvas-chat-provider-row.is-warn .canvas-chat-provider-row-dot {

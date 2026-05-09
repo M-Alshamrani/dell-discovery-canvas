@@ -1683,6 +1683,72 @@ The user's framing is clear: chat is working correctly today; the room for impro
 
 ---
 
+## BUG-047 · AI provider chip strip shows ALL configured providers as green dots — no visual distinction between "currently active" and "configured but inactive" (CLOSED 2026-05-09 — visual + label distinction shipped)
+
+**Status**: **CLOSED 2026-05-09** · Reported by user 2026-05-09: *"all providers show green dots in the drop down list of the ai assist window, though some are not connected .. status mismatch"*. Root cause + visual fix shipped same day.
+**Reporter**: User
+**Severity**: Medium (UX trust — green dot implied "connected/working", but really meant "configured")
+**Regression**: No — pre-existing CSS `.is-ready` rule painted green dot regardless of active state.
+
+### Repro
+1. Open Canvas AI Assist (topbar AI Assist button).
+2. Click the provider chip strip (upper-right of overlay header).
+3. Popover shows all configured providers (those with baseUrl + apiKey) as green dots.
+4. Even providers the user has NEVER actually tested or used appear green — visually identical to the active provider.
+
+### Root cause
+`styles.css` line 6269 `.canvas-chat-provider-row.is-ready .canvas-chat-provider-row-dot { background: var(--green); }` painted EVERY configured provider's dot green. The `.is-active` modifier set background hover/text colors but didn't change the dot color, so active and configured-but-inactive looked identical.
+
+The `isProviderReady(config, providerKey)` check in `ui/views/CanvasChatOverlay.js` line 860 verifies `baseUrl` + `apiKey` PRESENCE, not actual server reachability. So every provider with a populated config appeared green (a "configured" signal masquerading as a "connected" signal).
+
+### Fix
+1. **CSS visual distinction**: `.is-ready` (configured-but-inactive) dot now `var(--dell-blue)` (a neutral "switchable" signal, NOT a "live/connected" signal). `.is-active.is-ready` (currently active) keeps `var(--green)`. `.is-warn` (no key) stays `var(--amber)`.
+2. **Label clarity**: meta text "Ready" → "Configured" (active stays "Active"; needs-key stays "Needs key"). The label now matches what the check actually verifies (baseUrl + apiKey present).
+3. **Future enhancement (BUG-046 #6 v3.1)**: real reachability probing — send a HEAD/options to each provider's baseUrl on popover open with a short timeout, cache the result, drive a "Reachable" 3rd state. Out of scope for rc.7.
+
+### Memory anchor
+Same pattern as BUG-044's chat-half: a label ("Ready") implied a stronger property ("connected") than the underlying check actually verified ("configured"). When the label and the truth diverge, users lose trust. Fix in TWO places: the visual signal AND the text label.
+
+---
+
+## BUG-048 · Right-pane detail panel disappears after Save on a current/desired-state instance edit (CLOSED 2026-05-09 — selection persisted across re-mount)
+
+**Status**: **CLOSED 2026-05-09** · Reported by user 2026-05-09: *"the workload, and properly other items in the current state and desired state, the right pannel window, when i change the criticlaity for example, the right panned addtional infomraiton about the selected item diaperes ... and i have to reselect it again. this happen for example when i change criticlaity and click save"*. Root cause + fix shipped same day.
+**Reporter**: User
+**Severity**: Medium (workshop-flow disrupted; user mid-edit loses focus and has to re-click the tile they were JUST editing)
+**Regression**: New behavior introduced by Step G + Step H+J+K's subscribe-driven shell re-render. Pre-Step-G the v2 sessionBridge had different timing.
+
+### Repro
+1. Load demo (or any engagement with instances).
+2. Tab 2 (Current state) OR Tab 3 (Desired state).
+3. Click any instance tile to open the right-pane detail panel.
+4. Change criticality (or any other field).
+5. Click Save.
+6. Right-pane detail panel disappears; user has to re-click the tile to keep editing.
+
+### Root cause
+`ui/views/MatrixView.js` line 39 (pre-fix): `var selectedInstId = null;` was a CLOSURE-LOCAL variable inside `renderMatrixView`. The Save flow:
+1. `commitInstanceUpdate(inst.id, patch)` mutates engagement
+2. engagementStore `_emit()` fires `subscribeActiveEngagement` listeners
+3. `app.js` shell-render listener fires `renderHeaderMeta() / renderStepper() / renderStage()`
+4. `renderStage()` re-calls `renderMatrixView(left, right, null, opts)` from scratch
+5. NEW closure starts with `selectedInstId = null` → right pane reverts to `showHint(right)` placeholder
+
+The selection state didn't survive re-mount.
+
+### Fix
+1. **Lift `_selectedInstIdByState` to module scope** (keyed by stateFilter so Tab 2 and Tab 3 keep independent selections; a current-state selection isn't carried into desired-state and vice-versa).
+2. **Sync local var to map** at all 4 write sites (tile click, tile delete, detail panel mount, detail panel delete).
+3. **Restore detail panel on re-mount**: at end of `renderMatrixView`, if persisted `selectedInstId` matches a live engagement instance whose state matches the current `stateFilter`, call `showDetailPanel(right, instance)` instead of `showHint(right)`. Otherwise (stale ID, instance deleted) clear the persisted ID + show the hint.
+
+### Regression test
+**V-FLOW-MATRIX-SELECTION-PERSIST-1**: drives a v3-direct fixture (engagement + 1 instance), renders MatrixView once, simulates a tile click, re-renders MatrixView (simulates the engagement subscriber chain firing after a commit), asserts the right pane re-mounts with the detail panel — NOT the hint placeholder.
+
+### Memory anchor
+Same shape as BUG-043 (shell-subscribe wiped by tests) and BUG-042 (demo-banner predicate read from dead arg): re-mount paths in the v3-pure-shell-driven architecture must NOT lose mid-edit user state. Pattern to add to spec: "any view-local state that the user's edit-in-progress depends on must persist across the engagement subscriber re-render chain."
+
+---
+
 ## BUG-NNN · One-line headline
 
 **Status**: OPEN · Reported YYYY-MM-DD · vX.Y.Z · Scheduled <bucket>
