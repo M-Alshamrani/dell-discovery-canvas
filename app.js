@@ -28,7 +28,7 @@
 // newSessionBtn click site below. v2 sessionStore now has ZERO live
 // imports from app.js -- only the side-effect import of sessionBridge.js
 // (line ~30) remains, which itself drops in 7e-8d-3.
-import { engagementToV2Session } from "./state/v3ToV2DemoAdapter.js";
+import { engagementToV2Session } from "./state/legacySessionAdapter.js";
 // rc.7 / 7e-8 redo Step B · translateV2SessionToV3Engagement no longer
 // imported here. The translation lives inside services/sessionFile.js
 // applyEnvelope, which now returns a v3 engagement directly. app.js
@@ -722,7 +722,7 @@ function wireFooter() {
         // SPEC §S21.5 · single-source-of-truth demo dispatch.
         // The v3 demo (`core/demoEngagement.js`) is the authoritative
         // dataset; v2 sessionState is DERIVED from it via the down-
-        // converter (`state/v3ToV2DemoAdapter.js`) so v2 view tabs
+        // converter (`state/legacySessionAdapter.js`) so v2 view tabs
         // and the v3 Canvas Chat see the same customer + drivers +
         // environments + instances + gaps.
         // BUG-010 fix: replaces the prior v2-resetToDemo() + v3-

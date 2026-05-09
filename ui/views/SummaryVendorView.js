@@ -4,7 +4,7 @@ import { LAYERS, getEnvLabel } from "../../core/config.js";
 import { computeMixByLayer, computeMixByEnv, computeVendorTableData } from "../../services/vendorMixService.js";
 import { helpButton } from "./HelpModal.js";
 // rc.7 / 7e-6 · v3-pure (per SPEC §S40 + RULES §16 CH34).
-import { getEngagementAsSession, getVisibleEnvsFromEngagement } from "../../state/v3Projection.js";
+import { getEngagementAsSession, getVisibleEnvsFromEngagement } from "../../state/projection.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
 import * as fState from "../../state/filterState.js";
 

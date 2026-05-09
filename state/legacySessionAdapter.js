@@ -1,6 +1,10 @@
-// state/v3ToV2DemoAdapter.js
+// state/legacySessionAdapter.js (was state/v3ToV2DemoAdapter.js · renamed
+// in rc.7 post-tag-prep v3-prefix purge per feedback_no_version_prefix_in_names.md;
+// the "DemoAdapter" qualifier was also dropped because the adapter is no
+// longer demo-only — engagementToV2Session is the canonical projection at
+// the file-save boundary + every legacy v2-shape service consumer).
 //
-// SPEC §S21.5 · v3 engagement → v2 sessionState pure-function adapter.
+// SPEC §S21.5 · engagement → v2-shape pure-function adapter.
 //
 // Purpose: at demo-load time we want a SINGLE source of truth — the v3
 // engagement (`core/demoEngagement.js`). v2.x view tabs that have not

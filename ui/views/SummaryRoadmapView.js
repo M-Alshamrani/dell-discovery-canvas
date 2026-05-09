@@ -10,7 +10,7 @@
 
 import { LAYERS, ENVIRONMENTS, BUSINESS_DRIVERS } from "../../core/config.js";
 // rc.7 / 7e-6 · v3-pure (per SPEC §S40 + RULES §16 CH34).
-import { getEngagementAsSession } from "../../state/v3Projection.js";
+import { getEngagementAsSession } from "../../state/projection.js";
 import { buildProjects } from "../../services/roadmapService.js";
 import { groupProjectsByProgram, driverLabel as driverLabelFor } from "../../services/programsService.js";
 import { helpButton } from "./HelpModal.js";

@@ -122,9 +122,9 @@ export const PRODUCTION_FILES = [
   // sessionState helpers. Production importers all migrated through
   // Steps B-G; tests now use the inlined factories in
   // diagnostics/_v2TestFixtures.js).
-  "/state/v3Projection.js",
+  "/state/projection.js",
   "/state/v3SkillStore.js",
-  "/state/v3ToV2DemoAdapter.js",
+  "/state/legacySessionAdapter.js",
 
   // ─── ui/components/ ────────────────────────────────────────────────
   "/ui/components/DemoBanner.js",

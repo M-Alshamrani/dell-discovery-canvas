@@ -2,7 +2,7 @@
 
 import { LAYERS, ENVIRONMENTS, getEnvLabel } from "../../core/config.js";
 // rc.7 / 7e-6 · v3-pure (per SPEC §S40 + RULES §16 CH34).
-import { getEngagementAsSession, getVisibleEnvsFromEngagement } from "../../state/v3Projection.js";
+import { getEngagementAsSession, getVisibleEnvsFromEngagement } from "../../state/projection.js";
 import { getHealthSummary, computeBucketMetrics, scoreToRiskLabel, scoreToClass } from "../../services/healthMetrics.js";
 import { helpButton } from "./HelpModal.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";

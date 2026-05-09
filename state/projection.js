@@ -1,5 +1,6 @@
-// state/v3Projection.js -- v3 engagement -> v2-shape session projector
-// (rc.7 / 7e-6 transitional helper).
+// state/projection.js -- engagement -> v2-shape session projector
+// (transitional helper · was state/v3Projection.js · renamed in rc.7
+// post-tag-prep v3-prefix purge per feedback_no_version_prefix_in_names.md).
 //
 // Per SPEC §S40 (v3-pure architecture). Read-only consumers (Reporting +
 // 4 Summary views) need session-shape data because the services they

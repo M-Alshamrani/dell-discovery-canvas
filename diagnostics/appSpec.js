@@ -164,7 +164,7 @@ import { renderReportingOverview } from "../ui/views/ReportingView.js";
 // signatures still accept one (the v3-native cutover work in rc.7 / 7e
 // migrated the views to read v3 directly, but the function signatures
 // retained backward-compat session args for some renderers).
-import { engagementToV2Session } from "../state/v3ToV2DemoAdapter.js";
+import { engagementToV2Session } from "../state/legacySessionAdapter.js";
 
 import { renderContextView, _resetSelectionForTests as _resetContextSelectionForTests } from "../ui/views/ContextView.js";
 import { renderMatrixView }        from "../ui/views/MatrixView.js";
@@ -7880,7 +7880,7 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
     });
   });
 
-  it("V-FLOW-PROJECTION-ENV-UUID-1 · BUG-049 guard: state/v3Projection.getEngagementAsSession remaps gap.affectedEnvironments + instance.environmentId from v3 UUID -> v2 envCatalogId so downstream services (roadmapService.envLabel etc) resolve human labels (not raw UUIDs leaked into UI)", async () => {
+  it("V-FLOW-PROJECTION-ENV-UUID-1 · BUG-049 guard: state/projection.getEngagementAsSession (was v3Projection) remaps gap.affectedEnvironments + instance.environmentId from v3 UUID -> v2 envCatalogId so downstream services (roadmapService.envLabel etc) resolve human labels (not raw UUIDs leaked into UI)", async () => {
     // User report 2026-05-09: Tab 5 Reporting Overview "Initiative pipeline at a
     // glance" chips showed "00000000-...-001 — Layer Modernization (1)" instead
     // of "Riyadh Core DC — Layer Modernization (1)". Root cause: v3 projection
@@ -7889,7 +7889,7 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
     // (typeId-keyed) → no match → returned the raw UUID. Fix: project remap
     // UUID -> envCatalogId in getEngagementAsSession (mirrors the existing
     // engagementToV2Session adapter behaviour at line 86 + 115).
-    const proj = await import("../state/v3Projection.js");
+    const proj = await import("../state/projection.js");
     _resetEngagementStoreForTests();
     setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
     commitContextEdit({ customer: { name: "BUG-049 Co", vertical: "Enterprise", region: "EMEA" } });
@@ -17265,7 +17265,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     });
 
     it("V-DEMO-V2-1 · v3→v2 demo down-converter produces a v2-shaped session that mirrors v3 customer + drivers + envs + counts", async () => {
-      const adapterMod = await import("../state/v3ToV2DemoAdapter.js");
+      const adapterMod = await import("../state/legacySessionAdapter.js");
       const eng = loadV3Demo();
       const v2sess = adapterMod.engagementToV2Session(eng);
 
@@ -17476,10 +17476,20 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       // pass once the rename lands). After the rename, the v3-prefixed
       // entries 404 (don't exist) and don't contribute to offenders.
       const FILES_TO_CHECK = [
-        // To-be-renamed (will fail RED until Step 0b):
+        // Historical to-be-renamed entries (these v3-prefixed paths now 404):
+        // state/v3Adapter.js / v3EngagementStore.js / v3SessionBridge.js
+        // were rolled into the v3-pure architecture (canonical adapter +
+        // engagementStore + sessionBridge — all without prefix). The 404s
+        // on these are tolerated by the test loop (`if (!resp.ok) continue`).
+        // core/v3DemoEngagement.js / ui/views/V3SkillBuilder.js — same shape.
+        // state/v3Projection.js + state/v3ToV2DemoAdapter.js renamed in
+        // rc.7 post-tag-prep v3-prefix purge to state/projection.js +
+        // state/legacySessionAdapter.js; canonical-named below.
         "state/v3Adapter.js",
         "state/v3EngagementStore.js",
         "state/v3SessionBridge.js",
+        "state/v3Projection.js",
+        "state/v3ToV2DemoAdapter.js",
         "core/v3DemoEngagement.js",
         "ui/views/V3SkillBuilder.js",
         // Canonical-named (must always pass):
@@ -17487,6 +17497,8 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "state/engagementStore.js",
         "state/sessionBridge.js",
         "state/chatMemory.js",
+        "state/projection.js",
+        "state/legacySessionAdapter.js",
         "core/demoEngagement.js",
         "core/aiConfig.js",
         "core/version.js",
@@ -17510,9 +17522,16 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "ui/views/SkillBuilder.js"
       ];
       // Time-bounded exceptions per SPEC §S24.4 / R24.5 — documented blocked items.
+      // state/v3SkillStore.js — kept until the core/skillStore.js consolidation
+      //   in v3.1 (different concept: state/v3SkillStore.js is v3.1-shape skill
+      //   storage; core/skillStore.js is the v2-era loader+bus. Rename would
+      //   collide; consolidation is the right fix, scheduled for v3.1).
+      // core/v3SeedSkills.js — DELETED in rc.4-dev Arc 4b; the entry stays
+      //   here as a historical pin so V-NAME-1 doesn't regress if a future
+      //   commit accidentally re-adds the file.
       const ALLOWED_EXCEPTIONS = new Set([
-        "state/v3SkillStore.js",   // v2 core/skillStore.js export collision; drops when v2 retires
-        "core/v3SeedSkills.js"     // v2 core/seedSkills.js path collision; drops when v2 retires
+        "state/v3SkillStore.js",
+        "core/v3SeedSkills.js"
       ]);
 
       const offenders = [];

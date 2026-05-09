@@ -3,10 +3,11 @@
 // Shows: account health score, executive summary, and navigates to sub-tabs.
 
 // rc.7 / 7e-6 · v3-pure (per SPEC §S40 + RULES §16 CH34). Reads project
-// the v3 engagement to v2-shape via state/v3Projection.js. Services
-// still take session as a parameter; this projector retires at 7e-8
-// alongside the v2 sessionStore deletion.
-import { getEngagementAsSession, getVisibleEnvsFromEngagement } from "../../state/v3Projection.js";
+// the v3 engagement to v2-shape via state/projection.js. Services
+// still take session as a parameter; this projector retires when v2-shape
+// services (healthMetrics, programsService, roadmapService project-grouping)
+// migrate to consume v3 engagement directly (v3.1 polish arc).
+import { getEngagementAsSession, getVisibleEnvsFromEngagement } from "../../state/projection.js";
 // rc.7 / 7e-8c'-impl · shared empty-environments UX per SPEC §S41 + RULES §16 CH35.
 import { renderEmptyEnvsCenterCard, visibleEnvCount } from "../components/NoEnvsCard.js";
 import { generateExecutiveSummary, generateSessionBrief, buildProjects,
