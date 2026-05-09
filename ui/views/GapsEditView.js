@@ -1334,10 +1334,22 @@ export function renderGapsEditView(left, right, session) {
       }
       try {
         // v2.4.11 · B2 · build affectedLayers from the Also-affects chips.
-        // Primary is always at index 0; setPrimaryLayer in createGap
-        // reasserts that even if we forgot.
+        // Primary is always at index 0; rc.7 R8 #5 setPrimaryLayer auto-
+        // rebalance in updateGap reasserts that on subsequent edits.
+        //
+        // BUG-052 / R8 #6 closure (2026-05-09): the v2 contract
+        // "reviewed defaults to true for manual creation per createGap"
+        // is NOT preserved in v3-pure (schema/gap.js line 32:
+        // reviewed.default(false)). v3 manual-add gaps appear with the
+        // pulsing "needs review" dot until the user explicitly marks
+        // reviewed via the detail-panel "Mark reviewed" button (which
+        // routes through R8 #1's AL10 gate). This matches the v3 G2
+        // invariant: a reviewed gap MUST satisfy its action-link rules,
+        // which a fresh manual-add gap doesn't have yet (no links).
+        // The v2 reviewed=true UX is deferred to v3.1 polish; would
+        // need a dialog redesign to also collect links.
         var alsoLayers = Array.from(alsoSelected);
-        var newGap = commitGapAdd({
+        var addRes = commitGapAdd({
           description:    vals.description,
           layerId:        vals.layerId,
           affectedLayers: [vals.layerId].concat(alsoLayers.filter(function(l) { return l !== vals.layerId; })),
@@ -1345,10 +1357,22 @@ export function renderGapsEditView(left, right, session) {
           urgency:        vals.urgency || "Medium",
           phase:          vals.phase   || "next",
           status:         "open"
-          // reviewed defaults to true for manual creation per createGap.
+          // reviewed left default (false) per R8 #6 closure note above.
         });
-        selectedGapId = newGap.id;
-        setSelectedGapId(newGap.id);
+        // BUG-052 fix: commitGapAdd returns { ok, engagement, errors }
+        // (NOT the gap directly). If ok:false, surface the error and
+        // bail. If ok:true, read the new gap's id from the engagement
+        // (it's the last-added; addGap appends to allIds). Pre-fix this
+        // dereferenced addRes.id (undefined) and lost selection on
+        // every successful manual-add.
+        if (addRes && addRes.ok === false) {
+          var msg = (addRes.errors && addRes.errors[0] && addRes.errors[0].message) || "Validation failed";
+          notifyError({ title: "Couldn't create gap", body: msg });
+          return;
+        }
+        var newGapId = getActiveEngagement().gaps.allIds.at(-1);
+        selectedGapId = newGapId;
+        setSelectedGapId(newGapId);
         overlay.remove();
         renderAll();
       } catch(e) { notifyError({ title: "Validation error", body: e.message || String(e) }); }

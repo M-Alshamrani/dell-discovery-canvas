@@ -8503,6 +8503,70 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
     assertEqual(post.affectedLayers[1], "network", "R8 #5: caller's non-primary patch wins");
   });
 
+  // ─── R8 #6 · GapsEditView manual-add dialog UI contract ─────────────────
+  // R8 #6 of the rc.7-deferred invariant arc. Test exercises the actual
+  // GapsEditView "+ Add gap" dialog flow end-to-end: user fills in the
+  // form, clicks "Create gap", the gap appears in the engagement AND
+  // is auto-selected in the detail panel.
+  //
+  // Pre-fix BUG-052: commitGapAdd returns { ok, engagement, errors }, NOT
+  // the gap directly. The dialog dereferenced result.id (undefined) and
+  // called setSelectedGapId(undefined) — wiping selection on every
+  // successful manual-add. Detail panel reverted to empty hint.
+  // Post-fix: read newGapId from engagement.gaps.allIds.at(-1).
+  //
+  // Closes the v2 reviewed=true UX expectation gracefully: documented
+  // as v3.1 polish (would need dialog redesign to collect links AL10
+  // requires — current schema defaults reviewed=false; user marks
+  // reviewed later via detail-panel button after linking, which routes
+  // through R8 #1's AL10 gate).
+  it("V-FLOW-MANUAL-ADD-1 · R8 #6 · BUG-052 closure · GapsEditView manual-add dialog creates gap AND auto-selects it; commitGapAdd result-envelope handled (was broken pre-fix; selection lost on every manual-add)", async () => {
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitContextEdit({ customer: { name: "R8-6 Co", vertical: "Enterprise", region: "EMEA" } });
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var leftWrap = document.createElement("div");
+    var rightWrap = document.createElement("div");
+    document.body.appendChild(leftWrap);
+    document.body.appendChild(rightWrap);
+    try {
+      renderGapsEditView(leftWrap, rightWrap, null, {});
+      // Dispatch click on the "+ Add gap" button.
+      var addBtn = leftWrap.querySelector(".btn-primary.btn-with-feedback") ||
+                   Array.from(leftWrap.querySelectorAll("button")).find(b => /Add gap/.test(b.textContent));
+      assert(addBtn, "R8 #6: manual-add dialog trigger '+ Add gap' button MUST exist in GapsEditView");
+      addBtn.click();
+      var dialog = document.getElementById("gap-dialog");
+      assert(dialog, "R8 #6: clicking '+ Add gap' MUST open the gap-dialog overlay");
+      // Fill in description (required field).
+      var descField = dialog.querySelector("[data-prop='description']");
+      assert(descField, "R8 #6: dialog MUST contain description input");
+      descField.value = "R8 #6 manual-add test gap";
+      // Click "Create gap".
+      var createBtn = Array.from(dialog.querySelectorAll("button")).find(b => /Create gap/.test(b.textContent));
+      assert(createBtn, "R8 #6: dialog MUST have 'Create gap' submit button");
+      createBtn.click();
+      // Assertions: gap exists in engagement.
+      var eng = getActiveEngagement();
+      assertEqual(eng.gaps.allIds.length, 1, "R8 #6: gap MUST be added to engagement");
+      var newGapId = eng.gaps.allIds[0];
+      var newGap = eng.gaps.byId[newGapId];
+      assertEqual(newGap.description, "R8 #6 manual-add test gap",
+        "R8 #6: created gap.description MUST match dialog input");
+      // BUG-052 closure: gap is auto-selected in the detail panel.
+      // The right pane should now show the gap detail (not an empty hint).
+      // The detail panel typically renders an element with the gap's id
+      // or a title containing the gap's description.
+      assert(rightWrap.textContent.indexOf("R8 #6 manual-add test gap") >= 0,
+        "R8 #6 / BUG-052: right pane MUST auto-render the new gap's detail (got textContent length: " + rightWrap.textContent.length + ", first 200 chars: " + rightWrap.textContent.slice(0, 200) + ")");
+    } finally {
+      leftWrap.remove();
+      rightWrap.remove();
+      var leftover = document.getElementById("gap-dialog");
+      if (leftover) leftover.remove();
+    }
+  });
+
   it("V-FLOW-GAPS-SELECTION-PERSIST-1 · BUG-051 (closes BUG-032 root cause) guard: GapsEditView selectedGapId persists across commitGapLink*-driven re-render; gap detail panel + link buttons survive add-link / unlink / edit cycles", async () => {
     // User report 2026-05-09: clicking + Link desired instance / + Link
     // current instance after a successful link cycle felt like the buttons
