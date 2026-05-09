@@ -7880,6 +7880,24 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
     });
   });
 
+  it("V-FLOW-DEMO-BANNER-GAPS-1 · BUG-042 guard: GapsEditView renders .demo-mode-banner via the LIVE demo-loader path (session arg null, isDemo read from getActiveEngagement().meta)", () => {
+    // VT26 above passed a v2-shape projection as the 3rd arg, which the
+    // pre-fix predicate (`session && session.isDemo`) checked. The LIVE
+    // app.js renderStage() passes null for that arg post-Step-H+J+K --
+    // so the banner relied on a code path that no production caller
+    // exercises. The fix reads engagement.meta.isDemo from
+    // getActiveEngagement() directly. This test drives that exact path.
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: true } }));
+    commitContextEdit({ customer: { name: "Demo Banner Co", vertical: "Enterprise", region: "EMEA" } });
+    commitEnvAdd({ envCatalogId: "coreDc" });   // visibleEnvCount > 0 so renderGapsEditView body runs (not empty-state card)
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderGapsEditView(l, r, null);   // null session arg = the LIVE app.js path
+    var banner = l.querySelector(".demo-mode-banner");
+    assert(banner,
+      "GapsEditView MUST render .demo-mode-banner when getActiveEngagement().meta.isDemo === true, regardless of the v2-shape session arg (BUG-042 fix)");
+  });
+
   // ──────────────────────────────────────────────────────────────────────
   // Section 6 . stepper hover affordance (VT27)
   // ──────────────────────────────────────────────────────────────────────

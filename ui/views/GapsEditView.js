@@ -182,7 +182,19 @@ export function renderGapsEditView(left, right, session) {
 
   // v2.4.13 S5 . demo banner mirrors Tab 1 styling so the colorful demo
   // signal follows the user across the workshop.
-  if (session && session.isDemo) renderDemoBanner(left);
+  //
+  // BUG-042 fix · the original predicate read isDemo from the v2-shape
+  // session arg (3rd param), but app.js's renderStage now passes null
+  // for that arg in the live demo-loader path (post-Step-H+J+K -- v3-pure;
+  // session is dead). VT26 still passed a v2-shape projection so that
+  // path's banner works. The two paths diverged. Reading isDemo from the
+  // v3 engagement directly via getActiveEngagement().meta.isDemo
+  // unifies them: any path that reaches renderGapsEditView with a
+  // demo-flagged engagement gets the banner.
+  var _engForDemo = getActiveEngagement();
+  var _isDemoEng = !!(_engForDemo && _engForDemo.meta && _engForDemo.meta.isDemo);
+  var _isDemoLegacy = !!(session && session.isDemo);
+  if (_isDemoEng || _isDemoLegacy) renderDemoBanner(left);
 
   // rc.7 / 7e-8c'-impl · empty-environments empty-state via shared
   // NoEnvsCard component (SPEC §S41 + RULES §16 CH35). Per §S41.2 Tab 4
