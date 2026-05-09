@@ -16254,8 +16254,8 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
           "V-FLOW-REHYDRATE-1: localStorage.v3_engagement_v1 written on setActiveEngagement");
 
         const parsed = JSON.parse(raw);
-        assert(Array.isArray(parsed?.gaps?.allIds) && parsed.gaps.allIds.length === 8,
-          "V-FLOW-REHYDRATE-1: persisted engagement carries the demo's 8 gaps");
+        assert(Array.isArray(parsed?.gaps?.allIds) && parsed.gaps.allIds.length === 9,
+          "V-FLOW-REHYDRATE-1: persisted engagement carries the demo's 9 gaps");
 
         // Simulate page reload: drop in-memory state without touching
         // localStorage; explicitly re-rehydrate (the helper the module-load
@@ -16271,9 +16271,16 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         const eng = storeMod.getActiveEngagement();
         assert(eng !== null,
           "V-FLOW-REHYDRATE-1: getActiveEngagement returns the rehydrated engagement (no second loadDemo click required)");
-        assertEqual(eng.gaps.allIds.length, 8,
-          "V-FLOW-REHYDRATE-1: rehydrated engagement carries all 8 gaps (the user-visible repro)");
-        assertEqual(eng.customer.name, "Acme Healthcare Group",
+        // rc.7 / 7e-9c · 2026-05-09 PM · demo gap count bumped to 9 with
+        // the addition of gapAnalyticsEnhance (the 'enhance' gapType
+        // coverage required by V-DEMO-9 + the Northstar exec narrative).
+        assertEqual(eng.gaps.allIds.length, 9,
+          "V-FLOW-REHYDRATE-1: rehydrated engagement carries all 9 gaps (the user-visible repro)");
+        // rc.7 / 7e-9c · 2026-05-09 PM · demo customer rewritten to
+        // "Northstar Health Network" (4-site healthcare exec demo per
+        // user direction; was Acme Healthcare Group). Test asserts
+        // round-trip intact against the live demo's customer name.
+        assertEqual(eng.customer.name, "Northstar Health Network",
           "V-FLOW-REHYDRATE-1: customer round-trips intact");
 
         // Cleanup.
@@ -18403,16 +18410,17 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     // -----------------------------------------------------------------
     // V-DEMO-8/9 · v3-rich demo content invariants
     // After the rich-demo refresh, the demo MUST cover:
-    //   - 3 drivers (multi-driver narrative)
+    //   - ≥3 drivers (multi-driver narrative; rc.7 / 7e-9c bumped to 4
+    //     drivers per Northstar Health exec demo: cyber/modernize/ai/cost)
     //   - all 5 GAP_TYPES (replace + introduce + consolidate + ops + enhance)
     //   - at least one driver-tied gap per driver
     // These are content invariants that hold beyond the structural V-DEMO-1..7.
     // -----------------------------------------------------------------
 
-    it("V-DEMO-8 · rich demo: 3 drivers + 4 envs + every driver linked by ≥1 gap", () => {
+    it("V-DEMO-8 · rich demo: ≥3 drivers + 4 envs + every driver linked by ≥1 gap", () => {
       const eng = loadV3Demo();
-      assertEqual(eng.drivers.allIds.length, 3,
-        "rich demo carries exactly 3 strategic drivers");
+      assert(eng.drivers.allIds.length >= 3,
+        "rich demo carries at least 3 strategic drivers (got " + eng.drivers.allIds.length + ")");
       assertEqual(eng.environments.allIds.length, 4,
         "rich demo carries exactly 4 environments");
       const linkedDrivers = new Set();
