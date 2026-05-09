@@ -19357,6 +19357,500 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 
 });
 
+// ============================================================================
+// SUITE 50 · rc.8.b R1 · Skills Builder v3.2 rebooted RED-first scaffold
+// ============================================================================
+// Per SPEC §S46 + RULES §16 CH36 + feedback_spec_and_test_first.md.
+// 23 vectors authored RED-first; flip GREEN progressively across R2..R7.
+//
+// R5 spirit: RED-first scaffolding allowed when transient (1-3 commits per
+// vector). NOT a fig-leaf. The fact that 22 of 23 are RED at this commit
+// is the proof that R1 is spec-and-test only — no implementation pretends
+// to ship.
+//
+// Tier map (per SPEC §S46.14):
+//   Tier 1 (shape)        — V-FLOW-SKILL-V32-MODULE-1 + CURATION-1/2
+//   Tier 2 (author form)  — V-FLOW-SKILL-V32-AUTHOR-{SEED,DATA,IMPROVE,OUTPUT,POLICY,DESC}-1
+//   Tier 3 (schema)       — V-FLOW-SKILL-V32-SCHEMA-1/2/3/4
+//   Tier 4 (improve)      — V-FLOW-SKILL-V32-IMPROVE-1/2
+//   Tier 5 (chat tabs)    — V-FLOW-SKILL-V32-CHAT-TAB-1/2/3
+//   Tier 6 (runtime)      — V-FLOW-SKILL-V32-RUN-1/2
+//   Tier 7 (mutation)     — V-FLOW-SKILL-V32-MUTATE-1/2/3
+
+describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULES §16 CH36)", () => {
+
+  // ─── Tier 1 · Shape contracts ──────────────────────────────────────
+
+  it("V-FLOW-SKILL-V32-MODULE-1 · R1 / SPEC §S46.3 · ui/views/SkillBuilder.js exports renderSkillBuilder as a function (legacy file restored on rc.8 revert; GREEN at R1)", async () => {
+    const mod = await import("/ui/views/SkillBuilder.js");
+    assertEqual(typeof mod.renderSkillBuilder, "function",
+      "V-FLOW-SKILL-V32-MODULE-1: SkillBuilder.js MUST export renderSkillBuilder as a function (per SPEC §S46.3)");
+  });
+
+  it("V-FLOW-SKILL-V32-CURATION-1 · R1 / SPEC §S46.4 / CH36.3 · RED until R2 · core/dataContract.js exports getStandardMutableDataPoints + getAllMutableDataPoints as functions (curation layer; NO new file)", async () => {
+    const mod = await import("/core/dataContract.js");
+    assertEqual(typeof mod.getStandardMutableDataPoints, "function",
+      "V-FLOW-SKILL-V32-CURATION-1 (RED-until-R2): getStandardMutableDataPoints MUST be exported as a function (per CH36.3 — curation lives in dataContract.js, no new catalog file)");
+    assertEqual(typeof mod.getAllMutableDataPoints, "function",
+      "V-FLOW-SKILL-V32-CURATION-1 (RED-until-R2): getAllMutableDataPoints MUST be exported as a function");
+  });
+
+  it("V-FLOW-SKILL-V32-CURATION-2 · R1 / SPEC §S46.4 · RED until R2 · getStandardMutableDataPoints() returns a non-empty proper subset of getAllMutableDataPoints()", async () => {
+    const mod = await import("/core/dataContract.js");
+    var standardSet = mod.getStandardMutableDataPoints && mod.getStandardMutableDataPoints();
+    var allSet = mod.getAllMutableDataPoints && mod.getAllMutableDataPoints();
+    assert(Array.isArray(standardSet), "V-FLOW-SKILL-V32-CURATION-2 (RED-until-R2): getStandardMutableDataPoints() MUST return an Array");
+    assert(Array.isArray(allSet), "V-FLOW-SKILL-V32-CURATION-2 (RED-until-R2): getAllMutableDataPoints() MUST return an Array");
+    assert(standardSet.length > 0, "V-FLOW-SKILL-V32-CURATION-2 (RED-until-R2): standard set MUST be non-empty (got " + standardSet.length + " entries)");
+    assert(standardSet.length < allSet.length,
+      "V-FLOW-SKILL-V32-CURATION-2 (RED-until-R2): standard set MUST be a PROPER subset of all set (standard=" + standardSet.length + ", all=" + allSet.length + ")");
+    // Each standard entry must appear in the all-set (subset relationship).
+    var allPaths = new Set(allSet.map(function(d) { return d && d.path; }));
+    var orphans = standardSet.filter(function(d) { return !allPaths.has(d && d.path); });
+    assertEqual(orphans.length, 0,
+      "V-FLOW-SKILL-V32-CURATION-2 (RED-until-R2): every standard data point MUST appear in the all set (orphans: " + JSON.stringify(orphans.map(function(o) { return o && o.path; })) + ")");
+  });
+
+  // ─── Tier 2 · Author form fields (RED until R3) ────────────────────
+
+  it("V-FLOW-SKILL-V32-AUTHOR-SEED-1 · R1 / SPEC §S46.3 · RED until R3 · edit form has a Seed-prompt textarea ([data-skill-seed])", async () => {
+    const { renderSkillBuilder } = await import("/ui/views/SkillBuilder.js");
+    var host = document.createElement("div");
+    document.body.appendChild(host);
+    try {
+      renderSkillBuilder(host, function() {});
+      // Click "Add skill" or open the edit form somehow — at R3 the form
+      // mounts on demand. For this RED scaffold we look for the element in
+      // the entire host subtree (form might or might not be open).
+      var seed = host.querySelector("[data-skill-seed]");
+      assert(seed, "V-FLOW-SKILL-V32-AUTHOR-SEED-1 (RED-until-R3): edit form MUST contain a Seed-prompt textarea with [data-skill-seed] attribute (per SPEC §S46.3 field 3)");
+      assertEqual(seed.tagName.toLowerCase(), "textarea",
+        "V-FLOW-SKILL-V32-AUTHOR-SEED-1 (RED-until-R3): [data-skill-seed] MUST be a textarea (got " + seed.tagName.toLowerCase() + ")");
+    } finally { host.remove(); }
+  });
+
+  it("V-FLOW-SKILL-V32-AUTHOR-DATA-1 · R1 / SPEC §S46.3 · RED until R3 · edit form has Data-points selector ([data-skill-data-points]) + Standard/Advanced toggle ([data-skill-data-toggle])", async () => {
+    const { renderSkillBuilder } = await import("/ui/views/SkillBuilder.js");
+    var host = document.createElement("div");
+    document.body.appendChild(host);
+    try {
+      renderSkillBuilder(host, function() {});
+      var selector = host.querySelector("[data-skill-data-points]");
+      assert(selector, "V-FLOW-SKILL-V32-AUTHOR-DATA-1 (RED-until-R3): edit form MUST contain a Data-points selector with [data-skill-data-points] attribute (per SPEC §S46.3 field 4)");
+      var toggle = host.querySelector("[data-skill-data-toggle]");
+      assert(toggle, "V-FLOW-SKILL-V32-AUTHOR-DATA-1 (RED-until-R3): edit form MUST contain a Standard/Advanced toggle with [data-skill-data-toggle] attribute (per SPEC §S46.4)");
+    } finally { host.remove(); }
+  });
+
+  it("V-FLOW-SKILL-V32-AUTHOR-IMPROVE-1 · R1 / SPEC §S46.3 + §S46.5 · RED until R3 · edit form has Improve button ([data-skill-improve]) + Improved-prompt readonly textarea ([data-skill-improved][readonly])", async () => {
+    const { renderSkillBuilder } = await import("/ui/views/SkillBuilder.js");
+    var host = document.createElement("div");
+    document.body.appendChild(host);
+    try {
+      renderSkillBuilder(host, function() {});
+      var improveBtn = host.querySelector("[data-skill-improve]");
+      assert(improveBtn, "V-FLOW-SKILL-V32-AUTHOR-IMPROVE-1 (RED-until-R3): edit form MUST contain an Improve button with [data-skill-improve] attribute (per SPEC §S46.5)");
+      var improved = host.querySelector("[data-skill-improved]");
+      assert(improved, "V-FLOW-SKILL-V32-AUTHOR-IMPROVE-1 (RED-until-R3): edit form MUST contain an Improved-prompt textarea with [data-skill-improved] attribute");
+      assert(improved.hasAttribute("readonly"),
+        "V-FLOW-SKILL-V32-AUTHOR-IMPROVE-1 (RED-until-R3): Improved-prompt textarea MUST be readonly by default (per SPEC §S46.5; Edit button unfreezes)");
+    } finally { host.remove(); }
+  });
+
+  it("V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1 · R1 / SPEC §S46.3 + §S46.6 / CH36.4 · RED until R3 · output-format radio renders exactly 4 options (text / dimensional / json-array / scalar)", async () => {
+    const { renderSkillBuilder } = await import("/ui/views/SkillBuilder.js");
+    var host = document.createElement("div");
+    document.body.appendChild(host);
+    try {
+      renderSkillBuilder(host, function() {});
+      var radios = host.querySelectorAll("[data-skill-output-format]");
+      assert(radios.length > 0, "V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1 (RED-until-R3): edit form MUST contain output-format radios with [data-skill-output-format] attribute (per SPEC §S46.6)");
+      var values = Array.from(radios).map(function(r) { return r.value || r.getAttribute("data-output-format-value"); });
+      var expected = ["text", "dimensional", "json-array", "scalar"];
+      expected.forEach(function(v) {
+        assert(values.indexOf(v) >= 0,
+          "V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1 (RED-until-R3): output-format option '" + v + "' MUST be present (per CH36.4 enum lock; got: " + values.join(",") + ")");
+      });
+      assertEqual(values.length, 4,
+        "V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1 (RED-until-R3): output-format MUST have EXACTLY 4 options (got " + values.length + ": " + values.join(",") + ")");
+    } finally { host.remove(); }
+  });
+
+  it("V-FLOW-SKILL-V32-AUTHOR-POLICY-1 · R1 / SPEC §S46.3 + §S46.10 / CH36.5 · RED until R3 · mutation-policy radio is visible iff outputFormat ∈ {json-array, scalar}; values are exactly ask | auto-tag", async () => {
+    const { renderSkillBuilder } = await import("/ui/views/SkillBuilder.js");
+    var host = document.createElement("div");
+    document.body.appendChild(host);
+    try {
+      renderSkillBuilder(host, function() {});
+      // Step 1: with output format = text (the default), policy radios MUST be hidden.
+      var textRadio = host.querySelector("[data-skill-output-format][value='text']") ||
+                      Array.from(host.querySelectorAll("[data-skill-output-format]")).find(function(r) { return (r.value || r.getAttribute("data-output-format-value")) === "text"; });
+      if (textRadio) {
+        textRadio.click();
+        var policyHidden = host.querySelector("[data-skill-mutation-policy]");
+        // Either no policy radios in DOM, OR they're hidden via display:none (we assert they're not visible).
+        if (policyHidden) {
+          var style = window.getComputedStyle(policyHidden);
+          assert(style.display === "none" || policyHidden.hasAttribute("hidden"),
+            "V-FLOW-SKILL-V32-AUTHOR-POLICY-1 (RED-until-R3): when outputFormat=text, mutation-policy radios MUST be hidden (per SPEC §S46.3 field 8)");
+        }
+      }
+      // Step 2: switch output format to json-array; policy radios MUST appear with values exactly ask + auto-tag.
+      var jsonRadio = host.querySelector("[data-skill-output-format][value='json-array']") ||
+                      Array.from(host.querySelectorAll("[data-skill-output-format]")).find(function(r) { return (r.value || r.getAttribute("data-output-format-value")) === "json-array"; });
+      assert(jsonRadio, "V-FLOW-SKILL-V32-AUTHOR-POLICY-1 (RED-until-R3): json-array output radio MUST exist (per CH36.4)");
+      jsonRadio.click();
+      var policyRadios = host.querySelectorAll("[data-skill-mutation-policy]");
+      assert(policyRadios.length > 0,
+        "V-FLOW-SKILL-V32-AUTHOR-POLICY-1 (RED-until-R3): switching outputFormat to json-array MUST reveal mutation-policy radios");
+      var policyValues = Array.from(policyRadios).map(function(r) { return r.value || r.getAttribute("data-policy-value"); });
+      ["ask", "auto-tag"].forEach(function(v) {
+        assert(policyValues.indexOf(v) >= 0,
+          "V-FLOW-SKILL-V32-AUTHOR-POLICY-1 (RED-until-R3): mutation-policy option '" + v + "' MUST be present (per CH36.5; got: " + policyValues.join(",") + ")");
+      });
+      assertEqual(policyValues.length, 2,
+        "V-FLOW-SKILL-V32-AUTHOR-POLICY-1 (RED-until-R3): mutation-policy MUST have EXACTLY 2 options (got " + policyValues.length + ")");
+    } finally { host.remove(); }
+  });
+
+  it("V-FLOW-SKILL-V32-AUTHOR-DESC-1 · R1 / SPEC §S46.3 · RED until R3 · edit form has a Description input ([data-skill-description]) as a separate first-class field", async () => {
+    const { renderSkillBuilder } = await import("/ui/views/SkillBuilder.js");
+    var host = document.createElement("div");
+    document.body.appendChild(host);
+    try {
+      renderSkillBuilder(host, function() {});
+      var desc = host.querySelector("[data-skill-description]");
+      assert(desc, "V-FLOW-SKILL-V32-AUTHOR-DESC-1 (RED-until-R3): edit form MUST contain a Description input with [data-skill-description] attribute (per SPEC §S46.3 field 2; surfaced in launcher description-confirm flow)");
+    } finally { host.remove(); }
+  });
+
+  // ─── Tier 3 · Schema accepts new fields (RED until R4) ─────────────
+
+  it("V-FLOW-SKILL-V32-SCHEMA-1 · R1 / SPEC §S46.3 · RED until R4 · SkillSchema accepts new fields description / seedPrompt / dataPoints[] / improvedPrompt / outputFormat / mutationPolicy", async () => {
+    const { SkillSchema } = await import("/schema/skill.js");
+    const { defaultCrossCuttingFields } = await import("/schema/helpers/crossCuttingFields.js");
+    var sample = {
+      ...defaultCrossCuttingFields({}),
+      skillId:              "skl-test-v32",
+      label:                "v32 test",
+      description:          "Test description",
+      version:              "1.0.0",
+      seedPrompt:            "Summarize gaps under cyber resilience",
+      dataPoints:           [{ path: "gap.description", scope: "standard" }],
+      improvedPrompt:       "<context>...</context><task>...</task>",
+      outputFormat:         "text",
+      mutationPolicy:       null,
+      promptTemplate:       "Hello {{customer.name}}!",
+      bindings:             [],
+      outputContract:       "free-text",
+      validatedAgainst:     "3.2",
+      outdatedSinceVersion: null,
+      outputTarget:         "chat-bubble",
+      parameters:           []
+    };
+    var result = SkillSchema.safeParse(sample);
+    assert(result.success,
+      "V-FLOW-SKILL-V32-SCHEMA-1 (RED-until-R4): SkillSchema MUST accept new fields (per SPEC §S46.3); got error: " + (result.error && JSON.stringify(result.error.issues || result.error)));
+  });
+
+  it("V-FLOW-SKILL-V32-SCHEMA-2 · R1 / SPEC §S46.6 / CH36.4 · RED until R4 · outputFormat enum is exactly text | dimensional | json-array | scalar — no other values accepted", async () => {
+    const { SkillSchema } = await import("/schema/skill.js");
+    const { defaultCrossCuttingFields } = await import("/schema/helpers/crossCuttingFields.js");
+    var base = {
+      ...defaultCrossCuttingFields({}),
+      skillId: "skl-enum-test",
+      label: "x",
+      description: "x",
+      version: "1.0.0",
+      seedPrompt: "x",
+      dataPoints: [],
+      improvedPrompt: "x",
+      mutationPolicy: null,
+      promptTemplate: "x",
+      bindings: [],
+      outputContract: "free-text",
+      validatedAgainst: "3.2",
+      outdatedSinceVersion: null,
+      outputTarget: "chat-bubble",
+      parameters: []
+    };
+    // Each valid value should pass.
+    ["text", "dimensional", "json-array", "scalar"].forEach(function(v) {
+      var r = SkillSchema.safeParse({ ...base, outputFormat: v });
+      assert(r.success,
+        "V-FLOW-SKILL-V32-SCHEMA-2 (RED-until-R4): outputFormat='" + v + "' MUST be accepted; got error: " + (r.error && JSON.stringify(r.error.issues || r.error)));
+    });
+    // An invalid value should fail.
+    var bogus = SkillSchema.safeParse({ ...base, outputFormat: "freeform" });
+    assertEqual(bogus.success, false,
+      "V-FLOW-SKILL-V32-SCHEMA-2 (RED-until-R4): outputFormat='freeform' MUST be REJECTED (enum lock per CH36.4)");
+  });
+
+  it("V-FLOW-SKILL-V32-SCHEMA-3 · R1 / SPEC §S46.10 / CH36.5 · RED until R4 · mutationPolicy enum is exactly ask | auto-tag (or null when outputFormat is non-mutating)", async () => {
+    const { SkillSchema } = await import("/schema/skill.js");
+    const { defaultCrossCuttingFields } = await import("/schema/helpers/crossCuttingFields.js");
+    var base = {
+      ...defaultCrossCuttingFields({}),
+      skillId: "skl-policy-test",
+      label: "x",
+      description: "x",
+      version: "1.0.0",
+      seedPrompt: "x",
+      dataPoints: [],
+      improvedPrompt: "x",
+      outputFormat: "json-array",
+      promptTemplate: "x",
+      bindings: [],
+      outputContract: "free-text",
+      validatedAgainst: "3.2",
+      outdatedSinceVersion: null,
+      outputTarget: "chat-bubble",
+      parameters: []
+    };
+    ["ask", "auto-tag"].forEach(function(v) {
+      var r = SkillSchema.safeParse({ ...base, mutationPolicy: v });
+      assert(r.success,
+        "V-FLOW-SKILL-V32-SCHEMA-3 (RED-until-R4): mutationPolicy='" + v + "' MUST be accepted; got error: " + (r.error && JSON.stringify(r.error.issues || r.error)));
+    });
+    var bogus = SkillSchema.safeParse({ ...base, mutationPolicy: "yolo" });
+    assertEqual(bogus.success, false,
+      "V-FLOW-SKILL-V32-SCHEMA-3 (RED-until-R4): mutationPolicy='yolo' MUST be REJECTED (enum lock per CH36.5)");
+  });
+
+  it("V-FLOW-SKILL-V32-SCHEMA-4 · R1 / SPEC §S46.8 / CH36.10 · RED until R4 · ParameterSchema accepts type:'file' with accepts attribute (file-type parameter for run-time uploads)", async () => {
+    const { SkillSchema } = await import("/schema/skill.js");
+    const { defaultCrossCuttingFields } = await import("/schema/helpers/crossCuttingFields.js");
+    var sample = {
+      ...defaultCrossCuttingFields({}),
+      skillId: "skl-file-test",
+      label: "file param test",
+      description: "x",
+      version: "1.0.0",
+      seedPrompt: "x",
+      dataPoints: [],
+      improvedPrompt: "x",
+      outputFormat: "text",
+      mutationPolicy: null,
+      promptTemplate: "x {{rfp}}",
+      bindings: [],
+      outputContract: "free-text",
+      validatedAgainst: "3.2",
+      outdatedSinceVersion: null,
+      outputTarget: "chat-bubble",
+      parameters: [
+        { name: "rfp", type: "file", description: "Customer RFP body", required: true, accepts: ".xlsx,.csv,.txt,.pdf" }
+      ]
+    };
+    var r = SkillSchema.safeParse(sample);
+    assert(r.success,
+      "V-FLOW-SKILL-V32-SCHEMA-4 (RED-until-R4): ParameterSchema MUST accept type='file' with accepts attribute (per SPEC §S46.8 + CH36.10); got error: " + (r.error && JSON.stringify(r.error.issues || r.error)));
+  });
+
+  // ─── Tier 4 · Improve meta-skill (RED until R3) ────────────────────
+
+  it("V-FLOW-SKILL-V32-IMPROVE-1 · R1 / SPEC §S46.5 / CH36.2 · RED until R3 · Improve handler wires to real LLM via chatCompletion; SkillBuilder.js source MUST NOT import any mock provider (feedback_no_mocks.md)", async () => {
+    var src;
+    try { src = await (await fetch("/ui/views/SkillBuilder.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-SKILL-V32-IMPROVE-1: failed to fetch SkillBuilder.js: " + (e && e.message || e)); }
+    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    // No mock-provider imports of any kind.
+    assert(!/from\s+["'][^"']*mockChatProvider[^"']*["']/.test(stripped),
+      "V-FLOW-SKILL-V32-IMPROVE-1 (RED-until-R3): SkillBuilder.js MUST NOT import mockChatProvider (per CH36.2 + feedback_no_mocks.md)");
+    assert(!/from\s+["'][^"']*mockLLMProvider[^"']*["']/.test(stripped),
+      "V-FLOW-SKILL-V32-IMPROVE-1 (RED-until-R3): SkillBuilder.js MUST NOT import mockLLMProvider (per CH36.2 + feedback_no_mocks.md)");
+    // Must reference chatCompletion + a [data-skill-improve] handler wiring.
+    assert(/chatCompletion/.test(stripped),
+      "V-FLOW-SKILL-V32-IMPROVE-1 (RED-until-R3): SkillBuilder.js MUST call chatCompletion (real provider transport) for the Improve meta-skill (per SPEC §S46.5)");
+    assert(/data-skill-improve/.test(stripped),
+      "V-FLOW-SKILL-V32-IMPROVE-1 (RED-until-R3): SkillBuilder.js MUST wire a [data-skill-improve] button handler (per SPEC §S46.5)");
+  });
+
+  it("V-FLOW-SKILL-V32-IMPROVE-2 · R1 / SPEC §S46.5 · RED until R3 · Improved-prompt textarea is readonly by default; Edit button removes readonly; Re-improve re-locks + re-runs", async () => {
+    const { renderSkillBuilder } = await import("/ui/views/SkillBuilder.js");
+    var host = document.createElement("div");
+    document.body.appendChild(host);
+    try {
+      renderSkillBuilder(host, function() {});
+      var improved = host.querySelector("[data-skill-improved]");
+      assert(improved, "V-FLOW-SKILL-V32-IMPROVE-2 (RED-until-R3): Improved-prompt textarea MUST be present");
+      assert(improved.hasAttribute("readonly"),
+        "V-FLOW-SKILL-V32-IMPROVE-2 (RED-until-R3): Improved-prompt textarea MUST be readonly by default");
+      var editBtn = host.querySelector("[data-skill-improve-edit]");
+      assert(editBtn, "V-FLOW-SKILL-V32-IMPROVE-2 (RED-until-R3): Edit button [data-skill-improve-edit] MUST be present");
+      editBtn.click();
+      assert(!improved.hasAttribute("readonly"),
+        "V-FLOW-SKILL-V32-IMPROVE-2 (RED-until-R3): clicking Edit MUST remove readonly attribute");
+      var redoBtn = host.querySelector("[data-skill-improve-redo]");
+      assert(redoBtn, "V-FLOW-SKILL-V32-IMPROVE-2 (RED-until-R3): Re-improve button [data-skill-improve-redo] MUST be present");
+    } finally { host.remove(); }
+  });
+
+  // ─── Tier 5 · Canvas Chat tab system (RED until R5) ────────────────
+
+  it("V-FLOW-SKILL-V32-CHAT-TAB-1 · R1 / SPEC §S46.7 / CH36.6 · RED until R5 · Canvas Chat overlay tab strip has permanent Chat + permanent Skills launcher tabs", async () => {
+    const { openCanvasChat, _closeCanvasChatForTests } = await import("/ui/views/CanvasChatOverlay.js");
+    try { openCanvasChat({}); }
+    catch (e) { throw new Error("V-FLOW-SKILL-V32-CHAT-TAB-1 (RED-until-R5): openCanvasChat threw: " + (e && e.message || e)); }
+    try {
+      var chatTab = document.querySelector("[data-canvas-chat-tab='chat']");
+      assert(chatTab, "V-FLOW-SKILL-V32-CHAT-TAB-1 (RED-until-R5): Canvas Chat overlay MUST render a permanent Chat tab with [data-canvas-chat-tab='chat'] (per SPEC §S46.7)");
+      var skillsTab = document.querySelector("[data-canvas-chat-tab='skills']");
+      assert(skillsTab, "V-FLOW-SKILL-V32-CHAT-TAB-1 (RED-until-R5): Canvas Chat overlay MUST render a permanent Skills launcher tab with [data-canvas-chat-tab='skills']");
+    } finally {
+      try { if (typeof _closeCanvasChatForTests === "function") _closeCanvasChatForTests(); } catch (_e) {}
+    }
+  });
+
+  it("V-FLOW-SKILL-V32-CHAT-TAB-2 · R1 / SPEC §S46.7 / CH36.7 · RED until R5 · Skills tab is read-only launcher: NO [data-skill-edit] / [data-skill-save] / [data-skill-delete] affordances inside Skills tab DOM", async () => {
+    const { openCanvasChat, _closeCanvasChatForTests } = await import("/ui/views/CanvasChatOverlay.js");
+    try { openCanvasChat({}); } catch (e) { throw new Error("V-FLOW-SKILL-V32-CHAT-TAB-2: openCanvasChat threw: " + (e && e.message || e)); }
+    try {
+      // Click Skills tab to ensure its content is mounted.
+      var skillsTab = document.querySelector("[data-canvas-chat-tab='skills']");
+      assert(skillsTab, "V-FLOW-SKILL-V32-CHAT-TAB-2 (RED-until-R5): Skills launcher tab MUST exist (depends on CHAT-TAB-1)");
+      skillsTab.click();
+      var skillsContent = document.querySelector("[data-canvas-chat-skills-content]") ||
+                          document.querySelector(".canvas-chat-skills-pane");
+      assert(skillsContent, "V-FLOW-SKILL-V32-CHAT-TAB-2 (RED-until-R5): Skills tab content surface MUST mount on activate");
+      // None of these author affordances may exist inside the Skills tab content.
+      var forbidden = ["[data-skill-edit]", "[data-skill-save]", "[data-skill-delete]"];
+      forbidden.forEach(function(sel) {
+        var hit = skillsContent.querySelector(sel);
+        assert(!hit, "V-FLOW-SKILL-V32-CHAT-TAB-2 (RED-until-R5): Skills tab MUST NOT contain author affordance " + sel + " (those live in Settings only per CH36.7); offending element: " + (hit && hit.outerHTML.slice(0, 200)));
+      });
+    } finally {
+      try { if (typeof _closeCanvasChatForTests === "function") _closeCanvasChatForTests(); } catch (_e) {}
+    }
+  });
+
+  it("V-FLOW-SKILL-V32-CHAT-TAB-3 · R1 / SPEC §S46.7 / CH36.6 · RED until R5 · launching skill B while A runs prompts confirm-cancel-A modal ([data-skill-cancel-confirm])", async () => {
+    // R5 implementation will expose a programmatic launchSkill() helper for
+    // testing. At R1 (RED) the helper doesn't exist yet — the test fails on
+    // the import / function-not-found.
+    const mod = await import("/ui/views/CanvasChatOverlay.js");
+    assertEqual(typeof mod.launchSkill, "function",
+      "V-FLOW-SKILL-V32-CHAT-TAB-3 (RED-until-R5): CanvasChatOverlay.js MUST export launchSkill(skill) helper for the launcher row Run-button click (per SPEC §S46.7)");
+    // Once available, the assertion below runs: launching A then B with A still active triggers the confirm modal.
+    if (typeof mod.launchSkill === "function") {
+      var fakeSkillA = { skillId: "skl-test-a", label: "Test A", description: "test" };
+      var fakeSkillB = { skillId: "skl-test-b", label: "Test B", description: "test" };
+      mod.launchSkill(fakeSkillA);
+      mod.launchSkill(fakeSkillB);
+      var confirmModal = document.querySelector("[data-skill-cancel-confirm]");
+      assert(confirmModal, "V-FLOW-SKILL-V32-CHAT-TAB-3 (RED-until-R5): launching skill B while A runs MUST surface a [data-skill-cancel-confirm] modal (per CH36.6)");
+    }
+  });
+
+  // ─── Tier 6 · Runtime (RED until R6) ───────────────────────────────
+
+  it("V-FLOW-SKILL-V32-RUN-1 · R1 / SPEC §S46.5 + §S46.7 / CH36.2 · RED until R6 · skill runtime calls real LLM with improved prompt + parameter substitution; CanvasChatOverlay.js MUST NOT import mock providers", async () => {
+    var src;
+    try { src = await (await fetch("/ui/views/CanvasChatOverlay.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-SKILL-V32-RUN-1: failed to fetch CanvasChatOverlay.js: " + (e && e.message || e)); }
+    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    assert(!/from\s+["'][^"']*mockChatProvider[^"']*["']/.test(stripped),
+      "V-FLOW-SKILL-V32-RUN-1 (RED-until-R6): CanvasChatOverlay.js MUST NOT import mockChatProvider (per CH36.2)");
+    assert(!/from\s+["'][^"']*mockLLMProvider[^"']*["']/.test(stripped),
+      "V-FLOW-SKILL-V32-RUN-1 (RED-until-R6): CanvasChatOverlay.js MUST NOT import mockLLMProvider (per CH36.2)");
+    // Must reference launchSkill / runSkill plumbing AND use the improvedPrompt field.
+    assert(/launchSkill|runSkill/.test(stripped),
+      "V-FLOW-SKILL-V32-RUN-1 (RED-until-R6): CanvasChatOverlay.js MUST contain a launchSkill or runSkill function that wires the dynamic Skill tab (per SPEC §S46.7)");
+    assert(/improvedPrompt/.test(stripped),
+      "V-FLOW-SKILL-V32-RUN-1 (RED-until-R6): CanvasChatOverlay.js MUST reference improvedPrompt when running a skill (per SPEC §S46.5/§S46.7)");
+  });
+
+  it("V-FLOW-SKILL-V32-RUN-2 · R1 / SPEC §S46.8 / CH36.10 · RED until R6 · file-type parameter rendering exposes accepts filter at the run-time file picker", async () => {
+    // R6 implementation will export a renderSkillPanelForRun helper; test
+    // mounts a fake skill with a file parameter and verifies the file
+    // input filter wiring.
+    const mod = await import("/ui/views/CanvasChatOverlay.js");
+    assertEqual(typeof mod.renderSkillPanelForRun, "function",
+      "V-FLOW-SKILL-V32-RUN-2 (RED-until-R6): CanvasChatOverlay.js MUST export renderSkillPanelForRun(skill, host) helper");
+    if (typeof mod.renderSkillPanelForRun === "function") {
+      var host = document.createElement("div");
+      document.body.appendChild(host);
+      try {
+        mod.renderSkillPanelForRun({
+          skillId: "skl-file", label: "x", description: "x",
+          parameters: [{ name: "rfp", type: "file", description: "Customer RFP", required: true, accepts: ".xlsx,.csv,.txt,.pdf" }]
+        }, host);
+        var fileInput = host.querySelector("input[type='file'][data-skill-param='rfp']");
+        assert(fileInput, "V-FLOW-SKILL-V32-RUN-2 (RED-until-R6): file parameter MUST render an input[type=file] with [data-skill-param=<name>]");
+        var accept = fileInput.getAttribute("accept");
+        assertEqual(accept, ".xlsx,.csv,.txt,.pdf",
+          "V-FLOW-SKILL-V32-RUN-2 (RED-until-R6): file input MUST carry the parameter's accepts attribute as accept='" + ".xlsx,.csv,.txt,.pdf" + "' (got '" + accept + "')");
+      } finally { host.remove(); }
+    }
+  });
+
+  // ─── Tier 7 · Mutation policy + AI-tagging (RED until R7) ──────────
+
+  it("V-FLOW-SKILL-V32-MUTATE-1 · R1 / SPEC §S46.10 · RED until R7 · mutationPolicy='ask' produces an approval modal ([data-mutation-approve]) before any commit", async () => {
+    // R7 implementation will export applyMutations(proposals, policy, runMeta);
+    // test verifies the ask-path opens the approval modal.
+    const mod = await import("/ui/views/CanvasChatOverlay.js");
+    assertEqual(typeof mod.applyMutations, "function",
+      "V-FLOW-SKILL-V32-MUTATE-1 (RED-until-R7): CanvasChatOverlay.js MUST export applyMutations(proposals, policy, runMeta) for the ask-vs-auto-tag dispatch (per SPEC §S46.10)");
+    if (typeof mod.applyMutations === "function") {
+      var proposals = [{ op: "set", path: "customer.notes", value: "hi" }];
+      var runMeta = { skillId: "skl-x", runId: "run-x", mutatedAt: new Date().toISOString() };
+      mod.applyMutations(proposals, "ask", runMeta);
+      var approve = document.querySelector("[data-mutation-approve]");
+      assert(approve, "V-FLOW-SKILL-V32-MUTATE-1 (RED-until-R7): ask policy MUST surface a [data-mutation-approve] modal before commit (per SPEC §S46.10)");
+    }
+  });
+
+  it("V-FLOW-SKILL-V32-MUTATE-2 · R1 / SPEC §S46.10 / CH36.8 · RED until R7 · mutationPolicy='auto-tag' applies mutations + populates aiTag={skillId,runId,mutatedAt} on each affected entity", async () => {
+    const mod = await import("/ui/views/CanvasChatOverlay.js");
+    assertEqual(typeof mod.applyMutations, "function",
+      "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): CanvasChatOverlay.js MUST export applyMutations()");
+    if (typeof mod.applyMutations === "function") {
+      _resetEngagementStoreForTests();
+      const { loadDemo } = await import("/core/demoEngagement.js");
+      setActiveEngagement(loadDemo());
+      var eng = getActiveEngagement();
+      var firstGapId = eng.gaps && eng.gaps.allIds && eng.gaps.allIds[0];
+      assert(firstGapId, "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): demo MUST have at least one gap to test against");
+      var runMeta = { skillId: "skl-mutate-test", runId: "run-mutate-test", mutatedAt: "2026-05-10T12:00:00.000Z" };
+      mod.applyMutations(
+        [{ op: "set", path: "gaps.byId." + firstGapId + ".urgency", value: "High" }],
+        "auto-tag",
+        runMeta
+      );
+      var engAfter = getActiveEngagement();
+      var gap = engAfter.gaps.byId[firstGapId];
+      assert(gap, "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): gap entity MUST exist post-mutation");
+      assert(gap.aiTag, "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): mutated entity MUST gain aiTag field (per CH36.8)");
+      assertEqual(gap.aiTag.skillId, "skl-mutate-test",
+        "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): aiTag.skillId MUST match runMeta");
+      assertEqual(gap.aiTag.runId, "run-mutate-test",
+        "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): aiTag.runId MUST match runMeta");
+      assertEqual(gap.aiTag.mutatedAt, "2026-05-10T12:00:00.000Z",
+        "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): aiTag.mutatedAt MUST match runMeta");
+    }
+  });
+
+  it("V-FLOW-SKILL-V32-MUTATE-3 · R1 / SPEC §S46.11 / CH36.8 · RED until R7 · tile renderers in Context / Current state / Desired state / Gaps surface a 'Done by AI' badge for entities carrying aiTag", async () => {
+    // Source-grep contract: the tile renderers MUST contain a code path
+    // that branches on entity.aiTag and renders the badge.
+    var paths = [
+      "/ui/views/ContextView.js",
+      "/ui/views/MatrixView.js",
+      "/ui/views/GapsEditView.js"
+    ];
+    for (var i = 0; i < paths.length; i++) {
+      var p = paths[i];
+      var src;
+      try { src = await (await fetch(p)).text(); }
+      catch (e) { throw new Error("V-FLOW-SKILL-V32-MUTATE-3: failed to fetch " + p + ": " + (e && e.message || e)); }
+      var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+      assert(/aiTag/.test(stripped),
+        "V-FLOW-SKILL-V32-MUTATE-3 (RED-until-R7): " + p + " MUST reference aiTag in its render code (per CH36.8 'Done by AI' badge)");
+    }
+  });
+
+});
+
 // v2.4.5 · Foundations Refresh · register the human-surface demo suite
 // into the same runner so there's a single green banner for the whole
 // release. Import at bottom to avoid circular-dependency risk with the

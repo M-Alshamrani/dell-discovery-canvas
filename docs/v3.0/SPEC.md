@@ -4197,4 +4197,315 @@ Vectors live in TESTS.md §T43 (added inline with this spec):
 - **Sections**: §S25 (data contract; invariant ids surfaced to grounding meta-model -- the cleaned engagement is what AI sees, no orphan refs in AI prompts) · §S31 (engagement persistence; rehydrate path is the canonical scrubber-fire site) · §S40 (v3-pure architecture; the schema-default placeholder UUID is a v3 schema artifact, scrubbed at load) · §S41 (empty-environments UX; layer 1 fallback respects the empty-env state).
 - **Memory anchors**: `feedback_no_patches_flag_first.md` (the user's direction "no hardcoded, no patch work, scalable and maintainable structured work" drove the two-layer split rather than a one-line UI fallback patch), `feedback_test_or_it_didnt_ship.md` (every scrub rule + every UI fallback ships with a regression test; +8 assertions), `feedback_docs_inline.md` (this annex authored inline with the BUG-A fix commit, not as backfill).
 
+---
+
+## §S44 · RESERVED — was rc.8 / S1+S2 Skills Builder v3.2 (REVERTED 2026-05-10)
+
+**Status**: VOID. The rc.8 / S1 + S2.0..S2.3 architecture (12-subsection spec, capsule library, pill-capsule editor, cascaded vertical-tab rail, marketplace export gate) was authored 2026-05-09 PM, hard-reverted from local 2026-05-10 per user direction ("the direction is not meeting my requirements"). Section number SKIPPED; do NOT reuse for the rc.8.b rebooted Skills Builder. The replacement spec is §S46.
+
+**Origin commits (kept on origin as historical record per the v2.4.11 rollback precedent)**: `ac3df98` (S1 scaffold) → `b4ad93b` (S1.A capsuleLibrary + 3-column SkillsBuilderPanel) → `4a0c205` (S1.B Canvas Chat Skills tab + legacy SkillBuilder.js delete). Local rc.8 / S2 commits dropped from local-only state: `b601978` (S2.0 portability spec) · `5aadac9` (S2.1 schema-keyed paths + patternOperators) · `5704553` (S2.2 pill editor) · `2eff458` (S2.3 cascaded rail + GPLC).
+
+---
+
+## §S45 · RESERVED — was rc.8 / S2 Skills Builder portability + pill-capsule + marketplace amendment (REVERTED 2026-05-10)
+
+**Status**: VOID. Subsumed into the §S44 reversion. Section number SKIPPED for the same reason. Architectural ideas that may be re-derived in later sub-arcs of §S46 (no-UUID rule, pattern operators, validateSkillSave fail-closed gate) are NOT inherited automatically; each is re-decided on its own merits inside §S46 where it lands.
+
+---
+
+## §S46 · Skills Builder v3.2 — rebooted (rc.8.b · LOCKED 2026-05-10)
+
+### S46.0 · Status + authority
+
+**Status**: AUTHORED 2026-05-10 as the rc.8.b opening arc. SPEC + RULES + RED tests land first per `feedback_spec_and_test_first.md`; sub-arc R2..R7 implementation lands after user reviews this section + the §S46.4 `STANDARD_MUTABLE_PATHS` first-cut list. Supersedes the reverted §S44 / §S45.
+
+**Authority**: user direction 2026-05-10 verbal SPEC §3.1 (transcribed in §S46.2) — the canonical product description for the Skills Builder. The rc.8 (S1 + S2.0..S2.3) work was rejected entirely; this section is the from-scratch redesign anchored to a different mental model:
+- Authoring is a **Settings → Skills section** surface (admin/write), separate from runtime.
+- Running is a **Canvas Chat overlay tab** surface, with permanent Chat + permanent Skills (read-only launcher) + at most one dynamic `[Skill: <name>]` tab at a time.
+- Authoring shape: **Seed prompt** (raw idea) + **Data points** (curated catalog selector with Standard / Advanced toggle) + **Improve** button (real LLM meta-skill) → **Improved prompt** (readonly, edit-to-unfreeze).
+- Output formats: text · dimensional · json-array · scalar (locked enum).
+- Mutation policy: per-skill author-set `ask | auto-tag` (locked enum).
+- AI-mutated entities carry `aiTag: { skillId, runId, mutatedAt }` and render a "Done by AI" badge.
+- Marketplace export/import is an architectural goal (no UUIDs in saved skill JSON), no UX in v3.0 GA.
+
+**Locked design decisions** (greenlit 2026-05-10):
+1. Settings is the authoring home; Canvas Chat overlay is the run home; Two surfaces, one product, never confused.
+2. List + click-row-to-edit-inline (legacy SkillBuilder.js shape; not a wizard).
+3. Improve = real LLM meta-skill call (no mocks ever per `feedback_no_mocks.md`).
+4. Standard mutable curation = list whitelist in `core/dataContract.js`; Advanced toggle exposes the full mutable schema; NO new catalog file.
+5. Mutation policy per-skill, baked into saved JSON.
+6. Single-skill running at a time; launching skill B while A runs prompts confirm-cancel-A.
+7. Mid-run tab-close confirms cancel; post-run tab-close immediate (run is ephemeral).
+8. Inline clarifications stream into the dynamic Skill tab's chat dialog as ordinary AI turns.
+
+### S46.1 · Two-surface architecture
+
+```
+   ┌─────────────────────────────────────┐         ┌──────────────────────────────────┐
+   │ Settings (gear icon)                │         │ Canvas Chat overlay (AI Assist)  │
+   │  ├─ LLM providers                   │         │  ├─ Chat tab    (permanent)       │
+   │  ├─ Data export / import            │         │  ├─ Skills tab  (permanent;       │
+   │  └─ ▶ Skills (THIS SURFACE)         │         │  │   read-only launcher list)    │
+   │      ├─ List of saved skills        │         │  └─ [Skill: <name>] tab           │
+   │      └─ Edit form (inline on click) │         │      (dynamic; one at a time)    │
+   │                                     │         │                                  │
+   │  AUTHORING — write/edit/test/save   │         │  RUNTIME — launch & run skills   │
+   └─────────────────────────────────────┘         └──────────────────────────────────┘
+                  │                                              ▲
+                  │   Save → state/v3SkillStore.js               │
+                  └──────────────────────────────────────────────┘
+                            (skill JSON shared between surfaces)
+```
+
+The two surfaces are **never merged** (CH36.1 forbids embedding the authoring form in Canvas Chat or the launcher in Settings). Same skill JSON model on both sides; entry points differ by intent.
+
+### S46.2 · Verbal §3.1 (canonical · author surface)
+
+User direction 2026-05-10 (verbatim, light typo correction):
+
+> The author types in a **Seed prompt** box (their raw idea: *"summarize gaps under cyber resilience"*) and a separate **Data points** box (which data the skill needs: drivers, gaps, instances, environments, etc — populated from a curated catalog of mutable / readable data points).
+>
+> Clicking **Improve** triggers the meta-skill: it folds Seed + Data points together into an **Improved prompt** field below, structured per Anthropic XML on the wire and CARE form on screen, ready for the runtime LLM to execute.
+>
+> The author selects an **Output format** (one of):
+> - **Text reporting** — free-form prose, renders into a chat bubble or report block
+> - **Dimensional report** — structured rows × columns, feeds a heatmap / quadrant / matrix
+> - **JSON-array mutation** — emits a list of changes the engagement applies
+> - **Scalar mutation** — emits a single value mutating one data point
+>
+> The **Data points catalog** is the curated subset of "things realistic to read or mutate" — names of gaps, current/desired state across all layers, environments, drivers, gap labels + criticality. An **Advanced expansion** toggle exposes the full mutable schema for power users.
+>
+> **Test** runs the skill against the active engagement and shows live output. **Save** persists it.
+>
+> **Mutation policy** is a per-skill setting on the author surface: either *"Always ask before mutate"* (proposal-then-approval flow) or *"Mutate directly and tag as done-by-AI"* (immediate write, with visual highlight on the affected tiles + reports for human review). Either way, AI-authored mutations are visually distinguishable in the canvas.
+
+This paragraph is the canonical product description for the Skills Builder. All subsequent SPEC subsections + RULES + tests trace back to it.
+
+### S46.3 · Author form fields (locked: 8 fields)
+
+The Settings → Skills edit form (mounted at `ui/views/SkillBuilder.js renderSkillBuilder`) carries exactly these fields:
+
+| # | Field | Element | Required | Notes |
+|---|---|---|---|---|
+| 1 | **Label** | `<input type="text" data-skill-label>` | yes | User-visible name shown in lists + Skills launcher tab |
+| 2 | **Description** | `<input type="text" data-skill-description>` | yes | One-line summary; surfaced in the launcher description-confirm flow before run |
+| 3 | **Seed prompt** | `<textarea data-skill-seed>` | yes | Author's raw idea; sent to Improve meta-skill |
+| 4 | **Data points** | selector with `data-skill-data-points` + Standard/Advanced toggle `data-skill-data-toggle` | optional | Curated mutable paths; multi-select; at least one required to run Improve |
+| 5 | **Improved prompt** | `<textarea data-skill-improved readonly>` + Edit/Re-improve buttons | (read-only by default) | Filled by Improve meta-skill output; readonly until Edit clicked; Re-improve re-runs the meta-skill |
+| 6 | **Parameters[]** | rows of `{name, type, description, required}`; type ∈ `string \| number \| boolean \| entityId \| file` | optional | User-supplied at run-time; `file` type accepts `.xlsx,.csv,.txt,.pdf` |
+| 7 | **Output format** | radio with `data-skill-output-format`; 4 options (`text` \| `dimensional` \| `json-array` \| `scalar`) | yes | Locks how the run output renders |
+| 8 | **Mutation policy** | radio with `data-skill-mutation-policy`; 2 options (`ask` \| `auto-tag`); visible only when `outputFormat ∈ {json-array, scalar}` | conditional | Required when output format is mutating |
+
+**Test button** + **Save button** sit at the bottom of the form. Test runs the skill against the active engagement; output renders inline in a result panel. Save validates + persists via `state/v3SkillStore.js saveV3Skill`.
+
+### S46.4 · Standard mutable paths — first cut (DRAFT for user review)
+
+The curated whitelist `STANDARD_MUTABLE_PATHS` lives in `core/dataContract.js`, exported alongside helpers `getStandardMutableDataPoints(): Array<DataPoint>` + `getAllMutableDataPoints(): Array<DataPoint>`. **No new file** (CH36.3 / Q3 confirmed).
+
+**First cut** (~22 paths covering the high-frequency author needs the user named: gap names, current/desired state across layers, environments, drivers, gap labels + criticality):
+
+```
+# Customer (singleton)
+customer.name
+customer.vertical
+customer.region
+customer.notes
+
+# Driver (collection — per-driver fields)
+driver.priority
+driver.outcomes
+
+# Environment (collection)
+environment.alias
+environment.location
+environment.tier
+environment.sizeKw
+environment.sqm
+environment.notes
+
+# Instance (collection — both states)
+instance.label
+instance.vendor
+instance.vendorGroup
+instance.criticality
+instance.notes
+instance.disposition       # desired-state only
+
+# Gap (collection)
+gap.description
+gap.gapType
+gap.urgency
+gap.phase
+gap.status
+gap.notes
+gap.driverId               # FK; rendered as label via labelResolvers
+gap.layerId                # FK; rendered as label
+```
+
+**Excluded from Standard (Advanced toggle exposes them):**
+- All UUID identifier fields (`*.id`, `*.engagementId`)
+- Audit metadata (`createdAt`, `updatedAt`, `validatedAgainst`)
+- Schema-internal flags (`urgencyOverride`, `reviewed`, `origin`, `hidden`, `catalogVersion`)
+- Cross-cutting relational arrays (`affectedLayers`, `affectedEnvironments`, `relatedCurrentInstanceIds`, `relatedDesiredInstanceIds`, `mappedAssetIds`, `services`)
+- Provenance wrappers (`aiSuggestedDellMapping`, `aiMappedDellSolutions`, `aiTag`)
+- FK pointers that aren't author-meaningful (`originId`, `businessDriverId`, `envCatalogId`, `layerId` on instance)
+- Engagement-meta + persistence-only fields
+
+User review point: this first-cut list is **proposed**, not committed. Adjust before R2 codes the actual export. Adding / removing entries from the whitelist is a SPEC §S46.4 amendment (CH36.3 forbids the curation list to live anywhere except `core/dataContract.js` so this section is the only governance surface).
+
+### S46.5 · Improve meta-skill — real LLM call
+
+When the author clicks **Improve**:
+
+1. Pre-flight: validate Seed prompt is non-empty + at least one data point selected. If either fails → inline error chip (NO modal) below the Improve button: *"Add a seed prompt and at least one data point first."*
+2. Build meta-skill prompt:
+   - System: directs the LLM to fold Seed + Data points into a CARE-structured (Context · Action · Request · Examples) prompt with Anthropic XML wire tags (`<context>` `<task>` `<format>` `<examples>`).
+   - User: Seed prompt verbatim + serialized list of selected data points + their schema descriptions (drawn from `core/dataContract.js FIELD_DESCRIPTIONS`).
+3. Call real LLM via `services/aiService.js chatCompletion` (the existing real-provider transport; NO mock per CH36.2).
+4. On success: replace the Improved prompt readonly textarea with the LLM output. Edit / Re-improve buttons appear below.
+5. On failure (network / 401 / rate-limit / timeout): inline error chip below the Improve button surfaces the failure ("*Improve failed: <reason>. Try again, or check Settings → LLM providers.*") + a **Retry** button. The Improved prompt field is NOT cleared on failure (preserves any prior content). Per `feedback_no_patches_flag_first.md`: no silent failure, no auto-retry that hides errors.
+
+**Edit** button: unfreezes the Improved prompt textarea (removes `readonly`); the user can hand-edit. Switching to Edit mode disables Re-improve until the user explicitly clicks Re-improve (which re-locks + re-runs the meta-skill).
+
+**Re-improve** button: re-runs the meta-skill with the current Seed + Data points (NOT the current Improved prompt content; Re-improve is "regenerate from scratch", not "polish what's there"). The author can hand-edit the Improved prompt freely; Re-improve overwrites it.
+
+### S46.6 · Output formats (locked enum)
+
+| `outputFormat` | What the LLM emits | What the runtime does |
+|---|---|---|
+| `text` | Free-form prose | Renders into the dynamic Skill tab's chat dialog as an ordinary AI turn |
+| `dimensional` | Structured `{rows: [], columns: []}` JSON envelope | Renders as a heatmap / quadrant / matrix in the Skill panel right-rail (renderer stub at MVP; full heatmap at later arc) |
+| `json-array` | `Array<{ op, path, value }>` mutation list | Each row = one mutation; runtime applies per the skill's mutation policy (CH36.5) |
+| `scalar` | `{ path, value }` single mutation | Runtime applies per mutation policy |
+
+Output format is a **save-time author choice**; not user-changeable at run-time. Adding a new format requires SPEC §S46.6 amendment (CH36.4 enum lock).
+
+### S46.7 · Canvas Chat overlay run surface — tab system
+
+**Tab strip (after rc.8.b R5 lands):**
+- **Chat** — permanent, leftmost. Existing rc.7 general-AI surface, untouched.
+- **Skills** — permanent, second tab. Read-only launcher list of all saved skills (label + description + `Run` button per row). NO edit / save / delete affordances on this list (those live exclusively in Settings → Skills per CH36.1 + CH36.7).
+- **[Skill: \<name\>]** — dynamic, third tab. Appears when a skill is launched; one at a time (CH36.6); persists while user toggles to Chat / Skills and back.
+
+**Launch flow (Skills tab → run):**
+1. User clicks a skill row in the Skills list (or its "Run" button).
+2. Description-confirm modal appears: *"Run **\<label\>**? \<description\>"* + a **Run** button + **Cancel** button. (Q4 confirmed: the user sees a description and approves before the run begins.)
+3. On confirm:
+   - If another skill is currently running (`[Skill: <other>]` tab present): show a second confirm modal *"Cancel currently running skill **\<other\>** to launch **\<label\>**?"* with Cancel-And-Launch + Stay-On-Current options. (CH36.6)
+   - Otherwise: open the dynamic `[Skill: <label>]` tab + switch to it. The tab's left side is a chat dialog (where the run conversation streams); the right side is the Skill panel (description, parameters with the file slot if any, Run state, output preview).
+4. The user fills in parameters in the Skill panel right-rail + clicks **Run** (in the panel). The run starts; LLM streams responses into the left chat dialog.
+
+**Mid-run tab close:**
+- User clicks the X on the dynamic `[Skill: <name>]` tab while the run is still streaming.
+- Confirm modal: *"Cancel running skill? Output and conversation will be lost."* + **Cancel skill** + **Stay** buttons.
+- Confirm → cancel any in-flight LLM stream + AbortController.abort + dismiss the dynamic tab. State is NOT preserved.
+- Stay → modal closes; tab stays open; run continues.
+
+**Post-run tab close (output complete):**
+- User clicks the X on the dynamic tab after streaming finished + output fully rendered.
+- NO confirm modal. Tab dismisses immediately. The run was ephemeral; output is gone (the saved skill itself is unaffected).
+- Future arc may add a "Save run output to Chat thread" affordance before close; not in MVP.
+
+**Switch-while-running:**
+- User can toggle between Chat / Skills / `[Skill: A]` freely. The dynamic tab persists. LLM streaming continues in background; new tokens append to the left dialog when user returns.
+
+### S46.8 · File-type parameter
+
+Author declares (SkillBuilder.js parameters editor):
+
+```
+{ name: "rfpBody", type: "file", accepts: ".xlsx,.csv,.txt,.pdf", description: "Customer install-base or RFP body" }
+```
+
+At run-time the Skill panel right-rail renders a file picker (drag-or-click input filtered by `accepts`). User picks a file; the file's content is read client-side (FileReader for text/CSV; library extraction for XLSX deferred to runtime arc R6) and substituted into the prompt body in place of `{{rfpBody}}` (or whatever parameter name).
+
+File content NEVER persists with the skill (CH36.10). Files are run-scoped: picked once, used during that run, garbage-collected when the dynamic tab closes.
+
+### S46.9 · Inline clarification dialogue
+
+When the running skill's LLM output asks a clarifying question (e.g. *"I see 47 servers labeled 'PROD' and 23 'DR' — should I map PROD → Primary DC and DR → DR site?"*), the question streams into the dynamic Skill tab's left chat dialog as an ordinary AI assistant turn. The user types a reply in the same dialog input; the reply feeds into the next round of the run via the existing multi-round chat plumbing (CH10 — `MAX_TOOL_ROUNDS=5` applies; if the skill's clarifications exhaust the cap, the user-visible message includes the same chaining-terminated notice).
+
+The chat dialog inside the dynamic Skill tab is functionally identical to the Chat tab's dialog (same DOM shape, same message renderer, same provenance breadcrumb on completion). The ONLY difference is the right-rail Skill panel (description / parameters / file slot / output preview).
+
+### S46.10 · Mutation policy (per-skill author setting)
+
+Visible in the author form ONLY when `outputFormat ∈ {json-array, scalar}` (CH36.5). Two values:
+
+- `ask` — when the run produces mutations, runtime opens an approval modal listing every proposed change (`+ <path> = <value>`, `~ <path> = <oldValue> → <newValue>`); user clicks Apply or Discard. Apply commits via `commitAction` per CH34. (Aligns with v3-pure architecture; provenance fields populate via `aiTag`.)
+- `auto-tag` — runtime applies mutations immediately + tags each mutated entity with `aiTag: { skillId, runId, mutatedAt }`. The user reviews after-the-fact via the "Done by AI" badge on affected tiles (CH36.8).
+
+Default for new skills: `ask` (the safer pre-flight option).
+
+`aiTag` shape (locked):
+```
+{
+  skillId:   "skl-trace-env-drivers",     // FK to v3SkillStore
+  runId:     "run-2026-05-10T14-32-09Z",   // unique per launch
+  mutatedAt: "2026-05-10T14:32:09.421Z"    // ISO instant
+}
+```
+
+Tag persists in the engagement (audit trail). Cleared only by explicit user action (later arc — undo / clear-tag operations are NOT in MVP).
+
+### S46.11 · AI-tagging visual contract
+
+Entities mutated under `auto-tag` policy gain a "Done by AI" badge rendered on every tile that displays the entity:
+
+- Context view: driver chips + environment cards
+- Current state / Desired state matrix: instance tiles
+- Gaps view: gap cards
+- Reporting: roadmap rows referencing tagged entities
+
+Badge shape: small Dell-blue-soft chip with mono-uppercase text "DONE BY AI" + tooltip showing skill label + run timestamp. Survives re-render (sourced from `aiTag` field on the entity). NOT removable from UI in MVP (audit trail).
+
+### S46.12 · Marketplace export — abstract goal (no UX in v3.0 GA)
+
+Saved skill JSON MUST NOT contain UUID literals in `seedPrompt`, `improvedPrompt`, or any `parameters[].defaultValue` (CH36.9). This keeps the door open for export/import in a future arc without re-architecting. NO `core/skillMarketplace.js`, NO `exportSkillToJson` function, NO export/import UI in v3.0 GA. The portability **contract** is enforced by Save validator; the **UX** is deferred.
+
+### S46.13 · Forbidden patterns
+
+- **F46.1** — Embedding the Skills authoring form inside Canvas Chat overlay (rc.8 mistake, do not repeat). Authoring is Settings-only.
+- **F46.2** — Listing skills in Settings → Skills section as edit-only (no Run button). The Settings list MAY include an inline "Test" affordance (legacy SkillBuilder.js had this; preserved); a "Run-from-settings-list" affordance is acceptable, but it MUST also open the same Canvas Chat dynamic tab so runtime is unified (CH36.4).
+- **F46.3** — Mock LLM calls anywhere in the Improve meta-skill or run-time (`feedback_no_mocks.md`).
+- **F46.4** — Hardcoded data point list outside `core/dataContract.js` STANDARD_MUTABLE_PATHS. The curation lives in one place (CH36.3).
+- **F46.5** — Skill JSON containing UUID literals in seedPrompt / improvedPrompt / parameters defaults (CH36.9).
+- **F46.6** — Tab strip allowing two simultaneous dynamic skill tabs. Single-skill-at-a-time is locked (CH36.6).
+- **F46.7** — Mid-run tab close skipping the cancel-confirm modal. The lost-output safeguard is locked (CH36.6).
+- **F46.8** — Mutation policy as a per-run setting (instead of per-skill author setting). Q2 locked author-set (CH36.5).
+- **F46.9** — Removing or hiding the "Done by AI" badge in MVP (audit trail). Clear-tag is a later arc.
+
+### S46.14 · Test contract — V-FLOW-SKILL-V32-* (23 tests, 7 tiers)
+
+| Tier | Test id | Asserts | Flips at sub-arc |
+|---|---|---|---|
+| 1 | V-FLOW-SKILL-V32-MODULE-1 | `ui/views/SkillBuilder.js` exports `renderSkillBuilder` as a function | R1 (already true via legacy file) |
+| 1 | V-FLOW-SKILL-V32-CURATION-1 | `core/dataContract.js` exports `getStandardMutableDataPoints` + `getAllMutableDataPoints` as functions | R2 |
+| 1 | V-FLOW-SKILL-V32-CURATION-2 | `getStandardMutableDataPoints()` returns a non-empty proper subset of `getAllMutableDataPoints()` | R2 |
+| 2 | V-FLOW-SKILL-V32-AUTHOR-SEED-1 | Edit form has `[data-skill-seed]` textarea | R3 |
+| 2 | V-FLOW-SKILL-V32-AUTHOR-DATA-1 | Edit form has `[data-skill-data-points]` selector + `[data-skill-data-toggle]` Standard/Advanced switch | R3 |
+| 2 | V-FLOW-SKILL-V32-AUTHOR-IMPROVE-1 | Edit form has `[data-skill-improve]` button + `[data-skill-improved][readonly]` textarea | R3 |
+| 2 | V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1 | Edit form has `[data-skill-output-format]` radio with exactly the 4 options (`text`/`dimensional`/`json-array`/`scalar`) | R3 |
+| 2 | V-FLOW-SKILL-V32-AUTHOR-POLICY-1 | `[data-skill-mutation-policy]` radio is visible iff selected output format ∈ `{json-array, scalar}` | R3 |
+| 2 | V-FLOW-SKILL-V32-AUTHOR-DESC-1 | Edit form has `[data-skill-description]` input as a separate first-class field | R3 |
+| 3 | V-FLOW-SKILL-V32-SCHEMA-1 | `SkillSchema` accepts new fields (`description` `seedPrompt` `dataPoints[]` `improvedPrompt` `outputFormat` `mutationPolicy`) | R4 |
+| 3 | V-FLOW-SKILL-V32-SCHEMA-2 | `outputFormat` enum is exactly `text`/`dimensional`/`json-array`/`scalar` (no extra values accepted) | R4 |
+| 3 | V-FLOW-SKILL-V32-SCHEMA-3 | `mutationPolicy` enum is exactly `ask`/`auto-tag` (no extra values accepted) | R4 |
+| 3 | V-FLOW-SKILL-V32-SCHEMA-4 | `ParameterSchema` accepts `type:"file"` with an `accepts` string attribute | R4 |
+| 4 | V-FLOW-SKILL-V32-IMPROVE-1 | Improve handler is wired to call real LLM provider via `chatCompletion`; source-grep negation: NO `MockProvider` / `mockChatProvider` import in SkillBuilder.js | R3 |
+| 4 | V-FLOW-SKILL-V32-IMPROVE-2 | Improved-prompt textarea has `readonly` attribute by default; clicking `[data-skill-improve-edit]` removes `readonly`; `[data-skill-improve-redo]` re-locks + re-runs | R3 |
+| 5 | V-FLOW-SKILL-V32-CHAT-TAB-1 | Canvas Chat overlay renders permanent Chat + permanent Skills launcher tabs (queryable by `[data-canvas-chat-tab="chat"]` + `[data-canvas-chat-tab="skills"]`) | R5 |
+| 5 | V-FLOW-SKILL-V32-CHAT-TAB-2 | Skills tab is read-only launcher: no `[data-skill-edit]` / `[data-skill-save]` / `[data-skill-delete]` affordances anywhere inside the Skills tab DOM | R5 |
+| 5 | V-FLOW-SKILL-V32-CHAT-TAB-3 | Launching skill B while skill A is running prompts confirm-cancel-A modal (queryable by `[data-skill-cancel-confirm]`) | R5 |
+| 6 | V-FLOW-SKILL-V32-RUN-1 | Skill run uses real LLM with improved prompt + parameter substitution; source-grep negation: skill runner has no mock provider import | R6 |
+| 6 | V-FLOW-SKILL-V32-RUN-2 | Parameter `type:"file"` accepts `.xlsx,.csv,.txt,.pdf` filter at the file picker; file content reads via `FileReader` | R6 |
+| 7 | V-FLOW-SKILL-V32-MUTATE-1 | `mutationPolicy:"ask"` produces an approval modal `[data-mutation-approve]` before any commit | R7 |
+| 7 | V-FLOW-SKILL-V32-MUTATE-2 | `mutationPolicy:"auto-tag"` writes mutations + populates `aiTag: {skillId, runId, mutatedAt}` on each affected entity | R7 |
+| 7 | V-FLOW-SKILL-V32-MUTATE-3 | Tagged entities render the "Done by AI" badge in Context / Current state / Desired state / Gaps tile renderers | R7 |
+
+### S46.15 · Trace
+
+- **Principles**: P3 (presentation derived) — author surface is a derivation of the saved skill; runtime surface is a derivation of `aiTag` + run state; never separate code paths. P5 (atomic operations) — each mutation row is one `commitAction` call with a tagged provenance envelope. P7 (caller-agnostic) — Settings authoring layer doesn't know about Canvas Chat run; Canvas Chat run doesn't know about Settings; the skill JSON in `state/v3SkillStore.js` is the only shared interface.
+- **Sections**: §S20 (Canvas Chat — overlay tabs extend its tab strip) · §S25 (data contract — STANDARD_MUTABLE_PATHS lives here) · §S29 (skill architecture v3.1 — schema extension) · §S31 (engagement persistence — `aiTag` persists with engagement) · §S35 (Skill Builder consolidation under Settings — Settings → Skills section is the home, established here) · §S37 (grounding contract — applies to skill-run LLM calls) · §S40 (v3-pure architecture — mutations route through `commitAction`).
+- **Memory anchors**: `feedback_spec_and_test_first.md` (this entire section authored before any implementation) · `feedback_no_mocks.md` (Improve + run = real LLM only) · `feedback_no_patches_flag_first.md` (curation-list location is single source; mid-run cancel modal not silent) · `feedback_test_or_it_didnt_ship.md` (23 tests authored RED at scaffold) · `feedback_principal_architect_discipline.md` (R5 transient-RED; R7 per-commit revertibility — each sub-arc R2..R7 is independently revertible).
+
 End of SPEC.
