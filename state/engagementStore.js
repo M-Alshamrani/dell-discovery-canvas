@@ -44,6 +44,14 @@ import { EngagementSchema } from "../schema/engagement.js";
 // failure (quota/private-mode) -> leave status as "saving" so the
 // stuck-pulse IS the diagnostic (you can see persistence is broken).
 import { markSaved } from "../core/saveStatus.js";
+// rc.7 / 7e-9 · BUG-A closure (2026-05-09 PM) · SPEC §S43 reference-
+// integrity scrubber. Runs at engagement-load time (rehydrate path) so
+// any cross-reference orphans in the persisted JSON (gap.driverId
+// pointing at a removed driver, gap.affectedEnvironments[] containing
+// a sentinel placeholder UUID, etc.) are dropped/repaired before the
+// engagement is installed. UI label resolvers get clean data; raw UUIDs
+// stop leaking into user-visible surfaces.
+import { scrubEngagementOrphans } from "../core/engagementIntegrity.js";
 
 const STORAGE_KEY = "v3_engagement_v1";
 
@@ -138,7 +146,12 @@ export function _rehydrateFromStorage() {
     return false;
   }
 
-  _active = result.data;
+  // BUG-A / SPEC §S43 closure · scrub cross-reference orphans before
+  // installing the rehydrated engagement. Pure function; no-op fast path
+  // when nothing needs scrubbing (returns input by reference). Runs once
+  // per rehydrate (boot + explicit calls); not on every commit (commit
+  // path already validates via schema).
+  _active = scrubEngagementOrphans(result.data);
   // Don't emit on rehydrate — subscribers haven't subscribed yet at
   // module load, and a synthetic emit would be misleading anyway. The
   // first real emit will be the first user action (or the bridge's

@@ -569,7 +569,15 @@ export function renderGapsEditView(left, right, session) {
     var effDid = effectiveDriverId(gap, session);
     if (effDid) {
       var glyph = gap.driverId ? "★ " : "☆ ";
-      var progBadge = mkt("span", "program-badge", glyph + (driverLabelFor(effDid) || effDid));
+      // BUG-A / SPEC §S43.3 closure · NEVER fall back to raw effDid (UUID).
+      // driverLabelFor (services/programsService.js driverLabel) returns
+      // "(unknown driver)" structured placeholder when neither catalog
+      // nor engagement.drivers.byId resolution succeeds. Pre-fix the
+      // `|| effDid` fallback leaked v3 driver UUIDs into the gap-card
+      // program-badge whenever a gap had a driverId pointing at a removed
+      // driver (orphan ref the scrubber would repair on next reload, but
+      // visible in the meantime).
+      var progBadge = mkt("span", "program-badge", glyph + driverLabelFor(effDid));
       progBadge.title = gap.driverId
         ? "Strategic driver (confirmed). Click a card to change in the right panel."
         : "Strategic driver (auto-suggested). Confirm or override it in the right panel.";
@@ -1433,7 +1441,16 @@ function envName(uuidOrCatalogId) {
     return cat ? cat.label : e.envCatalogId;
   }
   var cat2 = ENV_CATALOG.find(function(c) { return c.id === uuidOrCatalogId; });
-  return cat2 ? cat2.label : uuidOrCatalogId;
+  if (cat2) return cat2.label;
+  // BUG-A / SPEC §S43.3 closure · NEVER fall back to raw UUID. Pre-fix
+  // returned uuidOrCatalogId verbatim, leaking sentinel UUIDs (e.g.
+  // schema placeholder "00000000-0000-4000-8000-000000000001") into
+  // gap-card meta lines. UI label resolvers MUST return a structured
+  // placeholder; the engagementIntegrity scrubber repairs orphan refs
+  // at engagement-load (layer 1), this is layer 2 (render-time fallback
+  // for any orphan that survives - e.g. a gap pointing at an env that
+  // was removed mid-session before the next reload triggers a re-scrub).
+  return "(unknown environment)";
 }
 function phaseLabel(p) { return p==="now" ? "Now (0-12 months)" : p==="next" ? "Next (12-24 months)" : "Later (>24 months)"; }
 

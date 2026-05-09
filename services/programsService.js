@@ -201,7 +201,16 @@ export function driverLabel(driverId) {
       return d2 ? d2.label : v3d.businessDriverId;
     }
   } catch (e) { /* defensive · driverLabel must never throw on the render path */ }
-  return null;
+  // BUG-A / SPEC §S43.3 closure · driverId looked like a UUID/typeId but
+  // resolved to no driver record. Pre-fix returned null, leaving the
+  // caller free to fall back to displaying the raw UUID. Now returns a
+  // structured placeholder so the UI surface has no path to leak a UUID.
+  // The engagementIntegrity scrubber (layer 1) nulls out orphan driverIds
+  // at rehydrate; this layer-2 placeholder catches any orphans that
+  // survive a single in-session edit (e.g. driver removed before next
+  // reload). Distinguishable from the explicit null case (driverId
+  // absent) by the caller checking !driverId before invoking.
+  return "(unknown driver)";
 }
 
 /**

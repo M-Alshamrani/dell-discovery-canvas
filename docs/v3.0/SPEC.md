@@ -4078,4 +4078,104 @@ The following contracts were identified during the R8 arc but NOT shipped:
 - **Sections**: §S40 (v3-pure architecture; v2 helper-layer enforcement deleted in 7e-8 Step I, contracts preserved as R8 backlog) · §S19 (adapter; helpers route through `commitAction(actionFn, ...)`) · §S25 (data contract; invariant ids surfaced to grounding meta-model).
 - **Memory anchors**: `feedback_no_patches_flag_first.md` (deferred items called out explicitly per the R8 / NEVER-patch-flag-first lock), `feedback_test_or_it_didnt_ship.md` (every gate ships with a regression test; +24 assertions), `feedback_principal_architect_discipline.md` (R8 invariant arc closure is a principal-architect-quality refactor: surface scope honestly, defer non-invariant UX behavior, atomic helper enforcement).
 
+---
+
+## §S43 · Engagement reference-integrity contract — two-layer scrub + render fallback (rc.7 / 7e-9; LOCKED 2026-05-09 PM)
+
+### S43.0 · Status + authority
+
+**Status**: SHIPPED 2026-05-09 PM session. Closes BUG-053 (UUID leak in gap-card meta lines on Saudi Aramco engagement; user screenshot 2026-05-09). Two-layer architectural fix: layer 1 scrubs orphan UUID references at engagement-load (data); layer 2 ensures UI label resolvers never fall back to displaying raw UUIDs (presentation). Together: no path for an internal UUID to reach a user-visible surface.
+
+**Authority**: user direction 2026-05-09 PM ("all data have to be modeled and present in the new data architecture... no hardcoded, no patch work, scalable and maintainable structured work"). The two-layer split is the structured response: data integrity at load time + presentation safety at render time. The AI grounding meta-model (§S25) consumes the cleaned data; UI surfaces never see orphan UUIDs.
+
+### S43.1 · Architecture
+
+```
+   localStorage             rehydrate                runtime mutations
+        |                        |                          |
+        v                        v                          v
+   v3_engagement_v1  --->  schema parse  --->  scrubEngagementOrphans  --->  _active
+                                                  (layer 1 · data)
+                                                                                |
+                                                                                v
+                                                                        UI render path
+                                                                        (envName / driverLabel
+                                                                         / ... layer 2)
+                                                                                |
+                                                                                v
+                                                                       USER-VISIBLE TEXT
+                                                                       (NEVER raw UUIDs)
+```
+
+Layer 1 (data) catches stale references in persisted JSON. Layer 2 (presentation) catches references that go orphan mid-session before the next reload.
+
+### S43.2 · Layer 1 contract — scrubEngagementOrphans
+
+`core/engagementIntegrity.js scrubEngagementOrphans(engagement) -> engagement`.
+
+Pure function. Idempotent (clean engagement is a fixed point). Reference-equal pass-through when no scrubbing needed (no allocation; memoization-friendly).
+
+**Gap-level scrubs**:
+- `gap.affectedEnvironments[]` -- drop entries not in `engagement.environments.byId`. If post-drop length === 0 AND engagement has ≥1 visible env, fall back to `[firstVisibleEnvId]` (preserves G6 + GapSchema `affectedEnvironments.min(1)`). If 0 visible envs, leave as-is (the empty-env UI state per §S41 handles this).
+- `gap.driverId` -- null if not in `engagement.drivers.byId`.
+- `gap.relatedCurrentInstanceIds[]` -- drop entries not in `engagement.instances.byId` OR whose `state !== "current"`.
+- `gap.relatedDesiredInstanceIds[]` -- drop entries not in `engagement.instances.byId` OR whose `state !== "desired"`.
+
+**Instance-level scrubs**:
+- `instance.originId` -- null if not in `engagement.instances.byId`.
+- `instance.mappedAssetIds[]` -- drop entries not in `engagement.instances.byId`.
+- `instance.environmentId` -- NOT scrubbed. Required + non-nullable per InstanceSchema; remapping silently moves tiles between matrix columns (unexpected behavior). Layer 2's `envName` resolver returns "(unknown environment)" for orphans.
+
+**Wiring**: invoked once inside `state/engagementStore.js _rehydrateFromStorage` after schema parse, before installing as `_active`. Not called on every commit (commit path already validates via schema).
+
+### S43.3 · Layer 2 contract — UI label resolvers
+
+Every UI helper that resolves a UUID-keyed reference to a human label MUST return a structured placeholder string for orphans -- NEVER the raw UUID.
+
+Resolvers covered (rc.7 / 7e-9):
+- `ui/views/GapsEditView.js envName(uuidOrCatalogId)` -- returns `"(unknown environment)"` for orphans (was: returned raw UUID via `: uuidOrCatalogId` fallback).
+- `services/programsService.js driverLabel(driverId)` -- returns `"(unknown driver)"` for orphans (was: returned `null`, leaving callers free to fall back to raw UUID via `|| effDid`).
+
+Caller-side cleanup (rc.7 / 7e-9):
+- `ui/views/GapsEditView.js` line 572 program-badge -- removed the `|| effDid` fallback. `driverLabelFor(effDid)` is now self-contained (resolves to label or structured placeholder; never null/undefined for a non-empty input).
+
+Future resolvers (when added) MUST follow the same contract per F43.1.
+
+### S43.4 · Rules
+
+- **R43.1** (HARD) -- `engagementStore._rehydrateFromStorage` MUST call `scrubEngagementOrphans(parsed)` before installing as `_active`. Skip scrubbing only if rehydrate already returned false.
+- **R43.2** (HARD) -- UI label resolvers MUST return structured placeholder strings (`"(unknown environment)"`, `"(unknown driver)"`, etc.) for any UUID input that resolves to no real entity. NEVER raw UUID.
+- **R43.3** (HARD) -- Scrubber is a no-op fast path when nothing needs repair (returns input by reference). Tests assert this via reference equality.
+- **R43.4** (HARD) -- Scrubber is idempotent: `scrub(scrub(x))` deep-equals `scrub(x)`.
+- **R43.5** (AUTO) -- The scrubber MUST tolerate partial / undefined collections (returns input as-is on bad input; never throws).
+
+### S43.5 · Forbidden patterns
+
+- **F43.1** -- UI label resolvers falling back to displaying raw UUIDs. Pre-fix patterns:
+  - `return cat ? cat.label : uuidOrCatalogId;` (envName)
+  - `return null` followed by caller-side `|| uuid` fallback (driverLabel + caller)
+  - These leak internal identifiers into user-visible surfaces. The structured placeholder is the canonical response.
+- **F43.2** -- Schema-default placeholder UUIDs (e.g. `"00000000-0000-4000-8000-000000000001"`) appearing in production engagements. The scrubber treats them as orphans and replaces with the first visible env (or leaves them on the empty-env path per §S41).
+- **F43.3** -- Calling the scrubber on every commit. The commit path already validates via schema; the scrubber is a load-time integrity gate, not a per-mutation gate. Running on every commit hides upstream bugs (we WANT addGap / updateGap / etc to fail loudly when caller passes orphan refs, not silently scrub).
+- **F43.4** -- Scrubber that mutates input. Pure function only; new objects for any changed collections; reference-equal pass-through on no-op.
+
+### S43.6 · Test contract
+
+Vectors live in TESTS.md §T43 (added inline with this spec):
+
+- **V-INV-ORPHAN-REFS-1** -- gap.driverId pointing at non-existent driver → null after scrub.
+- **V-INV-ORPHAN-REFS-2** -- gap.affectedEnvironments containing only orphan UUIDs → falls back to [first visible env UUID].
+- **V-INV-ORPHAN-REFS-3** -- gap.relatedCurrentInstanceIds containing orphan UUIDs → orphans dropped, real survives.
+- **V-INV-ORPHAN-REFS-4** -- instance.originId pointing at non-existent instance → nulled.
+- **V-INV-ORPHAN-REFS-5** -- instance.mappedAssetIds containing orphan UUIDs → orphans dropped, real survives.
+- **V-INV-ORPHAN-IDEMPOTENT-1** -- clean engagement → reference-equal pass-through (no allocation); double-scrub deep-equals single-scrub.
+- **V-FLOW-LABEL-RESOLVER-1** -- driverLabel(unknown UUID) === "(unknown driver)" (not null, not raw UUID).
+- **V-FLOW-LABEL-RESOLVER-2** -- envName source-grep: contains the structured placeholder return; legacy `return uuidOrCatalogId;` fallback is GONE.
+
+### S43.7 · Trace
+
+- **Principles**: P3 (presentation derived from data) -- the structured placeholder IS a derivation of "missing reference"; not a separate code path. P5 (atomic operations) -- scrubber returns whole engagement; either repaired or pass-through; no partial states. P7 (caller-agnostic) -- the scrubber knows nothing about the UI; the resolvers know nothing about persistence. Clean separation.
+- **Sections**: §S25 (data contract; invariant ids surfaced to grounding meta-model -- the cleaned engagement is what AI sees, no orphan refs in AI prompts) · §S31 (engagement persistence; rehydrate path is the canonical scrubber-fire site) · §S40 (v3-pure architecture; the schema-default placeholder UUID is a v3 schema artifact, scrubbed at load) · §S41 (empty-environments UX; layer 1 fallback respects the empty-env state).
+- **Memory anchors**: `feedback_no_patches_flag_first.md` (the user's direction "no hardcoded, no patch work, scalable and maintainable structured work" drove the two-layer split rather than a one-line UI fallback patch), `feedback_test_or_it_didnt_ship.md` (every scrub rule + every UI fallback ships with a regression test; +8 assertions), `feedback_docs_inline.md` (this annex authored inline with the BUG-A fix commit, not as backfill).
+
 End of SPEC.

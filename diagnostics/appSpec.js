@@ -8610,6 +8610,204 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
       "BUG-B: commitAction-driven mutation MUST also transition status to 'saved' (got: " + _getSaveStatus().status + ")");
   });
 
+  // ─── BUG-A closure · SPEC §S43 · engagement reference-integrity scrubber ──
+  // Two-layer architecture (per SPEC §S43.0):
+  //
+  //   LAYER 1 (data) · core/engagementIntegrity.js scrubEngagementOrphans
+  //   - Runs at engagement-load (engagementStore._rehydrateFromStorage)
+  //   - Drops/nulls/repairs orphan UUID references
+  //   - Pure function, idempotent, no-op fast path when nothing changed
+  //
+  //   LAYER 2 (UI) · label resolvers in views + services
+  //   - envName / driverLabel / etc return structured placeholders
+  //     ("(unknown environment)", "(unknown driver)") for any orphan
+  //     that survives layer 1 (e.g. mid-session edit before next reload)
+  //   - NEVER fall back to displaying raw UUIDs
+  //
+  // Pre-fix (before BUG-A closure 2026-05-09 PM): the v3 schema
+  // placeholder UUID "00000000-0000-4000-8000-000000000001" was leaking
+  // into gap-card meta lines on Saudi Aramco engagement (user screenshot).
+  // Root cause: a desired instance had been created via createEmptyInstance
+  // without an explicit environmentId, schema default kicked in, the
+  // auto-draft path propagated it to the gap, and the UI envName
+  // resolver fell back to displaying the raw UUID.
+  function _bugA_setupOrphanFixture() {
+    _resetEngagementStoreForTests();
+    var eng = createEmptyEngagement({ meta: { isDemo: false } });
+    setActiveEngagement(eng);
+    commitContextEdit({ customer: { name: "BUG-A Co", vertical: "Enterprise", region: "EMEA" } });
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var realEnvId = getActiveEngagement().environments.allIds[0];
+    commitInstanceAdd({
+      state: "current", layerId: "compute", environmentId: realEnvId,
+      label: "BUG-A cur", vendor: "X", vendorGroup: "custom",
+      criticality: "Medium", disposition: "keep"
+    });
+    var realCurId = getActiveEngagement().instances.allIds.at(-1);
+    commitInstanceAdd({
+      state: "desired", layerId: "compute", environmentId: realEnvId,
+      label: "BUG-A des", vendor: "X", vendorGroup: "custom"
+    });
+    var realDesId = getActiveEngagement().instances.allIds.at(-1);
+    return { realEnvId, realCurId, realDesId };
+  }
+
+  it("V-INV-ORPHAN-REFS-1 · BUG-A / SPEC §S43.2 · scrubEngagementOrphans nulls gap.driverId when it points at a removed driver", async () => {
+    const { scrubEngagementOrphans } = await import("/core/engagementIntegrity.js");
+    var f = _bugA_setupOrphanFixture();
+    // Inject an orphan driverId by directly mutating a working engagement
+    // copy (bypass commitGapEdit because the schema would accept the
+    // orphan id but the test wants to assert the scrubber repairs it).
+    var eng = getActiveEngagement();
+    var dirtyEng = JSON.parse(JSON.stringify(eng));
+    var gapAddRes = commitGapAdd({
+      description: "BUG-A orphan-driver gap",
+      layerId: "compute", affectedLayers: ["compute"],
+      affectedEnvironments: [f.realEnvId],
+      gapType: "ops",
+      notes: "ops gap with sufficient notes for AL7 substance check.",
+      reviewed: false
+    });
+    assertEqual(gapAddRes.ok, true, "precondition: gap added");
+    dirtyEng = JSON.parse(JSON.stringify(getActiveEngagement()));
+    var gapId = dirtyEng.gaps.allIds[0];
+    dirtyEng.gaps.byId[gapId].driverId = "deadbeef-0000-4000-8000-000000000fff";
+    var clean = scrubEngagementOrphans(dirtyEng);
+    assertEqual(clean.gaps.byId[gapId].driverId, null,
+      "BUG-A / S43.2: orphan gap.driverId MUST be nulled (got: " + JSON.stringify(clean.gaps.byId[gapId].driverId) + ")");
+  });
+
+  it("V-INV-ORPHAN-REFS-2 · BUG-A / SPEC §S43.2 · scrubEngagementOrphans drops gap.affectedEnvironments[] orphans + falls back to first visible env when result would be empty", async () => {
+    const { scrubEngagementOrphans } = await import("/core/engagementIntegrity.js");
+    var f = _bugA_setupOrphanFixture();
+    var gapAddRes = commitGapAdd({
+      description: "BUG-A orphan-env gap",
+      layerId: "compute", affectedLayers: ["compute"],
+      affectedEnvironments: [f.realEnvId],
+      gapType: "ops",
+      notes: "ops gap with sufficient notes for AL7 substance check.",
+      reviewed: false
+    });
+    assertEqual(gapAddRes.ok, true, "precondition: gap added");
+    var dirtyEng = JSON.parse(JSON.stringify(getActiveEngagement()));
+    var gapId = dirtyEng.gaps.allIds[0];
+    // Set affectedEnvironments to ONLY an orphan UUID (the schema placeholder).
+    dirtyEng.gaps.byId[gapId].affectedEnvironments = ["00000000-0000-4000-8000-000000000001"];
+    var clean = scrubEngagementOrphans(dirtyEng);
+    var cleanEnvs = clean.gaps.byId[gapId].affectedEnvironments;
+    assertEqual(cleanEnvs.length, 1,
+      "BUG-A / S43.2: scrubber MUST fall back to [first visible env] when affectedEnvironments would be empty post-drop (got: " + JSON.stringify(cleanEnvs) + ")");
+    assertEqual(cleanEnvs[0], f.realEnvId,
+      "BUG-A / S43.2: fallback target MUST be the engagement's first visible env UUID");
+  });
+
+  it("V-INV-ORPHAN-REFS-3 · BUG-A / SPEC §S43.2 · scrubEngagementOrphans drops gap.relatedCurrentInstanceIds[] orphans (instance removed)", async () => {
+    const { scrubEngagementOrphans } = await import("/core/engagementIntegrity.js");
+    var f = _bugA_setupOrphanFixture();
+    var gapAddRes = commitGapAdd({
+      description: "BUG-A orphan-link gap",
+      layerId: "compute", affectedLayers: ["compute"],
+      affectedEnvironments: [f.realEnvId],
+      gapType: "ops",
+      notes: "ops gap with sufficient notes for AL7 substance check.",
+      relatedCurrentInstanceIds: [f.realCurId],
+      reviewed: false
+    });
+    assertEqual(gapAddRes.ok, true, "precondition: gap added with current link");
+    var dirtyEng = JSON.parse(JSON.stringify(getActiveEngagement()));
+    var gapId = dirtyEng.gaps.allIds[0];
+    // Inject orphan: append a UUID that doesn't exist in instances.byId.
+    dirtyEng.gaps.byId[gapId].relatedCurrentInstanceIds.push("deadbeef-1111-4000-8000-000000000fff");
+    var clean = scrubEngagementOrphans(dirtyEng);
+    var cleanLinks = clean.gaps.byId[gapId].relatedCurrentInstanceIds;
+    assertEqual(cleanLinks.length, 1,
+      "BUG-A / S43.2: orphan current-instance link MUST be dropped (got: " + JSON.stringify(cleanLinks) + ")");
+    assertEqual(cleanLinks[0], f.realCurId,
+      "BUG-A / S43.2: real link MUST survive scrub");
+  });
+
+  it("V-INV-ORPHAN-REFS-4 · BUG-A / SPEC §S43.2 · scrubEngagementOrphans nulls instance.originId when it points at a removed instance", async () => {
+    const { scrubEngagementOrphans } = await import("/core/engagementIntegrity.js");
+    var f = _bugA_setupOrphanFixture();
+    // Patch the desired instance's originId to point at an orphan UUID.
+    var dirtyEng = JSON.parse(JSON.stringify(getActiveEngagement()));
+    dirtyEng.instances.byId[f.realDesId].originId = "deadbeef-2222-4000-8000-000000000fff";
+    var clean = scrubEngagementOrphans(dirtyEng);
+    assertEqual(clean.instances.byId[f.realDesId].originId, null,
+      "BUG-A / S43.2: orphan instance.originId MUST be nulled");
+  });
+
+  it("V-INV-ORPHAN-REFS-5 · BUG-A / SPEC §S43.2 · scrubEngagementOrphans drops instance.mappedAssetIds[] orphans", async () => {
+    const { scrubEngagementOrphans } = await import("/core/engagementIntegrity.js");
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitContextEdit({ customer: { name: "BUG-A Co", vertical: "Enterprise", region: "EMEA" } });
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var envId = getActiveEngagement().environments.allIds[0];
+    commitInstanceAdd({
+      state: "current", layerId: "workload", environmentId: envId,
+      label: "wkl", vendor: "X", vendorGroup: "custom",
+      criticality: "Medium", disposition: "keep"
+    });
+    var workloadId = getActiveEngagement().instances.allIds.at(-1);
+    commitInstanceAdd({
+      state: "current", layerId: "compute", environmentId: envId,
+      label: "asset", vendor: "X", vendorGroup: "custom",
+      criticality: "Medium", disposition: "keep"
+    });
+    var assetId = getActiveEngagement().instances.allIds.at(-1);
+    var dirtyEng = JSON.parse(JSON.stringify(getActiveEngagement()));
+    dirtyEng.instances.byId[workloadId].mappedAssetIds = [assetId, "deadbeef-3333-4000-8000-000000000fff"];
+    var clean = scrubEngagementOrphans(dirtyEng);
+    var cleanMaps = clean.instances.byId[workloadId].mappedAssetIds;
+    assertEqual(cleanMaps.length, 1, "BUG-A / S43.2: orphan mappedAssetId MUST be dropped");
+    assertEqual(cleanMaps[0], assetId, "BUG-A / S43.2: real asset map MUST survive");
+  });
+
+  it("V-INV-ORPHAN-IDEMPOTENT-1 · BUG-A / SPEC §S43.0 · scrubEngagementOrphans is idempotent (running twice on already-clean engagement returns input by reference)", async () => {
+    const { scrubEngagementOrphans } = await import("/core/engagementIntegrity.js");
+    var f = _bugA_setupOrphanFixture();
+    var eng = getActiveEngagement();
+    var pass1 = scrubEngagementOrphans(eng);
+    var pass2 = scrubEngagementOrphans(pass1);
+    // Clean engagement: pass1 should be reference-equal to input (no-op fast path).
+    assertEqual(pass1, eng,
+      "BUG-A / S43.0: clean engagement MUST be a fixed point (reference-equal pass-through; no allocation)");
+    assertEqual(pass2, pass1,
+      "BUG-A / S43.0: scrubber MUST be idempotent");
+  });
+
+  it("V-FLOW-LABEL-RESOLVER-1 · BUG-A / SPEC §S43.3 · services/programsService.driverLabel returns '(unknown driver)' for unknown UUIDs (NEVER raw UUID fallback)", async () => {
+    const { driverLabel } = await import("/services/programsService.js");
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    var unknownUuid = "deadbeef-4444-4000-8000-000000000fff";
+    var label = driverLabel(unknownUuid);
+    assert(label !== null && label !== unknownUuid,
+      "BUG-A / S43.3: driverLabel(unknownUuid) MUST NOT return null or the raw UUID (got: " + JSON.stringify(label) + ")");
+    assert(label === "(unknown driver)",
+      "BUG-A / S43.3: driverLabel(unknownUuid) MUST return the structured placeholder '(unknown driver)' (got: " + JSON.stringify(label) + ")");
+    // Sanity: known catalog id still resolves correctly.
+    assertEqual(driverLabel("cyber_resilience"), "Cyber Resilience",
+      "BUG-A / S43.3: driverLabel('cyber_resilience') MUST resolve to the catalog label");
+  });
+
+  it("V-FLOW-LABEL-RESOLVER-2 · BUG-A / SPEC §S43.3 · GapsEditView envName returns '(unknown environment)' for orphan UUIDs (NEVER raw UUID fallback) — source-grep guard", async () => {
+    var src;
+    try { src = await (await fetch("/ui/views/GapsEditView.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-LABEL-RESOLVER-2: failed to fetch GapsEditView: " + (e && e.message || e)); }
+    // Source-grep guard: envName must contain the structured placeholder
+    // string + must NOT contain the legacy raw-UUID fallback pattern.
+    assert(/return\s+["']\(unknown environment\)["']/.test(src),
+      "BUG-A / S43.3: envName MUST return '(unknown environment)' for orphan UUIDs");
+    // Negative match: the legacy `: uuidOrCatalogId;` fallback inside envName must be gone.
+    var envNameBlockMatch = src.match(/function envName\(uuidOrCatalogId\)\s*\{[\s\S]*?\n\}/);
+    assert(envNameBlockMatch, "BUG-A: envName function block must be findable in GapsEditView source");
+    var envNameBlock = envNameBlockMatch[0];
+    assert(!/return\s+uuidOrCatalogId\s*;\s*\}/.test(envNameBlock),
+      "BUG-A / S43.3: envName MUST NOT have a `return uuidOrCatalogId;` raw-UUID fallback (legacy pre-fix pattern)");
+  });
+
   it("V-FLOW-MANUAL-ADD-1 · R8 #6 · BUG-052 closure · GapsEditView manual-add dialog creates gap AND auto-selects it; commitGapAdd result-envelope handled (was broken pre-fix; selection lost on every manual-add)", async () => {
     _resetEngagementStoreForTests();
     setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
