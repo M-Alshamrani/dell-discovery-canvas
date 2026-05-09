@@ -31,7 +31,7 @@
 // envId option. Tab 5 reporting views pass getVisibleEnvironments output
 // at the FilterBar layer, not at this service layer.
 
-import { LAYERS, ENVIRONMENTS, BUSINESS_DRIVERS } from "../core/config.js";
+import { LAYERS, ENVIRONMENTS, ENV_CATALOG, BUSINESS_DRIVERS } from "../core/config.js";
 import { effectiveDriverId, effectiveDellSolutions } from "./programsService.js";
 import { computeBucketMetrics } from "./healthMetrics.js";
 
@@ -64,7 +64,16 @@ function urgencyRank(u) {
 
 function envLabel(envId) {
   if (envId === "crossCutting") return "Cross-cutting";
-  var e = (typeof ENVIRONMENTS !== "undefined") ? ENVIRONMENTS.find(function(x) { return x.id === envId; }) : null;
+  // BUG-049 follow-up · ENVIRONMENTS is filtered to the default-4 subset
+  // (coreDc / drDc / publicCloud / edge); ENV_CATALOG is the full 8-entry
+  // canonical list (adds archiveSite, coLo, managedHosting, sovereignCloud).
+  // The pipeline chips on Tab 5 Reporting were leaking the typeId for any
+  // env outside the default-4 (e.g. "sovereignCloud" instead of
+  // "Sovereign Cloud"). Look up ENV_CATALOG first; fall back to ENVIRONMENTS
+  // for completeness; final fallback to envId is the legitimate "unknown
+  // env id" path.
+  var e = (typeof ENV_CATALOG !== "undefined") ? ENV_CATALOG.find(function(x) { return x.id === envId; }) : null;
+  if (!e && typeof ENVIRONMENTS !== "undefined") e = ENVIRONMENTS.find(function(x) { return x.id === envId; });
   return e ? e.label : envId;
 }
 
