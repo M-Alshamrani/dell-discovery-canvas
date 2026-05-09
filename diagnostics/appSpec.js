@@ -7928,6 +7928,119 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
       "BUG-049: session.gaps[].affectedEnvironments[] MUST contain the v2 envCatalogId 'coreDc'; got: " + JSON.stringify(gapEnvs));
   });
 
+  it("V-INV-UPDATEGAP-AL10-1 · R8 #1 · commitGapEdit({reviewed:true}) on a v3 gap with INVALID action-link shape returns ok:false + AL10_VIOLATION code (atomic gate · was caller-layer pre-validation in v2-shim era)", async () => {
+    // R8 #1 closure of the rc.7-deferred invariant. Pre-fix the v3
+    // updateGap only ran GapSchema.safeParse — it accepted reviewed:true
+    // even on shape that violated AL10 (e.g. a "replace" gap with zero
+    // current links). Caller-layer enforcement (validateActionLinks(probe))
+    // was the workaround. R8 #1 lifts the gate to the helper so it fires
+    // for ANY caller (UI, AI write paths, integrations, future code).
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitContextEdit({ customer: { name: "R8-1 Co", vertical: "Enterprise", region: "EMEA" } });
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var envId = getActiveEngagement().environments.allIds[0];
+    var addRes = commitGapAdd({
+      description: "R8-1 invalid-shape replace gap",
+      layerId: "compute",
+      affectedLayers: ["compute"],
+      affectedEnvironments: [envId],
+      gapType: "replace",
+      relatedCurrentInstanceIds: [],
+      relatedDesiredInstanceIds: [],
+      reviewed: false
+    });
+    assertEqual(addRes.ok, true, "addGap with reviewed:false succeeded (no validation)");
+    var gapId = getActiveEngagement().gaps.allIds[0];
+    // "replace" Action requires ≥1 current + ≥1 desired link per RULES T1 / TX13.
+    // Both link arrays are empty, so reviewed-flip MUST fail AL10.
+    var flipRes = commitGapEdit(gapId, { reviewed: true });
+    assertEqual(flipRes.ok, false,
+      "R8 #1: commitGapEdit({reviewed:true}) MUST return ok:false on AL10 violation (got: " + JSON.stringify(flipRes) + ")");
+    assert(flipRes.errors && flipRes.errors[0] && flipRes.errors[0].code === "AL10_VIOLATION",
+      "R8 #1: error code MUST be AL10_VIOLATION (got: " + JSON.stringify(flipRes.errors) + ")");
+    // Post-failure state: gap.reviewed stays false (no partial commit).
+    var post = getActiveEngagement().gaps.byId[gapId];
+    assertEqual(post.reviewed, false,
+      "R8 #1: failed reviewed-flip MUST NOT mutate state");
+  });
+
+  it("V-INV-UPDATEGAP-AL10-2 · R8 #1 · structural patch (e.g. relatedCurrentInstanceIds) on an already-reviewed gap that produces AL10 violation returns ok:false", async () => {
+    // Patch flow: gap is reviewed:true with a valid shape. User unlinks
+    // all current instances via a structural patch. The merged shape
+    // violates "replace" Action's ≥1 current rule. updateGap must
+    // refuse the structural patch.
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitContextEdit({ customer: { name: "R8-1 Co", vertical: "Enterprise", region: "EMEA" } });
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var envId = getActiveEngagement().environments.allIds[0];
+    var instAdd = commitInstanceAdd({
+      state: "current", layerId: "compute", environmentId: envId,
+      label: "R8-1 cur", vendor: "X", vendorGroup: "custom",
+      criticality: "Medium", disposition: "keep"
+    });
+    var curInstId = getActiveEngagement().instances.allIds.at(-1);
+    var instDes = commitInstanceAdd({
+      state: "desired", layerId: "compute", environmentId: envId,
+      label: "R8-1 des", vendor: "X", vendorGroup: "custom"
+    });
+    var desInstId = getActiveEngagement().instances.allIds.at(-1);
+    var addRes = commitGapAdd({
+      description: "R8-1 reviewed gap",
+      layerId: "compute",
+      affectedLayers: ["compute"],
+      affectedEnvironments: [envId],
+      gapType: "replace",
+      relatedCurrentInstanceIds: [curInstId],
+      relatedDesiredInstanceIds: [desInstId],
+      reviewed: true
+    });
+    assertEqual(addRes.ok, true, "addGap with reviewed:true + 1+1 links succeeded");
+    var gapId = getActiveEngagement().gaps.allIds[0];
+    // Structural patch: drop the current link. Merged shape violates AL10.
+    var patchRes = commitGapEdit(gapId, { relatedCurrentInstanceIds: [] });
+    assertEqual(patchRes.ok, false,
+      "R8 #1: structural patch on reviewed gap that produces AL10 violation MUST return ok:false (got: " + JSON.stringify(patchRes) + ")");
+    assert(patchRes.errors && patchRes.errors[0] && patchRes.errors[0].code === "AL10_VIOLATION",
+      "R8 #1: error code MUST be AL10_VIOLATION");
+  });
+
+  it("V-INV-UPDATEGAP-AL10-3 · R8 #1 · pure metadata patch (urgency, notes, phase) on a reviewed gap with PRE-EXISTING AL10 violation succeeds — A1 contract preserved", async () => {
+    // The flip side of R8 #1: metadata patches (urgency, notes, phase,
+    // status, driverId, urgencyOverride, services, mappedDellSolutions,
+    // description) MUST succeed even on a reviewed gap that has a
+    // pre-existing AL10 violation. Per v2.4.11 A1: the user can save
+    // side notes on an already-invalid gap; the soft chip in the UI
+    // flags the violation but doesn't block the metadata save.
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitContextEdit({ customer: { name: "R8-1 Co", vertical: "Enterprise", region: "EMEA" } });
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var envId = getActiveEngagement().environments.allIds[0];
+    // Add an "ops" gap with notes substantial enough to satisfy AL7 + reviewed:true.
+    var addRes = commitGapAdd({
+      description: "R8-1 ops gap",
+      layerId: "compute",
+      affectedLayers: ["compute"],
+      affectedEnvironments: [envId],
+      gapType: "ops",
+      notes: "This is the operational gap notes — at least ten characters for AL7.",
+      relatedCurrentInstanceIds: [],
+      relatedDesiredInstanceIds: [],
+      reviewed: true
+    });
+    assertEqual(addRes.ok, true, "addGap reviewed ops gap with substantial notes succeeded");
+    var gapId = getActiveEngagement().gaps.allIds[0];
+    // Pure metadata patches MUST succeed (no structural change, not flipping reviewed).
+    var u1 = commitGapEdit(gapId, { urgency: "High" });
+    assertEqual(u1.ok, true, "metadata urgency patch succeeded");
+    var u2 = commitGapEdit(gapId, { phase: "later" });
+    assertEqual(u2.ok, true, "metadata phase patch succeeded");
+    var u3 = commitGapEdit(gapId, { notes: "Updated notes (still long enough for AL7 substance)." });
+    assertEqual(u3.ok, true, "metadata notes patch succeeded");
+  });
+
   it("V-FLOW-GAPS-SELECTION-PERSIST-1 · BUG-051 (closes BUG-032 root cause) guard: GapsEditView selectedGapId persists across commitGapLink*-driven re-render; gap detail panel + link buttons survive add-link / unlink / edit cycles", async () => {
     // User report 2026-05-09: clicking + Link desired instance / + Link
     // current instance after a successful link cycle felt like the buttons

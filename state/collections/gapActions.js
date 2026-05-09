@@ -1,6 +1,35 @@
 // state/collections/gapActions.js — v3.0 · SPEC sec S4.1.2
+//
+// R8 #1 (rc.7 v3-invariant-enforcement arc · 2026-05-09): updateGap now
+// enforces validateActionLinks (AL10 / TX13.10) atomically when the patch
+// flips reviewed:true OR when a structural field (gapType / layerId /
+// affectedLayers / affectedEnvironments / relatedCurrent/DesiredInstanceIds)
+// changes on an already-reviewed gap. Pure metadata patches (urgency, notes,
+// phase, status, driverId, urgencyOverride, etc.) on an already-reviewed-
+// but-shape-invalid gap STILL succeed — that's the v2.4.11 A1 contract:
+// the user can save a side note on a gap with a violation; the soft chip
+// in the UI flags it. AL10 only fires on the "I'm done" moment (explicit
+// reviewed:true flip) or when the structural shape changes.
+//
+// Pre-fix v3 only ran GapSchema.safeParse (which checks shape but not
+// link-count rules). Caller-layer enforcement was the workaround
+// (validateActionLinks(probe-with-reviewed:true) before commitGapEdit).
+// That worked for hand-coded UI flows but left the AL10 gate optional
+// for any future caller (AI write paths, integrations, etc). R8 #1 makes
+// the gate atomic at the helper layer per the v2 contract.
 
 import { GapSchema, createEmptyGap } from "../../schema/gap.js";
+import { validateActionLinks } from "../../core/taxonomy.js";
+
+// Fields whose change can plausibly violate the Action's link-count rules
+// or move the gap into a different Action category. Pure metadata patches
+// (urgency, notes, phase, status, driverId, urgencyOverride, services,
+// mappedDellSolutions, description) are NOT in this list — they can update
+// freely even on a reviewed gap with a pre-existing AL10 violation.
+const _STRUCTURAL_FIELDS = [
+  "gapType", "layerId", "affectedLayers", "affectedEnvironments",
+  "relatedCurrentInstanceIds", "relatedDesiredInstanceIds"
+];
 
 function newId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -63,6 +92,29 @@ export function updateGap(engagement, gapId, patch) {
         path: i.path.join("."), message: i.message, code: i.code
       }))
     };
+  }
+  // R8 #1 · AL10 / TX13.10 · enforce action-link rules atomically when:
+  //   (a) caller explicitly flips reviewed:true ("I'm done with this gap")
+  //   (b) caller patches a structural field AND the merged gap is reviewed
+  // Skipped for pure metadata patches on a reviewed-but-AL10-violating gap
+  // (per v2.4.11 A1 contract: side notes, urgency, phase changes etc. save
+  // freely; UI surfaces the violation as a soft chip on the gap detail).
+  // Skipped entirely when the merged gap is reviewed:false (validateActionLinks
+  // bypasses on unreviewed gaps anyway, but checking here avoids the call).
+  const explicitReviewedFlip = patch.reviewed === true;
+  const hasStructuralPatch = _STRUCTURAL_FIELDS.some(f => patch[f] !== undefined);
+  const shouldValidateLinks =
+    (explicitReviewedFlip) ||
+    (hasStructuralPatch && result.data.reviewed === true);
+  if (shouldValidateLinks) {
+    try {
+      validateActionLinks(result.data);
+    } catch (e) {
+      return {
+        ok: false,
+        errors: [{ path: "actionLinks", message: (e && e.message) || String(e), code: "AL10_VIOLATION" }]
+      };
+    }
   }
   return {
     ok: true,
