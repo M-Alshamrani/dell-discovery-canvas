@@ -2,7 +2,32 @@
 
 **🔴 READ FIRST · Principal-architect discipline (LOCKED 2026-05-08, R11 added evening)**: every session, every commit, every handover. Full text in [`docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md`](docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md) (R0..R11) + tier-1 memory anchor `feedback_principal_architect_discipline.md`. Core rules: **R0** acknowledge "what would a principal architect do?" before non-trivial action · **R1** own-grep before delete · **R2** migrate consumers FIRST, delete LAST · **R3** Chrome MCP browser smoke at every commit boundary (test banner alone is NOT sufficient) · **R4** no v3-store backward-compat hacks · **R5** no fig-leaf test fixtures hiding v2 logic · **R6** rewrite tests to assert v3 contracts (never retire-with-negative) · **R7** per-commit revertibility · **R8** surface scope balloons · **R9** every handover references this · **R10** acknowledge in every action out loud · **R11 (HARDEST · LOCKED 2026-05-08 evening)** Recite + Answer + Execute + Pledge-Smoke-Screenshot at EVERY step boundary; every commit message ends with a `Browser smoke evidence:` block. **Test banner alone is a discipline violation.**
 
-**Last session end**: 2026-05-09 (Step H+J+K mega-commit · v2 deletion arc COMPLETE) · `v3.0.0-rc.7-dev` on `v3.0-data-architecture` · **Banner 1133/1134 GREEN** (FS3 only RED, expected, scheduled for rc.7/7e-post).
+**Last session end**: 2026-05-09 (rc.7 tag-prep COMPLETE · awaiting PREFLIGHT 5b real-LLM smoke from user) · `v3.0.0-rc.7-dev` on `v3.0-data-architecture` · **Banner 1138/1138 GREEN ✅** · 7 commits this session · v2 architecture DELETED · all reported bugs CLOSED.
+
+## 🟢 rc.7 tag-ready summary (2026-05-09 EOD)
+
+| Commit | Banner Δ | Theme |
+|---|---|---|
+| `ea898df` | 1129→1133 | **Step H+J+K v2 deletion mega-commit** (929 LOC removed across 5 v2 modules; v3-pure architecture is now the sole source of truth) |
+| `a764f17` | 1133→1134 | FS3+FS4 v3-direct rewrite (last expected RED resolved) |
+| `af2c26a` | 1134→1135 | BUG-043: shell-render subscriber re-registered in testRunner afterRestore + V-FLOW-SHELL-SUBSCRIBER-1 |
+| `0926b30` | 1135→1136 | BUG-042: GapsEditView demo banner reads `meta.isDemo` from getActiveEngagement + V-FLOW-DEMO-BANNER-GAPS-1 |
+| `1c306dc` | 1136→1137 | BUG-044 gap-tile half: programsService driverLabel resolves v3 UUID via BUSINESS_DRIVERS catalog + V-FLOW-DRIVER-LABEL-V3UUID-1 |
+| `1deda90` | 1137→1138 | BUG-044 chat half: uuidScrubber buildLabelMap drivers branch resolves UUID → catalog label + V-CHAT-39 |
+| `8a7c265` | 1138/1138 | VT29 viewport-sufficiency guard + close 5 bugs (BUG-019/027/028/001/002) verified-fixed in BUG_LOG + ROADMAP refresh |
+
+**Bugs closed since rc.6 tag (9 total)**:
+BUG-001, BUG-002, BUG-019, BUG-027, BUG-028, BUG-041 (rc.6→rc.7 window), BUG-042, BUG-043, BUG-044 (both halves).
+
+**Tests added (regression guards)**:
+V-FLOW-SHELL-SUBSCRIBER-1 + V-FLOW-DEMO-BANNER-GAPS-1 + V-FLOW-DRIVER-LABEL-V3UUID-1 + V-CHAT-39 + V-FLOW-V3-PURE-1/3/4/5 (all flipped GREEN).
+
+**rc.7 tag gate (the ONE remaining item)**:
+PREFLIGHT 5b real-LLM live-key smoke per `docs/PREFLIGHT.md §5b` + `docs/RELEASE_NOTES_rc.7.md`. The user runs this with their Anthropic + Gemini + Local A keys: 3 providers × 3 prompts × no-fabrication + UUID-free check. After GREEN → user says "tag rc.7" → bump APP_VERSION (drop -dev) → tag → push (only on user "push" / "ship it" instruction).
+
+## Prior session entries
+
+
 
 ## 🔴 rc.7 / 7e-8 Path (c) shipped — v2 architecture DELETED
 
