@@ -19,7 +19,9 @@ import { getActiveEngagement } from "../state/engagementStore.js";
 // via its subscriber chain on every setActiveEngagement / commitAction
 // success. The only side-effect that didn't ride through the v3 path
 // was the topbar Saving... pulse — kept by calling markSaving() directly.
-import { markSaving } from "../core/saveStatus.js";
+// rc.7 / 7e-9b · BUG-B regression fix · markSaving call dropped (override
+// harm); engagementStore _persist drives the state machine end-to-end now.
+// Import retired since no production callers remain in this module.
 
 // Parse the AI response for a json-scalars skill. Tolerates code-fences
 // around the JSON (some models add them despite instructions) and
@@ -102,7 +104,8 @@ export function applyProposal(proposal, opts) {
     else if (result.error) msg += result.error;
     throw new Error(msg);
   }
-  markSaving(); // Step K · was: emitSessionChanged("ai-apply", label)
+  // BUG-B regression fix · markSaving() dropped (override harm).
+  // engagementStore._persist now drives the saved-status state machine.
 }
 
 // Apply every proposal in a list under one undo entry. Each proposal
@@ -127,7 +130,7 @@ export function applyAllProposals(proposals, opts) {
         }
       }
     });
-    markSaving(); // Step K · was: emitSessionChanged("ai-apply", label)
+    // BUG-B regression fix · markSaving() dropped (override harm).
   } catch (e) {
     undoStack.undoLast();
     throw e;

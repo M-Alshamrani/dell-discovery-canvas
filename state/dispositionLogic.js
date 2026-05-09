@@ -132,7 +132,13 @@ export function buildGapFromDisposition(engagement, desiredInstance) {
     relatedCurrentInstanceIds: currentIds,
     relatedDesiredInstanceIds: desiredIds,
     status:                    "open",
-    reviewed:                  false
+    reviewed:                  false,
+    // BUG-D closure (rc.7 / 7e-9b · 2026-05-09 PM) · explicit provenance.
+    // Gaps created via this auto-draft path are origin="autoDraft" so the
+    // GapsEditView banner can count them accurately (was using the
+    // shape proxy `relatedDesiredInstanceIds.length > 0` which mis-
+    // classified manually-added gaps the user later linked).
+    origin:                    "autoDraft"
   };
 }
 

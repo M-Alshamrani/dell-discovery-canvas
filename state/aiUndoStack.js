@@ -22,7 +22,9 @@ import { EngagementSchema } from "../schema/engagement.js";
 // above already emits to subscribeActiveEngagement listeners; the only
 // thing the legacy emitSessionChanged("ai-undo", ...) did beyond that
 // was pulse markSaving() for the topbar — kept via direct call below.
-import { markSaving } from "../core/saveStatus.js";
+// rc.7 / 7e-9b · BUG-B regression fix · markSaving call dropped (override
+// harm); engagementStore _persist drives the state machine end-to-end now.
+// Import retired since no production callers remain in this module.
 
 var MAX_DEPTH   = 10;
 var STORAGE_KEY = "ai_undo_v1";
@@ -69,7 +71,8 @@ export function undoLast() {
       }
     }
     persistToStorage();
-    markSaving(); // Step K · was: emitSessionChanged("ai-undo", entry.label || "")
+    // BUG-B regression fix · markSaving() dropped (override harm).
+    // setActiveEngagement above already routes through _persist → markSaved.
   } catch (e) {
     console.error("[aiUndoStack] undoLast failed:", e);
   }
@@ -95,7 +98,7 @@ export function undoAll() {
     }
     stack = [];
     persistToStorage();
-    markSaving(); // Step K · was: emitSessionChanged("ai-undo", "Undo all (...)")
+    // BUG-B regression fix · markSaving() dropped (override harm).
   } catch (e) {
     console.error("[aiUndoStack] undoAll failed:", e);
   }

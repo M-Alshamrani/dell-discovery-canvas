@@ -52,7 +52,12 @@ import { visibleEnvCount } from "./ui/components/NoEnvsCard.js";
 import { APP_VERSION }               from "./core/version.js";
 import { loadAiConfig, saveAiConfig } from "./core/aiConfig.js";
 import { loadSkills, saveSkills }    from "./core/skillStore.js";
-import { getStatus as getSaveStatus, onStatusChange as onSaveStatusChange, markSaving } from "./core/saveStatus.js";
+// rc.7 / 7e-9b · BUG-B regression fix · markSaving import dropped from
+// app.js call sites (was overriding the markSaved() that engagementStore
+// _persist now fires; left header capsule stuck on 'Saving...' forever).
+// _persist drives the state machine end-to-end now; production code paths
+// don't need to manually pulse 'saving'.
+import { getStatus as getSaveStatus, onStatusChange as onSaveStatusChange } from "./core/saveStatus.js";
 // v2.4.15 . eagerly load filterState so its module-init applyToBody()
 // restores the user's saved body[data-filter-<dim>] attributes on app
 // boot, before the user navigates to a tab that uses FilterBar.
@@ -770,11 +775,14 @@ function wireFooter() {
           // anymore -- the v2 mirror is dead weight. v3 engagementStore.
           // setActiveEngagement IS the authoritative write.
           storeMod.setActiveEngagement(v3eng);
-          // Pulse the topbar "Saving..." indicator briefly. setActiveEngagement
-          // already triggers subscribeActiveEngagement listeners (re-render);
-          // markSaving is the visual feedback that the engagement just
-          // changed (Step K replaced the legacy emitSessionChanged bus).
-          markSaving();
+          // BUG-B regression fix (rc.7 / 7e-9b · 2026-05-09 PM) · pre-fix
+          // an explicit markSaving() ran AFTER setActiveEngagement, which
+          // overrode the markSaved() that _persist now fires inside the
+          // store (BUG-B closure ecc429e). The result: header pulsed to
+          // 'Saving...' and stayed there forever because nothing followed.
+          // The Step K comment below is now obsolete: _persist drives the
+          // state machine end-to-end, so the explicit pulse is redundant
+          // AND actively harmful. Dropped per BUG-B regression report.
         } catch (e) {
           console.error("[demo] v3-native demo failed to load:", e);
         }
@@ -809,7 +817,8 @@ function wireFooter() {
         } catch (_e) { /* defensive -- never let chat-memory cleanup block reset */ }
         setActiveEngagement(createEmptyEngagement());
         try { aiUndoStack.clear(); } catch (_e) { /* AI undo not loaded -- harmless */ }
-        markSaving(); // Step K · was: emitSessionChanged("session-reset", ...)
+        // BUG-B regression fix · markSaving() dropped (was overriding the
+        // markSaved() that _persist fires inside setActiveEngagement).
         currentStep = "context"; currentReportingTab = "overview";
         renderHeaderMeta(); renderStepper(); renderStage();
       });
@@ -905,7 +914,7 @@ function wireFooter() {
         setActiveEngagement(res.engagement);
         saveSkills(res.skills);
         if (res.providerConfig) saveAiConfig(res.providerConfig);
-        markSaving(); // Step K · was: emitSessionChanged("session-replace", "Opened " + ...)
+        // BUG-B regression fix · markSaving() dropped (override harm).
         var body = "Saved by Canvas v" + res.savedAppVersion +
           (res.savedAt ? " at " + res.savedAt : "");
         if (res.warnings.length) body += " · " + res.warnings.length + " note" + (res.warnings.length === 1 ? "" : "s");

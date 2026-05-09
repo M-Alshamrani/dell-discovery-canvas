@@ -8938,6 +8938,106 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
     }
   });
 
+  // ─── BUG-B regression closure (rc.7 / 7e-9b · 2026-05-09 PM evening) ───
+  // Pre-fix the BUG-B closure (ecc429e) added markSaved() to _persist
+  // but 5 explicit markSaving() call sites in app.js + aiCommands.js +
+  // aiUndoStack.js fired AFTER setActiveEngagement, overriding the
+  // markSaved() that _persist had just fired. The header capsule pulsed
+  // to "Saving..." and stayed there forever (production-broken UX).
+  // Fix: drop the 5 explicit calls; _persist drives the state machine
+  // end-to-end. Source-grep guard ensures no regression re-introduces them.
+  it("V-FLOW-SAVE-STATUS-NO-OVERRIDE-1 · BUG-B regression · production code does NOT call markSaving() after setActiveEngagement (would override the markSaved that _persist fires; capsule would stick on 'Saving...')", async () => {
+    var sites = ["/app.js", "/interactions/aiCommands.js", "/state/aiUndoStack.js"];
+    for (var i = 0; i < sites.length; i++) {
+      var path = sites[i];
+      var src;
+      try { src = await (await fetch(path)).text(); }
+      catch (e) { throw new Error("V-FLOW-SAVE-STATUS-NO-OVERRIDE-1: failed to fetch " + path + ": " + (e && e.message || e)); }
+      // Strip block comments so commented-out references don't trip the
+      // grep. Pattern matches `markSaving(` only as a function call.
+      var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+      // After stripping comments: NO markSaving() function calls should remain.
+      assert(!/markSaving\(\)/.test(stripped),
+        "BUG-B regression: " + path + " MUST NOT call markSaving() in production code (overrides markSaved() that _persist fires; capsule would stick on 'Saving...')");
+    }
+  });
+
+  // ─── BUG-D closure · gap.origin provenance field ───────────────────────
+  // Pre-fix isAutoDrafted(gap) used the shape proxy
+  // `relatedDesiredInstanceIds.length > 0`, mis-classifying manually-
+  // added gaps that the user later linked to a desired tile. The
+  // GapsEditView "X auto-drafted gaps from Desired State" banner inflated
+  // with these false positives. Fix: schema field gap.origin (manual |
+  // autoDraft); back-compat default "autoDraft" preserves historical
+  // shape for persisted gaps; explicit tagging at all creation paths.
+  it("V-FLOW-GAP-ORIGIN-1 · BUG-D · GapSchema accepts gap.origin field (manual | autoDraft); defaults to 'autoDraft' for back-compat", async () => {
+    const { GapSchema, createEmptyGap } = await import("/schema/gap.js");
+    // Default path: createEmptyGap with no origin override -> "autoDraft"
+    var defaulted = createEmptyGap({
+      description: "BUG-D test gap",
+      layerId: "compute", affectedLayers: ["compute"],
+      affectedEnvironments: ["00000000-0000-4000-8000-000000000001"],
+      gapType: "ops", notes: "ops gap with sufficient notes for AL7 substance check.",
+      reviewed: false
+    });
+    assertEqual(defaulted.origin, "autoDraft", "BUG-D: default origin is 'autoDraft' for back-compat");
+    // Explicit manual override
+    var manual = createEmptyGap({
+      description: "Manual gap", layerId: "compute", affectedLayers: ["compute"],
+      affectedEnvironments: ["00000000-0000-4000-8000-000000000001"],
+      gapType: "ops", notes: "ops gap with sufficient notes for AL7 substance check.",
+      reviewed: false, origin: "manual"
+    });
+    assertEqual(manual.origin, "manual", "BUG-D: explicit origin='manual' preserved");
+    // Schema rejects invalid origin
+    var bad = GapSchema.safeParse({ ...defaulted, origin: "scribbled" });
+    assertEqual(bad.success, false, "BUG-D: invalid origin enum value rejected by schema");
+  });
+
+  it("V-FLOW-GAP-ORIGIN-2 · BUG-D · buildGapFromDisposition returns origin='autoDraft' (auto-draft path provenance)", async () => {
+    const { buildGapFromDisposition } = await import("/state/dispositionLogic.js");
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitContextEdit({ customer: { name: "BUG-D Co", vertical: "Enterprise", region: "EMEA" } });
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var envId = getActiveEngagement().environments.allIds[0];
+    commitInstanceAdd({
+      state: "desired", layerId: "compute", environmentId: envId,
+      label: "BUG-D des", vendor: "Dell", vendorGroup: "dell",
+      disposition: "introduce"
+    });
+    var desId = getActiveEngagement().instances.allIds.at(-1);
+    var desInst = getActiveEngagement().instances.byId[desId];
+    var props = buildGapFromDisposition(getActiveEngagement(), desInst);
+    assertEqual(props.origin, "autoDraft",
+      "BUG-D: buildGapFromDisposition MUST set origin='autoDraft' (auto-draft path)");
+  });
+
+  it("V-FLOW-GAP-ORIGIN-3 · BUG-D · GapsEditView manual-add dialog passes origin='manual' to commitGapAdd (source-grep guard)", async () => {
+    var src;
+    try { src = await (await fetch("/ui/views/GapsEditView.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-GAP-ORIGIN-3: failed to fetch GapsEditView: " + (e && e.message || e)); }
+    // The +Add gap dialog must include origin: "manual" in its commitGapAdd call.
+    assert(/origin:\s*["']manual["']/.test(src),
+      "BUG-D: GapsEditView manual-add dialog MUST pass origin: 'manual' to commitGapAdd");
+  });
+
+  it("V-FLOW-GAP-ORIGIN-4 · BUG-D · isAutoDrafted reads gap.origin === 'autoDraft' (NOT the relatedDesired shape proxy)", async () => {
+    var src;
+    try { src = await (await fetch("/ui/views/GapsEditView.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-GAP-ORIGIN-4: failed to fetch GapsEditView: " + (e && e.message || e)); }
+    // Source-grep guard: isAutoDrafted's body must reference gap.origin,
+    // and must NOT use the legacy `relatedDesiredInstanceIds.length > 0`
+    // shape proxy.
+    var fnMatch = src.match(/function isAutoDrafted\(gap\)\s*\{[\s\S]*?\n\}/);
+    assert(fnMatch, "BUG-D: isAutoDrafted function block must be findable in GapsEditView source");
+    var fnBody = fnMatch[0];
+    assert(/gap\.origin\s*===\s*["']autoDraft["']/.test(fnBody),
+      "BUG-D: isAutoDrafted MUST check gap.origin === 'autoDraft'");
+    assert(!/relatedDesiredInstanceIds\.length\s*>\s*0/.test(fnBody),
+      "BUG-D: isAutoDrafted MUST NOT use the legacy `relatedDesiredInstanceIds.length > 0` shape proxy (mis-classifies manual gaps the user later linked)");
+  });
+
   it("V-FLOW-MANUAL-ADD-1 · R8 #6 · BUG-052 closure · GapsEditView manual-add dialog creates gap AND auto-selects it; commitGapAdd result-envelope handled (was broken pre-fix; selection lost on every manual-add)", async () => {
     _resetEngagementStoreForTests();
     setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));

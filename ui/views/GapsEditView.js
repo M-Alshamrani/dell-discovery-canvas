@@ -327,12 +327,18 @@ export function renderGapsEditView(left, right, session) {
   left._unsubFilter = unsubFilter;
 
   // Auto-gap notice + v2.4.11 · C2 · "Review all" guided walkthrough button.
+  // rc.7 / 7e-9b · BUG-D closure · message tone matched to the Desired
+  // State unreviewed-banner pattern (subtle + accurate; no bold weight,
+  // no marketing flourish). Reads "N of M auto-drafted gap(s) from
+  // Desired State dispositions not yet reviewed -- click below to walk
+  // through them." Counts only origin==="autoDraft" + reviewed===false.
   var autoGaps = getAutoGaps();
   if (autoGaps.length > 0) {
     var notice = mk("div", "auto-gap-notice");
-    var msg = "<strong>" + autoGaps.length + " auto-drafted gap" + (autoGaps.length > 1 ? "s" : "") +
-      "</strong> from Desired State dispositions , review them in the board below.";
-    notice.innerHTML = msg + " ";
+    var totalGaps = (_v3GapsArray() || []).length;
+    var msg = autoGaps.length + " of " + totalGaps + " gap" + (totalGaps > 1 ? "s" : "") +
+      " auto-drafted from Desired State dispositions not yet reviewed -- walk through each in the board below.";
+    notice.textContent = msg + " ";
     var reviewAllBtn = mkt("button", "btn-primary auto-gap-review-all", "Review all →");
     reviewAllBtn.title = "Walk through each unreviewed gap in sequence so you can approve, edit, or delete it.";
     reviewAllBtn.addEventListener("click", function() {
@@ -392,10 +398,18 @@ export function renderGapsEditView(left, right, session) {
     }
   }
 
+  // rc.7 / 7e-9b · BUG-D closure · count only gaps that came from a
+  // Desired-State disposition AND are unreviewed AND open. Pre-fix used
+  // the shape proxy `relatedDesiredInstanceIds.length > 0`, which mis-
+  // counted manually-added gaps the user later linked to a desired tile.
+  // Now uses the explicit gap.origin provenance field. The "needs review"
+  // signal is `g.reviewed === false` (not `!g.notes` which was a stale
+  // pre-AL10-substance heuristic; reviewed flag is the canonical gate).
   function getAutoGaps() {
     return (_v3GapsArray() || []).filter(function(g) {
-      return g.relatedDesiredInstanceIds && g.relatedDesiredInstanceIds.length > 0
-          && g.status === "open" && !g.notes;
+      return g.origin === "autoDraft"
+          && g.reviewed === false
+          && g.status === "open";
     });
   }
 
@@ -1368,7 +1382,14 @@ export function renderGapsEditView(left, right, session) {
           gapType:        vals.gapType || undefined,
           urgency:        vals.urgency || "Medium",
           phase:          vals.phase   || "next",
-          status:         "open"
+          status:         "open",
+          // BUG-D closure (rc.7 / 7e-9b · 2026-05-09 PM) · explicit
+          // provenance flag. Manually-added gaps via this dialog are
+          // origin="manual" so the "X auto-drafted gaps from Desired
+          // State" banner doesn't inflate with them. Pre-fix the banner
+          // mis-counted any gap with relatedDesiredInstanceIds.length>0
+          // (which a manual gap acquires the moment the user links it).
+          origin:         "manual"
           // reviewed left default (false) per R8 #6 closure note above.
         });
         // BUG-052 fix: commitGapAdd returns { ok, engagement, errors }
@@ -1448,10 +1469,18 @@ function layerName(id) { var l = (typeof LAYERS !== "undefined") ? LAYERS.find(f
 function envName(uuidOrCatalogId) { return _resolveEnvLabel(uuidOrCatalogId); }
 function phaseLabel(p) { return p==="now" ? "Now (0-12 months)" : p==="next" ? "Next (12-24 months)" : "Later (>24 months)"; }
 
-// A gap is "auto-drafted" when it came from a Desired-State disposition, i.e.
-// it has a linked desired instance. Manual gaps have no desired link at creation.
+// rc.7 / 7e-9b · BUG-D closure · provenance-based "auto-drafted" check.
+// Pre-fix this used the shape proxy "has any linked desired instance",
+// which mis-classified manually-added gaps as auto-drafted as soon as
+// the user linked them to a desired tile. Now reads gap.origin (schema
+// field added rc.7 / 7e-9b). Persisted gaps without origin field default
+// to "autoDraft" via schema default, preserving back-compat with the
+// historical interpretation (most pre-fix gaps came from desired-state
+// dispositions). Manual gaps from rc.7 / 7e-9b onwards are tagged
+// explicitly at the +Add gap dialog call site.
 function isAutoDrafted(gap) {
-  return !!(gap && gap.relatedDesiredInstanceIds && gap.relatedDesiredInstanceIds.length > 0);
+  if (!gap) return false;
+  return gap.origin === "autoDraft";
 }
 
 function readOnlyField(text, titleText) {

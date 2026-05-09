@@ -30,6 +30,22 @@ export const GapSchema = z.object({
   phase:                     z.enum(["now", "next", "later"]),
   status:                    z.enum(["open", "in_progress", "closed", "deferred"]),
   reviewed:                  z.boolean().default(false),
+  // BUG-D closure (rc.7 / 7e-9b · 2026-05-09 PM) · provenance flag for
+  // gap creation source. "autoDraft" = generated from a Desired-State
+  // disposition via buildGapFromDispositionV3. "manual" = user-created
+  // via the GapsEditView "+ Add gap" dialog (or AI write-path that
+  // explicitly authors a gap). Pre-fix isAutoDrafted(gap) used the
+  // shape proxy `relatedDesiredInstanceIds.length > 0`, which mis-
+  // classified manually-added gaps as auto-drafted as soon as the
+  // user linked them to a desired tile. The "X auto-drafted gaps
+  // from Desired State" banner inflated with manual gaps. Now origin
+  // is explicit; UI never confuses provenance with link state.
+  // Default "autoDraft" for back-compat: persisted gaps without origin
+  // field become autoDraft on rehydrate, which matches the historical
+  // shape (most existing gaps in the field came from desired-state
+  // dispositions). Manual gaps from rc.7 / 7e-9b onwards explicitly
+  // set origin: "manual".
+  origin:                    z.enum(["manual", "autoDraft"]).default("autoDraft"),
   notes:                     z.string().default(""),
   driverId:                  z.string().uuid().nullable().default(null),
   layerId:                   z.string().min(1),                       // primary layer; FK to LAYERS
@@ -60,6 +76,7 @@ export function createEmptyGap(overrides = {}) {
     phase:                     overrides.phase                     ?? "now",
     status:                    overrides.status                    ?? "open",
     reviewed:                  overrides.reviewed                  ?? false,
+    origin:                    overrides.origin                    ?? "autoDraft",
     notes:                     overrides.notes                     ?? "",
     driverId:                  overrides.driverId                  ?? null,
     layerId,
