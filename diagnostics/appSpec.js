@@ -8041,6 +8041,170 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
     assertEqual(u3.ok, true, "metadata notes patch succeeded");
   });
 
+  // ─── R8 #2 · v3 mapWorkloadAssets invariant gates (I1..I8) ──────────────
+  // Closes BUG-040 (workload→retired-asset map) AND lifts the v2.3.1 5-rule
+  // workload-mapping contract from caller-layer-only to atomic helper-layer
+  // enforcement. Pre-fix v3 mapWorkloadAssets was a thin updateInstance
+  // wrapper with NO enforcement; ANY caller (UI, AI write paths,
+  // integrations) could violate the rules. Now the helper aborts on the
+  // first invariant violation.
+  //
+  // Test fixture pattern (shared by the V-INV-MAPWORKLOAD-* tests below):
+  //   1. fresh engagement
+  //   2. add envA + envB  (so cross-env tests have somewhere to put the
+  //      mismatched asset)
+  //   3. add 1 current workload-layer instance  (the source for all maps)
+  //   4. add 1 current compute-layer instance in envA  (the happy-path target)
+  //   5. add 1 current compute-layer instance in envA with disposition='retire'
+  //      (the BUG-040 target)
+  //   6. add 1 desired compute-layer instance in envA  (the state-mismatch target)
+  //   7. add 1 current compute-layer instance in envB  (the env-mismatch target)
+  //   8. add 1 current workload-layer instance  (the workload→workload target)
+  function _r8_setupMapFixture() {
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitContextEdit({ customer: { name: "R8-2 Co", vertical: "Enterprise", region: "EMEA" } });
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    commitEnvAdd({ envCatalogId: "drDc" });
+    var envA = getActiveEngagement().environments.allIds[0];
+    var envB = getActiveEngagement().environments.allIds[1];
+    // 1 · workload (source)
+    commitInstanceAdd({
+      state: "current", layerId: "workload", environmentId: envA,
+      label: "R8-2 wkl", vendor: "X", vendorGroup: "custom",
+      criticality: "Medium", disposition: "keep"
+    });
+    var workloadId = getActiveEngagement().instances.allIds.at(-1);
+    // 2 · compute current envA (happy-path target)
+    commitInstanceAdd({
+      state: "current", layerId: "compute", environmentId: envA,
+      label: "R8-2 cmpA", vendor: "X", vendorGroup: "custom",
+      criticality: "Medium", disposition: "keep"
+    });
+    var computeA = getActiveEngagement().instances.allIds.at(-1);
+    // 3 · compute current envA + disposition:retire (BUG-040 target)
+    commitInstanceAdd({
+      state: "current", layerId: "compute", environmentId: envA,
+      label: "R8-2 cmpRetire", vendor: "X", vendorGroup: "custom",
+      criticality: "Medium", disposition: "retire"
+    });
+    var computeRetire = getActiveEngagement().instances.allIds.at(-1);
+    // 4 · compute desired envA (state-mismatch target)
+    commitInstanceAdd({
+      state: "desired", layerId: "compute", environmentId: envA,
+      label: "R8-2 cmpDes", vendor: "X", vendorGroup: "custom",
+      criticality: "Medium", disposition: "keep"
+    });
+    var computeDes = getActiveEngagement().instances.allIds.at(-1);
+    // 5 · compute current envB (env-mismatch target)
+    commitInstanceAdd({
+      state: "current", layerId: "compute", environmentId: envB,
+      label: "R8-2 cmpB", vendor: "X", vendorGroup: "custom",
+      criticality: "Medium", disposition: "keep"
+    });
+    var computeB = getActiveEngagement().instances.allIds.at(-1);
+    // 6 · second workload (workload→workload target)
+    commitInstanceAdd({
+      state: "current", layerId: "workload", environmentId: envA,
+      label: "R8-2 wkl2", vendor: "X", vendorGroup: "custom",
+      criticality: "Medium", disposition: "keep"
+    });
+    var workload2 = getActiveEngagement().instances.allIds.at(-1);
+    return { envA, envB, workloadId, computeA, computeRetire, computeDes, computeB, workload2 };
+  }
+
+  it("V-INV-MAPWORKLOAD-NOT-WORKLOAD-SOURCE-1 · R8 #2 · I1 · mapWorkloadAssets refuses non-workload-layer source instance (returns ok:false + MAP_NOT_WORKLOAD_SOURCE)", async () => {
+    var f = _r8_setupMapFixture();
+    // computeA is layerId='compute', not 'workload'. Helper must refuse.
+    var r = commitWorkloadMap(f.computeA, [f.computeB]);
+    assertEqual(r.ok, false,
+      "R8 #2 / I1: mapWorkloadAssets MUST refuse non-workload source (got: " + JSON.stringify(r) + ")");
+    assert(r.errors && r.errors[0] && r.errors[0].code === "MAP_NOT_WORKLOAD_SOURCE",
+      "R8 #2 / I1: error code MUST be MAP_NOT_WORKLOAD_SOURCE (got: " + JSON.stringify(r.errors) + ")");
+  });
+
+  it("V-INV-MAPWORKLOAD-DEDUPE-1 · R8 #2 · I2 · mapWorkloadAssets silently dedupes assetIds (order-preserving, first occurrence wins)", async () => {
+    var f = _r8_setupMapFixture();
+    // Pass [computeA, computeA, computeA] — the helper must commit a single
+    // entry. No error; mappedAssetIds.length === 1.
+    var r = commitWorkloadMap(f.workloadId, [f.computeA, f.computeA, f.computeA]);
+    assertEqual(r.ok, true,
+      "R8 #2 / I2: dedupe MUST succeed silently (got: " + JSON.stringify(r) + ")");
+    var post = getActiveEngagement().instances.byId[f.workloadId];
+    assertEqual(post.mappedAssetIds.length, 1,
+      "R8 #2 / I2: mappedAssetIds MUST contain exactly one entry after dedupe (got: " + JSON.stringify(post.mappedAssetIds) + ")");
+    assertEqual(post.mappedAssetIds[0], f.computeA,
+      "R8 #2 / I2: dedupe MUST preserve first occurrence");
+  });
+
+  it("V-INV-MAPWORKLOAD-ASSET-NOT-FOUND-1 · R8 #2 · I3 · mapWorkloadAssets refuses non-existent asset id (returns ok:false + MAP_ASSET_NOT_FOUND)", async () => {
+    var f = _r8_setupMapFixture();
+    var r = commitWorkloadMap(f.workloadId, ["00000000-0000-4000-8000-deadbeefcafe"]);
+    assertEqual(r.ok, false, "R8 #2 / I3: dangling asset id MUST be rejected");
+    assert(r.errors && r.errors[0] && r.errors[0].code === "MAP_ASSET_NOT_FOUND",
+      "R8 #2 / I3: error code MUST be MAP_ASSET_NOT_FOUND (got: " + JSON.stringify(r.errors) + ")");
+  });
+
+  it("V-INV-MAPWORKLOAD-SELF-1 · R8 #2 · I4 · mapWorkloadAssets refuses workload-self-map (returns ok:false + MAP_SELF)", async () => {
+    var f = _r8_setupMapFixture();
+    var r = commitWorkloadMap(f.workloadId, [f.workloadId]);
+    assertEqual(r.ok, false, "R8 #2 / I4: self-map MUST be rejected");
+    assert(r.errors && r.errors[0] && r.errors[0].code === "MAP_SELF",
+      "R8 #2 / I4: error code MUST be MAP_SELF (got: " + JSON.stringify(r.errors) + ")");
+  });
+
+  it("V-INV-MAPWORKLOAD-WORKLOAD-TO-WORKLOAD-1 · R8 #2 · I5 · mapWorkloadAssets refuses target with layerId==='workload' (returns ok:false + MAP_WORKLOAD_TO_WORKLOAD)", async () => {
+    var f = _r8_setupMapFixture();
+    var r = commitWorkloadMap(f.workloadId, [f.workload2]);
+    assertEqual(r.ok, false, "R8 #2 / I5: workload→workload map MUST be rejected");
+    assert(r.errors && r.errors[0] && r.errors[0].code === "MAP_WORKLOAD_TO_WORKLOAD",
+      "R8 #2 / I5: error code MUST be MAP_WORKLOAD_TO_WORKLOAD (got: " + JSON.stringify(r.errors) + ")");
+  });
+
+  it("V-INV-MAPWORKLOAD-STATE-MISMATCH-1 · R8 #2 · I6 · mapWorkloadAssets refuses cross-state map (current workload to desired asset; returns ok:false + MAP_STATE_MISMATCH)", async () => {
+    var f = _r8_setupMapFixture();
+    var r = commitWorkloadMap(f.workloadId, [f.computeDes]);
+    assertEqual(r.ok, false, "R8 #2 / I6: cross-state map MUST be rejected");
+    assert(r.errors && r.errors[0] && r.errors[0].code === "MAP_STATE_MISMATCH",
+      "R8 #2 / I6: error code MUST be MAP_STATE_MISMATCH (got: " + JSON.stringify(r.errors) + ")");
+  });
+
+  it("V-INV-MAPWORKLOAD-ENV-MISMATCH-1 · R8 #2 · I7 · mapWorkloadAssets refuses cross-env map (workload in envA to asset in envB; returns ok:false + MAP_ENV_MISMATCH)", async () => {
+    var f = _r8_setupMapFixture();
+    var r = commitWorkloadMap(f.workloadId, [f.computeB]);
+    assertEqual(r.ok, false, "R8 #2 / I7: cross-env map MUST be rejected");
+    assert(r.errors && r.errors[0] && r.errors[0].code === "MAP_ENV_MISMATCH",
+      "R8 #2 / I7: error code MUST be MAP_ENV_MISMATCH (got: " + JSON.stringify(r.errors) + ")");
+  });
+
+  it("V-INV-MAPWORKLOAD-RETIRED-ASSET-1 · R8 #2 · I8 · BUG-040 · mapWorkloadAssets refuses asset with disposition==='retire' (returns ok:false + MAP_TO_RETIRED_ASSET)", async () => {
+    // BUG-040 closure: pre-fix the helper happily accepted a retired-asset
+    // target, creating a dangling reference when the asset was later removed.
+    // Now the gate fires atomically on commit. The user's escape hatch is
+    // to map to the replacement desired-state asset instead.
+    var f = _r8_setupMapFixture();
+    var r = commitWorkloadMap(f.workloadId, [f.computeRetire]);
+    assertEqual(r.ok, false, "R8 #2 / I8 / BUG-040: retired-asset map MUST be rejected");
+    assert(r.errors && r.errors[0] && r.errors[0].code === "MAP_TO_RETIRED_ASSET",
+      "R8 #2 / I8 / BUG-040: error code MUST be MAP_TO_RETIRED_ASSET (got: " + JSON.stringify(r.errors) + ")");
+    // Workload's mappedAssetIds MUST NOT have been mutated.
+    var post = getActiveEngagement().instances.byId[f.workloadId];
+    assertEqual(post.mappedAssetIds.length, 0,
+      "R8 #2 / I8: failed map MUST NOT mutate workload state");
+  });
+
+  it("V-INV-MAPWORKLOAD-HAPPY-1 · R8 #2 · happy-path · mapWorkloadAssets accepts a same-state same-env non-workload non-retired asset and commits the mapping atomically", async () => {
+    // Sanity check: the gate isn't over-restrictive. A clean valid map
+    // commits, mappedAssetIds reflects the input, no errors.
+    var f = _r8_setupMapFixture();
+    var r = commitWorkloadMap(f.workloadId, [f.computeA]);
+    assertEqual(r.ok, true,
+      "R8 #2: clean valid map MUST succeed (got: " + JSON.stringify(r) + ")");
+    var post = getActiveEngagement().instances.byId[f.workloadId];
+    assertEqual(post.mappedAssetIds.length, 1, "R8 #2: mappedAssetIds.length === 1");
+    assertEqual(post.mappedAssetIds[0], f.computeA, "R8 #2: mappedAssetIds[0] === target");
+  });
+
   it("V-FLOW-GAPS-SELECTION-PERSIST-1 · BUG-051 (closes BUG-032 root cause) guard: GapsEditView selectedGapId persists across commitGapLink*-driven re-render; gap detail panel + link buttons survive add-link / unlink / edit cycles", async () => {
     // User report 2026-05-09: clicking + Link desired instance / + Link
     // current instance after a successful link cycle felt like the buttons
@@ -10172,7 +10336,11 @@ import {
   commitGapLinkCurrentInstance,
   commitGapLinkDesiredInstance,
   // rc.7 / 7e-8b' · v3-pure driver fixture surface for Suite 12.
-  commitDriverAdd
+  commitDriverAdd,
+  // rc.7 R8 #2 (v3-invariant-enforcement arc · 2026-05-09) · v3-pure
+  // workload→asset mapping with helper-layer invariant enforcement.
+  // Used by V-INV-MAPWORKLOAD-* tests to assert I1..I8 gates fire atomically.
+  commitWorkloadMap
 } from "../state/adapter.js";
 // rc.7 / 7e-8 redo Step I Phase I-B-13 · v3 dispositionLogic helpers for
 // the RH9 v3-direct rewrite. buildGapFromDispositionV3 takes (engagement,

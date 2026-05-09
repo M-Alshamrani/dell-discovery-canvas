@@ -123,7 +123,111 @@ export function linkOrigin(engagement, desiredInstanceId, currentInstanceId) {
   return updateInstance(engagement, desiredInstanceId, { originId: currentInstanceId });
 }
 
-// mapWorkloadAssets sets workload.mappedAssetIds (cross-env supported).
+// mapWorkloadAssets sets workload.mappedAssetIds, enforcing the workload-
+// to-asset relationship invariants (R8 #2, rc.7 v3-invariant-enforcement
+// arc · 2026-05-09). Pre-fix this was a thin updateInstance wrapper with
+// NO enforcement: ANY caller (UI, AI write paths, integrations) could map
+// a workload to itself, to another workload, to a cross-state/cross-env
+// asset, or to an asset being retired (BUG-040). Now atomic in the helper
+// per the v2.3.1 / Phase 16 contract preserved in HANDOFF "Open R8 backlog"
+// item #2.
+//
+// Invariants enforced (all atomic; first violation aborts the commit):
+//   I1 · workload.layerId === "workload" (only workload-layer instances
+//        carry mappedAssetIds; other layers reject the call entirely)
+//   I2 · dedupe assetIds (silent — duplicates collapse to a unique set;
+//        order-preserving for the first occurrence)
+//   I3 · asset must exist in engagement.instances.byId (no dangling refs)
+//   I4 · workloadId NOT in the asset list (self-map forbidden — a workload
+//        cannot be its own infrastructure)
+//   I5 · asset.layerId !== "workload" (workload→workload forbidden;
+//        workloads only map to infrastructure layers — compute / storage /
+//        network / data-protection / virtualization / infrastructure)
+//   I6 · asset.state === workload.state (current workload maps current
+//        infra; desired workload maps desired infra; cross-state mapping
+//        leaks lifecycle boundaries)
+//   I7 · asset.environmentId === workload.environmentId (a workload lives
+//        in one environment; its mapped infrastructure must run there too.
+//        Hybrid workloads are modelled by creating one workload tile per
+//        environment, each mapping to its local stack — same-env constraint
+//        is the v2.3.1 contract preserved)
+//   I8 · asset.disposition !== "retire" (BUG-040: workload cannot map to
+//        an asset being retired — that creates dangling references when
+//        the asset is removed; the user should map to the replacement
+//        desired-state asset instead. If the user intends to track a
+//        retiring dependency, they should NOT pin it via mappedAssetIds —
+//        that signal belongs in a different model · workload.transitionPlan
+//        or similar v3.1 schema-widening work · BUG-040 / BUG-039 family)
 export function mapWorkloadAssets(engagement, workloadInstanceId, assetIds) {
-  return updateInstance(engagement, workloadInstanceId, { mappedAssetIds: assetIds });
+  const workload = engagement.instances.byId[workloadInstanceId];
+  if (!workload) {
+    return { ok: false, errors: [{ path: "workloadInstanceId",
+      message: "Workload instance '" + workloadInstanceId + "' not found",
+      code: "WORKLOAD_NOT_FOUND" }] };
+  }
+  // I1
+  if (workload.layerId !== "workload") {
+    return { ok: false, errors: [{ path: "workloadInstanceId",
+      message: "mapWorkloadAssets: source '" + (workload.label || workload.id) + "' is not a workload-layer instance (layerId='" + workload.layerId + "')",
+      code: "MAP_NOT_WORKLOAD_SOURCE" }] };
+  }
+  if (!Array.isArray(assetIds)) {
+    return { ok: false, errors: [{ path: "assetIds",
+      message: "assetIds must be an array",
+      code: "MAP_INVALID_ARG" }] };
+  }
+  // I2 · dedupe (order-preserving, first occurrence wins)
+  const seen = new Set();
+  const dedupedAssetIds = [];
+  for (const id of assetIds) {
+    if (typeof id !== "string" || id.length === 0) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    dedupedAssetIds.push(id);
+  }
+  // I3..I8 · per-asset gate
+  for (const assetId of dedupedAssetIds) {
+    // I4 · self-map
+    if (assetId === workloadInstanceId) {
+      return { ok: false, errors: [{ path: "assetIds",
+        message: "mapWorkloadAssets: a workload cannot map to itself",
+        code: "MAP_SELF" }] };
+    }
+    const asset = engagement.instances.byId[assetId];
+    // I3 · existence
+    if (!asset) {
+      return { ok: false, errors: [{ path: "assetIds",
+        message: "mapWorkloadAssets: asset instance '" + assetId + "' not found",
+        code: "MAP_ASSET_NOT_FOUND" }] };
+    }
+    // I5 · workload→workload forbidden
+    if (asset.layerId === "workload") {
+      return { ok: false, errors: [{ path: "assetIds",
+        message: "mapWorkloadAssets: target '" + (asset.label || asset.id) + "' is itself a workload — workloads only map to infrastructure layers",
+        code: "MAP_WORKLOAD_TO_WORKLOAD" }] };
+    }
+    // I6 · state mismatch
+    if (asset.state !== workload.state) {
+      return { ok: false, errors: [{ path: "assetIds",
+        message: "mapWorkloadAssets: state mismatch — " + workload.state + " workload cannot map to a " + asset.state + " asset",
+        code: "MAP_STATE_MISMATCH" }] };
+    }
+    // I7 · cross-env mismatch
+    if (asset.environmentId !== workload.environmentId) {
+      return { ok: false, errors: [{ path: "assetIds",
+        message: "mapWorkloadAssets: environment mismatch — workload is in " +
+          workload.environmentId + ", asset is in " + asset.environmentId +
+          ". Create a separate workload tile in '" + asset.environmentId +
+          "' to model hybrid deployments.",
+        code: "MAP_ENV_MISMATCH" }] };
+    }
+    // I8 · BUG-040 · retired-asset gate
+    if (asset.disposition === "retire") {
+      return { ok: false, errors: [{ path: "assetIds",
+        message: "mapWorkloadAssets: target '" + (asset.label || asset.id) + "' has disposition 'retire' — cannot map a workload to an asset being retired (BUG-040). Map to the replacement desired-state asset instead.",
+        code: "MAP_TO_RETIRED_ASSET" }] };
+    }
+  }
+  // All invariants pass · delegate to updateInstance for the actual commit.
+  return updateInstance(engagement, workloadInstanceId, { mappedAssetIds: dedupedAssetIds });
 }
