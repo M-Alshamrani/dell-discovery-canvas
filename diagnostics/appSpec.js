@@ -14273,6 +14273,43 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "buildLabelMap with null collections returns empty object (no throw)");
     });
 
+    it("V-CHAT-39 · BUG-044 chat-half guard: buildLabelMap resolves v3 driver UUID -> BUSINESS_DRIVERS catalog label (not UUID -> UUID), so scrubber actually scrubs the LLM's prose", async () => {
+      // V-CHAT-38 above passed a hand-crafted driver shape with both
+      // `id` and `label` fields. Real v3 driver records produced by
+      // commitDriverAdd carry { id: <uuid>, businessDriverId, priority,
+      // outcomes } — NO `label` field. Pre-fix, buildLabelMap fell back
+      // to drv.id (the UUID itself), producing a uuid->uuid map entry
+      // that turned scrubUuidsInProse into a no-op. The LLM's UUID
+      // emissions stayed visible in chat. Fix resolves the catalog
+      // label via BUSINESS_DRIVERS keyed by drv.businessDriverId.
+      const { buildLabelMap, scrubUuidsInProse } = await import("../services/uuidScrubber.js");
+
+      _resetEngagementStoreForTests();
+      setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+      commitContextEdit({ customer: { name: "BUG-044 Chat Co", vertical: "Enterprise", region: "EMEA" } });
+      const addRes = commitDriverAdd({ businessDriverId: "cyber_resilience", priority: "High", outcomes: "" });
+      const driverUuid = addRes && addRes.engagement && addRes.engagement.drivers.allIds[0];
+      assert(driverUuid && /[0-9a-f]{8}-[0-9a-f]{4}/.test(driverUuid),
+        "test setup requires a v3 UUID-keyed driver");
+
+      const map = buildLabelMap(getActiveEngagement());
+      assert(typeof map[driverUuid] === "string" && map[driverUuid].length > 0,
+        "buildLabelMap MUST emit an entry for the v3 driver UUID");
+      assert(map[driverUuid] !== driverUuid,
+        "BUG-044: buildLabelMap MUST NOT map UUID -> UUID; got map[" + driverUuid + "]='" + map[driverUuid] + "'");
+      assert(/cyber/i.test(map[driverUuid]),
+        "BUG-044: buildLabelMap MUST resolve the v3 driver UUID to its catalog label ('Cyber Resilience'); got: '" + map[driverUuid] + "'");
+
+      // End-to-end: scrubUuidsInProse with the real v3 map actually
+      // replaces the UUID in prose with the human label.
+      const text = "The user wants to invest in driver " + driverUuid + " this quarter.";
+      const scrubbed = scrubUuidsInProse(text, map);
+      assert(scrubbed.indexOf(driverUuid) < 0,
+        "BUG-044: scrubUuidsInProse MUST remove the UUID from prose (got: '" + scrubbed + "')");
+      assert(/cyber/i.test(scrubbed),
+        "BUG-044: scrubbed prose MUST contain the catalog label (got: '" + scrubbed + "')");
+    });
+
     // -----------------------------------------------------------------
     // V-CONCEPT-1..5 · Phase B2 · Concept dictionary grounding
     // (per SPEC §S27 + RULES §16 CH21). Wires the 62-entry concept

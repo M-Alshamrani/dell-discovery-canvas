@@ -35,6 +35,15 @@
 
 import { WORKFLOWS } from "../core/appManifest.js";
 import { CONCEPTS }  from "../core/conceptManifest.js";
+// rc.7 / 7e-8 BUG-044 chat-half fix · v3 driver objects shape is
+// { id: <uuid>, businessDriverId: "cyber_resilience", priority, outcomes }
+// — no `label` field. Pre-fix, buildLabelMap fell back to drv.id (the
+// UUID) when drv.label was undefined, mapping uuid → uuid. The scrubber
+// then "replaced" the LLM's UUID with itself = no-op = leaked UUID in
+// chat response. Resolve via BUSINESS_DRIVERS catalog instead. Same
+// pattern as ENV_CATALOG could apply to env aliases for parity, but
+// envs already have alias/envCatalogId fallbacks that work today.
+import { BUSINESS_DRIVERS } from "../core/config.js";
 
 const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 
@@ -69,10 +78,22 @@ export function buildLabelMap(engagement) {
       }
     }
   }
-  // Drivers — label is the user-facing name (e.g. "Cyber resilience").
+  // Drivers — v3 stores driver records as { id: <uuid>, businessDriverId,
+  // priority, outcomes }; the human label lives in the BUSINESS_DRIVERS
+  // catalog keyed by businessDriverId. Resolve through the catalog so
+  // the scrubber can swap "00000000-...-001" → "Cyber Resilience" in
+  // the LLM's prose. Pre-fix this branch fell back to drv.id (the UUID
+  // itself) and mapped uuid → uuid, so the scrubber's "replace" was a
+  // no-op (BUG-044 chat half).
   if (engagement.drivers && engagement.drivers.byId) {
     for (const [id, drv] of Object.entries(engagement.drivers.byId)) {
-      const lbl = drv && (drv.label || drv.id);
+      if (!drv) continue;
+      let lbl = drv.label;   // legacy + future-proof for label-bearing v3 records
+      if (!lbl && drv.businessDriverId) {
+        const meta = BUSINESS_DRIVERS.find(function(b) { return b.id === drv.businessDriverId; });
+        if (meta && typeof meta.label === "string" && meta.label.length > 0) lbl = meta.label;
+      }
+      if (!lbl) lbl = drv.businessDriverId;   // last-resort typeId (still readable, not a UUID)
       if (typeof lbl === "string" && lbl.length > 0) {
         map[id] = lbl;
       }
