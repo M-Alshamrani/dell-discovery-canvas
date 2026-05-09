@@ -203,3 +203,61 @@ In a subscribe-driven shell architecture (post-Step-G v3-pure), every commit* op
 - `CanvasChatOverlay` — state object module-scope per existing architecture.
 
 **v3.1 polish-arc audit prescription**: any new view that holds user-edit-in-progress selection MUST lift to module scope. Closure-local selection vars are an explicit anti-pattern in subscribe-driven shells.
+
+---
+
+## Evening arc — BUG-A/B/C + Z2 label-resolver centralization (2026-05-09 PM)
+
+After R8 ship, user reported 3 bugs from live use. All shipped + Z2 architectural follow-on.
+
+**Banner trajectory (evening)**: 1166 → 1169 → 1171 → 1179 → 1186 (+20 assertions across 4 fix commits; +1 docs commit).
+
+| Commit | Banner Δ | Theme |
+|---|---|---|
+| `ecc429e` | 1166→1169 | **BUG-B** · v3 `engagementStore._persist` calls `markSaved()` (chain severed by Step H sessionStore deletion; capsule pulsed "Saving..." forever) · V-FLOW-SAVE-STATUS-1/DEMO-1/COMMIT-1 |
+| `9913658` | 1169→1171 | **BUG-C** · `app.js` gates `setTimeout(runAllTests, 150)` behind `?runTests=1` URL / `localStorage.runTestsOnBoot` / `window.runDellDiscoveryTests()` opt-in; production users see clean boot · V-FLOW-TEST-OPT-IN-1/2 |
+| `5792d43` | 1171→1179 | **BUG-A** (BUG-053) + **SPEC §S43** · two-layer reference-integrity contract. Layer 1 = `core/engagementIntegrity.js scrubEngagementOrphans` runs at `_rehydrateFromStorage`. Layer 2 = UI label resolvers return structured placeholders. Pure idempotent · V-INV-ORPHAN-REFS-1..5 + V-INV-ORPHAN-IDEMPOTENT-1 + V-FLOW-LABEL-RESOLVER-1/2 |
+| `bafc578` | 1179→1186 | **Z2 closure** + **SPEC §S43.3 amendment** · NEW `core/labelResolvers.js` is single source of truth for env/layer/driver/instance label resolution. 5 sites migrated. Defensive (never throws on render path) · V-FLOW-LABEL-CENTRAL-1..7 + 1 in-loop regression caught + reverted (R7) |
+| `a839a54` | docs | HANDOFF refresh closing `feedback_docs_inline.md` doc-debt for the 4 prior commits |
+
+### BUG-A — UUID leak root cause + fix architecture
+
+User screenshot showed gap card meta line `Compute - introduce | 00000000-0000-4000-8000-000000000001` on Saudi Aramco engagement. The leaking UUID was the **schema placeholder** (`schema/instance.js` line 79 `environmentId` default + `schema/gap.js` line 67 `affectedEnvironments` default). Pre-fix:
+- Some upstream path created a desired instance without an explicit `environmentId`
+- Schema default kicked in (the placeholder UUID)
+- Auto-draft propagated to gap.affectedEnvironments
+- UI envName resolver fell back to `: uuidOrCatalogId` raw return
+
+**Two-layer architectural response** (SPEC §S43):
+- **Layer 1 (data)** · `core/engagementIntegrity.js` (NEW · 165 LOC). Pure idempotent function. Drops/nulls/repairs orphan refs at engagement-load. Reference-equal pass-through fast path. Wired into `engagementStore._rehydrateFromStorage` (runs once per boot).
+- **Layer 2 (UI)** · UI label resolvers return `"(unknown environment)"` / `"(unknown driver)"` / etc. for orphans. NEVER raw UUIDs.
+
+### Z2 — label-resolver centralization (BUG-A audit follow-on)
+
+Audit found **4 latent UUID-leak surfaces** beyond BUG-A's two: roadmapService `envLabel`/`layerLabel`, MatrixView cmd-palette ctx, SummaryVendorView layer-slice. Each had its own inline `?: rawId` fallback. Per the user's locked direction "no hardcoded, no patch work, scalable and maintainable structured work" (verbatim 2026-05-09 PM), the architecturally honest answer = one module, one contract, one test surface.
+
+**NEW `core/labelResolvers.js`** (155 LOC) exports `envLabel` / `layerLabel` / `driverLabel` / `instanceLabel` + `PLACEHOLDER_*` constants. Each resolver: (1) walks active engagement (v3 UUID), (2) falls back to v2 catalog typeIds, (3) returns structured placeholder. Defensive — never throws on render path.
+
+**5 sites migrated**: GapsEditView envName · programsService driverLabel (preserves legacy null-for-falsy contract at wrapper for selectors/gapsKanban + V-CHAT-21 back-compat) · roadmapService envLabel/layerLabel · MatrixView cmd-palette · SummaryVendorView layer-slice.
+
+**In-loop regression caught**: First MatrixView edit removed `var envCatalogId = _envCatalogIdFromUuid(envUuid)` — the variable was used downstream at line 486 for catalog filtering. 5 palette tests went RED. Per **R7 (revert, don't fix-forward)** restored declaration; second iteration GREEN. Documents the discipline working as designed.
+
+### Visible behavior changes for the user on next page-reload
+
+- Header capsule reads "Saved Just Now / Saved Ns ago" (was stuck "Saving...").
+- Production users see no test pass; QA opt-in via `?runTests=1` or `localStorage.setItem("runTestsOnBoot","1")` or `window.runDellDiscoveryTests()` from devtools.
+- Saudi Aramco stale state: scrubber repairs the placeholder UUID in gap.affectedEnvironments → falls back to first visible env. Gap-card displays "Compute - introduce | Madinah" instead of UUID. **No data loss** — only orphan refs touched.
+
+### AI-enhancement readiness substrate
+
+Per the user's 2026-05-09 PM direction "when we get to AI enhancements we will need all data models and relationships modeled functionally not hardcoded": SPEC §S43 + Z2 closure is the substrate. The grounding meta-model (§S25) consumes cleaned data; future AI prompt assemblers + tool-use round-trips get clean labels via centralized resolvers, never orphan UUIDs.
+
+**Architectural extension contract** (SPEC §S43.3 / F43.1): every future label resolver (skill labels, service labels, etc.) MUST live in `core/labelResolvers.js`. Source-grep test V-FLOW-LABEL-CENTRAL-7 catches any PR that re-introduces inline `?: rawId` resolution logic.
+
+### Total session count
+
+- **Banner**: 1142 → **1186 GREEN ✅** (+44 assertions today)
+- **Commits today**: 24 (R8 arc + post-R8 polish + BUG-A/B/C + Z2 + docs)
+- **Bugs closed**: 18 today (BUG-001/002/019/027/028/032/041/042/043/044/045/047/048/049/051/052 + BUG-040 + BUG-A/053 + BUG-B + BUG-C)
+- **NEW SPEC sections**: §S42 (R8 invariant gates) · §S43 (reference integrity + label resolvers)
+- **NEW modules**: `core/engagementIntegrity.js` · `core/labelResolvers.js`
