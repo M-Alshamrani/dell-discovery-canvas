@@ -261,3 +261,82 @@ Per the user's 2026-05-09 PM direction "when we get to AI enhancements we will n
 - **Bugs closed**: 18 today (BUG-001/002/019/027/028/032/041/042/043/044/045/047/048/049/051/052 + BUG-040 + BUG-A/053 + BUG-B + BUG-C)
 - **NEW SPEC sections**: §S42 (R8 invariant gates) · §S43 (reference integrity + label resolvers)
 - **NEW modules**: `core/engagementIntegrity.js` · `core/labelResolvers.js`
+
+---
+
+## Late evening — BUG-B regression + BUG-D + Northstar demo + BUG-E + BUG-F + rc.7 TAG
+
+After the Z2 push, user did hands-on workshop testing on simulated data and reported a fresh round of bugs:
+
+### BUG-B regression — capsule still stuck "Saving..."
+
+The first BUG-B fix (`ecc429e`) added `markSaved()` to `engagementStore._persist`. But 5 explicit `markSaving()` call sites in `app.js` + `aiCommands.js` + `aiUndoStack.js` fired AFTER `setActiveEngagement`, **overriding** the markSaved that `_persist` had just fired. Header pulsed to "Saving..." and stayed there forever.
+
+**Fix** (`ad5e631`): dropped all 5 explicit `markSaving()` calls. `_persist` drives the state machine end-to-end. Source-grep test V-FLOW-SAVE-STATUS-NO-OVERRIDE-1 catches any future regression.
+
+### BUG-D — manual gaps mis-counted as auto-drafted
+
+`isAutoDrafted(gap)` used the shape proxy `relatedDesiredInstanceIds.length > 0`. Manually-added gaps that the user later linked → mis-classified as auto-drafted. The "X auto-drafted gaps from Desired State" banner inflated.
+
+**Fix** (`ad5e631`): NEW schema field **`gap.origin`** (`manual` | `autoDraft`). Default `autoDraft` for back-compat. `isAutoDrafted(gap) → gap.origin === "autoDraft"`. Banner copy made subtle (matches Desired State pattern). Surfaced to AI grounding meta-model via `core/dataContract.js`. 4 regression tests V-FLOW-GAP-ORIGIN-1/2/3/4.
+
+### Northstar Health demo rewrite (`b554c53`)
+
+Per user direction: rewrite for an exec audience with easy-to-pick labels + Dell-replace stories. **Northstar Health Network** · 4 sites (Main DC + DR + Branch Clinic + GCP) · 4 drivers (Cyber/Modernize/AI/Cost) · 9 gaps. PowerEdge R770 (NOT MX which is older).
+
+Each Dell-replace story hits a real customer-CIO pain point:
+1. EHR compute: HPE ProLiant → PowerEdge R770 (modernize)
+2. Tier-1 storage: NetApp AFF → PowerStore 1200T (modernize)
+3. Backup: Veeam + tape → PowerProtect DD9410 + Cyber Recovery Vault (cyber)
+4. Analytics tier: Pure FlashArray → PowerScale F210 (ai_data)
+5. Clinical Analytics workload: ENHANCE with PowerScale + GCP burst (ai_data)
+6. Net-new Radiology AI: PowerEdge XE9680 8x H100 (ai_data)
+7. Branch Clinic: Lenovo + virt + storage → VxRail VD-4000 (cost)
+8. GCP DR egress: APEX Backup Services (cyber)
+9. HIPAA tabletop drill (manual ops gap; pairs with Cyber Recovery Vault)
+
+Schema-validated at module load (V-DEMO-1..9 + DS1..21 GREEN). Provenance demonstration on the cyber-replace gap (full §S8.1 wrapper). All test surfaces updated: V-FLOW-REHYDRATE-1 customer name, V-DEMO-8 driver count, V-DEMO-9 gap_type coverage including enhance.
+
+### BUG-E — Reporting Roadmap drivers empty (cc3a3b1)
+
+User: "in the reporting, none of the gaps are linked to drivers in the roadmap... a major flaw and an important feature to have the strategic drivers as our project portfolios encapsulating all the gaps that will be under that driver for funding, planning and project planning."
+
+**Root cause**: `state/projection.js` (the v3→v2 down-converter ReportingView consumes via `getEngagementAsSession`) did NOT remap `gap.driverId` from v3 UUID → v2 typeId. Sister adapter `state/legacySessionAdapter.js` (used for `.canvas` file save) DOES remap (line 123). Drift.
+
+`groupProjectsByProgram` checks `Set(addedDriverIds).has(project.driverId)` — addedIds set contained typeIds from `session.customer.drivers[].id`, but `project.driverId` was the gap's v3 UUID → miss every project → all projects fell into the `unassigned` swimlane.
+
+**Fix** (`cc3a3b1`): mirror the existing `envUuidToCatalogId` remap pattern in `projection.js`. Add `driverUuidToTypeId` map; remap `gap.driverId` in the gaps projection. 3 regression tests:
+- V-FLOW-DRIVER-PROJECTION-1 (UUID → typeId)
+- V-FLOW-DRIVER-PROJECTION-2 (null preserved; no false-positive)
+- V-FLOW-ROADMAP-DRIVER-GROUPING-1 (Northstar demo: every driver has ≥1 project after grouping)
+
+### BUG-F — Review all banner UX (cc3a3b1)
+
+User: "gaps auto review message has a button that says review all, i would rather if clicked to highlight the gaps that needs review and the button itself should be aligned to the right-most of the bubble banner that it is inside."
+
+**Fixes**:
+- `.auto-gap-notice` now uses `display: flex; justify-content: space-between` — message left, button right-aligned in the bubble
+- Click "Review all" → adds `.gap-card-highlighted-review` class to every unreviewed-autoDraft gap card (outline + brief animation), no longer walks-one-at-a-time. User scans + picks first.
+- New CSS: `@keyframes review-highlight-pulse` (auto-fades ~2.4s)
+- Cards now carry `data-gap-id` attribute for the highlight selector
+- 2 regression tests V-FLOW-REVIEW-ALL-HIGHLIGHT-1 + V-FLOW-REVIEW-ALL-LAYOUT-1
+
+### Session-management feature backlogged (ROADMAP.md)
+
+Per user direction: backlog the session-save / RPO / undo feature for v3.1+. Not implemented — spec'd in `ROADMAP.md §4 v3.1+ session lifecycle management`. Authoring sequence locked: SPEC §S44 + RULES + V-FLOW-SNAPSHOT-* tests before implementation.
+
+### rc.7 TAG (this entry's centerpiece)
+
+After 21 bugs closed today (BUG-001/002/019/027/028/032/040/041/042/043/044/045/047/048/049/051/052 + BUG-A/B/C/D/E/F), banner climbed 1138 → **1196/1196 GREEN ✅**.
+
+APP_VERSION bumped `3.0.0-rc.7-dev` → `3.0.0-rc.7`. Commit + tag `v3.0.0-rc.7` + push.
+
+### Final session count (revised)
+
+- **Banner**: 1142 → **1196 GREEN ✅** (+54 assertions today)
+- **Commits today**: ~30 (R8 arc + post-R8 polish + BUG-A/B/C/D/E/F + Z2 + Northstar demo rewrite + tag-prep docs)
+- **Bugs closed**: **21 today** (the 18 above + BUG-D + BUG-E + BUG-F)
+- **NEW SPEC sections**: §S42 (R8 invariant gates) · §S43 (reference integrity + label resolvers)
+- **NEW modules**: `core/engagementIntegrity.js` · `core/labelResolvers.js`
+- **Schema additions**: `gap.origin` (manual / autoDraft)
+- **Demo**: Northstar Health Network exec scenario shipping with the tag

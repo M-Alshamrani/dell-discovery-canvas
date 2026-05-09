@@ -1,6 +1,20 @@
 # v3.0.0-rc.7 — release notes
 
-**Tagged**: TBD (gated on PREFLIGHT 5b real-LLM smoke) · **Branch**: `v3.0-data-architecture` · **Banner**: 1138/1138 GREEN ✅ · **APP_VERSION at tag**: `"3.0.0-rc.7"`
+**Tagged**: 2026-05-09 PM · **Branch**: `v3.0-data-architecture` · **Banner**: **1196/1196 GREEN ✅** · **APP_VERSION at tag**: `"3.0.0-rc.7"`
+
+## Top-line summary (rc.6 → rc.7)
+
+Banner 1187 → **1196** (+9 net; many tests rewrote-in-place during the v2 architecture deletion + invariant arc). Today (2026-05-09 PM) was a major bug-closure + invariant-hardening + demo-rewrite pass.
+
+**v2 architecture is GONE** (Step H+J+K mega-commit + 7e-8 redo Step I-A..B-34): 929 LOC of v2 code deleted; v3 engagement is sole source of truth across every production code path.
+
+**R8 invariant arc is CLOSED** (6/6 backlog items shipped 2026-05-09 PM): every helper-layer invariant gate is atomic now (AL10 / I1..I8 / L8 / G6 / setPrimaryLayer-rebalance / manual-add UI contract).
+
+**Reference integrity is structural** (SPEC §S43 NEW): `core/engagementIntegrity.js` scrubs orphan UUID refs at engagement-load; `core/labelResolvers.js` is the single source of truth for env / layer / driver / instance label resolution — UI surfaces NEVER display raw UUIDs.
+
+**21 user-reported bugs closed**: BUG-001/002/019/027/028/032/040/041/042/043/044/045/047/048/049/051/052 + BUG-A/B/C/D/E/F.
+
+**Demo rewrite**: Northstar Health Network 4-site exec-friendly scenario (Main DC + DR + Branch Clinic + GCP) showcasing Dell-replace stories with PowerEdge R770.
 
 ## Theme — v2 architecture deletion arc COMPLETE + bug-closure pass
 
@@ -66,20 +80,60 @@ The 4 v2-shape data factories (`session`, `createEmptySession`, `addInstance`, `
 - **R0..R11 Principal-Architect Discipline** (LOCKED 2026-05-08) — every commit in rc.7 governed by R11's four-block ritual (Recite + Answer + Execute + Pledge-Smoke-Screenshot) with `Browser smoke evidence:` block in every commit message.
 - **R5 spirit clarification** — fig-leaf forbids hiding v2 BEHAVIOR (atomic gates, helper-layer invariant enforcement) in `diagnostics/_*.js`; v2-shape DATA factories at the test boundary are allowed (per Phase I-B-31..34 LOCKED v2-shape-literal pattern + 49-test precedent).
 
+## 2026-05-09 PM addendum — closure pass before tag
+
+After the initial rc.7 tag-prep snapshot above (banner 1138), one more day of intensive bug-closure + invariant work landed before the actual tag:
+
+### R8 invariant arc CLOSED (6 commits)
+| Commit | Theme |
+|---|---|
+| `3184043` | R8 #1 — `updateGap` AL10/TX13.10 atomic gate (V-INV-UPDATEGAP-AL10-1/2/3) |
+| `8ad0219` | R8 #2 — `mapWorkloadAssets` I1..I8 invariants + **BUG-040 closure** (V-INV-MAPWORKLOAD ×9) |
+| `4ab0a77` | R8 #3 — `_gapUnlinkInstance` integration tests (V-INV-UNLINK-AL10-1/2/3) |
+| `4a8f8dc` | R8 #4 — `_gapLinkInstance` PHASE_CONFLICT_NEEDS_ACK gate (V-INV-LINK-PHASE-1/2/3/4) |
+| `ad8e919` | R8 #5 partial — `setPrimaryLayer` auto-rebalance G6 (V-INV-PRIMARY-LAYER-REBALANCE-1/2/3/4) |
+| `6a6b94f` | R8 #6 — manual-add dialog UI contract + **BUG-052 closure** (V-FLOW-MANUAL-ADD-1) |
+
+### BUG-A/B/C/D/E/F closure (6 commits + supporting)
+| Commit | Theme |
+|---|---|
+| `ecc429e` | **BUG-B** — markSaved restored at v3 `engagementStore._persist` (chain severed by Step H sessionStore deletion; capsule pulsed "Saving..." forever) |
+| `9913658` | **BUG-C** — test-runner opt-in gate (`?runTests=1` / `localStorage.runTestsOnBoot` / `window.runDellDiscoveryTests()`) so production users don't race against the 70s test pass on Load demo |
+| `5792d43` | **BUG-A (BUG-053)** + **SPEC §S43** — two-layer engagement reference-integrity contract (NEW `core/engagementIntegrity.js` scrubber + UI label resolver placeholders; no more raw-UUID leaks into gap-card meta lines) |
+| `bafc578` | **Z2** — NEW `core/labelResolvers.js` single source of truth for env/layer/driver/instance label resolution; 5 sites migrated; SPEC §S43.3 amendment |
+| `ad5e631` | **BUG-B regression closure** + **BUG-D** — dropped 5 explicit `markSaving()` calls that were overriding `_persist`'s `markSaved()`; added `gap.origin` schema field (manual / autoDraft) so the auto-draft banner stops mis-counting manual gaps |
+| `b554c53` | **Healthcare demo rewrite** — Northstar Health Network exec demo (4 sites: Main DC + DR + Branch Clinic + GCP; 4 drivers; 9 gaps; PowerEdge R770) |
+| `cc3a3b1` | **BUG-E** + **BUG-F** — projection.js gap.driverId UUID→typeId remap restores the driver-grouped Roadmap (was: every project fell into Unassigned swimlane); Review all button right-aligns + highlights cards instead of walking-one-at-a-time |
+
+### NEW SPEC sections added inline
+- **§S42** — v3 invariant-enforcement arc (R8 backlog as architectural annex; per-helper contract table + R42.1..5 + F42.1..3 + test contract)
+- **§S43** — engagement reference-integrity contract (two-layer scrubber + label resolvers); §S43.3 amended post-Z2 to make `core/labelResolvers.js` the single source of truth
+
+### NEW modules
+- **`core/engagementIntegrity.js`** — pure idempotent scrubber for orphan UUID refs (gap.driverId / gap.affectedEnvironments / gap.relatedCurrent/Desired / instance.originId / instance.mappedAssetIds)
+- **`core/labelResolvers.js`** — `envLabel` / `layerLabel` / `driverLabel` / `instanceLabel` + PLACEHOLDER_* constants; defensive (never throws on render path); v3 UUID + v2 typeId both resolve correctly
+
+### Schema additions
+- **`gap.origin`** (`manual` | `autoDraft`) — provenance flag separating user-authored gaps from auto-drafted-from-disposition gaps. Default `autoDraft` for back-compat with persisted gaps. Surfaced to AI grounding meta-model via `core/dataContract.js`.
+
 ## Path to v3.0.0 GA
 
 | Item | Status |
 |---|---|
 | v2 architecture deletion (Steps A..K) | ✅ COMPLETE this release |
-| All reported user bugs closed | ✅ COMPLETE this release |
-| Banner all-GREEN | ✅ 1138/1138 |
-| **PREFLIGHT 5b real-LLM live-key smoke** | ⬜ **GATED ON USER (this is the rc.7 tag gate)** |
-| Real-customer `.canvas` workshop validation round 2 | ⬜ Day 2 / GA |
-| R8 invariant arc (6 deferred items) | DEFERRED to v3.0.1 patch (per principal-architect descope decision 2026-05-09; caller-layer enforcement covers gates today; helper-layer is defense-in-depth) |
+| **R8 invariant arc** (6/6 helper-layer atomic gates) | ✅ **COMPLETE** this release (was deferred; lifted into rc.7 per 2026-05-09 PM workshop) |
+| **SPEC §S42 + §S43** (invariants + reference integrity contracts) | ✅ Authored inline |
+| All user-reported bugs closed | ✅ 21 today; 0 open critical |
+| Banner all-GREEN | ✅ **1196/1196** |
+| PREFLIGHT 5b real-LLM live-key smoke | ✅ confirmed by user 2026-05-09 ("AI chat works") |
+| Real-customer `.canvas` workshop validation round 2 | ⬜ **GA gate** — workshop run against the new Northstar demo + bug-spotting round |
+| AI-enhancement arc-1 (urgencyOverride auto-pin / instance-NAMES selectors / drivers+envs in WRITE_RESOLVERS) | ⬜ **GA-or-v3.1 decision pending** (audit + paths surfaced 2026-05-09 PM) |
+| Session lifecycle management (RPO snapshots / save browser / undo) | DEFERRED to v3.1+ (BACKLOGGED 2026-05-09 PM per user direction) |
 | Crown-jewel UI polish (BUG-022/037/038) | DEFERRED to v3.1 minor |
 | Vendor-mix data-model widening (BUG-039) | DEFERRED to v3.1+ |
 | v3-prefix module-name purge | DEFERRED to v3.0.1 (mechanical-only, no behaviour change) |
-| Merge `v3.0-data-architecture` → `main` | After GA tag |
+| docs/TAXONOMY.md v3-pure rewrite (currently v2.4.16) | DEFERRED to v3.1 (doc-only; out of scope for GA) |
+| **Merge `v3.0-data-architecture` → `main`** | **After GA tag (v3.0.0)** — NOT at rc.7 |
 
 ## How to PREFLIGHT 5b for the rc.7 tag
 

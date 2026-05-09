@@ -131,6 +131,31 @@
 - Possible: relationship-strength typing for gap.related* edges
 - Possible: cross-environment workload mapping with explicit affectedEnvironments
 
+### v3.1+ session lifecycle management — **NEW BACKLOG (2026-05-09 PM)**
+
+Per user direction 2026-05-09 evening: presales workshops accumulate substantial state during a session (drivers + envs + instances + gaps + AI mutations). Today the in-memory engagement persists to localStorage on every commit (SPEC §S31), but there's no rolling-history surface for time-travel within a session and no explicit-save/delete management. Workshop-friendly RPO + undo controls needed.
+
+**Scope sketch** (subject to SPEC §S44 + RULES authoring before implementation):
+
+- **Rolling auto-saves with RPO** — every ~3 minutes, snapshot the active engagement to a session-history slot. Cap N (e.g. 20 slots = ~1 hour of rolling history). User can rewind to any slot. Persistence: localStorage (multiple keys) or IndexedDB (cleaner for the snapshot fan-out).
+- **Manual save points** — explicit "save snapshot now" button surfaces in the topbar; user-named slot + timestamp; included in the rolling-history view.
+- **Saves browser** — UI surface (modal or panel) listing all snapshots with timestamps + previews (driver count, env count, gap count, customer name); click to restore. Confirmation prompt before restore (overwrites in-memory state).
+- **Per-snapshot delete + delete-undo** — user can delete a snapshot from the list; undo within session window (pushes onto the existing AI-undo-style stack OR a separate session-undo stack with same shape).
+- **AI-mutation undo extension** — extend the existing `state/aiUndoStack.js` shape (already AI-write-aware) to cover ALL state mutations, not just AI proposal applies. Or keep the AI-undo-stack scoped to AI writes + introduce a sibling `state/manualUndoStack.js` for manual edits + delete-undo. Architecturally cleaner separation.
+- **Cross-session save/restore** — separate from in-session snapshots. The existing `Save to file` / `Open file` `.canvas` workbook flow handles this today. Session-snapshot system is the in-session RPO layer.
+
+**Architectural prerequisites**:
+- SPEC §S44 (NEW) authoring — entity model for snapshot (id, timestamp, label, isManual, engagementSnapshot ref, parentSnapshotId for delta-storage if scope warrants)
+- TESTS V-FLOW-SNAPSHOT-* contract (auto-save fires every 3min while engagement-dirty, manual save on demand, restore round-trips JSON-identical, delete-undo within window, AI-undo + manual-undo stacks coexist)
+- RULES §16 CH37 (NEW) — snapshot lifecycle invariants (no-snapshot-during-replay; snapshot count cap; corruption tolerance like `_rehydrateFromStorage`)
+- Storage decision — localStorage multiple keys (simple but quota-bound) vs IndexedDB (no quota concerns, async API). Probably IndexedDB given the snapshot fan-out.
+
+**Out of scope** (related but separate):
+- Multi-engagement session switching (already partially modeled per HANDOFF)
+- Cloud-side cross-device snapshot sync (would require Dell-side identity service)
+
+**Status**: BACKLOGGED — NOT scheduled. Authoring sequence locked: SPEC + RULES + TESTS authored before code per `feedback_spec_and_test_first.md`.
+
 ### v3.x naming pass (after v2 fully retired)
 - Drop `v3` prefix from module / symbol / UI names per `feedback_no_version_prefix_in_names.md`
 - Mechanical rename only — no behaviour change
