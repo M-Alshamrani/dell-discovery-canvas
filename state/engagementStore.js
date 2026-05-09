@@ -31,6 +31,19 @@
 // Authority: docs/v3.0/SPEC.md §S19.3 + §S31 · docs/RULES.md §15 + §16 CH27.
 
 import { EngagementSchema } from "../schema/engagement.js";
+// rc.7 / 7e-9 · BUG-B closure (2026-05-09 PM): the v2 sessionStore.
+// saveToLocalStorage() was the canonical caller of markSaved() per the
+// core/saveStatus.js state machine docstring. Step H (rc.7 / 7e-8)
+// deleted state/sessionStore.js but did not relocate the markSaved()
+// call to the v3 replacement (engagementStore._persist). Result: the
+// header capsule pulsed to "Saving..." on every commit and never
+// transitioned back to "Saved just now" because nothing called markSaved.
+// Restored here so the v3 store is the canonical save-status driver,
+// matching the v2 contract verbatim. _persist's existing try/catch on
+// localStorage.setItem decides which signal we send: success -> markSaved;
+// failure (quota/private-mode) -> leave status as "saving" so the
+// stuck-pulse IS the diagnostic (you can see persistence is broken).
+import { markSaved } from "../core/saveStatus.js";
 
 const STORAGE_KEY = "v3_engagement_v1";
 
@@ -75,10 +88,23 @@ function _persist() {
     }
     const json = JSON.stringify(_active);
     localStorage.setItem(STORAGE_KEY, json);
+    // BUG-B closure (rc.7 / 7e-9 · 2026-05-09): v3 engagementStore IS the
+    // canonical save-status driver post-Step-H sessionStore deletion. Fire
+    // markSaved on every successful localStorage write so the header
+    // capsule transitions out of "Saving..." pulse. isDemo flag carried
+    // from engagement.meta so demo sessions get the "demo" status pill
+    // instead of the standard "Saved" pill (per saveStatus.js state
+    // machine: "demo" overrides "saved" when meta.isDemo === true).
+    try {
+      const isDemo = !!(_active.meta && _active.meta.isDemo);
+      markSaved({ isDemo: isDemo });
+    } catch (_e) { /* defensive · markSaved must never throw on the persist path */ }
   } catch (e) {
     // Quota-exceeded / private-mode / disabled-storage. Log once and
     // continue — the in-memory state is still authoritative for this
-    // session.
+    // session. Per BUG-B closure: deliberately do NOT call markSaved on
+    // the failure path; the stuck "Saving..." pulse IS the diagnostic
+    // signal that persistence has broken (user can save-to-file).
     console.warn("[engagementStore] _persist failed:", e && e.message || e);
   }
 }

@@ -46,7 +46,7 @@ import { createTestRunner, runIsolated } from "./testRunner.js";
 // is restored but in-memory engagement stays null until a user click).
 import { _rehydrateFromStorage as _rehydrateEngagementFromStorage } from "../state/engagementStore.js";
 // v2.4.13 S2A · post-test indicator restore (see runAllTests below).
-import { markSaved as _markSaved, markIdle as _markIdle, markSaving as _markSaving } from "../core/saveStatus.js";
+import { markSaved as _markSaved, markIdle as _markIdle, markSaving as _markSaving, getStatus as _getSaveStatus } from "../core/saveStatus.js";
 // v2.4.15 · Suite 46 · synchronous filterState + FilterBar imports for FB tests.
 import * as filterState from "../state/filterState.js";
 import { renderFilterBar } from "../ui/components/FilterBar.js";
@@ -8520,6 +8520,50 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
   // requires — current schema defaults reviewed=false; user marks
   // reviewed later via detail-panel button after linking, which routes
   // through R8 #1's AL10 gate).
+  // ─── BUG-B closure · v3 engagementStore drives save-status state machine ─
+  // Pre-fix the header capsule pulsed to "Saving..." on every commit but
+  // never transitioned back to "Saved just now". Root cause: the v2
+  // sessionStore.saveToLocalStorage() was the canonical markSaved() caller
+  // (per core/saveStatus.js state machine docstring); Step H rc.7 / 7e-8
+  // deleted state/sessionStore.js without relocating the markSaved call
+  // to the v3 replacement (engagementStore._persist). The v3 store now
+  // calls markSaved on every successful localStorage write, mirroring the
+  // v2 contract verbatim. Failure path (quota / private-mode) deliberately
+  // leaves status="saving" as the diagnostic signal.
+  it("V-FLOW-SAVE-STATUS-1 · BUG-B closure · setActiveEngagement triggers _persist which calls markSaved; status transitions saving -> saved", async () => {
+    _resetEngagementStoreForTests();
+    _markSaving();
+    assertEqual(_getSaveStatus().status, "saving",
+      "BUG-B precondition: status starts as 'saving' before setActiveEngagement");
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    assertEqual(_getSaveStatus().status, "saved",
+      "BUG-B: setActiveEngagement on a non-demo engagement MUST transition status to 'saved' (got: " + _getSaveStatus().status + ")");
+    assert(_getSaveStatus().savedAt > 0,
+      "BUG-B: savedAt timestamp MUST be set after successful persist");
+  });
+
+  it("V-FLOW-SAVE-STATUS-DEMO-1 · BUG-B closure · setActiveEngagement on a demo engagement transitions status to 'demo' (overrides 'saved' per state machine)", async () => {
+    _resetEngagementStoreForTests();
+    _markSaving();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: true } }));
+    assertEqual(_getSaveStatus().status, "demo",
+      "BUG-B: setActiveEngagement on a demo engagement MUST transition status to 'demo' (got: " + _getSaveStatus().status + ")");
+  });
+
+  it("V-FLOW-SAVE-STATUS-COMMIT-1 · BUG-B closure · commitAction-driven engagement updates ALSO call _persist + markSaved (every state mutation transitions out of 'saving')", async () => {
+    // Tighter contract: not just setActiveEngagement, but every commitAction
+    // that mutates state should drive the status transition. _persist is
+    // called inside commitAction on success (engagementStore.js line 140).
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    _markSaving();
+    assertEqual(_getSaveStatus().status, "saving", "precondition: 'saving' after manual markSaving");
+    // Now commit a real action.
+    commitContextEdit({ customer: { name: "BUG-B Test Co", vertical: "Enterprise", region: "EMEA" } });
+    assertEqual(_getSaveStatus().status, "saved",
+      "BUG-B: commitAction-driven mutation MUST also transition status to 'saved' (got: " + _getSaveStatus().status + ")");
+  });
+
   it("V-FLOW-MANUAL-ADD-1 · R8 #6 · BUG-052 closure · GapsEditView manual-add dialog creates gap AND auto-selects it; commitGapAdd result-envelope handled (was broken pre-fix; selection lost on every manual-add)", async () => {
     _resetEngagementStoreForTests();
     setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
