@@ -83,6 +83,7 @@
 | BUG-039 | Medium | Vendor mix % misleading (counts records, not deployment scale) | v3.1+ data-model widening |
 | BUG-040 | Medium | Workload can map to retired asset (relationship invariant gap) | rc.8 / GA hardening |
 | BUG-046 | Medium | AI chat enhancement — instance NAMES (selectInstancesByVendor), calculation-methodology transparency, anticipatory user-confusion handling, perf (OpenAI caching) | v3.1 polish arc |
+| BUG-050 | Medium | Workload "↑ Propagate criticality" button appears disabled after first cycle + add-asset (NEEDS-REPRO — could not reproduce in live test, queued for user-side detail) | rc.7 / 7e-post (if reproduces) or v3.1 |
 
 **Closed since rc.6 tag**:
 - `709e778` BUG-041 (AI Assist provider popover stale snapshot)
@@ -96,6 +97,7 @@
 - `2026-05-09` BUG-045 (SettingsModal "Couldn't save" — initial-open path missed `_settings` because Save lookup scoped to `.overlay-body` wrap instead of `.settings-body` inner)
 - `2026-05-09` BUG-047 (AI provider chip dots all green — visual + label distinction shipped: configured-but-inactive = blue dot + "Configured" label; active = green dot + "Active" label)
 - `2026-05-09` BUG-048 (right-pane detail panel disappears on Save — selection lifted to module scope + restored on re-mount)
+- `2026-05-09` BUG-049 (UUIDs leak in Reporting Initiative pipeline — env UUID→envCatalogId remap added to v3Projection.getEngagementAsSession)
 
 ---
 

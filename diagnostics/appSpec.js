@@ -7880,6 +7880,54 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
     });
   });
 
+  it("V-FLOW-PROJECTION-ENV-UUID-1 · BUG-049 guard: state/v3Projection.getEngagementAsSession remaps gap.affectedEnvironments + instance.environmentId from v3 UUID -> v2 envCatalogId so downstream services (roadmapService.envLabel etc) resolve human labels (not raw UUIDs leaked into UI)", async () => {
+    // User report 2026-05-09: Tab 5 Reporting Overview "Initiative pipeline at a
+    // glance" chips showed "00000000-...-001 — Layer Modernization (1)" instead
+    // of "Riyadh Core DC — Layer Modernization (1)". Root cause: v3 projection
+    // shallow-copied gap fields, leaving affectedEnvironments[] as v3 UUIDs.
+    // services/roadmapService.js envLabel(uuid) looked up v2 ENVIRONMENTS catalog
+    // (typeId-keyed) → no match → returned the raw UUID. Fix: project remap
+    // UUID -> envCatalogId in getEngagementAsSession (mirrors the existing
+    // engagementToV2Session adapter behaviour at line 86 + 115).
+    const proj = await import("../state/v3Projection.js");
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitContextEdit({ customer: { name: "BUG-049 Co", vertical: "Enterprise", region: "EMEA" } });
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var envUuid = getActiveEngagement().environments.allIds[0];
+    assert(envUuid && /[0-9a-f]{8}-[0-9a-f]{4}/.test(envUuid),
+      "test setup needs a v3 UUID environmentId");
+    commitInstanceAdd({
+      state: "current", layerId: "compute", environmentId: envUuid,
+      label: "BUG-049 instance", vendor: "Test", vendorGroup: "custom",
+      criticality: "Medium", disposition: "keep"
+    });
+    commitGapAdd({
+      description: "BUG-049 test gap",
+      layerId: "compute",
+      affectedLayers: ["compute"],
+      affectedEnvironments: [envUuid],
+      gapType: "replace",
+      relatedCurrentInstanceIds: [],
+      relatedDesiredInstanceIds: [],
+      reviewed: true
+    });
+    var session = proj.getEngagementAsSession();
+    assert(session, "getEngagementAsSession must return a session");
+    // The v3 UUID MUST NOT appear in instance.environmentId.
+    var instEnvIds = (session.instances || []).map(i => i.environmentId);
+    assert(instEnvIds.every(id => !/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(id)),
+      "BUG-049: session.instances[].environmentId MUST be remapped from v3 UUID to v2 envCatalogId; got: " + JSON.stringify(instEnvIds));
+    assert(instEnvIds.indexOf("coreDc") >= 0,
+      "BUG-049: session.instances[].environmentId MUST equal the v2 envCatalogId 'coreDc'; got: " + JSON.stringify(instEnvIds));
+    // Same for gap.affectedEnvironments[].
+    var gapEnvs = (session.gaps || []).flatMap(g => g.affectedEnvironments || []);
+    assert(gapEnvs.every(id => !/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(id)),
+      "BUG-049: session.gaps[].affectedEnvironments[] MUST be remapped from v3 UUID to v2 envCatalogId; got: " + JSON.stringify(gapEnvs));
+    assert(gapEnvs.indexOf("coreDc") >= 0,
+      "BUG-049: session.gaps[].affectedEnvironments[] MUST contain the v2 envCatalogId 'coreDc'; got: " + JSON.stringify(gapEnvs));
+  });
+
   it("V-FLOW-MATRIX-SELECTION-PERSIST-1 · BUG-048 guard: MatrixView selection survives commitInstanceUpdate-driven re-render; right-pane detail panel restored on re-mount", async () => {
     // User report 2026-05-09: select an instance tile in current/desired
     // state, change criticality, click Save → right-pane detail panel

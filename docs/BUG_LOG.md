@@ -1749,6 +1749,93 @@ Same shape as BUG-043 (shell-subscribe wiped by tests) and BUG-042 (demo-banner 
 
 ---
 
+## BUG-049 · UUIDs leak into Reporting → Initiative pipeline chips ("00000000-...-001 — Layer Modernization (1)" instead of "Riyadh Core DC — Layer Modernization (1)") (CLOSED 2026-05-09)
+
+**Status**: **CLOSED 2026-05-09** · Reported by user 2026-05-09 with screenshot. Same shape as BUG-044 (UUID leak into user-visible UI). Fix: project env UUID → envCatalogId in `state/v3Projection.js getEngagementAsSession()` (the v2-shape projection used by the reporting layer). Same pattern as the `engagementToV2Session` adapter already implements.
+**Reporter**: User
+**Severity**: Medium (UI trust + workshop-readout polish — chips render unreadable raw UUID strings)
+**Regression**: Yes — pre-existing since the v3 projection layer was added; the projector mapped envs but not gap.affectedEnvironments / instance.environmentId (those stayed v3 UUID).
+
+### Repro
+1. Load Acme Healthcare demo.
+2. Navigate to Tab 5 (Reporting) → Overview sub-tab.
+3. Scroll to "Initiative pipeline at a glance" card.
+4. Each chip in Now/Next/Later columns shows label `<env-key> — <layer> <verb> (<count>)`. Pre-fix the env-key resolved to a raw UUID for any project derived from gaps with v3 affectedEnvironments.
+
+### Expected
+Chips read like `Riyadh Core DC — Data Protection & Recovery Modernization (1)` (env-name + em-dash + layer-verb + count).
+
+### Actual (pre-fix)
+Chips read like `00000000-0000-4000-8000-00e100000001 — Data Protection & Recovery Modernization (1)`.
+
+### Root cause
+`services/roadmapService.js buildProjects` calls `resolvePrimaryEnv(session, gap)` which returns `gap.affectedEnvironments[0]`. In the v2-shape projection (`state/v3Projection.js getEngagementAsSession()`), gap fields were shallow-copied: `{ ...g }`. So `affectedEnvironments` retained v3 UUID values. `envLabel(uuid)` looks up `ENVIRONMENTS` v2 catalog (typeId-keyed) → no match → falls through to return the UUID.
+
+### Fix
+`state/v3Projection.js getEngagementAsSession()`: build `envUuidToCatalogId` map (uuid → envCatalogId typeId) at the env-projection step, then remap:
+- `instance.environmentId` from UUID → typeId
+- `gap.affectedEnvironments[]` from [UUID...] → [typeId...]
+
+Now `envLabel(typeId)` resolves via `ENVIRONMENTS` catalog → returns the human label. The user-visible chip shows the env name. Pattern matches the existing `engagementToV2Session` adapter (line 86 + 115).
+
+### Out of scope
+- The Reporting Initiative-pipeline chip text format ("env — layer verb (count)") is the rc.6-era render; full v3.1 reporting-enhancements arc may redesign it (per user direction "this view will be redesigned anyway in the reporting enhancements task"). The fix here just stops the UUID leak in the CURRENT format.
+
+### Memory anchor
+Same shape as BUG-044 (user-visible UUID leak) and BUG-049: every v2-shape projection of v3 data must remap UUID-keyed FK fields to the v2 typeId. Add to v3.1 plan: a single audit pass on every v2-shape projector (engagementToV2Session, getEngagementAsSession, anything else) verifying all FK references get the UUID→typeId remap.
+
+---
+
+## BUG-050 · Workload "↑ Propagate criticality" button appears disabled after first propagate cycle + add-asset (NEEDS-REPRO 2026-05-09)
+
+**Status**: OPEN · NEEDS USER REPRO DETAIL · Reported 2026-05-09 by user · Could not reproduce in live Chrome MCP test of the same described sequence; suspect specific UI-interaction nuance (timing, env, layer, or specific provider mode) not captured. Scheduled rc.7 / 7e-post if reproducible OR v3.1 reporting + matrix polish.
+**Reporter**: User
+**Severity**: Medium (workshop flow disrupted if reproducible — user can't propagate again after a workflow cycle)
+
+### User report (verbatim)
+*"the propegation of the workload criticality get disabled after i propegate some items , and then add another item , whey i try to propegate , it is diabled and can not be cliecked"*
+
+### Reproduction attempt 2026-05-09 (could NOT reproduce)
+Live Chrome MCP test:
+1. Load Acme demo, navigate to Tab 2 Current state.
+2. Programmatically lower one mapped asset of PACS Imaging workload to criticality "Low".
+3. Click PACS tile → detail panel opens with "↑ Propagate criticality" button (disabled=false, pointer-events=auto, opacity=1).
+4. Click Propagate → window.confirm auto-accept → asset upgraded Low→High. Button stays present, enabled.
+5. Click "+ Map asset" → picker overlay opens with 2 candidates.
+6. Click first candidate → commitWorkloadMap fires → picker closes → detail panel re-renders → propBtn still present, enabled, opacity 1.
+7. (Test setup also lowered another mapped asset's crit to Low to make propagate non-empty.)
+8. Click Propagate again → asset upgraded Low→High. No alert. Button stays present.
+9. propBtnDisabledFinal: false. mappedSectionCount: 1 (no dup). propBtnCount: 1 (no dup).
+
+So in the test reproduction, the button works correctly across both cycles + intermediate add-asset. The bug does not reproduce.
+
+### Suspected scenarios needing user clarification
+The bug may surface only under one of:
+- Specific provider mode (Local A/B vs Anthropic vs Gemini) influencing some shared event handler
+- Specific environment / layer combination
+- Specific click-order timing (e.g. clicking propagate while the picker overlay is still mid-fade-out)
+- A different asset-add path (drag-drop? keyboard?)
+- Different state — e.g. after a `+New session` reset
+- A stale CSS state class lingering from a prior overlay
+
+### Things checked (and ruled out)
+- No CSS rule disables `.propagate-btn` based on any state class
+- `propBtn.disabled = true` not set programmatically anywhere
+- `pointer-events: none` not set
+- Button NOT hidden (display: none / visibility: hidden) in any code path
+- `commitWorkloadMap` correctly updates `workload.mappedAssetIds`; the listener chain re-renders the panel; the new propBtn has a fresh closure
+- BUG-048 fix's restore-showDetailPanel doesn't double up the section (verified mappedSectionCount: 1 + propBtnCount: 1 in test)
+
+### Fix plan
+1. Ask user for: which environment / layer was the workload? Which provider was active? Did anything OTHER than the propagate button click do something unexpected? Was the page recently reloaded? Was test mode running in F12?
+2. If reproducible with detail: trace the exact flow + wire to a regression test V-FLOW-PROPAGATE-AFTER-MAP-1.
+3. If not reproducible: leave open as NEEDS-REPRO and re-test in v3.1 polish arc.
+
+### Memory anchor
+Reported in same session as BUG-049 + BUG-047 + BUG-048. Both BUG-047 (cosmetic dot color) and BUG-048 (selection persistence) had clean reproductions; BUG-050 specifically did not. Could be tied to the BUG-048 fix's behavior under some specific timing — flag if user re-hits and confirm BUG-048 commit (`d6d74b8`) timing is involved.
+
+---
+
 ## BUG-NNN · One-line headline
 
 **Status**: OPEN · Reported YYYY-MM-DD · vX.Y.Z · Scheduled <bucket>
