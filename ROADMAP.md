@@ -72,24 +72,26 @@
 
 | ID | Severity | Theme | Scheduled |
 |---|---|---|---|
-| BUG-001 | Medium | Propagation toast wrong urgency level (tightened by closed BUG-031) | rc.7-polish or rc.8 |
-| BUG-002 | Medium | Propagate button non-dispatchable after add-different-layer cycle | rc.7-polish or rc.8 |
 | BUG-017 | Low | Mock provider toggle clutters chat header (UNCONFIRMED) | TBD |
-| BUG-019 | Low | Canvas Chat reports "empty" after page reload until Load demo clicked | rc.8 |
 | BUG-021 | Medium | AI performance — Gemini slow, OpenAI prompt caching not wired | rc.8 |
 | BUG-022 | Medium | Chat UI polish (button + skills tabs + spacing + status UX) | v3.1 crown-jewel |
 | BUG-025 | Low | Cmd+K shortcut opens legacy AiAssistOverlay instead of CanvasChat (deleted in Step E — re-verify) | rc.7 (auto-resolved?) |
-| BUG-027 | Low | Test pass briefly flashes file content on page load (residual cloak) | rc.8 polish |
-| BUG-028 | Medium | Canvas AI Assistant chat closes when user clicks Skills button | rc.7-polish |
 | BUG-032 | Medium | Gaps tab desired-state asset linking button greyed-out (DEFERRED — needs user repro) | rc.6.1 / rc.7 |
 | BUG-036 | High | Canvas AI reports "empty" when user entered data via v2 UI tabs (v2-v3 sync gap) | likely auto-resolves with rc.7 view migration |
 | BUG-037 | Low | Chat lacks visual differentiation between user / assistant messages | v3.1 crown-jewel |
 | BUG-038 | Medium | Skill Builder UI is text-heavy / primitive | v3.1 crown-jewel |
 | BUG-039 | Medium | Vendor mix % misleading (counts records, not deployment scale) | v3.1+ data-model widening |
 | BUG-040 | Medium | Workload can map to retired asset (relationship invariant gap) | rc.8 / GA hardening |
-| BUG-042 | Low | Demo-mode banner missing on Tab 4 Gaps via live demo-loader | rc.7 / 7e-post |
 
-**Closed since rc.6 tag**: BUG-041 (AI Assist provider popover stale snapshot · `709e778`).
+**Closed since rc.6 tag**:
+- `709e778` BUG-041 (AI Assist provider popover stale snapshot)
+- `0926b30` BUG-042 (demo banner missing on Tab 4 Gaps)
+- `af2c26a` BUG-043 (welcome-card "Load demo session" doesn't render demo)
+- `1c306dc` + `1deda90` BUG-044 (UUIDs leak into gap tiles + AI chat — both halves)
+- `2026-05-09` BUG-019 (engagement auto-rehydrate per SPEC §S31; verified live)
+- `2026-05-09` BUG-027 (broad test-pass cloak rule covers all body-level rogue probes)
+- `2026-05-09` BUG-028 (side-panel stacking per SPEC §S36.1; chat persists when Skills opens)
+- `2026-05-09` BUG-001 + BUG-002 (v2 root path deleted in Step J; v3 propagate-criticality flow correctly reads `applied[0].newCrit` for toast + creates fresh button on each panel re-mount)
 
 ---
 
@@ -104,7 +106,6 @@
   - #5 v3 setPrimaryLayer-rebalance + auto-flip-reviewed contracts (T6.6 / PR5 / RH7-19 retired)
   - #6 manual-add-dialog reviewed:true UI-contract test (T6.5 retired)
 - BUG-040 relationship-invariant audit (workload → retire asset; gap.related* → orphans)
-- BUG-001/002 propagate-criticality root-cause closure
 - BUG-021 AI performance (OpenAI prompt caching wiring)
 - Real-LLM live-key smoke at PREFLIGHT 5b · GA gate
 - Real-customer `.canvas` migration smoke · GA gate

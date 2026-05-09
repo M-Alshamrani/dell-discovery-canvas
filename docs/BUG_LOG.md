@@ -8,9 +8,10 @@ Live tracker for known regressions and outstanding bugs. New bugs land here as s
 
 ---
 
-## BUG-001 · Propagation toast shows "low" when actual urgency mutation is "high"
+## BUG-001 · Propagation toast shows "low" when actual urgency mutation is "high" (CLOSED 2026-05-09 — v2 root path deleted in Step J; v3 flow reads correct field)
 
-**Status**: OPEN · Reported 2026-05-02 · v3.0.0-rc.1 · Scheduled rc.2 polish bucket
+**Status**: **CLOSED 2026-05-09** · The original bug lived in `interactions/desiredStateSync.js`'s propagate-criticality toast emitter. That entire file was DELETED in rc.7 / 7e-8 Step J (commit `ea898df`). The v3 propagate-criticality flow lives in `ui/views/MatrixView.js runPropagation()` (line 829-861) and correctly builds the toast from `applied[0].newCrit` — the actual upgrade level, sourced from the proposal returned by `proposeCriticalityUpgrades`. Toast format: "N assets upgraded to High" (or whichever level applied). The "low" placeholder bug in the v2 emitter is structurally impossible in the v3 path. Reverify with user during workshop validation round 2 if any remaining shape surfaces.
+**Reporter**: User during rc.1 manual smoke
 **Reporter**: User during rc.1 manual smoke
 **Severity**: Medium (state is correct; user-visible feedback is wrong → trust loss)
 **Regression**: Yes — was working before the v3.0 data-architecture rebuild; broke during the cutover
@@ -51,9 +52,10 @@ In `interactions/desiredStateSync.js` (or the toast emitter that wraps it), the 
 
 ---
 
-## BUG-002 · Propagate button non-dispatchable after add-disposition-different-layer cycle
+## BUG-002 · Propagate button non-dispatchable after add-disposition-different-layer cycle (CLOSED 2026-05-09 — v3 render path creates fresh button on every panel mount)
 
-**Status**: OPEN · Reported 2026-05-02 · v3.0.0-rc.1 · Scheduled rc.2 polish bucket
+**Status**: **CLOSED 2026-05-09** · The v3 propagate-criticality button (`ui/views/MatrixView.js` line 762, "↑ Propagate criticality") is created on every workload-detail-panel render via the `showDetailPanel(right, _liveInstance(workload.id))` call at the END of `runPropagation`. After a successful propagate cycle, the panel re-mounts and a fresh button (with a fresh listener) replaces the old one. The "non-dispatchable after second cycle" failure mode is structurally impossible in the v3 mount/unmount lifecycle. Original v2 root cause (stale closure in `interactions/desiredStateSync.js`) deleted in Step J. Reverify with user during workshop validation round 2 if any remaining shape surfaces.
+**Reporter**: User during rc.1 manual smoke
 **Reporter**: User during rc.1 manual smoke
 **Severity**: Medium (multi-step user flow blocked; recovery requires page reload)
 **Regression**: Likely — same v3.0 cutover window
@@ -499,9 +501,10 @@ It exists to (a) test chat without burning provider credits, (b) demo offline. F
 
 ---
 
-## BUG-019 · After page reload, canvas data persists in localStorage but Canvas Chat reports "empty" until user clicks Load demo again (CONFIRMED 2026-05-03)
+## BUG-019 · After page reload, canvas data persists in localStorage but Canvas Chat reports "empty" until user clicks Load demo again (CLOSED 2026-05-09 — auto-rehydrate shipped per SPEC §S31)
 
-**Status**: **CONFIRMED 2026-05-03** (deterministic repro from user) · v3.0.0-rc.3-dev · Scheduled rc.3 (folded into Group A AI-correctness arc per user direction 2026-05-03)
+**Status**: **CLOSED 2026-05-09** · `state/engagementStore.js` `_rehydrateFromStorage()` runs at module load (per SPEC §S31 R31.2) — engagement state restored from `v3_engagement_v1` localStorage key on every page boot, no Load-demo click required. **Verified live 2026-05-09 via Chrome MCP**: Load demo (Acme/3/8/23) → reload → engagement = Acme/3/8/23 immediately, no Load-demo click. Test runner's runIsolated snapshot+restore preserves user state across the test pass. Regression guards: V-FLOW-REHYDRATE-1 + V-FLOW-REHYDRATE-3 (per SPEC §S31.1 R31.1/R31.2/R31.4).
+**Reporter**: User
 **Reporter**: User
 **Severity**: High (very confusing user-perceived broken state — UI shows the canvas, AI says "empty")
 **Regression**: rehydration path — v3 engagement is NOT auto-rehydrated from localStorage on app boot (the Load-demo button is the only path that calls `setActiveEngagement(...)`)
@@ -769,9 +772,10 @@ Hide overlays from the user's view DURING the test run, without breaking tests:
 
 ---
 
-## BUG-027 · Test pass briefly flashes file content / tags / DOM fragments on screen at page load (residual of overlay cloak)
+## BUG-027 · Test pass briefly flashes file content / tags / DOM fragments on screen at page load (CLOSED 2026-05-09 — broad cloak rule shipped)
 
-**Status**: OPEN · Reported 2026-05-05 by user (post-rc.4) · v3.0.0-rc.4 · Scheduled rc.5 (low priority — flagged "not a big issue for development for now")
+**Status**: **CLOSED 2026-05-09** · `styles.css` line 3940 (rc.5 §S36.3 R36.12 "BUG-027 fix") extends the test-pass cloak to cover **every** body-level child except the closed app-shell list (`#app-header`, `#stepper`, `#main`, `#app-footer`, `#test-banner`, `.overlay-backdrop`). Rogue test probes (V-PROD/V-DEMO/VT* tests appending DIVs to body for layout assertions) are now `visibility: hidden + pointer-events: none` for the duration of the test pass; afterRestore Hotfix #1 sweep removes them entirely before the cloak attribute clears. Visual flash gone. Regression: V-NO-VISIBLE-TEST-OVERLAY-1 covers the cloak-attribute lifecycle.
+**Reporter**: User (work computer)
 **Reporter**: User (work computer)
 **Severity**: Low (visual polish; not blocking)
 **Regression**: No (pre-existing class of issue partially addressed by BUG-026 cloak)
@@ -795,9 +799,10 @@ BUG-026 (HOTFIX #3) cloak hides `.overlay` + `.overlay-backdrop` + `#skillBuilde
 
 ---
 
-## BUG-028 · Canvas AI Assistant chat doesn't persist when user clicks Skills button (chat-rail entry routes to Settings — chat closes)
+## BUG-028 · Canvas AI Assistant chat doesn't persist when user clicks Skills button (CLOSED 2026-05-09 — side-panel stacking shipped per SPEC §S36.1)
 
-**Status**: OPEN · Reported 2026-05-05 by user (post-rc.4) · v3.0.0-rc.4 · Scheduled rc.5 (UX polish — paired with broader chat persistence concern)
+**Status**: **CLOSED 2026-05-09** · `ui/components/Overlay.js` rc.5 work added stack-aware overlay management (per SPEC §S36.1 R36.1). When chat is open and the user clicks `+ Author new skill` in the chat right-rail, `ui/skillBuilderOpener.js` detects the open chat and passes `sidePanel:true` to `openSettingsModal()`. Chat repositions to `data-stack-pos="left"` (50vw left), Settings panel mounts at `data-stack-pos="right"` (50vw right), single shared backdrop. Closing Settings (Done button or Esc) pops the stack and chat returns to full-width. **Verified live 2026-05-09 via Chrome MCP**: open AI Assist → click Skills (right-rail panel toggles, chat persists) → click + Author new skill → 2 overlays mounted side-by-side (canvas-chat:left + settings:right) → click Done → chat back to full. Skills button in head-extras toggles a chat-internal SHORTCUTS panel (no Settings, no overlay swap), which is even smoother UX than the original BUG-028 fix scope. Regression guard: V-CHAT-PERSIST style assertions covered by overlay stack tests in §T36.
+**Reporter**: User
 **Reporter**: User
 **Severity**: Medium (UX continuity gap — workshop-flow disrupted)
 **Regression**: New behavior introduced by Arc 4 opener-shim retirement (`8f7a90a`). The pre-Arc-4 standalone overlay path didn't have this problem because Skills opened a separate overlay layered atop chat. Post-Arc-4, opener calls `closeOverlay()` → loses chat overlay → opens Settings.
@@ -1528,6 +1533,77 @@ Either (a) `ui/views/GapsEditView.js` reads `meta.isDemo` from a different state
 
 ### Memory anchor
 Surfaced by R11's mandatory regression-suite walk at every commit boundary. Without R11, banner-only verification would have missed this entirely (the test suite is GREEN; only manual Tab 4 click reveals the gap). This is exactly the failed-attempt anti-pattern R11 is designed to catch — confirms R11's value on its first hard application.
+
+---
+
+## BUG-043 · "Load demo session" button in fresh-session welcome card does not load the demo
+
+**Status**: OPEN · Reported 2026-05-09 · v3.0.0-rc.7-dev (post-Step-H+J+K, commit `ea898df`) · Scheduled rc.7 / 7e-post (Day 1, alongside FS3)
+**Reporter**: User during post-Step-K browser smoke walk
+**Severity**: Medium (golden path: a fresh user is supposed to be ONE click from a populated demo; this click silently fails)
+**Regression**: Likely yes — the live footer "Load demo" button works (proven by the standing regression flow); the welcome-card-embedded "Load demo session" button is the broken affordance.
+
+### Repro
+1. Click footer "+ New session" → confirm "Start fresh".
+2. Land on Tab 1 with the welcome card "NEW SESSION · Start a workshop from scratch, or explore with demo data" + two CTAs: "↺ Load demo session" (blue primary) and "Start fresh" (outline).
+3. Click the welcome-card "↺ Load demo session" button.
+
+### Expected
+Engagement loads to Acme Healthcare demo (3 drivers, 4 envs, 23 instances, 8 gaps); header pill flips to "Acme Healthcare Group · DEMO SESSION"; current tab re-renders to demo content.
+
+### Actual
+Engagement state DOES update under the hood (probe via `getActiveEngagement()` returns the Acme demo with 3/8/23 counts), but the UI continues to show the welcome card + "New customer" pill — Tab 1 does NOT re-render. (This is the same shape as BUG-042's Tab 1 stale-render-on-active-tab — the demo-loader path mutates engagement state but the render that's bound to the active tab doesn't fire.) Footer "Load demo" button works correctly; only the welcome-card button is broken.
+
+### Suspected root cause
+Either the welcome-card "Load demo session" handler is wired to a different path than the footer button's handler, OR it's the same path but missing the explicit `renderHeaderMeta() / renderStepper() / renderStage()` call that the footer handler does (per `app.js` line ~742 — footer Demo handler explicitly re-renders after `setActiveEngagement`). The welcome-card handler probably trusts `subscribeActiveEngagement` to drive the re-render, but Tab 1 is bound to a stale closure (BUG-042's family).
+
+### Fix plan
+1. Locate the welcome-card "Load demo session" click handler (likely in `ui/views/ContextView.js` or wherever the welcome card is rendered).
+2. Compare its post-load render sequence to the footer-button handler's (`app.js` line ~742).
+3. Make them symmetric: explicit `renderHeaderMeta() / renderStepper() / renderStage()` after `setActiveEngagement(v3eng)`.
+4. With regression test V-FLOW-DEMO-WELCOME-CARD-1: drive the welcome-card click programmatically, assert `.demo-mode-banner` + `Acme Healthcare Group` header pill + 3 driver tiles + Tab 4/5 un-greyed all appear in main-left after the click.
+
+### Memory anchor
+Likely shares root cause with BUG-042 (Tab 1 stale-render-on-active-tab) — both about Tab 1 not re-rendering when the demo-loader path mutates state. Fix together if possible.
+
+---
+
+## BUG-044 · UUID strings leak into Gap tile + AI chat response UI instead of the entity's human-readable name
+
+**Status**: OPEN · Reported 2026-05-09 · v3.0.0-rc.7-dev · Scheduled rc.7 / 7e-post or Day 2 golden-path bucket
+**Reporter**: User during post-Step-K browser smoke walk
+**Severity**: Medium (correctness + trust — exposing internal IDs to the user reads as a half-finished UX; in AI chat it could also confuse the LLM into echoing UUIDs back)
+**Regression**: Yes — pre-rc.7 the gap tile + chat response showed labels (e.g. "Cyber Resilience driver", "Replace Veeam"), not UUID strings. v3.0 schema introduced UUID-keyed entity collections (per SPEC §S31); a label-resolver step must have been missed in one or more views/services.
+
+### Repro
+1. Load demo session.
+2. Navigate to Tab 4 (Gaps).
+3. Observe each gap card body — the metadata line includes a `★` icon followed by a string of the form `00000000-0000-4000-8000-00d100000001` (the gap's UUID).
+4. Open AI Assist (Cmd+K or topbar). Ask any question. Observe the response — UUIDs appear in the LLM's response text, suggesting the system prompt or the grounding context is feeding raw UUIDs instead of resolved labels.
+
+### Expected
+- Gap tile metadata line shows the gap's short id label OR (more useful) the linked driver's name (e.g. "★ Cyber Resilience" instead of "★ 00000000-...-00000001").
+- AI chat response cites real entity names (e.g. "the Veeam workload" not the workload's UUID).
+
+### Actual
+- Gap tiles render UUID after the star icon (4 of 8 gap cards in the demo screenshot show this pattern: e.g. "Replace Veeam with PowerProtect Data Manager... ★ 00000000-0000-4000-8000-00d100000001 2 current 1 desired").
+- AI chat response (per user report) similarly carries UUIDs in place of labels, "in other places" too.
+
+### Suspected root cause
+Two distinct code paths likely share a single root: the v3 → v2 down-converter (`state/v3ToV2DemoAdapter.js engagementToV2Session`) might be passing the v3 UUID through where a downstream view expects a typeId-shaped (or label-shaped) string. Specific theories:
+- **Gap tile**: `ui/views/GapsEditView.js` renders `gap.driverId` or similar field as the chip label without resolving via `eng.drivers.byId[driverId].label` first — fine pre-v3 because `driverId` was the catalog typeId (e.g. "cyber_resilience"), but in v3 it's a UUID.
+- **AI chat**: `services/systemPromptAssembler.js` or the grounding router (`services/groundingRouter.js`) builds the LLM context from raw v3 collections, not from a label-projected snapshot. The router result feeds Layer 4 of the system prompt; if it carries UUIDs the LLM has nothing to do but echo them.
+
+### Fix plan
+1. Grep all `ui/views/*.js` for `\bdriverId\b` / `\bgapId\b` / `\binstanceId\b` direct rendering. Each hit must resolve via `eng.drivers.byId[id].label` (or equivalent typeId/label resolver) before going to text.
+2. Same audit on `services/systemPromptAssembler.js` + `services/groundingRouter.js` + `services/chatTools.js` + `services/uuidScrubber.js` (the latter is *already* the canonical scrub layer — likely not running on the right surfaces).
+3. Verify the v2 down-converter in `state/v3ToV2DemoAdapter.js` produces typeId-shaped fields (not UUIDs) — that's the one place V-DEMO-V2-1 already asserts; a V-DEMO-V2-2 strengthening might catch this regression.
+4. With regression tests:
+   - V-FLOW-GAP-TILE-LABEL-1 — render Tab 4 with the demo, assert no gap card's text content contains a `/[0-9a-f]{8}-[0-9a-f]{4}-/` UUID pattern.
+   - V-FLOW-CHAT-LABELS-1 — drive a chat round-trip with a real LLM probe (or v3 grounding-router output), assert no UUID pattern in the response or in the system prompt's grounding context.
+
+### Memory anchor
+Same shape as the v2 → v3 cutover BUG-010 (bridge clobber): the data-shape boundary between v3 collections and the user-facing surfaces was supposed to be entirely handled by adapters/projectors. Spotting UUIDs in user-facing strings is a "boundary leaked" signal — same anti-pattern. Fix should center on the projector layer, not on per-view string-replacement.
 
 ---
 
