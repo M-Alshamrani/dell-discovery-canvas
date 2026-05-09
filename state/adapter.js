@@ -66,6 +66,13 @@ import {
   unhideEnvironment,
   removeEnvironment
 } from "./collections/environmentActions.js";
+// rc.7 R8 #4 (v3-invariant-enforcement arc · 2026-05-09) · phase-conflict
+// pure read-only check used by _gapLinkInstance to enforce L8 / P6
+// (RULES.md §5 L8 + §3 P6): linkDesiredInstance MUST refuse the link
+// with PHASE_CONFLICT_NEEDS_ACK when gap.phase != desired.priority and
+// opts.acknowledged !== true. Preserves the v2.4.12 footgun-killer at
+// the v3 helper layer so AI write-paths can't bypass the confirm.
+import { confirmPhaseOnLink } from "./dispositionLogic.js";
 
 // ─── view-shape selectors (R19.1 read side) ──────────────────────────────────
 
@@ -386,8 +393,19 @@ export function commitGapRemove(gapId) {
 // Cross-cutting gap linkage. The gap stores arrays of instance UUIDs;
 // the link/unlink helpers fetch the current arrays, apply the change,
 // and commit the next arrays through attachInstances. Idempotent.
-function _gapLinkInstance(gapId, instanceId, side) {
-  // side: "current" or "desired"
+//
+// rc.7 R8 #4 (v3-invariant-enforcement arc · 2026-05-09) · L8 / P6
+// phase-conflict-acknowledgment gate is enforced HERE (when side ===
+// "desired"). Pre-fix the helper ignored opts entirely; UI was the
+// only safety-net (caller-layer enforcement). v3 AI write-paths could
+// silently link a desired tile to a phase-mismatched gap, leaving the
+// tile's priority and the gap's phase out of sync until the user
+// noticed. Now atomic: opts.acknowledged !== true + conflict → refuse
+// with PHASE_CONFLICT_NEEDS_ACK + the conflict details so the caller
+// can surface a confirmation modal. Idempotent (already-linked is a
+// no-op pre-gate so it doesn't trip on re-link).
+function _gapLinkInstance(gapId, instanceId, side, opts) {
+  // side: "current" or "desired"; opts: { acknowledged?: bool } (desired only)
   const eng = getActiveEngagement();
   if (!eng || !eng.gaps || !eng.gaps.byId) {
     return { ok: false, error: "no active engagement" };
@@ -398,7 +416,33 @@ function _gapLinkInstance(gapId, instanceId, side) {
   }
   const field = side === "desired" ? "relatedDesiredInstanceIds" : "relatedCurrentInstanceIds";
   const cur = Array.isArray(gap[field]) ? gap[field] : [];
-  if (cur.indexOf(instanceId) >= 0) return { ok: true, engagement: eng };  // already linked
+  if (cur.indexOf(instanceId) >= 0) return { ok: true, engagement: eng };  // already linked (idempotent)
+
+  // R8 #4 / L8 / P6 · phase-conflict gate (desired side only)
+  if (side === "desired") {
+    const acknowledged = !!(opts && opts.acknowledged === true);
+    const check = confirmPhaseOnLink(eng, gapId, instanceId);
+    if (check && check.status === "conflict" && !acknowledged) {
+      return {
+        ok: false,
+        errors: [{
+          path: "acknowledged",
+          message: "Linking '" + check.desiredLabel + "' to a gap in phase '" +
+                   check.gapPhase + "' would reassign the tile's priority from '" +
+                   check.currentPriority + "' to '" + check.targetPriority +
+                   "'. Pass { acknowledged: true } to confirm.",
+          code: "PHASE_CONFLICT_NEEDS_ACK",
+          details: {
+            currentPriority: check.currentPriority,
+            targetPriority:  check.targetPriority,
+            gapPhase:        check.gapPhase,
+            desiredLabel:    check.desiredLabel
+          }
+        }]
+      };
+    }
+  }
+
   const next = cur.concat([instanceId]);
   const patch = side === "desired"
     ? { relatedDesiredInstanceIds: next }
@@ -428,8 +472,13 @@ function _gapUnlinkInstance(gapId, instanceId, side) {
 export function commitGapLinkCurrentInstance(gapId, instanceId) {
   return _gapLinkInstance(gapId, instanceId, "current");
 }
-export function commitGapLinkDesiredInstance(gapId, instanceId) {
-  return _gapLinkInstance(gapId, instanceId, "desired");
+// rc.7 R8 #4 · opts.acknowledged is the L8 / P6 phase-conflict opt-in.
+// When the caller has already confirmed with the user (or when the
+// caller is sure no conflict exists) it passes { acknowledged: true }.
+// Otherwise the helper refuses the link with PHASE_CONFLICT_NEEDS_ACK
+// when there's a conflict, so AI write-paths can't bypass the modal.
+export function commitGapLinkDesiredInstance(gapId, instanceId, opts) {
+  return _gapLinkInstance(gapId, instanceId, "desired", opts);
 }
 export function commitGapUnlinkCurrentInstance(gapId, instanceId) {
   return _gapUnlinkInstance(gapId, instanceId, "current");

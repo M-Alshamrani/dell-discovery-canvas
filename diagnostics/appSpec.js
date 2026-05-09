@@ -2973,12 +2973,12 @@ describe("22 · services/programsService", () => {
     //   (b) syncDesiredFromGap propagates gap.phase to the linked
     //       desired's priority
     //
-    // (a) is V2-CONTRACT-ONLY (acknowledged-arg machinery). v3
-    // commitGapLinkDesiredInstance (state/adapter.js _gapLinkInstance)
-    // does NOT enforce phase-conflict acknowledgment -- same R8 shape
-    // as the AL10/mapWorkloadAssets findings. RH10 (Suite 28 line ~5644)
-    // covers the v2 acknowledged-arg contract directly; T6.3 in v3-
-    // direct form focuses on the (b) sync propagation.
+    // (a) WAS V2-CONTRACT-ONLY at I-B-15. **R8 #4 closure (2026-05-09):**
+    // v3 commitGapLinkDesiredInstance NOW enforces phase-conflict
+    // acknowledgment at the helper layer (V-INV-LINK-PHASE-1..4 guard
+    // the L8 contract directly). This test focuses on (b) sync
+    // propagation; we pass { acknowledged: true } so the gate lets the
+    // link through and we can exercise the sync.
     //
     // Snapshot+restore _active per Phase I-B-9 pattern.
     const savedEng = getActiveEngagement();
@@ -3000,9 +3000,10 @@ describe("22 · services/programsService", () => {
       });
       assertEqual(gapAddRes.ok, true, "commitGapAdd succeeded");
       const gapId = getActiveEngagement().gaps.allIds.at(-1);
-      // Link the desired to the gap via v3 helper (no phase-conflict ack
-      // gate in v3 -- see comment block above).
-      const linkRes = commitGapLinkDesiredInstance(gapId, desId);
+      // Link the desired to the gap via v3 helper. Phase mismatch
+      // (gap.phase='later', des.priority='Now') triggers R8 #4 gate
+      // unless { acknowledged: true } passed — UI-confirmed flow.
+      const linkRes = commitGapLinkDesiredInstance(gapId, desId, { acknowledged: true });
       assertEqual(linkRes.ok, true, "commitGapLinkDesiredInstance succeeded");
       // Sync gap.phase to linked desired's priority.
       const syncRes = commitSyncDesiredFromGap(gapId);
@@ -6642,11 +6643,12 @@ describe("42 · Phase 19k · v2.4.11 rules hardening + relationships polish", ()
     // The contract -- "linking a desired instance to a gap with
     // matching/no phase conflict succeeds without explicit
     // acknowledgment" -- is v3-applicable: state/adapter.js
-    // commitGapLinkDesiredInstance (line 431) wraps _gapLinkInstance
-    // which appends instanceId with dedupe and never throws on
-    // matching phases. The v2 conflict-throw assertion (RH10
-    // retired above) has moved to caller-layer enforcement (per
-    // HANDOFF R8 backlog #4).
+    // commitGapLinkDesiredInstance wraps _gapLinkInstance which
+    // appends instanceId with dedupe and (post-R8 #4) only refuses
+    // when phases mismatch + opts.acknowledged !== true. The v2
+    // conflict-throw assertion (RH10 retired above) is now CLOSED
+    // at the helper layer per V-INV-LINK-PHASE-1..4 (R8 #4 closure
+    // 2026-05-09 · was HANDOFF R8 backlog #4).
     const savedEng = getActiveEngagement();
     try {
       setActiveEngagement(createEmptyEngagement());
@@ -8283,6 +8285,122 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
     var post = getActiveEngagement().gaps.byId[f.gapId];
     assertEqual(post.relatedDesiredInstanceIds.length, 1,
       "R8 #3: failed unlink MUST NOT mutate gap.relatedDesiredInstanceIds");
+  });
+
+  // ─── R8 #4 · v3 _gapLinkInstance phase-conflict-acknowledgment gate ──────
+  // R8 #4 of the rc.7-deferred invariant arc. Pre-fix the v3
+  // _gapLinkInstance helper IGNORED opts entirely; the UI was the only
+  // caller-layer safety-net (GapsEditView calls confirmPhaseOnLink before
+  // commitGapLinkDesiredInstance). v3 AI write-paths could silently link
+  // a phase-mismatched desired tile, leaving the tile's priority and the
+  // gap's phase out of sync — a subtle data quality bug that surfaces
+  // hours later when the user notices the kanban roadmap shows the tile
+  // in the wrong column. R8 #4 lifts the gate to the helper layer so
+  // ANY caller (UI, AI, integrations) is forced through the confirm.
+  //
+  // L8 contract (RULES §5 L8 + §3 P6):
+  //   linkDesiredInstance(gapId, instanceId, opts) MUST refuse with
+  //   PHASE_CONFLICT_NEEDS_ACK when confirmPhaseOnLink returns conflict
+  //   AND opts.acknowledged !== true. UI shows the confirm modal; on
+  //   user OK, calls again with { acknowledged: true }.
+  function _r8_4_setupPhaseConflictFixture(gapPhase, desiredPriority) {
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitContextEdit({ customer: { name: "R8-4 Co", vertical: "Enterprise", region: "EMEA" } });
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var envId = getActiveEngagement().environments.allIds[0];
+    commitInstanceAdd({
+      state: "current", layerId: "compute", environmentId: envId,
+      label: "R8-4 cur", vendor: "X", vendorGroup: "custom",
+      criticality: "Medium", disposition: "keep"
+    });
+    var curId = getActiveEngagement().instances.allIds.at(-1);
+    commitInstanceAdd({
+      state: "desired", layerId: "compute", environmentId: envId,
+      label: "R8-4 des", vendor: "X", vendorGroup: "custom",
+      priority: desiredPriority || null
+    });
+    var desId = getActiveEngagement().instances.allIds.at(-1);
+    commitGapAdd({
+      description: "R8-4 phase-conflict gap",
+      layerId: "compute",
+      affectedLayers: ["compute"],
+      affectedEnvironments: [envId],
+      gapType: "replace",
+      relatedCurrentInstanceIds: [curId],
+      relatedDesiredInstanceIds: [],
+      phase: gapPhase || "now",
+      reviewed: false
+    });
+    var gapId = getActiveEngagement().gaps.allIds[0];
+    return { envId, curId, desId, gapId };
+  }
+
+  it("V-INV-LINK-PHASE-1 · R8 #4 · L8 · commitGapLinkDesiredInstance refuses phase-conflicting link without { acknowledged: true } (returns ok:false + PHASE_CONFLICT_NEEDS_ACK)", async () => {
+    // Setup: gap.phase='now'; desired.priority='Later'. Mismatch.
+    var f = _r8_4_setupPhaseConflictFixture("now", "Later");
+    var r = commitGapLinkDesiredInstance(f.gapId, f.desId);
+    assertEqual(r.ok, false,
+      "R8 #4 / L8: phase-mismatched link without { acknowledged } MUST return ok:false (got: " + JSON.stringify(r) + ")");
+    assert(r.errors && r.errors[0] && r.errors[0].code === "PHASE_CONFLICT_NEEDS_ACK",
+      "R8 #4 / L8: error code MUST be PHASE_CONFLICT_NEEDS_ACK (got: " + JSON.stringify(r.errors) + ")");
+    // Conflict details surfaced for the UI to populate the confirm modal.
+    assertEqual(r.errors[0].details.currentPriority, "Later",
+      "R8 #4: error.details.currentPriority MUST equal desired.priority pre-link");
+    assertEqual(r.errors[0].details.targetPriority, "Now",
+      "R8 #4: error.details.targetPriority MUST equal phase-derived priority");
+    // Atomic abort: the link is NOT in the gap's relatedDesiredInstanceIds.
+    var post = getActiveEngagement().gaps.byId[f.gapId];
+    assertEqual(post.relatedDesiredInstanceIds.length, 0,
+      "R8 #4: failed phase-conflict link MUST NOT mutate gap.relatedDesiredInstanceIds (got: " + JSON.stringify(post.relatedDesiredInstanceIds) + ")");
+  });
+
+  it("V-INV-LINK-PHASE-2 · R8 #4 · L8 · commitGapLinkDesiredInstance with { acknowledged: true } commits the phase-conflicting link (UI-confirmed flow)", async () => {
+    // Setup: same conflict; this time pass acknowledged. The helper
+    // commits; the UI's job (GapsEditView) is then to call
+    // commitSyncDesiredFromGap so the desired's priority moves to match
+    // the gap's phase. The helper here only handles the LINK gate.
+    var f = _r8_4_setupPhaseConflictFixture("now", "Later");
+    var r = commitGapLinkDesiredInstance(f.gapId, f.desId, { acknowledged: true });
+    assertEqual(r.ok, true,
+      "R8 #4 / L8: { acknowledged: true } MUST allow the phase-conflicting link (got: " + JSON.stringify(r) + ")");
+    var post = getActiveEngagement().gaps.byId[f.gapId];
+    assertEqual(post.relatedDesiredInstanceIds.length, 1,
+      "R8 #4: acknowledged conflict link MUST commit");
+    assertEqual(post.relatedDesiredInstanceIds[0], f.desId,
+      "R8 #4: acknowledged conflict link MUST contain the target instance");
+  });
+
+  it("V-INV-LINK-PHASE-3 · R8 #4 · L8 · commitGapLinkDesiredInstance with no phase conflict succeeds without acknowledged (gate isn't over-restrictive)", async () => {
+    // No conflict cases per confirmPhaseOnLink:
+    //   (a) desired.priority equals phase-derived priority → no conflict
+    //   (b) desired.priority is null/missing → no conflict (gap is the
+    //       authoritative phase signal; desired tile has no opinion)
+    // Both must succeed without acknowledged.
+    var f1 = _r8_4_setupPhaseConflictFixture("now", "Now");  // matches
+    var r1 = commitGapLinkDesiredInstance(f1.gapId, f1.desId);
+    assertEqual(r1.ok, true, "R8 #4: matching priority MUST succeed without acknowledged (got: " + JSON.stringify(r1) + ")");
+    var f2 = _r8_4_setupPhaseConflictFixture("now", null);   // no priority
+    var r2 = commitGapLinkDesiredInstance(f2.gapId, f2.desId);
+    assertEqual(r2.ok, true, "R8 #4: null-priority desired MUST succeed without acknowledged (got: " + JSON.stringify(r2) + ")");
+  });
+
+  it("V-INV-LINK-PHASE-4 · R8 #4 · current-side commitGapLinkCurrentInstance is NOT affected by phase-conflict gate (the L8 contract is desired-only)", async () => {
+    // Sanity check: the gate fires ONLY on side === "desired". Linking
+    // a current instance never triggers PHASE_CONFLICT_NEEDS_ACK because
+    // current instances have no priority field (R3.5.a — priority only
+    // valid on desired). Phase conflict is a desired↔gap concern.
+    var f = _r8_4_setupPhaseConflictFixture("now", "Later");
+    // Add a second current to test linking; the existing curId is already linked.
+    commitInstanceAdd({
+      state: "current", layerId: "compute", environmentId: f.envId,
+      label: "R8-4 cur2", vendor: "X", vendorGroup: "custom",
+      criticality: "Medium", disposition: "keep"
+    });
+    var cur2Id = getActiveEngagement().instances.allIds.at(-1);
+    var r = commitGapLinkCurrentInstance(f.gapId, cur2Id);
+    assertEqual(r.ok, true,
+      "R8 #4: current-side link MUST NOT be gated by phase-conflict (got: " + JSON.stringify(r) + ")");
   });
 
   it("V-FLOW-GAPS-SELECTION-PERSIST-1 · BUG-051 (closes BUG-032 root cause) guard: GapsEditView selectedGapId persists across commitGapLink*-driven re-render; gap detail panel + link buttons survive add-link / unlink / edit cycles", async () => {
