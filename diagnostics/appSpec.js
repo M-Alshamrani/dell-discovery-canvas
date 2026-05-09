@@ -7880,6 +7880,46 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
     });
   });
 
+  it("V-FLOW-DRIVER-LABEL-V3UUID-1 · BUG-044 guard: gap card .program-badge resolves v3 UUID driverId to human label, never leaks UUID into user-visible text", () => {
+    // Build a v3 engagement with one driver. commitDriverAdd creates a
+    // UUID; commitGapAdd binds gap.driverId = that UUID. Pre-fix the
+    // gap card rendered the UUID literally after the ★ glyph because
+    // services/programsService.js driverLabel(uuid) returned null and
+    // the caller fell through to displaying effDid (the UUID itself).
+    // Fix resolves UUID → engagement.drivers.byId[uuid].businessDriverId
+    // → BUSINESS_DRIVERS catalog label.
+    _resetEngagementStoreForTests();
+    setActiveEngagement(createEmptyEngagement({ meta: { isDemo: false } }));
+    commitContextEdit({ customer: { name: "BUG-044 Co", vertical: "Enterprise", region: "EMEA" } });
+    commitEnvAdd({ envCatalogId: "coreDc" });
+    var addRes = commitDriverAdd({ businessDriverId: "cyber_resilience", priority: "High", outcomes: "" });
+    var driverUuid = addRes && addRes.engagement && addRes.engagement.drivers.allIds[0];
+    assert(driverUuid && /[0-9a-f]{8}-[0-9a-f]{4}/.test(driverUuid),
+      "BUG-044 setup requires a v3 UUID driverId; got: " + driverUuid);
+    var envId = getActiveEngagement().environments.allIds[0];
+    commitGapAdd({
+      description: "BUG-044 test gap",
+      layerId: "compute",
+      affectedLayers: ["compute"],
+      affectedEnvironments: [envId],
+      gapType: "replace",
+      relatedCurrentInstanceIds: [],
+      relatedDesiredInstanceIds: [],
+      driverId: driverUuid,
+      reviewed: true
+    });
+    var l = document.createElement("div"); var r = document.createElement("div");
+    renderGapsEditView(l, r, null);
+    var badge = l.querySelector(".program-badge");
+    assert(badge, "BUG-044: gap card must render a .program-badge when driverId is set");
+    var badgeTxt = badge.textContent || "";
+    var UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+    assert(!UUID_RE.test(badgeTxt),
+      "BUG-044: gap card .program-badge MUST NOT contain a UUID; got: '" + badgeTxt + "'");
+    assert(/cyber/i.test(badgeTxt),
+      "BUG-044: gap card .program-badge should resolve to the catalog label ('Cyber Resilience'); got: '" + badgeTxt + "'");
+  });
+
   it("V-FLOW-DEMO-BANNER-GAPS-1 · BUG-042 guard: GapsEditView renders .demo-mode-banner via the LIVE demo-loader path (session arg null, isDemo read from getActiveEngagement().meta)", () => {
     // VT26 above passed a v2-shape projection as the 3rd arg, which the
     // pre-fix predicate (`session && session.isDemo`) checked. The LIVE

@@ -12,6 +12,14 @@
 // gap.affectedEnvironments + linked instances; doesn't consider visibility.
 
 import { BUSINESS_DRIVERS } from "../core/config.js";
+// rc.7 / 7e-8 BUG-044 fix · v3 engagement read for UUID->businessDriverId
+// resolution in driverLabel. v3 stores drivers as
+// engagement.drivers.byId[uuid] = { id, businessDriverId, priority, outcomes }.
+// gap.driverId in v3 is the UUID; the catalog label lives at
+// BUSINESS_DRIVERS keyed by businessDriverId (the v2 typeId, e.g.
+// "cyber_resilience"). Without this resolution the UI rendered the
+// raw UUID after the ★/☆ glyph (BUG-044 visible repro).
+import { getActiveEngagement } from "../state/engagementStore.js";
 
 /**
  * Suggest a program (driverId) for a gap using a deterministic rule ladder.
@@ -168,10 +176,32 @@ export function effectiveDriverReason(gap, session) {
   return { driverId: null, source: "none", reason: "no suggestion rule matched (lands in Unassigned swimlane)" };
 }
 
-/** Human label lookup. */
+/**
+ * Human label lookup. Accepts EITHER a v2 catalog typeId
+ * (e.g. "cyber_resilience") OR a v3 UUID (gap.driverId in v3 storage).
+ *
+ * BUG-044 fix · pre-fix this returned null for v3 UUIDs and the caller
+ * (GapsEditView gap-card render) fell through to display the raw UUID
+ * after the ★ glyph. Now: resolve the UUID via engagement.drivers.byId
+ * to its businessDriverId (catalog typeId), then look up the label.
+ */
 export function driverLabel(driverId) {
+  if (!driverId) return null;
+  // v2 path: directly a catalog typeId.
   var d = BUSINESS_DRIVERS.find(function(b) { return b.id === driverId; });
-  return d ? d.label : null;
+  if (d) return d.label;
+  // v3 path: driverId is a UUID; resolve via the active engagement's
+  // drivers collection to get the businessDriverId (catalog typeId),
+  // then look up the catalog label.
+  try {
+    var eng = getActiveEngagement();
+    var v3d = eng && eng.drivers && eng.drivers.byId && eng.drivers.byId[driverId];
+    if (v3d && v3d.businessDriverId) {
+      var d2 = BUSINESS_DRIVERS.find(function(b) { return b.id === v3d.businessDriverId; });
+      return d2 ? d2.label : v3d.businessDriverId;
+    }
+  } catch (e) { /* defensive · driverLabel must never throw on the render path */ }
+  return null;
 }
 
 /**
