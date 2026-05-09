@@ -1607,6 +1607,80 @@ Same shape as the v2 → v3 cutover BUG-010 (bridge clobber): the data-shape bou
 
 ---
 
+## BUG-045 · SettingsModal "Couldn't save — reopen Settings" red error fires on initial open + Save without first tab-switching (CLOSED 2026-05-09)
+
+**Status**: **CLOSED 2026-05-09** · Reported by user with screenshot 2026-05-09 (Local A provider · API key entered · Save clicked → red error). Root cause + fix shipped same day.
+**Reporter**: User
+**Severity**: High (Save was non-functional on the most common entry path — first-open + Save)
+**Regression**: No — pre-existing structural mismatch since rc.4-dev Hotfix #1 (`36a87fe`) scoped the lookup to `.overlay-body`. The hotfix worked for swapSection because swap REPLACES the wrap; it didn't work for initial-open because openOverlay APPENDS the body INTO a fresh wrap. Two DOM structures, lookup matched only one.
+
+### Repro
+1. Open Settings via topbar gear button (initial-open path; no prior tab switch).
+2. (Optional) switch to AI Providers tab is the default; no need to click pills.
+3. Enter / change any field (API key, model, baseUrl, etc.).
+4. Click Save.
+
+### Expected
+Save persists the AI config to localStorage; button flashes "Saved ✓" then resets to "Save" disabled until next edit.
+
+### Actual (pre-fix)
+Save button flashes red: "Couldn't save — reopen Settings" for 2 seconds, then resets. localStorage NOT updated.
+
+### Root cause
+`ui/components/Overlay.js` line 172-175 wraps the user-supplied `body` in a fresh `<div class="overlay-body">` on every `openOverlay()` call. So the DOM is:
+```
+<div class="overlay-body">         <!-- wrap, NO _settings stash -->
+  <div class="settings-body ...">  <!-- inner (buildSettingsBody), HAS _settings -->
+    ...
+  </div>
+</div>
+```
+
+`ui/views/SettingsModal.js` `swapSection()` (tab switch) instead REPLACES the wrap with a body that has `class="overlay-body"` added (line 111: `newBody.classList.add("overlay-body")`). Post-swap, `.overlay-body` IS the body with `_settings`. Two different structures across initial-open vs post-swap paths.
+
+The Save handler at line 353 scoped its lookup to `.overlay-body` (the wrap on initial-open, the body on post-swap). Hit the wrap on initial-open → no `_settings` → friendly error.
+
+### Fix
+`ui/views/SettingsModal.js` Save handler now scopes the lookup to `.settings-body` (always the body proper, regardless of which mount path produced it). One source of truth across both paths.
+
+### Regression test
+**V-FLOW-SETTINGS-SAVE-1**: open Settings via `openSettingsModal({ section: "providers" })` (initial-open path), assert `.settings-body` carries `_settings` with populated `config.providers` + non-empty `activeKey`. The pre-fix lookup pattern would NOT have caught this (it only checked `.overlay-body`).
+
+### Memory anchor
+Same shape as BUG-042: VT26 was passing because it tested ONE rendering path (direct call) but the LIVE app exercised a DIFFERENT path (live demo-loader). Two paths diverged. Pattern to add to spec: when a function has multiple call sites with different DOM-mount paths, the test must cover EACH mount path separately, not just one.
+
+---
+
+## BUG-046 · AI chat quality enhancement — chat doesn't know calculation methodologies, instance NAMES (only counts via selectMatrixView), or design rationale (deferred)
+
+**Status**: OPEN · Reported by user 2026-05-09 with verbatim chat-session quote · Scheduled v3.1 (chat polish + grounding-router enhancement)
+**Reporter**: User during workshop validation
+**Severity**: Medium (chat works correctly + ground-truth-honest, but has explicit gaps the LLM correctly self-reports — opportunity for 10x deeper helpfulness)
+**Regression**: No — these are gaps in what the grounding context contains, not bugs in what's there. The chat is doing the right thing (admitting "data not specified"), it just doesn't have access to the deeper data.
+
+### User feedback (verbatim)
+> "The quality of the chat ai responses are great but we need to enhanse it more and improve the performance and ightness, we did this once before and i think it is worth to revisi it when all majosr data and connections and relationships and functions are fixed and reaady... dont get me wrong i think the answers are great now , but there is a room for improvement maybe."
+
+### Specific gaps surfaced by chat sample
+1. **Instance NAMES vs counts**: chat asked "find the dell assets in current state" → response gave Dell instance COUNTS per environment+layer (correct, sourced from selectMatrixView count rollup). Follow-up "i need to know these components names" → response could only resolve some labels, said: *"the data does not specify which of the two instances (PowerEdge R740 Cluster or Cisco UCS B-series) is the Dell one."* Translation: selectMatrixView returns aggregate counts; the LLM has no per-cell instance-label-with-vendor projection. Need a selector that returns instance.label + instance.vendor + instance.layerId + env-alias for the cells the LLM is reasoning about.
+2. **Calculation methodology unknown**: chat asked "how the discovery coverage score and heath status are calculated?" → response listed factor INPUTS but said *"the canvas doesn't include the explicit calculation methodology."* The formula DOES exist (services/healthMetrics.js). Need a "how-this-is-calculated" capability — either: (a) a new selector `selectCalculationMethodology(scoreId)` that returns the formula doc-string, or (b) inline the formulas in the system prompt's catalog/data-contract section.
+3. **Design rationale**: chat asked "what else you think you can answer be better about" → response gave a beautiful self-reflective list: invariant rationale, concept nuances ("replace" vs "consolidate"), workflow best practices, "so what" of reporting views, graceful-not-supported responses. All real opportunities.
+
+### Fix plan (v3.1 chat polish arc)
+1. **NEW SELECTOR `selectInstancesByVendor(vendorGroup, stateFilter?)`**: returns `[{ id, label, vendor, vendorGroup, layerLabel, environmentLabel, criticality, disposition }]` for each instance matching the filter. Lets chat answer "name the Dell assets" with full label-level resolution.
+2. **NEW DATA-CONTRACT SECTION `calculationMethodologies`**: inline the actual formulas from services/healthMetrics.js + services/programsService.js + selectors/healthSummary.js into the system prompt's data-contract block. So the chat can articulate "Discovery Coverage = (gaps with disposition / total gaps) × 100, weighted by layer..." or whatever the actual formula is. Single source of truth: extract the formula constants from the service file, embed them as a documented map.
+3. **NEW SECTION IN ROLE PROMPT — "Anticipating user confusion"**: per the chat's own self-reflection ("replace vs consolidate", "Workload vs Compute"), bake explicit nuance-clarification examples into the role section. The LLM can already articulate these once primed.
+4. **Performance**: per BUG-021, OpenAI prompt caching wiring + Anthropic extended-1h caching for workshop-length sessions. Token-budget hint chip in chat header so user sees cache hits.
+5. **"So what" hooks for reporting views**: each `selectXView` selector emits an additional `_executiveTakeaway` field — "the money slide" the designers had in mind. So chat doesn't just summarize the data; it interprets it.
+
+### Out of scope (this rc.7)
+This is a v3.1 polish item. The user explicitly said "when all majosr data and connections and relationships and functions are fixed and reaady". rc.7 ships the architecture; v3.1 ships the depth.
+
+### Memory anchor
+The user's framing is clear: chat is working correctly today; the room for improvement is enrichment (more selectors, formula transparency, anticipatory nuance), not regression repair. Track as a v3.1 epic; the 5 items above are the breakdown.
+
+---
+
 ## BUG-NNN · One-line headline
 
 **Status**: OPEN · Reported YYYY-MM-DD · vX.Y.Z · Scheduled <bucket>

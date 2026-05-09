@@ -82,6 +82,7 @@
 | BUG-038 | Medium | Skill Builder UI is text-heavy / primitive | v3.1 crown-jewel |
 | BUG-039 | Medium | Vendor mix % misleading (counts records, not deployment scale) | v3.1+ data-model widening |
 | BUG-040 | Medium | Workload can map to retired asset (relationship invariant gap) | rc.8 / GA hardening |
+| BUG-046 | Medium | AI chat enhancement — instance NAMES (selectInstancesByVendor), calculation-methodology transparency, anticipatory user-confusion handling, perf (OpenAI caching) | v3.1 polish arc |
 
 **Closed since rc.6 tag**:
 - `709e778` BUG-041 (AI Assist provider popover stale snapshot)
@@ -92,6 +93,7 @@
 - `2026-05-09` BUG-027 (broad test-pass cloak rule covers all body-level rogue probes)
 - `2026-05-09` BUG-028 (side-panel stacking per SPEC §S36.1; chat persists when Skills opens)
 - `2026-05-09` BUG-001 + BUG-002 (v2 root path deleted in Step J; v3 propagate-criticality flow correctly reads `applied[0].newCrit` for toast + creates fresh button on each panel re-mount)
+- `2026-05-09` BUG-045 (SettingsModal "Couldn't save" — initial-open path missed `_settings` because Save lookup scoped to `.overlay-body` wrap instead of `.settings-body` inner)
 
 ---
 

@@ -350,10 +350,28 @@ function buildSettingsFooter(section) {
     // overlay panel directly + prefer the body that's NOT mid-leaving.
     // Belt-and-suspenders: also re-read input values from the live DOM
     // at click time (refs.*Input.value already does this; preserved).
+    // BUG-045 fix · Overlay.js wraps the supplied body in a NEW
+    // .overlay-body div on initial open (Overlay.js line 172-175):
+    //
+    //   <div class="overlay-body">       <-- wrap, NO _settings
+    //     <div class="settings-body...">  <-- inner (buildSettingsBody), HAS _settings
+    //       ...
+    //     </div>
+    //   </div>
+    //
+    // swapSection (line 110-117) INSTEAD replaces the wrap with a body
+    // that has class "overlay-body" added (line 111), so post-swap the
+    // .overlay-body element IS the body with _settings. Two structures.
+    //
+    // Pre-fix the lookup scoped to .overlay-body found the wrap (no
+    // _settings) on initial open and the body (_settings present) on
+    // post-swap. That's why "Couldn't save" reproduced for users who
+    // hit Save without tab-switching first. Fix: look at .settings-body
+    // (always the body proper, regardless of open-vs-swap path).
     var settingsPanel = document.querySelector(".overlay.open[data-kind='settings']");
     var refs = null;
     if (settingsPanel) {
-      var candidateBodies = settingsPanel.querySelectorAll(".overlay-body");
+      var candidateBodies = settingsPanel.querySelectorAll(".settings-body");
       // Prefer the body that is NOT mid-leaving.
       for (var i = 0; i < candidateBodies.length; i++) {
         var b = candidateBodies[i];

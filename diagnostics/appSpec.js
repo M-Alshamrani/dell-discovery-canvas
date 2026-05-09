@@ -7880,6 +7880,34 @@ describe("45 · Phase 19m · v2.4.13 intermediate UX/UI patches", () => {
     });
   });
 
+  it("V-FLOW-SETTINGS-SAVE-1 · BUG-045 guard: SettingsModal Save handler resolves _settings via .settings-body (not .overlay-body) so initial-open path saves correctly without first tab-switching", async () => {
+    // User report 2026-05-09 · screenshot of "Couldn't save — reopen
+    // Settings" red error after entering Local A API key + clicking Save
+    // (without first switching tabs). Root cause: Overlay.js wraps the
+    // body in a NEW .overlay-body div on initial open, so the user-
+    // supplied .settings-body (with _settings stashed) is the INNER
+    // element. The save handler scoped the lookup to .overlay-body (the
+    // wrap, no _settings) and showed the friendly error. swapSection
+    // (tab switch) replaced the wrap with the body so post-switch
+    // it worked — masking the initial-open bug.
+    const { openSettingsModal } = await import("../ui/views/SettingsModal.js");
+    const { closeOverlay } = await import("../ui/components/Overlay.js");
+    closeOverlay({ _allLayers: true });
+    openSettingsModal({ section: "providers" });
+    // Allow the panel to mount synchronously (openOverlay is sync).
+    const settingsPanel = document.querySelector(".overlay.open[data-kind='settings']");
+    assert(settingsPanel, "Settings overlay must mount via openSettingsModal");
+    const settingsBody = settingsPanel.querySelector(".settings-body");
+    assert(settingsBody, "Settings overlay must contain a .settings-body element on initial open");
+    assert(settingsBody._settings,
+      "BUG-045: .settings-body MUST carry the _settings stash on initial open (NOT just post-swapSection); Save handler scopes its lookup to this element to avoid the .overlay-body wrap mismatch");
+    assert(settingsBody._settings.config && settingsBody._settings.config.providers,
+      "BUG-045: _settings.config.providers must be populated for the Save handler to dereference activeKey");
+    assert(typeof settingsBody._settings.activeKey === "string" && settingsBody._settings.activeKey.length > 0,
+      "BUG-045: _settings.activeKey must be a non-empty string");
+    closeOverlay({ _allLayers: true });
+  });
+
   it("V-FLOW-DRIVER-LABEL-V3UUID-1 · BUG-044 guard: gap card .program-badge resolves v3 UUID driverId to human label, never leaks UUID into user-visible text", () => {
     // Build a v3 engagement with one driver. commitDriverAdd creates a
     // UUID; commitGapAdd binds gap.driverId = that UUID. Pre-fix the
