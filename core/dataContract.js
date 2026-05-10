@@ -329,3 +329,150 @@ const _CONTRACT = buildContract();
 
 export function getDataContract()    { return _CONTRACT; }
 export function getContractChecksum() { return _CONTRACT.checksum; }
+
+// ─── rc.8.b R2 · Skills Builder mutable-data-point curation (per SPEC §S46.4 + RULES §16 CH36.c) ───
+//
+// `STANDARD_MUTABLE_PATHS` is the curated whitelist of schema-keyed paths the
+// Skills Builder Data-points selector exposes by DEFAULT (Standard view).
+// Switching to Advanced exposes the full mutable schema via
+// `getAllMutableDataPoints()`. The list lives HERE (NOT a separate file) per
+// the user-confirmed Q3 architectural decision; CH36.c forbids duplication.
+//
+// Path semantics: schema-keyed (`<entityKind>.<fieldName>`), entity-level NOT
+// instance-level — a skill bound to "gap.urgency" iterates ALL gaps in the
+// active engagement at run-time. NO UUIDs in saved skill JSON (CH36.i).
+//
+// Curation policy (read-only — modifications require SPEC §S46.4 amendment):
+//   - Standard set: ~22 high-frequency author paths (customer / drivers /
+//     environments / instances / gaps).
+//   - Advanced set: every schema field NOT in the provenance/internal
+//     exclusion list below. Includes UUIDs + FKs + audit metadata for
+//     power-user authoring; the runtime + Save validator still reject
+//     UUID literals in saved bindings (CH36.i).
+
+// First cut per SPEC §S46.4 (LOCKED 2026-05-10).
+export const STANDARD_MUTABLE_PATHS = Object.freeze([
+  // Customer (singleton)
+  "customer.name",
+  "customer.vertical",
+  "customer.region",
+  "customer.notes",
+  // Driver (collection — per-driver fields)
+  "driver.priority",
+  "driver.outcomes",
+  // Environment (collection)
+  "environment.alias",
+  "environment.location",
+  "environment.tier",
+  "environment.sizeKw",
+  "environment.sqm",
+  "environment.notes",
+  // Instance (collection — both states)
+  "instance.label",
+  "instance.vendor",
+  "instance.vendorGroup",
+  "instance.criticality",
+  "instance.notes",
+  "instance.disposition",          // desired-state only
+  // Gap (collection)
+  "gap.description",
+  "gap.gapType",
+  "gap.urgency",
+  "gap.phase",
+  "gap.status",
+  "gap.notes",
+  "gap.driverId",                  // FK; rendered as label via labelResolvers
+  "gap.layerId"                    // FK; rendered as label
+]);
+
+// Schema fields excluded from `getAllMutableDataPoints()` because they're
+// computed / provenance / migration metadata and never user-mutable in any
+// meaningful sense. Per-entity field-name match (not full path).
+const _NON_MUTABLE_FIELD_NAMES = new Set([
+  // Provenance wrappers (§S8) — populated by AI dispatch, not author-set.
+  "aiSuggestedDellMapping",
+  "aiMappedDellSolutions",
+  "aiTag",
+  // Audit + cross-cutting metadata (set by store, not author-set).
+  "engagementId",
+  "createdAt",
+  "updatedAt",
+  "validatedAgainst",
+  // Engagement-meta fields (locked at engagement scope; not skill-mutable).
+  "schemaVersion",
+  "checksum",
+  "generatedAt"
+]);
+
+// Note + scope helpers — surface field-specific caveats on the DataPoint.
+function _scopeNote(entity, field) {
+  if (entity === "instance" && field === "disposition") return "desired-state only";
+  if (entity === "instance" && field === "originId")    return "desired-state only; FK to current";
+  if (entity === "instance" && field === "priority")    return "desired-state only";
+  if (entity === "instance" && field === "mappedAssetIds") return "workload-layer only";
+  return null;
+}
+
+// Build one DataPoint descriptor per schema field.
+// Shape: { path, entity, field, type, required, description, values?, note?, scope }
+//   - `path`         schema-keyed identifier the skill binds to
+//   - `entity`       contract entity kind (customer | driver | env | instance | gap | engagementMeta)
+//   - `field`        schema field name
+//   - `type`         zod-derived primitive type (string | number | boolean | enum | array | object)
+//   - `required`     true if the field is non-optional in the schema
+//   - `description`  hand-authored from FIELD_DESCRIPTIONS
+//   - `values`       enum option list (when type='enum')
+//   - `note`         optional field-specific caveat (e.g. "desired-state only")
+//   - `scope`        "standard" | "advanced" — which curation tier this point belongs to
+function _buildDataPoint(entityKind, field) {
+  var path = entityKind + "." + field.name;
+  var dp = {
+    path:        path,
+    entity:      entityKind,
+    field:       field.name,
+    type:        field.type,
+    required:    !!field.required,
+    description: field.description || "",
+    scope:       STANDARD_MUTABLE_PATHS.indexOf(path) >= 0 ? "standard" : "advanced"
+  };
+  if (Array.isArray(field.values)) dp.values = field.values.slice();
+  var note = _scopeNote(entityKind, field.name);
+  if (note) dp.note = note;
+  return dp;
+}
+
+/**
+ * getAllMutableDataPoints() -> Array<DataPoint>
+ *
+ * Returns every author-mutable schema field across the 6 contract entities
+ * (excluding provenance wrappers + audit metadata + engagement-meta).
+ * The "Advanced" view in the Skills Builder Data-points selector consumes
+ * this. Stable ordering: entity → field declaration order.
+ *
+ * Pure: no side effects; safe to call multiple times.
+ */
+export function getAllMutableDataPoints() {
+  var out = [];
+  _CONTRACT.entities.forEach(function(entity) {
+    if (entity.kind === "engagementMeta") return; // not author-mutable; skip entirely
+    entity.fields.forEach(function(field) {
+      if (_NON_MUTABLE_FIELD_NAMES.has(field.name)) return;
+      out.push(_buildDataPoint(entity.kind, field));
+    });
+  });
+  return out;
+}
+
+/**
+ * getStandardMutableDataPoints() -> Array<DataPoint>
+ *
+ * Returns the curated standard subset (~22 paths per SPEC §S46.4).
+ * Same DataPoint shape as `getAllMutableDataPoints()`. Used by the Skills
+ * Builder Data-points selector's DEFAULT view; toggle to Advanced switches
+ * to the full set.
+ */
+export function getStandardMutableDataPoints() {
+  var allPoints = getAllMutableDataPoints();
+  var standardSet = new Set(STANDARD_MUTABLE_PATHS);
+  return allPoints.filter(function(dp) { return standardSet.has(dp.path); });
+}
