@@ -19404,13 +19404,24 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
     assertEqual(typeof mod.launchSkill, "function",
       "V-FLOW-SKILL-V32-CHAT-TAB-3 (RED-until-R5): CanvasChatOverlay.js MUST export launchSkill(skill) helper for the launcher row Run-button click (per SPEC §S46.7)");
     // Once available, the assertion below runs: launching A then B with A still active triggers the confirm modal.
-    if (typeof mod.launchSkill === "function") {
-      var fakeSkillA = { skillId: "skl-test-a", label: "Test A", description: "test" };
-      var fakeSkillB = { skillId: "skl-test-b", label: "Test B", description: "test" };
-      mod.launchSkill(fakeSkillA);
-      mod.launchSkill(fakeSkillB);
-      var confirmModal = document.querySelector("[data-skill-cancel-confirm]");
-      assert(confirmModal, "V-FLOW-SKILL-V32-CHAT-TAB-3 (RED-until-R5): launching skill B while A runs MUST surface a [data-skill-cancel-confirm] modal (per CH36.6)");
+    try {
+      if (typeof mod.launchSkill === "function") {
+        var fakeSkillA = { skillId: "skl-test-a", label: "Test A", description: "test" };
+        var fakeSkillB = { skillId: "skl-test-b", label: "Test B", description: "test" };
+        mod.launchSkill(fakeSkillA);
+        mod.launchSkill(fakeSkillB);
+        var confirmModal = document.querySelector("[data-skill-cancel-confirm]");
+        assert(confirmModal, "V-FLOW-SKILL-V32-CHAT-TAB-3 (RED-until-R5): launching skill B while A runs MUST surface a [data-skill-cancel-confirm] modal (per CH36.6)");
+      }
+    } finally {
+      // rc.8.b / hygiene · clean up the cancel-confirm modal + reset
+      // single-skill state so subsequent tests + the user's UI don't
+      // see test residue popping up. The modal mounts on document.body
+      // outside the overlay, so the regular overlay-cleanup sweep
+      // doesn't reach it.
+      var residue = document.querySelectorAll("[data-skill-cancel-confirm]");
+      residue.forEach(function(el) { try { el.remove(); } catch (_e) {} });
+      try { if (typeof mod._closeCanvasChatForTests === "function") mod._closeCanvasChatForTests(); } catch (_e) {}
     }
   });
 
@@ -19464,12 +19475,19 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
     const mod = await import("/ui/views/CanvasChatOverlay.js");
     assertEqual(typeof mod.applyMutations, "function",
       "V-FLOW-SKILL-V32-MUTATE-1 (RED-until-R7): CanvasChatOverlay.js MUST export applyMutations(proposals, policy, runMeta) for the ask-vs-auto-tag dispatch (per SPEC §S46.10)");
-    if (typeof mod.applyMutations === "function") {
-      var proposals = [{ op: "set", path: "customer.notes", value: "hi" }];
-      var runMeta = { skillId: "skl-x", runId: "run-x", mutatedAt: new Date().toISOString() };
-      mod.applyMutations(proposals, "ask", runMeta);
-      var approve = document.querySelector("[data-mutation-approve]");
-      assert(approve, "V-FLOW-SKILL-V32-MUTATE-1 (RED-until-R7): ask policy MUST surface a [data-mutation-approve] modal before commit (per SPEC §S46.10)");
+    try {
+      if (typeof mod.applyMutations === "function") {
+        var proposals = [{ op: "set", path: "customer.notes", value: "hi" }];
+        var runMeta = { skillId: "skl-x", runId: "run-x", mutatedAt: new Date().toISOString() };
+        mod.applyMutations(proposals, "ask", runMeta);
+        var approve = document.querySelector("[data-mutation-approve]");
+        assert(approve, "V-FLOW-SKILL-V32-MUTATE-1 (RED-until-R7): ask policy MUST surface a [data-mutation-approve] modal before commit (per SPEC §S46.10)");
+      }
+    } finally {
+      // rc.8.b / hygiene · clean up the approval modal so it doesn't
+      // linger as test residue on the user's canvas.
+      var residue = document.querySelectorAll("[data-mutation-approve]");
+      residue.forEach(function(el) { try { el.remove(); } catch (_e) {} });
     }
   });
 

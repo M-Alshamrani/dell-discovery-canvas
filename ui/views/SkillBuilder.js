@@ -599,7 +599,15 @@ function renderEditForm(adminRoot, list, existing, onChange) {
     improveBtn.click();
   });
 
-  // ─── Test button (R3 stub; full wiring at R6 per user direction) ─
+  // ─── Test button (rc.8.b hygiene: real-LLM wiring per SPEC §S46.3) ─
+  // Runs the current draft's improvedPrompt through the active LLM
+  // provider via chatCompletion (same transport as Improve + the
+  // Canvas Chat skill runtime). NO mocks per CH36.b /
+  // feedback_no_mocks.md. {{paramName}} placeholders are NOT
+  // substituted at the author surface (they pass through verbatim);
+  // for full parameter substitution, save the skill + run it via
+  // Canvas Chat → Skills tab where parameter inputs render in the
+  // Skill panel right-rail.
   var testRow = mk("div", "skill-form-test-row");
   var testBtn = mkt("button", "btn-secondary", "Test skill now");
   testBtn.type = "button";
@@ -609,11 +617,53 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   var testOut = mk("div", "ai-skill-result skill-form-test-out");
   testOut.style.display = "none";
   form.appendChild(testOut);
-  testBtn.addEventListener("click", function() {
+  testBtn.addEventListener("click", async function() {
+    var draft = (improvedArea.value || "").trim();
     testOut.style.display = "block";
-    testOut.className = "ai-skill-result skill-form-test-out";
-    testOut.textContent = "Test wiring lands at rc.8.b R6 (run-time execution sub-arc). " +
-      "Today the skill saves; running happens via Canvas Chat → Skills tab once R5 + R6 land.";
+    if (!draft) {
+      testOut.className = "ai-skill-result skill-form-test-out err";
+      testOut.textContent = "Improved prompt is empty. Click Improve first, or hand-edit the Improved prompt textarea, then Test.";
+      return;
+    }
+    testBtn.disabled = true;
+    var origLabel = testBtn.textContent;
+    testBtn.textContent = "Running...";
+    testOut.className = "ai-skill-result skill-form-test-out running";
+    testOut.textContent = "Running with " + (loadAiConfig().activeProvider || "active provider") + "...";
+    try {
+      var cfg = loadAiConfig();
+      var active = cfg.providers[cfg.activeProvider];
+      if (!active) {
+        testOut.className = "ai-skill-result skill-form-test-out err";
+        testOut.textContent = "No active LLM provider configured. Open Settings → AI Providers to set one up.";
+        return;
+      }
+      var res = await chatCompletion({
+        providerKey: cfg.activeProvider,
+        baseUrl:     active.baseUrl,
+        model:       active.model,
+        apiKey:      active.apiKey,
+        messages: [
+          { role: "system", content: "You are running a saved skill draft. Follow the instructions in the user message; produce output in the format the skill specifies. Note: this is a draft test without parameter substitution; {{paramName}} placeholders pass through verbatim." },
+          { role: "user",   content: draft }
+        ]
+      });
+      testOut.innerHTML = "";
+      testOut.className = "ai-skill-result skill-form-test-out ok";
+      var head = mk("div", "ai-skill-result-head");
+      head.textContent = "Test output · " + (cfg.activeProvider || "?") + " (draft — not saved)";
+      testOut.appendChild(head);
+      var body = mk("pre", "ai-skill-result-body");
+      body.textContent = (res && res.text) || "(empty response)";
+      testOut.appendChild(body);
+    } catch (e) {
+      testOut.className = "ai-skill-result skill-form-test-out err";
+      testOut.textContent = "Test failed: " + (e && e.message || String(e)) +
+        ". Try again, or check Settings → AI Providers.";
+    } finally {
+      testBtn.disabled = false;
+      testBtn.textContent = origLabel;
+    }
   });
 
   // ─── Save + Cancel ───────────────────────────────────────────────
