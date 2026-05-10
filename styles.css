@@ -5799,8 +5799,427 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
    to keep the chat-only experience for users who don't need it. Phase 4
    populates the rail with saved skills. */
 .canvas-chat-body {
-  display: flex; flex-direction: row;
+  /* rc.8.b / R5 (per SPEC §S46.7) - column layout: tab strip on top,
+     tab content panes below. The Chat pane re-establishes the row
+     layout (main + rail) within itself. */
+  display: flex; flex-direction: column;
   height: min(72vh, 760px); min-height: 480px;
+}
+
+/* rc.8.b / R5 - canvas chat tab strip */
+.canvas-chat-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--canvas-alt, #F4F6F9);
+  border-bottom: 1px solid var(--rule, #E4E8EE);
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+.canvas-chat-tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--ink-mute, #6B7A90);
+  font-family: var(--sans, 'Inter', sans-serif);
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.canvas-chat-tab:hover {
+  color: var(--ink, #0B2A4A);
+  background: var(--canvas, #FFF);
+}
+.canvas-chat-tab.is-active {
+  color: var(--dell-blue, #0076CE);
+  border-bottom-color: var(--dell-blue, #0076CE);
+  background: var(--canvas, #FFF);
+}
+.canvas-chat-tab-dynamic-close {
+  background: transparent;
+  border: 0;
+  padding: 0 0 0 4px;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.6;
+}
+.canvas-chat-tab-dynamic-close:hover { opacity: 1; }
+
+/* Tab content panes: only .is-active is visible */
+.canvas-chat-tab-content {
+  display: none;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.canvas-chat-tab-content.is-active {
+  display: flex;
+}
+/* Chat pane re-establishes the row layout (main + rail) */
+.canvas-chat-chat-pane.is-active {
+  flex-direction: row;
+}
+/* Skills launcher + dynamic skill panes */
+.canvas-chat-skills-pane.is-active,
+.canvas-chat-skill-pane.is-active {
+  flex-direction: row;
+}
+
+/* Skills launcher list (read-only per CH36.g) */
+.canvas-chat-skills-pane {
+  background: var(--canvas, #FFF);
+  padding: 20px 24px;
+  overflow-y: auto;
+  flex-direction: column !important;
+}
+.canvas-chat-skills-pane.is-active { flex-direction: column !important; }
+.canvas-chat-skills-head { margin-bottom: 16px; }
+.canvas-chat-skills-eyebrow {
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-mute, #6B7A90);
+  margin-bottom: 4px;
+}
+.canvas-chat-skills-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink, #0B2A4A);
+  margin-bottom: 6px;
+}
+.canvas-chat-skills-help {
+  font-size: 12.5px;
+  color: var(--ink-soft, #3E4C62);
+  line-height: 1.5;
+}
+.canvas-chat-skills-empty {
+  font-size: 13px;
+  color: var(--ink-mute, #6B7A90);
+  font-style: italic;
+  padding: 24px 0;
+}
+.canvas-chat-skills-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.canvas-chat-skills-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--canvas-soft, #FAFBFC);
+  border: 1px solid var(--rule, #E4E8EE);
+  border-radius: var(--radius-md, 5px);
+}
+.canvas-chat-skills-row-info { flex: 1 1 auto; min-width: 0; }
+.canvas-chat-skills-row-label {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink, #0B2A4A);
+}
+.canvas-chat-skills-row-desc {
+  font-size: 12px;
+  color: var(--ink-soft, #3E4C62);
+  margin-top: 2px;
+}
+.canvas-chat-skills-row-meta {
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-mute, #6B7A90);
+  margin-top: 4px;
+}
+.canvas-chat-skills-row-run { flex-shrink: 0; }
+
+/* Dynamic skill pane: chat dialog (left) + skill panel (right) */
+.canvas-chat-skill-pane {
+  background: var(--canvas, #FFF);
+}
+.canvas-chat-skill-dialog {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: #0D1117;
+  color: #E6EDF3;
+  padding: 20px 24px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.canvas-chat-skill-dialog-empty {
+  font-style: italic;
+  color: #6E7681;
+  font-size: 12.5px;
+}
+.canvas-chat-skill-panel {
+  flex: 0 0 320px;
+  border-left: 1px solid var(--rule, #E4E8EE);
+  background: var(--canvas-soft, #FAFBFC);
+  padding: 20px 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.canvas-chat-skill-panel-head { padding-bottom: 12px; border-bottom: 1px solid var(--rule, #E4E8EE); }
+.canvas-chat-skill-panel-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink, #0B2A4A);
+}
+.canvas-chat-skill-panel-desc {
+  font-size: 12.5px;
+  color: var(--ink-soft, #3E4C62);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+.canvas-chat-skill-panel-meta {
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-mute, #6B7A90);
+  margin-top: 6px;
+}
+.canvas-chat-skill-panel-section-head {
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-mute, #6B7A90);
+  margin-bottom: 8px;
+}
+.canvas-chat-skill-panel-no-params {
+  font-size: 12px;
+  color: var(--ink-mute, #6B7A90);
+  font-style: italic;
+}
+.canvas-chat-skill-panel-param-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.canvas-chat-skill-panel-param-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink, #0B2A4A);
+}
+.canvas-chat-skill-panel-param-hint {
+  font-size: 11px;
+  color: var(--ink-mute, #6B7A90);
+}
+.canvas-chat-skill-panel-run-row { display: flex; flex-direction: column; gap: 8px; }
+.canvas-chat-skill-panel-run { width: 100%; }
+.canvas-chat-skill-panel-run-stub {
+  font-size: 11.5px;
+  color: var(--ink-mute, #6B7A90);
+  font-style: italic;
+  padding: 8px 10px;
+  background: var(--canvas-alt, #F4F6F9);
+  border: 1px dashed var(--rule, #E4E8EE);
+  border-radius: var(--radius-sm, 3px);
+}
+.canvas-chat-skill-panel-output {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--ink-soft, #3E4C62);
+}
+
+/* rc.8.b / R5 - cancel-confirm modal (per SPEC §S46.7 single-skill invariant CH36.f) */
+.skill-cancel-confirm-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 42, 74, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+.skill-cancel-confirm-card {
+  background: var(--canvas, #FFF);
+  border-radius: var(--radius-lg, 8px);
+  box-shadow: var(--shadow-lg);
+  padding: 24px 28px;
+  max-width: 480px;
+  width: 90%;
+}
+.skill-cancel-confirm-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink, #0B2A4A);
+  margin-bottom: 10px;
+}
+.skill-cancel-confirm-msg {
+  font-size: 13px;
+  color: var(--ink-soft, #3E4C62);
+  line-height: 1.5;
+  margin-bottom: 18px;
+}
+.skill-cancel-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* rc.8.b / R5 - PATCH: output-format + mutation-policy radio rows
+   were rendering inline (all 4 labels + descriptions running together
+   in one paragraph). Stack them vertically with proper spacing.
+   Same fix for mutation-policy. */
+.skill-form-output-format,
+.skill-form-mutation-policy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.skill-form-output-format-row,
+.skill-form-mutation-policy-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  cursor: pointer;
+  padding: 8px 10px;
+  border: 1px solid var(--rule, #E4E8EE);
+  border-radius: var(--radius-md, 5px);
+  background: var(--canvas, #FFF);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.skill-form-output-format-row:hover,
+.skill-form-mutation-policy-row:hover {
+  background: var(--canvas-soft, #FAFBFC);
+  border-color: var(--rule-strong, #CBD2DC);
+}
+.skill-form-output-format-row input[type="radio"],
+.skill-form-mutation-policy-row input[type="radio"] {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.skill-form-output-format-label,
+.skill-form-mutation-policy-label {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--ink, #0B2A4A);
+  flex-shrink: 0;
+  min-width: 140px;
+}
+.skill-form-output-format-hint,
+.skill-form-mutation-policy-hint {
+  color: var(--ink-mute, #6B7A90);
+  font-size: 12px;
+  line-height: 1.4;
+  flex: 1 1 auto;
+}
+
+/* rc.8.b / R3+R5 - Skills Builder author form polish (data-points selector,
+   improve button, textareas) for the new field set */
+.skills-builder-textarea {
+  width: 100%;
+  font-family: var(--sans, 'Inter', sans-serif);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  border: 1px solid var(--rule, #E4E8EE);
+  border-radius: var(--radius-md, 5px);
+  resize: vertical;
+  background: var(--canvas, #FFF);
+}
+.skills-builder-textarea[readonly] {
+  background: var(--canvas-soft, #FAFBFC);
+  color: var(--ink-soft, #3E4C62);
+}
+.skill-form-data-toggle {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.skill-form-data-toggle-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.skill-form-data-toggle-btn.is-active {
+  background: var(--dell-blue, #0076CE);
+  color: #FFF;
+  border-color: var(--dell-blue, #0076CE);
+}
+.skill-form-data-points {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--rule, #E4E8EE);
+  border-radius: var(--radius-md, 5px);
+  padding: 10px 12px;
+  background: var(--canvas-soft, #FAFBFC);
+}
+.skill-form-data-group-head {
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-mute, #6B7A90);
+  margin: 8px 0 4px 0;
+}
+.skill-form-data-group-head:first-child { margin-top: 0; }
+.skill-form-data-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+.skill-form-data-checkbox {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.skill-form-data-checkbox input[type="checkbox"] { flex-shrink: 0; }
+.skill-form-data-path {
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  color: var(--ink, #0B2A4A);
+}
+.skill-form-data-note {
+  color: var(--ink-mute, #6B7A90);
+  font-size: 11px;
+  font-style: italic;
+}
+.skill-form-improve-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 4px 0;
+}
+.skill-form-improve-status {
+  font-size: 12px;
+  color: var(--ink-mute, #6B7A90);
+  font-style: italic;
+}
+.skill-form-improve-error {
+  margin: 6px 0 12px 0;
+  padding: 8px 12px;
+  background: var(--red-soft, #FCEBED);
+  border: 1px solid #EAB2B8;
+  border-radius: var(--radius-md, 5px);
+  font-size: 12px;
+  color: var(--red, #C8102E);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.skill-form-improved-btn-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
 }
 .canvas-chat-main {
   flex: 1 1 auto; min-width: 0;

@@ -142,16 +142,37 @@ export function openCanvasChat() {
 }
 
 function buildBody() {
-  // Phase 3 redesign: row layout. Main column (transcript + meter +
-  // input) on the left; collapsible Skills rail on the right. Rail
-  // is hidden by default; toggled via the head-extras chip.
+  // rc.8.b / R5 redesign (per SPEC §S46.7 + RULES §16 CH36.f/g):
+  //   <body>
+  //     <tabs>            ← permanent Chat + permanent Skills + dynamic [Skill: <name>]
+  //     <chat-tab>        ← existing chat surface (Phase 3 row layout: main + rail)
+  //     <skills-tab>      ← read-only launcher list
+  //     <skill-tab>       ← dynamic, ONE at a time (R5 skeleton; R6 wires run)
+  //   </body>
   const body = document.createElement("div");
   body.className = "canvas-chat-body";
+
+  // ── Tab strip (rc.8.b / R5) ────────────────────────────────────
+  const tabs = document.createElement("div");
+  tabs.className = "canvas-chat-tabs";
+  tabs.setAttribute("role", "tablist");
+  tabs.setAttribute("data-canvas-chat-tabs", "");
+  const chatTabBtn = _buildTabButton("chat", "Chat", true);
+  const skillsTabBtn = _buildTabButton("skills", "Skills", false);
+  tabs.appendChild(chatTabBtn);
+  tabs.appendChild(skillsTabBtn);
+  body.appendChild(tabs);
+
+  // ── Chat tab content (existing surface · row layout) ───────────
+  const chatPane = document.createElement("div");
+  chatPane.className = "canvas-chat-tab-content canvas-chat-chat-pane is-active";
+  chatPane.setAttribute("data-canvas-chat-tab-content", "chat");
+  body.appendChild(chatPane);
 
   // ── Main column ─────────────────────────────────────────────────
   const main = document.createElement("div");
   main.className = "canvas-chat-main";
-  body.appendChild(main);
+  chatPane.appendChild(main);
 
   // Transcript scroll region.
   const scroll = document.createElement("div");
@@ -229,10 +250,116 @@ function buildBody() {
       '<div class="canvas-chat-rail-title">Skills</div>' +
     '</div>' +
     '<div class="canvas-chat-rail-body" data-canvas-chat-rail-body></div>';
-  body.appendChild(rail);
+  chatPane.appendChild(rail);
   paintSkillRail(body);
 
+  // ── Skills tab content (rc.8.b / R5 · read-only launcher list) ──
+  const skillsPane = document.createElement("div");
+  skillsPane.className = "canvas-chat-tab-content canvas-chat-skills-pane";
+  skillsPane.setAttribute("data-canvas-chat-tab-content", "skills");
+  skillsPane.setAttribute("data-canvas-chat-skills-content", "");
+  body.appendChild(skillsPane);
+  paintSkillsLauncher(skillsPane);
+
+  // Tab click handlers
+  chatTabBtn.addEventListener("click", function() { _switchCanvasChatTab(body, "chat"); });
+  skillsTabBtn.addEventListener("click", function() { _switchCanvasChatTab(body, "skills"); });
+
   return body;
+}
+
+// ─── rc.8.b / R5 · tab system helpers (per SPEC §S46.7) ─────────────
+
+function _buildTabButton(tabId, label, isActive) {
+  var btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "canvas-chat-tab" + (isActive ? " is-active" : "");
+  btn.setAttribute("role", "tab");
+  btn.setAttribute("data-canvas-chat-tab", tabId);
+  btn.setAttribute("aria-selected", isActive ? "true" : "false");
+  btn.textContent = label;
+  return btn;
+}
+
+function _switchCanvasChatTab(body, tabId) {
+  if (!body) return;
+  // Update tab buttons
+  body.querySelectorAll("[data-canvas-chat-tab]").forEach(function(b) {
+    var match = b.getAttribute("data-canvas-chat-tab") === tabId;
+    b.classList.toggle("is-active", match);
+    b.setAttribute("aria-selected", match ? "true" : "false");
+  });
+  // Update tab content panes
+  body.querySelectorAll("[data-canvas-chat-tab-content]").forEach(function(p) {
+    p.classList.toggle("is-active", p.getAttribute("data-canvas-chat-tab-content") === tabId);
+  });
+}
+
+// ─── rc.8.b / R5 · Skills launcher list (read-only per CH36.g) ──────
+
+function paintSkillsLauncher(host) {
+  host.innerHTML = "";
+  var head = document.createElement("div");
+  head.className = "canvas-chat-skills-head";
+  head.innerHTML =
+    '<div class="canvas-chat-skills-eyebrow">Skills launcher</div>' +
+    '<div class="canvas-chat-skills-title">Run a saved skill</div>' +
+    '<div class="canvas-chat-skills-help">Click Run to launch a skill in a dedicated tab. ' +
+    'Author + edit skills in Settings → Skills builder.</div>';
+  host.appendChild(head);
+
+  var skills = [];
+  try { skills = Object.values(loadV3Skills() || {}); } catch (_e) { skills = []; }
+
+  if (skills.length === 0) {
+    var empty = document.createElement("div");
+    empty.className = "canvas-chat-skills-empty";
+    empty.textContent = "No saved skills yet. Open Settings → Skills builder to author your first.";
+    host.appendChild(empty);
+    return;
+  }
+
+  var list = document.createElement("div");
+  list.className = "canvas-chat-skills-list";
+  skills.forEach(function(skill) {
+    list.appendChild(_buildLauncherRow(skill));
+  });
+  host.appendChild(list);
+}
+
+function _buildLauncherRow(skill) {
+  var row = document.createElement("div");
+  row.className = "canvas-chat-skills-row";
+  row.setAttribute("data-launcher-skill-id", skill.skillId);
+
+  var info = document.createElement("div");
+  info.className = "canvas-chat-skills-row-info";
+  var labelEl = document.createElement("div");
+  labelEl.className = "canvas-chat-skills-row-label";
+  labelEl.textContent = skill.label || skill.skillId;
+  info.appendChild(labelEl);
+  if (skill.description) {
+    var descEl = document.createElement("div");
+    descEl.className = "canvas-chat-skills-row-desc";
+    descEl.textContent = skill.description;
+    info.appendChild(descEl);
+  }
+  if (skill.outputFormat) {
+    var meta = document.createElement("div");
+    meta.className = "canvas-chat-skills-row-meta";
+    meta.textContent = skill.outputFormat + (skill.mutationPolicy ? " · " + skill.mutationPolicy : "");
+    info.appendChild(meta);
+  }
+  row.appendChild(info);
+
+  var runBtn = document.createElement("button");
+  runBtn.type = "button";
+  runBtn.className = "btn-primary canvas-chat-skills-row-run";
+  runBtn.textContent = "Run";
+  runBtn.addEventListener("click", function() { launchSkill(skill); });
+  row.appendChild(runBtn);
+
+  return row;
 }
 
 // paintSkillRail — renders saved-skill cards into the right rail.
@@ -564,6 +691,278 @@ export function _paintTypingIndicatorForTests() { paintTypingIndicator(); }
 export function _clearTypingIndicatorForTests() { clearTypingIndicator(); }
 export function _paintToolStatusForTests(toolName) { paintToolStatus(toolName); }
 export function _paintRoundBadgeForTests(evt) { paintRoundBadge(evt); }
+
+// ─── rc.8.b / R5 · Skill launch + dynamic-tab system (per SPEC §S46.7) ─
+
+// Module-level state — single skill running at a time (CH36.f).
+var _activeRunningSkill = null;
+
+// launchSkill(skill) - per SPEC §S46.7 launch flow.
+// If another skill is currently active, prompts the user to cancel it
+// before launching the new one (CH36.f single-skill invariant). Otherwise
+// opens the dynamic [Skill: <label>] tab + the skill panel right-rail
+// (R5 skeleton; R6 wires the actual run).
+//
+// Single-skill state (_activeRunningSkill) is tracked even when the
+// Canvas Chat overlay is not currently mounted -- the cancel-confirm
+// modal mounts on document.body and the test surface drives launchSkill
+// directly without opening the overlay.
+export function launchSkill(skill) {
+  if (!skill || !skill.skillId) return;
+  // CH36.f - if another skill is running, surface the cancel-confirm modal.
+  if (_activeRunningSkill && _activeRunningSkill.skillId !== skill.skillId) {
+    var bodyForModal = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-body");
+    _showCancelConfirmModal(bodyForModal, _activeRunningSkill, skill);
+    return;
+  }
+  var body = document.querySelector(".overlay[data-kind='canvas-chat'] .canvas-chat-body");
+  if (!body) {
+    // Overlay not mounted -- still record the active running skill so a
+    // subsequent launch trips the CH36.f cancel-confirm path.
+    _activeRunningSkill = skill;
+    return;
+  }
+  _openDynamicSkillTab(body, skill);
+}
+
+function _showCancelConfirmModal(body, currentSkill, nextSkill) {
+  // Remove any existing confirm modal first (idempotent).
+  var existing = document.querySelector("[data-skill-cancel-confirm]");
+  if (existing) existing.remove();
+  var modal = document.createElement("div");
+  modal.className = "skill-cancel-confirm-modal";
+  modal.setAttribute("data-skill-cancel-confirm", "");
+  modal.innerHTML =
+    '<div class="skill-cancel-confirm-card">' +
+      '<div class="skill-cancel-confirm-title">Cancel running skill?</div>' +
+      '<div class="skill-cancel-confirm-msg">Currently running: <b>' +
+        escapeText(currentSkill.label || currentSkill.skillId) + '</b><br>' +
+        'Launch instead: <b>' + escapeText(nextSkill.label || nextSkill.skillId) + '</b><br>' +
+        'The current skill\'s output and conversation will be lost.</div>' +
+      '<div class="skill-cancel-confirm-actions">' +
+        '<button type="button" class="btn-secondary" data-skill-cancel-stay>Stay on current</button>' +
+        '<button type="button" class="btn-primary" data-skill-cancel-and-launch>Cancel and launch new</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(modal);
+  modal.querySelector("[data-skill-cancel-stay]").addEventListener("click", function() { modal.remove(); });
+  modal.querySelector("[data-skill-cancel-and-launch]").addEventListener("click", function() {
+    modal.remove();
+    _closeDynamicSkillTab(body);
+    _openDynamicSkillTab(body, nextSkill);
+  });
+}
+
+function _openDynamicSkillTab(body, skill) {
+  // Insert tab button into the tab strip (after Skills tab).
+  var tabs = body.querySelector("[data-canvas-chat-tabs]");
+  if (!tabs) return;
+  // Remove any existing dynamic tab (single-skill invariant).
+  var existingDynBtn = tabs.querySelector("[data-canvas-chat-tab^='skill-']");
+  if (existingDynBtn) existingDynBtn.remove();
+  var existingDynPane = body.querySelector("[data-canvas-chat-tab-content^='skill-']");
+  if (existingDynPane) existingDynPane.remove();
+
+  var dynTabId = "skill-" + skill.skillId;
+  var dynBtn = document.createElement("button");
+  dynBtn.type = "button";
+  dynBtn.className = "canvas-chat-tab canvas-chat-tab-dynamic";
+  dynBtn.setAttribute("role", "tab");
+  dynBtn.setAttribute("data-canvas-chat-tab", dynTabId);
+  dynBtn.setAttribute("aria-selected", "false");
+  var dynLabel = document.createElement("span");
+  dynLabel.className = "canvas-chat-tab-dynamic-label";
+  dynLabel.textContent = "Skill: " + (skill.label || skill.skillId);
+  dynBtn.appendChild(dynLabel);
+  // Use <span role="button"> to avoid invalid nested-button HTML.
+  // The dynBtn is itself a <button>; nesting another would be invalid.
+  var closeX = document.createElement("span");
+  closeX.className = "canvas-chat-tab-dynamic-close";
+  closeX.setAttribute("role", "button");
+  closeX.setAttribute("tabindex", "0");
+  closeX.setAttribute("aria-label", "Close skill tab");
+  closeX.textContent = "×";
+  closeX.addEventListener("click", function(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    // R5: simple close (R6 will add mid-run confirm modal per SPEC §S46.7).
+    _closeDynamicSkillTab(body);
+    _switchCanvasChatTab(body, "chat");
+  });
+  dynBtn.appendChild(closeX);
+  dynBtn.addEventListener("click", function() { _switchCanvasChatTab(body, dynTabId); });
+  tabs.appendChild(dynBtn);
+
+  // Build dynamic tab content: chat dialog (left) + skill panel (right).
+  var dynPane = document.createElement("div");
+  dynPane.className = "canvas-chat-tab-content canvas-chat-skill-pane";
+  dynPane.setAttribute("data-canvas-chat-tab-content", dynTabId);
+  dynPane.setAttribute("data-canvas-chat-skill-pane", skill.skillId);
+
+  var dialog = document.createElement("div");
+  dialog.className = "canvas-chat-skill-dialog";
+  dialog.setAttribute("data-canvas-chat-skill-dialog", "");
+  dialog.innerHTML = '<div class="canvas-chat-skill-dialog-empty">' +
+    'Skill conversation will stream here when you click <b>Run</b> on the right. ' +
+    '(Run wiring lands at rc.8.b R6.)</div>';
+  dynPane.appendChild(dialog);
+
+  var panel = document.createElement("aside");
+  panel.className = "canvas-chat-skill-panel";
+  panel.setAttribute("data-canvas-chat-skill-panel", "");
+  renderSkillPanelForRun(skill, panel);
+  dynPane.appendChild(panel);
+
+  body.appendChild(dynPane);
+
+  // Switch to the new tab + record state.
+  _activeRunningSkill = skill;
+  _switchCanvasChatTab(body, dynTabId);
+}
+
+function _closeDynamicSkillTab(body) {
+  if (!body) return;
+  var dynBtn = body.querySelector("[data-canvas-chat-tab^='skill-']");
+  if (dynBtn) dynBtn.remove();
+  var dynPane = body.querySelector("[data-canvas-chat-tab-content^='skill-']");
+  if (dynPane) dynPane.remove();
+  _activeRunningSkill = null;
+}
+
+// renderSkillPanelForRun(skill, host) - per SPEC §S46.7 right-rail.
+// Renders the skill panel: description + parameters (with file slot) +
+// Run button + output preview area. R5 stub: Run button is wired but
+// shows "wiring lands at R6" inline; R6 hooks up real-LLM streaming +
+// output renderers per outputFormat.
+export function renderSkillPanelForRun(skill, host) {
+  if (!host) return;
+  host.innerHTML = "";
+
+  var head = document.createElement("div");
+  head.className = "canvas-chat-skill-panel-head";
+  var labelEl = document.createElement("div");
+  labelEl.className = "canvas-chat-skill-panel-label";
+  labelEl.textContent = (skill && skill.label) || "(unnamed skill)";
+  head.appendChild(labelEl);
+  if (skill && skill.description) {
+    var descEl = document.createElement("div");
+    descEl.className = "canvas-chat-skill-panel-desc";
+    descEl.textContent = skill.description;
+    head.appendChild(descEl);
+  }
+  if (skill && skill.outputFormat) {
+    var meta = document.createElement("div");
+    meta.className = "canvas-chat-skill-panel-meta";
+    meta.textContent = "Output: " + skill.outputFormat +
+      (skill.mutationPolicy ? " · policy: " + skill.mutationPolicy : "");
+    head.appendChild(meta);
+  }
+  host.appendChild(head);
+
+  // Parameters section
+  var paramsSection = document.createElement("div");
+  paramsSection.className = "canvas-chat-skill-panel-params";
+  var paramsHead = document.createElement("div");
+  paramsHead.className = "canvas-chat-skill-panel-section-head";
+  paramsHead.textContent = "Inputs";
+  paramsSection.appendChild(paramsHead);
+
+  var params = (skill && Array.isArray(skill.parameters)) ? skill.parameters : [];
+  if (params.length === 0) {
+    var noParams = document.createElement("div");
+    noParams.className = "canvas-chat-skill-panel-no-params";
+    noParams.textContent = "(this skill has no run-time inputs)";
+    paramsSection.appendChild(noParams);
+  } else {
+    params.forEach(function(p) {
+      paramsSection.appendChild(_buildSkillPanelParamRow(p));
+    });
+  }
+  host.appendChild(paramsSection);
+
+  // Run button (R5 stub)
+  var runRow = document.createElement("div");
+  runRow.className = "canvas-chat-skill-panel-run-row";
+  var runBtn = document.createElement("button");
+  runBtn.type = "button";
+  runBtn.className = "btn-primary canvas-chat-skill-panel-run";
+  runBtn.setAttribute("data-skill-panel-run", "");
+  runBtn.textContent = "Run skill";
+  runBtn.addEventListener("click", function() {
+    var stub = host.querySelector(".canvas-chat-skill-panel-run-stub");
+    if (!stub) {
+      stub = document.createElement("div");
+      stub.className = "canvas-chat-skill-panel-run-stub";
+      runRow.appendChild(stub);
+    }
+    stub.textContent = "Run wiring lands at rc.8.b R6 (real-LLM streaming + " +
+      "outputFormat renderers + mutation apply). Today this is a stub.";
+  });
+  runRow.appendChild(runBtn);
+  host.appendChild(runRow);
+
+  // Output preview (R6 fills this)
+  var preview = document.createElement("div");
+  preview.className = "canvas-chat-skill-panel-output";
+  preview.setAttribute("data-skill-panel-output", "");
+  host.appendChild(preview);
+}
+
+function _buildSkillPanelParamRow(p) {
+  var row = document.createElement("div");
+  row.className = "canvas-chat-skill-panel-param-row";
+
+  var labelEl = document.createElement("label");
+  labelEl.className = "canvas-chat-skill-panel-param-label";
+  labelEl.textContent = (p.name || "(unnamed)") + (p.required ? " *" : "");
+  row.appendChild(labelEl);
+
+  if (p.description) {
+    var hint = document.createElement("div");
+    hint.className = "canvas-chat-skill-panel-param-hint";
+    hint.textContent = p.description;
+    row.appendChild(hint);
+  }
+
+  var input;
+  if (p.type === "file") {
+    // SPEC §S46.8 / CH36.j — file parameter; client-side reader on Run.
+    input = document.createElement("input");
+    input.type = "file";
+    input.setAttribute("data-skill-param", p.name || "");
+    input.setAttribute("data-skill-param-type", "file");
+    if (p.accepts) input.setAttribute("accept", p.accepts);
+  } else if (p.type === "boolean") {
+    input = document.createElement("input");
+    input.type = "checkbox";
+    input.setAttribute("data-skill-param", p.name || "");
+    input.setAttribute("data-skill-param-type", "boolean");
+  } else if (p.type === "number") {
+    input = document.createElement("input");
+    input.type = "number";
+    input.className = "settings-input";
+    input.setAttribute("data-skill-param", p.name || "");
+    input.setAttribute("data-skill-param-type", "number");
+  } else {
+    // string / entityId — plain text input at R5 (R6 may upgrade entityId
+    // to a picker dropdown over the active engagement).
+    input = document.createElement("input");
+    input.type = "text";
+    input.className = "settings-input";
+    input.setAttribute("data-skill-param", p.name || "");
+    input.setAttribute("data-skill-param-type", p.type || "string");
+  }
+  row.appendChild(input);
+  return row;
+}
+
+// Test helper — close the overlay cleanly (used by V-FLOW-SKILL-V32-CHAT-TAB-1/2 finally clauses).
+export function _closeCanvasChatForTests() {
+  try {
+    _activeRunningSkill = null;
+    closeOverlay();
+  } catch (_e) { /* best-effort */ }
+}
 
 function buildFooter() {
   const foot = document.createElement("div");
