@@ -16281,43 +16281,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
           "paintSkillRail invoked from buildBody on overlay open");
       });
 
-      it("V-SKILL-V3-5 · ui/views/SkillBuilder.js source carries v3.1 schema discipline: state.outputTarget + state.parameters present; v3.0 schema fields (skillType / entityKind) absent (per SPEC §S29 + §S35.2)", async () => {
-        const src = await (await fetch("/ui/views/SkillBuilder.js")).text();
-        const codeOnly = src.split("\n").filter(ln => {
-          const t = ln.trim();
-          return !(t.startsWith("//") || t.startsWith("*") || t.startsWith("/*"));
-        }).join("\n");
-
-        // SPEC §S35 (Arc 4) RE-INTRODUCES the chip palette + Refine-to-CARE
-        // patterns from v2.4 SkillAdmin under the renamed SkillBuilder.js.
-        // The detailed surface contracts (chip palette / parameters editor /
-        // outputTarget radio / Test button / Legacy v2 section) live in
-        // §T36 V-SKILL-V3-8..15 + V-MIGRATE-V2-V3-1..4. This rc.3-era test
-        // is now scoped to the SCHEMA-level discipline only.
-
-        // ── v3.0 schema fields must not appear (retired in v3.1) ──────────
-        assert(!/state\.skillType/.test(codeOnly),
-          "state.skillType (v3.0) absent in v3.1 builder");
-        assert(!/state\.entityKind/.test(codeOnly),
-          "state.entityKind (v3.0) absent in v3.1 builder");
-
-        // ── v3.1 schema fields must drive the form state ──────────────────
-        assert(/state\.outputTarget/.test(src),
-          "state.outputTarget present (v3.1)");
-        assert(/state\.parameters/.test(src),
-          "state.parameters present (v3.1)");
-
-        // Output target enum: all 4 declared per SPEC §S35.6 decision A
-        // (chat-bubble enabled; 3 deferred to GA).
-        assert(/id:\s*"chat-bubble"/.test(src) && /enabled:\s*true/.test(src),
-          "chat-bubble target declared (enabled)");
-        assert(/id:\s*"structured-card"/.test(src),
-          "structured-card target declared (disabled placeholder)");
-        assert(/id:\s*"reporting-panel"/.test(src),
-          "reporting-panel target declared (disabled placeholder)");
-        assert(/id:\s*"proposed-changes"/.test(src),
-          "proposed-changes target declared (disabled placeholder)");
-      });
+      it("V-SKILL-V3-5 · RETIRED rc.8.b / R3 (legacy v3.1 outputTarget enum + chip-palette schema discipline replaced by v3.2 outputFormat enum + STANDARD_MUTABLE_PATHS curation per SPEC §S46.6 / §S46.4; new contract covered by V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1 + V-FLOW-SKILL-V32-CURATION-1/2)", () => {});
 
     });
 
@@ -17985,19 +17949,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-SKILL-V3-10: parameter type select offers string/number/boolean/entityId");
     });
 
-    it("V-SKILL-V3-11 · Edit form renders an outputTarget radio group (4 options; only chat-bubble enabled)", async () => {
-      const builderSrc = await (await fetch("/ui/views/SkillBuilder.js")).text();
-      // 4 outputTarget options surface — chat-bubble enabled, others disabled
-      // with the deferred-to-GA hint.
-      assert(/outputTarget/.test(builderSrc),
-        "V-SKILL-V3-11: outputTarget radio must be in source");
-      assert(/chat-bubble/.test(builderSrc),
-        "V-SKILL-V3-11: chat-bubble option present");
-      assert(/structured-card/.test(builderSrc) && /reporting-panel/.test(builderSrc) && /proposed-changes/.test(builderSrc),
-        "V-SKILL-V3-11: all 3 deferred outputTarget options surface (disabled with hint)");
-      assert(/deferred to GA|deferred|disabled/i.test(builderSrc),
-        "V-SKILL-V3-11: disabled options carry a 'deferred' hint text");
-    });
+    it("V-SKILL-V3-11 · RETIRED rc.8.b / R3 (legacy outputTarget radio replaced by v3.2 outputFormat radio with text/dimensional/json-array/scalar enum per SPEC §S46.6; covered by V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1 + V-FLOW-SKILL-V32-SCHEMA-2)", () => {});
 
     it("V-SKILL-V3-12 · Chat-rail '+ Author new skill' routes via skillBuilderOpener shim to Settings (no #skillBuilderOverlay div)", async () => {
       const openerSrc = await (await fetch("/ui/skillBuilderOpener.js")).text();
@@ -18011,21 +17963,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-SKILL-V3-12: opener must call openSettingsModal({ section: 'skills' }) to redirect");
     });
 
-    it("V-SKILL-V3-13 · Evolved admin preserves v2.4 patterns: chip palette + Refine-to-CARE button + Test button + dual-textbox preview", async () => {
-      const builderSrc = await (await fetch("/ui/views/SkillBuilder.js")).text();
-      // Chip palette — bindable fields.
-      assert(/field-chip|skill-chip-palette|chipsWrap/.test(builderSrc),
-        "V-SKILL-V3-13: chip palette section present");
-      // Refine-to-CARE button.
-      assert(/Refine to CARE|refineBtn|REFINE_META/i.test(builderSrc),
-        "V-SKILL-V3-13: Refine-to-CARE rewrite button preserved");
-      // Test skill button.
-      assert(/Test skill|testBtn/.test(builderSrc),
-        "V-SKILL-V3-13: Test-skill button preserved");
-      // Preview pre.
-      assert(/template-preview|previewBox/.test(builderSrc),
-        "V-SKILL-V3-13: live-preview pre preserved");
-    });
+    it("V-SKILL-V3-13 · RETIRED rc.8.b / R3 (chip palette + Refine-to-CARE diff modal + live-preview pre replaced by v3.2 Data-points selector with Standard/Advanced toggle + Improve button + readonly Improved textarea per SPEC §S46.3..5; covered by V-FLOW-SKILL-V32-AUTHOR-DATA-1 + V-FLOW-SKILL-V32-AUTHOR-IMPROVE-1 + V-FLOW-SKILL-V32-IMPROVE-1/2)", () => {});
 
     it("V-SKILL-V3-14 · Pure helper migrateV2SkillToV31 (round-trip + idempotency)", async () => {
       const { migrateV2SkillToV31 } = await import("../schema/skill.js");
@@ -18044,15 +17982,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-SKILL-V3-14: re-migration keeps validatedAgainst at 3.1");
     });
 
-    it("V-SKILL-V3-15 · Legacy (v2) section is conditional: renders only when v3 store is empty AND v2 store has records", async () => {
-      const builderSrc = await (await fetch("/ui/views/SkillBuilder.js")).text();
-      // Source-grep — admin must conditionally render a Legacy (v2) section.
-      assert(/Legacy.*v2|skill-legacy-section|legacySection/i.test(builderSrc),
-        "V-SKILL-V3-15: evolved admin must reference a legacy v2 section");
-      // Migrate button must be wired per-row.
-      assert(/Migrate|migrateBtn|migrateV2SkillToV31/.test(builderSrc),
-        "V-SKILL-V3-15: per-row Migrate button + migrateV2SkillToV31 invocation present");
-    });
+    it("V-SKILL-V3-15 · RETIRED rc.8.b / R3 (legacy v2 section + per-row Migrate button removed per user direction 2026-05-10 'replace clean — no production skills today to migrate'; v3.1 → v3.2 is a from-scratch shape with no migration burden)", () => {});
 
     it("V-ANTI-V3-IN-LABEL-1 · No 'v3' / 'v3.1' / '3.0' / '3.1' in user-facing UI labels of SettingsModal + SkillBuilder", async () => {
       const settingsSrc = await (await fetch("/ui/views/SettingsModal.js")).text();

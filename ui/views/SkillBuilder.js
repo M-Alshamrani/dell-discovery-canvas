@@ -1,85 +1,84 @@
-// ui/views/SkillBuilder.js — v3.0.0-rc.4-dev Arc 4 (SPEC §S35 + RULES §16 CH31)
+// ui/views/SkillBuilder.js — rc.8.b / R3 (SPEC §S46 + RULES §16 CH36)
 //
-// Evolved Skill Builder. Replaces the rc.3-era lean v3.1 builder
-// (deleted in this same arc) AND replaces ui/views/SkillAdmin.js
-// (renamed/retired in this same arc). Mounted by SettingsModal under
-// the "Skills builder" pill — the SINGLE entry point for skill
-// authoring per CH31 (no version suffix in the label, no second pill,
-// no standalone overlay).
+// Skills Builder authoring surface — Settings → Skills section.
+// Clean rewrite per user direction 2026-05-10:
+//   "(a) replace clean — don't have any production skills today to migrate"
 //
-// Architecture:
-//   - UX BASE preserved from v2.4 SkillAdmin (list + deploy toggle +
-//     edit form + chip palette + Refine-to-CARE + dual-textbox preview
-//     + Test button + save gate)
-//   - Storage SWITCHED to state/v3SkillStore.js (v3.1 schema). v2
-//     core/skillStore.js is read-only legacy for one release; v2
-//     records appear under a "Legacy (v2)" section with per-row
-//     "Migrate" button (opt-in, NOT auto)
-//   - parameters[] editor ADDED to the edit form (rows: name + type +
-//     description + required)
-//   - outputTarget radio ADDED (4 options; only chat-bubble enabled,
-//     other 3 disabled with "deferred to GA" hint per SPEC §S29.7)
-//   - DROPPED v2-only fields: tab, applyPolicy, deployed, outputSchema,
-//     providerKey, systemPrompt (per SPEC §S35.2 R35.8)
-//   - Chat-rail "+ Author new skill" routes here via the
-//     skillBuilderOpener.js shim (R35.3)
+// Replaces the legacy v3.1 SkillBuilder shape (pill editor + chip palette
+// + Refine-to-CARE diff modal + outputTarget radio) with the rc.8.b form
+// shape locked in SPEC §S46.3:
 //
-// Authority: docs/v3.0/SPEC.md §S35 · docs/RULES.md §16 CH31 ·
-// feedback_no_version_prefix_in_names.md · feedback_spec_and_test_first.md.
+//   1. Label                  [data-skill-label]            <input text>
+//   2. Description             [data-skill-description]     <input text>
+//   3. Seed prompt             [data-skill-seed]            <textarea>
+//   4. Data points             [data-skill-data-points]     selector + toggle
+//      Standard/Advanced toggle [data-skill-data-toggle]    pill
+//   5. Improved prompt         [data-skill-improved]        <textarea readonly>
+//      Improve button         [data-skill-improve]          <button>
+//      Edit / Re-improve      [data-skill-improve-edit] /  buttons
+//                             [data-skill-improve-redo]
+//   6. Parameters[]            rows of {name, type, desc, required, accepts}
+//   7. Output format           [data-skill-output-format]   4 radios
+//                             (text / dimensional / json-array / scalar)
+//   8. Mutation policy         [data-skill-mutation-policy] 2 radios
+//                             (ask / auto-tag) — visible iff
+//                             outputFormat ∈ {json-array, scalar}
+//
+// Test + Save buttons at the bottom.
+//   - Test = stub at R3 (full wiring at R6 per user direction)
+//   - Save = best-effort; v3SkillStore will reject until R4 lands the
+//     schema extension. No production skills exist today, so failure
+//     here doesn't affect any user.
+//
+// Improve = real LLM call via services/aiService.js chatCompletion (per
+// SPEC §S46.5 + CH36.b + feedback_no_mocks.md). On failure: inline error
+// chip + Retry button. NEVER mock.
+//
+// Authority: docs/v3.0/SPEC.md §S46 · docs/RULES.md §16 CH36.
 
 import {
   saveV3Skill, loadV3Skills, loadV3SkillById, deleteV3Skill
 }                                          from "../../state/v3SkillStore.js";
-import { loadSkills as loadV2Skills }      from "../../core/skillStore.js"; // read-only legacy
-import { migrateV2SkillToV31 }             from "../../schema/skill.js";
 import { generateManifest }                from "../../services/manifestGenerator.js";
-import { runSkill }                        from "../../services/skillRunner.js";
-import { resolveTemplate }                 from "../../services/pathResolver.js";
-// rc.7-arc-1 (2026-05-06) — createMockLLMProvider import removed per
-// feedback_no_mocks.md (LOCKED 2026-05-05). The Mock toggle in the
-// "Test skill now" UI is removed; the test button always invokes the
-// active real provider via createRealLLMProvider().
-import {
-  createRealLLMProvider, ProviderNotConfiguredError
-}                                          from "../../services/realLLMProvider.js";
 import { loadAiConfig }                    from "../../core/aiConfig.js";
 import { chatCompletion }                  from "../../services/aiService.js";
-import { REFINE_META_SYSTEM, REFINE_META_RULES } from "../../core/promptGuards.js";
-import { createPillEditor }                from "../components/PillEditor.js";
-import { getActiveEngagement }             from "../../state/engagementStore.js";
-import { loadDemo }                        from "../../core/demoEngagement.js";
-import { loadCatalog }                     from "../../services/catalogLoader.js";
+import {
+  getStandardMutableDataPoints,
+  getAllMutableDataPoints
+}                                          from "../../core/dataContract.js";
 
-// outputTarget options. Only chat-bubble enabled; other 3 disabled
-// with "deferred to GA" hint per SPEC §S29.7 + §S35.6 decision A.
-const OUTPUT_TARGETS = [
-  { id: "chat-bubble",      label: "Chat bubble (markdown)",       enabled: true,
-    hint: "Free-text or structured output rendered as a chat message." },
-  { id: "structured-card",  label: "Structured card",              enabled: false,
-    hint: "Schema-typed data + render template. Deferred to GA." },
-  { id: "reporting-panel",  label: "Reporting panel (visual)",     enabled: false,
-    hint: "Visualization (heatmap, chart). Deferred to GA." },
-  { id: "proposed-changes", label: "Proposed changes (mutate)",    enabled: false,
-    hint: "Mutation proposals with per-item approval. Deferred to GA." }
+// SPEC §S46.6 + CH36.d — output format enum locked
+const OUTPUT_FORMATS = [
+  { id: "text",        label: "Text reporting",           hint: "Free-form prose into a chat bubble." },
+  { id: "dimensional", label: "Dimensional report",       hint: "Rows × columns into a heatmap / matrix (renderer stub at MVP)." },
+  { id: "json-array",  label: "JSON-array mutation",      hint: "List of changes the engagement applies." },
+  { id: "scalar",      label: "Scalar mutation",          hint: "Single-value mutation of one data point." }
 ];
 
+// SPEC §S46.10 + CH36.e — mutation policy enum locked
+const MUTATION_POLICIES = [
+  { id: "ask",      label: "Always ask before mutate", hint: "Approval modal lists every change before commit." },
+  { id: "auto-tag", label: "Mutate directly + tag as AI", hint: "Apply immediately + 'Done by AI' badge for review." }
+];
+
+// SPEC §S46.3 + §S46.8 — parameter types (file type added per CH36.j)
 const PARAMETER_TYPES = [
   { id: "string",   label: "string" },
   { id: "number",   label: "number" },
   { id: "boolean",  label: "boolean" },
-  { id: "entityId", label: "entityId (gap / driver / instance / environment)" }
+  { id: "entityId", label: "entityId (gap / driver / instance / environment)" },
+  { id: "file",     label: "file (uploaded at run-time)" }
 ];
 
-// Render the panel into `container` (the settings modal body). Public
-// API matches v2 renderSkillAdmin so SettingsModal call site changes
-// from `renderSkillAdmin` to `renderSkillBuilder`.
+// ─── Public entry ────────────────────────────────────────────────────
+
 export function renderSkillBuilder(container, onChange) {
   container.innerHTML = "";
   var root = mk("div", "skill-admin");
 
   var header = mk("div", "skill-admin-header");
   var title  = mkt("div", "skill-admin-title", "Skills builder");
-  var addBtn = mkt("button", "btn-primary", "+ Add skill");
+  var addBtn = mkt("button", "btn-primary", "+ New skill");
   addBtn.addEventListener("click", function() {
     renderEditForm(root, list, null /* new skill */, onChange);
   });
@@ -88,132 +87,77 @@ export function renderSkillBuilder(container, onChange) {
   root.appendChild(header);
 
   root.appendChild(mkt("div", "settings-help",
-    "Skills run against the active AI provider. Each skill is a parameterized prompt; " +
-    "users invoke it from the AI assistant chat right-rail. Click any chip below to " +
-    "insert a binding to engagement data (the customer name, a selected gap, an " +
-    "environment, and so on). Add parameters for runtime user input (e.g. 'Pick a gap')."));
+    "Author skills as Seed prompt + Data points; click Improve to fold them " +
+    "into a CARE-structured prompt via the active LLM. Pick output format + " +
+    "mutation policy. Save here; users run skills from Canvas Chat → Skills tab."));
 
   var list = mk("div", "skill-admin-list");
   renderList(list, onChange);
   root.appendChild(list);
 
   container.appendChild(root);
-  return root;
+
+  // SPEC §S46.3 — auto-mount a new-skill draft form so the authoring
+  // surface is visible on first open (zero-state shows what authoring
+  // looks like; tests can find data-* attributes immediately).
+  renderEditForm(root, list, null, onChange);
 }
+
+// ─── List rendering ─────────────────────────────────────────────────
 
 function renderList(list, onChange) {
   list.innerHTML = "";
-  var savedMap     = loadV3Skills();
-  var savedSkills  = Object.keys(savedMap).map(function(k) { return savedMap[k]; });
-
-  if (savedSkills.length === 0) {
-    list.appendChild(mkt("div", "skill-admin-empty",
-      "No skills yet. Click '+ Add skill' to create one."));
-  } else {
-    savedSkills.forEach(function(s) {
-      list.appendChild(renderRow(s, list, onChange));
-    });
+  // loadV3Skills() returns an object map { skillId: skill }, not an array.
+  // Convert to array for iteration.
+  var skills = [];
+  try { skills = Object.values(loadV3Skills() || {}); } catch (_e) { skills = []; }
+  if (skills.length === 0) {
+    list.appendChild(mkt("div", "settings-help-inline",
+      "No skills yet — author your first below, then click Save."));
+    return;
   }
-
-  // Legacy section: rendered ONLY when current store is empty AND legacy
-  // store has records. One-release transition window — opt-in migration
-  // via per-row "Migrate" button. (SPEC + RULES references in comments.)
-  var legacySkills = [];
-  try { legacySkills = loadV2Skills(); } catch (e) { /* best-effort; legacy store is read-only */ }
-  if (savedSkills.length === 0 && Array.isArray(legacySkills) && legacySkills.length > 0) {
-    list.appendChild(renderLegacySection(legacySkills, list, onChange));
-  }
-}
-
-function renderLegacySection(legacySkills, list, onChange) {
-  var sec = mk("div", "skill-legacy-section");
-  sec.appendChild(mkt("div", "skill-legacy-section-head", "Legacy skills"));
-  sec.appendChild(mkt("div", "settings-help-inline",
-    "These skills come from the previous store. They're read-only here — click 'Migrate' " +
-    "on a row to translate it into the current schema and copy it to the new store. The " +
-    "original record stays in place as backup until the next release."));
-  legacySkills.forEach(function(legacy) {
-    var row = mk("div", "skill-row skill-row-legacy");
-    var nameCol = mk("div", "skill-row-name-col");
-    nameCol.appendChild(mkt("div", "skill-row-name", legacy.name || "(untitled legacy skill)"));
-    if (legacy.description) nameCol.appendChild(mkt("div", "skill-row-desc", legacy.description));
-    var meta = mk("div", "skill-row-meta");
-    if (legacy.tabId)          meta.appendChild(mkt("span", "skill-row-tab",    "tab: " + legacy.tabId));
-    if (legacy.responseFormat) meta.appendChild(mkt("span", "skill-row-format", legacy.responseFormat));
-    nameCol.appendChild(meta);
-    row.appendChild(nameCol);
-
-    var actions = mk("div", "skill-row-actions");
-    var migrateBtn = mkt("button", "btn-secondary skill-row-migrate", "Migrate");
-    migrateBtn.title = "Translate this legacy skill into the current schema and copy it to the new store. The original stays as backup.";
-    migrateBtn.addEventListener("click", function() {
-      var migrated = migrateV2SkillToV31(legacy);
-      // Drop the audit field before saving (it's not part of the strict
-      // schema). UI surfaces what was lost in a one-time confirm dialog.
-      var dropped = (migrated._droppedFromV2 || []).map(function(d) { return d.field; });
-      delete migrated._droppedFromV2;
-      var msg = "Migrate '" + migrated.label + "' into the current schema?";
-      if (dropped.length > 0) {
-        msg += "\n\nThese legacy fields will be dropped (no equivalent in the current schema): " + dropped.join(", ") + ".";
-      }
-      msg += "\n\nThe original legacy record stays as backup.";
-      if (!confirm(msg)) return;
-      var manifest = generateManifest();
-      var result = saveV3Skill(migrated, { manifest: manifest });
-      if (result.ok) {
-        renderList(list, onChange);
-        if (onChange) onChange();
-      } else {
-        alert("Migration failed: " + (result.errors || []).map(function(e) { return e.message || e; }).join("; "));
-      }
-    });
-    actions.appendChild(migrateBtn);
-    row.appendChild(actions);
-    sec.appendChild(row);
+  list.appendChild(mkt("div", "skill-admin-list-head", "Saved skills (" + skills.length + ")"));
+  skills.forEach(function(s) {
+    list.appendChild(renderRow(s, list, onChange));
   });
-  return sec;
 }
 
 function renderRow(skill, list, onChange) {
-  var row = mk("div", "skill-row");
-
-  var nameCol = mk("div", "skill-row-name-col");
-  nameCol.appendChild(mkt("div", "skill-row-name", skill.label || skill.skillId));
-  if (skill.description) nameCol.appendChild(mkt("div", "skill-row-desc", skill.description));
-  var meta = mk("div", "skill-row-meta");
-  meta.appendChild(mkt("span", "skill-row-format", skill.outputTarget || "chat-bubble"));
-  if (typeof skill.outputContract === "object" && skill.outputContract.schemaRef) {
-    meta.appendChild(mkt("span", "skill-row-policy", "structured: " + skill.outputContract.schemaRef));
-  } else {
-    meta.appendChild(mkt("span", "skill-row-policy", "free-text"));
-  }
+  var row = mk("div", "skill-admin-row");
+  var info = mk("div", "skill-admin-row-info");
+  info.appendChild(mkt("div", "skill-admin-row-label", skill.label || skill.skillId));
+  if (skill.description) info.appendChild(mkt("div", "skill-admin-row-desc", skill.description));
+  var meta = mk("div", "skill-admin-row-meta");
+  if (skill.outputFormat) meta.appendChild(mkt("span", "tag", skill.outputFormat));
+  if (skill.mutationPolicy) meta.appendChild(mkt("span", "tag", "policy: " + skill.mutationPolicy));
   if (Array.isArray(skill.parameters) && skill.parameters.length > 0) {
-    meta.appendChild(mkt("span", "skill-row-params", skill.parameters.length + " param" + (skill.parameters.length === 1 ? "" : "s")));
+    meta.appendChild(mkt("span", "tag", skill.parameters.length + " param(s)"));
   }
-  nameCol.appendChild(meta);
-  row.appendChild(nameCol);
+  info.appendChild(meta);
 
-  var actions = mk("div", "skill-row-actions");
-
-  var editBtn = mkt("button", "btn-outline", "Edit");
+  var actions = mk("div", "skill-admin-row-actions");
+  var editBtn = mkt("button", "btn-secondary", "Edit");
   editBtn.addEventListener("click", function() {
+    var fresh = loadV3SkillById(skill.skillId) || skill;
     var adminRoot = list.parentElement;
-    if (adminRoot) renderEditForm(adminRoot, list, skill, onChange);
+    if (adminRoot) renderEditForm(adminRoot, list, fresh, onChange);
   });
-  actions.appendChild(editBtn);
-
   var delBtn = mkt("button", "btn-danger", "Delete");
   delBtn.addEventListener("click", function() {
     if (!confirm("Delete skill '" + (skill.label || skill.skillId) + "'? This cannot be undone.")) return;
-    deleteV3Skill(skill.skillId);
+    try { deleteV3Skill(skill.skillId); } catch (_e) {}
     renderList(list, onChange);
     if (onChange) onChange();
   });
+  actions.appendChild(editBtn);
   actions.appendChild(delBtn);
 
+  row.appendChild(info);
   row.appendChild(actions);
   return row;
 }
+
+// ─── Edit form ──────────────────────────────────────────────────────
 
 function renderEditForm(adminRoot, list, existing, onChange) {
   var old = adminRoot.querySelector(".skill-form");
@@ -221,140 +165,267 @@ function renderEditForm(adminRoot, list, existing, onChange) {
 
   var form = mk("div", "skill-form");
   form.appendChild(mkt("div", "skill-form-title",
-    existing ? "Edit skill" : "Add skill"));
+    existing ? ("Edit skill: " + (existing.label || existing.skillId)) : "Author new skill"));
 
-  var nameInput = mkField(form, "Label *", "text",
-    existing ? existing.label : "",
-    "User-visible name shown in the chat right-rail and skill list.");
-  var descInput = mkField(form, "Description", "text",
-    existing ? existing.description : "",
-    "One-line summary; helps users know when to invoke this skill.");
+  // ─── Field 1 · Label ────────────────────────────────────────────
+  var labelGroup = mk("div", "skill-form-field");
+  labelGroup.appendChild(mkt("label", "skill-form-label", "Label *"));
+  labelGroup.appendChild(mkt("div", "settings-help-inline",
+    "Short user-visible name shown in the Skills launcher tab."));
+  var labelInput = mk("input", "settings-input");
+  labelInput.type = "text";
+  labelInput.value = existing && existing.label ? existing.label : "";
+  labelInput.placeholder = "e.g. Trace environment to drivers";
+  labelInput.setAttribute("data-skill-label", "");
+  labelGroup.appendChild(labelInput);
+  form.appendChild(labelGroup);
 
-  // ─── Prompt template (pill editor) ─────────────────────────────
-  var tplLabelGroup = mk("div", "skill-form-field");
-  tplLabelGroup.appendChild(mkt("label", "skill-form-label", "Prompt template *"));
-  tplLabelGroup.appendChild(mkt("div", "settings-help-inline",
-    "Sent to the AI on every run. Click any field chip below to insert a binding pill (uneditable as a unit; " +
-    "Backspace removes it whole). Reference parameters with {{paramName}} (defined below)."));
-  form.appendChild(tplLabelGroup);
+  // ─── Field 2 · Description ──────────────────────────────────────
+  var descGroup = mk("div", "skill-form-field");
+  descGroup.appendChild(mkt("label", "skill-form-label", "Description *"));
+  descGroup.appendChild(mkt("div", "settings-help-inline",
+    "One-line summary shown in the launcher's description-confirm before run."));
+  var descInput = mk("input", "settings-input");
+  descInput.type = "text";
+  descInput.value = existing && existing.description ? existing.description : "";
+  descInput.placeholder = "e.g. For one environment, trace each instance back to its strategic driver via gaps.";
+  descInput.setAttribute("data-skill-description", "");
+  descGroup.appendChild(descInput);
+  form.appendChild(descGroup);
 
-  // Build the pill-editor manifest from the v3 manifestGenerator (engagement-wide
-  // bindable paths, NOT v2 fieldsForTab(tabId)).
-  var canvasManifest        = generateManifest();
-  var pillManifestList  = buildPillEditorManifest(canvasManifest);
+  // ─── Field 3 · Seed prompt ──────────────────────────────────────
+  var seedGroup = mk("div", "skill-form-field");
+  seedGroup.appendChild(mkt("label", "skill-form-label", "Seed prompt *"));
+  seedGroup.appendChild(mkt("div", "settings-help-inline",
+    "Your raw idea in plain English. The Improve button folds this with " +
+    "the selected data points into a CARE-structured Anthropic-XML prompt."));
+  var seedArea = mk("textarea", "settings-input skills-builder-textarea");
+  seedArea.rows = 4;
+  seedArea.value = existing && existing.seedPrompt ? existing.seedPrompt : "";
+  seedArea.placeholder = "e.g. Summarize the gaps under cyber resilience as 3-5 exec bullets ordered by urgency.";
+  seedArea.setAttribute("data-skill-seed", "");
+  seedGroup.appendChild(seedArea);
+  form.appendChild(seedGroup);
 
-  var tplArea = createPillEditor({
-    initialValue: existing ? existing.promptTemplate : "Hello {{customer.name}}!",
-    manifest:     pillManifestList,
-    onInput:      function() { refreshBindingsAndPreview(); invalidateTest(); }
-  });
-  tplLabelGroup.appendChild(tplArea);
+  // ─── Field 4 · Data points ──────────────────────────────────────
+  // Selector with Standard/Advanced toggle. Author multi-selects which
+  // schema paths the skill consumes; Improve folds these descriptions
+  // into the meta-skill's CARE prompt build.
+  var dataGroup = mk("div", "skill-form-field");
+  dataGroup.appendChild(mkt("label", "skill-form-label", "Data points"));
+  dataGroup.appendChild(mkt("div", "settings-help-inline",
+    "Schema-keyed paths the skill reads or mutates. Standard view shows the " +
+    "26 high-frequency paths; Advanced exposes the full mutable schema."));
+  // Standard/Advanced toggle
+  var toggleWrap = mk("div", "skill-form-data-toggle");
+  var toggleStdBtn = mkt("button", "btn-secondary skill-form-data-toggle-btn is-active", "Standard (26)");
+  toggleStdBtn.type = "button";
+  toggleStdBtn.setAttribute("data-skill-data-toggle", "standard");
+  var toggleAdvBtn = mkt("button", "btn-secondary skill-form-data-toggle-btn", "Advanced (full schema)");
+  toggleAdvBtn.type = "button";
+  toggleAdvBtn.setAttribute("data-skill-data-toggle", "advanced");
+  toggleWrap.appendChild(toggleStdBtn);
+  toggleWrap.appendChild(toggleAdvBtn);
+  dataGroup.appendChild(toggleWrap);
+  // Selector area — re-rendered when toggle flips
+  var dataSelector = mk("div", "skill-form-data-points");
+  dataSelector.setAttribute("data-skill-data-points", "");
+  dataGroup.appendChild(dataSelector);
+  form.appendChild(dataGroup);
 
-  // ─── Refine to CARE button ─────────────────────────────────────
-  var refineRow = mk("div", "refine-row");
-  var refineBtn = mkt("button", "btn-secondary", "✨ Refine to CARE format");
-  refineBtn.title = "Rewrite this draft as a CARE-structured prompt (Context · Ask · Rules · Examples) using the active AI provider.";
-  refineRow.appendChild(refineBtn);
-  var refineStatus = mkt("span", "refine-status", "");
-  refineRow.appendChild(refineStatus);
-  form.appendChild(refineRow);
-  var refineDiff = mk("div", "refine-diff");
-  refineDiff.style.display = "none";
-  form.appendChild(refineDiff);
+  // ─── Field 5 · Improve button + Improved prompt ─────────────────
+  var improveRow = mk("div", "skill-form-improve-row");
+  var improveBtn = mkt("button", "btn-primary", "✨ Improve");
+  improveBtn.type = "button";
+  improveBtn.setAttribute("data-skill-improve", "");
+  improveBtn.title = "Fold the seed prompt + selected data points into a CARE-structured prompt via the active LLM provider (real call; no mocks).";
+  improveRow.appendChild(improveBtn);
+  var improveStatus = mkt("span", "skill-form-improve-status", "");
+  improveRow.appendChild(improveStatus);
+  form.appendChild(improveRow);
+  // Inline error chip (only rendered on failure)
+  var improveError = mk("div", "skill-form-improve-error");
+  improveError.style.display = "none";
+  form.appendChild(improveError);
+  // Improved prompt readonly textarea
+  var improvedGroup = mk("div", "skill-form-field");
+  improvedGroup.appendChild(mkt("label", "skill-form-label", "Improved prompt"));
+  improvedGroup.appendChild(mkt("div", "settings-help-inline",
+    "LLM-generated CARE-structured prompt. Readonly by default — click Edit to hand-tune; click Re-improve to regenerate from scratch."));
+  var improvedArea = mk("textarea", "settings-input skills-builder-textarea");
+  improvedArea.rows = 8;
+  improvedArea.value = existing && existing.improvedPrompt ? existing.improvedPrompt : "";
+  improvedArea.placeholder = "(empty — click Improve above to generate a CARE-structured prompt from the seed + data points)";
+  improvedArea.setAttribute("data-skill-improved", "");
+  improvedArea.setAttribute("readonly", "");
+  improvedGroup.appendChild(improvedArea);
+  // Edit + Re-improve buttons (rendered always; Edit toggles readonly)
+  var improvedBtnRow = mk("div", "skill-form-improved-btn-row");
+  var editBtn = mkt("button", "btn-secondary", "Edit");
+  editBtn.type = "button";
+  editBtn.setAttribute("data-skill-improve-edit", "");
+  editBtn.title = "Unfreeze the Improved prompt for hand-editing.";
+  var redoBtn = mkt("button", "btn-secondary", "Re-improve");
+  redoBtn.type = "button";
+  redoBtn.setAttribute("data-skill-improve-redo", "");
+  redoBtn.title = "Re-run Improve with the current seed + data points (overwrites the Improved prompt).";
+  improvedBtnRow.appendChild(editBtn);
+  improvedBtnRow.appendChild(redoBtn);
+  improvedGroup.appendChild(improvedBtnRow);
+  form.appendChild(improvedGroup);
 
-  refineBtn.addEventListener("click", async function() {
-    var draft = tplArea.serialize().trim();
-    if (!draft) { alert("Write a draft first, or click a chip to insert a binding."); return; }
-    refineBtn.disabled = true;
-    refineStatus.textContent = " · refining via " + (loadAiConfig().activeProvider || "AI") + "…";
-    refineDiff.style.display = "none";
-    try {
-      var cfg = loadAiConfig();
-      var active = cfg.providers[cfg.activeProvider];
-      var res = await chatCompletion({
-        providerKey: cfg.activeProvider,
-        baseUrl:     active.baseUrl,
-        model:       active.model,
-        apiKey:      active.apiKey,
-        messages: [
-          { role: "system", content: REFINE_META_SYSTEM + "\n\n" + REFINE_META_RULES },
-          { role: "user",   content: "Original prompt to rewrite:\n---\n" + draft + "\n---" }
-        ]
+  // ─── Field 6 · Parameters[] ─────────────────────────────────────
+  var paramsGroup = mk("div", "skill-form-field");
+  paramsGroup.appendChild(mkt("label", "skill-form-label", "Parameters (user-supplied at run-time)"));
+  paramsGroup.appendChild(mkt("div", "settings-help-inline",
+    "Zero or more parameters the user fills when running the skill. " +
+    "Use the file type for run-time uploads (e.g. RFP / install-base CSV)."));
+  var paramsWrap = mk("div", "skill-form-parameters");
+  paramsGroup.appendChild(paramsWrap);
+  var addParamBtn = mkt("button", "btn-outline skill-form-add-param", "+ Add parameter");
+  addParamBtn.type = "button";
+  paramsGroup.appendChild(addParamBtn);
+  form.appendChild(paramsGroup);
+
+  // ─── Field 7 · Output format ────────────────────────────────────
+  var outputGroup = mk("div", "skill-form-field");
+  outputGroup.appendChild(mkt("label", "skill-form-label", "Output format *"));
+  outputGroup.appendChild(mkt("div", "settings-help-inline",
+    "How the run output renders. Mutation formats (json-array / scalar) reveal the Mutation policy choice."));
+  var outputWrap = mk("div", "skill-form-output-format");
+  outputGroup.appendChild(outputWrap);
+  form.appendChild(outputGroup);
+
+  // ─── Field 8 · Mutation policy (conditional) ────────────────────
+  var policyGroup = mk("div", "skill-form-field");
+  policyGroup.appendChild(mkt("label", "skill-form-label", "Mutation policy *"));
+  policyGroup.appendChild(mkt("div", "settings-help-inline",
+    "Per-skill author setting. Saved with the skill; users running it get this behavior."));
+  var policyWrap = mk("div", "skill-form-mutation-policy");
+  policyGroup.appendChild(policyWrap);
+  // Hide until output format is mutating
+  policyGroup.style.display = "none";
+  form.appendChild(policyGroup);
+
+  // ─── Form-local state ───────────────────────────────────────────
+  var state = {
+    parameters:     existing && Array.isArray(existing.parameters) ? existing.parameters.slice() : [],
+    outputFormat:   existing && existing.outputFormat ? existing.outputFormat : "text",
+    mutationPolicy: existing && existing.mutationPolicy ? existing.mutationPolicy : "ask",
+    dataView:       "standard",  // "standard" | "advanced"
+    dataPoints:     existing && Array.isArray(existing.dataPoints) ? existing.dataPoints.slice() : []
+  };
+
+  // ─── Renderers ──────────────────────────────────────────────────
+
+  function renderDataPoints() {
+    dataSelector.innerHTML = "";
+    var points = state.dataView === "standard"
+      ? getStandardMutableDataPoints()
+      : getAllMutableDataPoints();
+    var selectedPaths = new Set(state.dataPoints.map(function(d) { return d.path; }));
+    // Group by entity for readability
+    var groups = {};
+    points.forEach(function(p) {
+      if (!groups[p.entity]) groups[p.entity] = [];
+      groups[p.entity].push(p);
+    });
+    Object.keys(groups).forEach(function(entityKind) {
+      dataSelector.appendChild(mkt("div", "skill-form-data-group-head",
+        entityKind + " (" + groups[entityKind].length + ")"));
+      var groupWrap = mk("div", "skill-form-data-group");
+      groups[entityKind].forEach(function(dp) {
+        var label = mk("label", "skill-form-data-checkbox");
+        var cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = dp.path;
+        cb.checked = selectedPaths.has(dp.path);
+        cb.setAttribute("data-skill-data-path", dp.path);
+        cb.addEventListener("change", function() {
+          if (cb.checked) {
+            if (!selectedPaths.has(dp.path)) {
+              state.dataPoints.push({ path: dp.path, scope: dp.scope });
+              selectedPaths.add(dp.path);
+            }
+          } else {
+            state.dataPoints = state.dataPoints.filter(function(d) { return d.path !== dp.path; });
+            selectedPaths.delete(dp.path);
+          }
+        });
+        label.appendChild(cb);
+        var pathSpan = mkt("span", "skill-form-data-path", dp.path);
+        label.appendChild(pathSpan);
+        if (dp.note) {
+          label.appendChild(mkt("span", "skill-form-data-note", "(" + dp.note + ")"));
+        }
+        groupWrap.appendChild(label);
       });
-      renderRefineDiff(refineDiff, draft, res.text || "", function(accepted) {
-        if (accepted) { tplArea.setValue(accepted); refreshBindingsAndPreview(); invalidateTest(); }
-        refineDiff.style.display = "none";
-      });
-      refineDiff.style.display = "block";
-      refineStatus.textContent = "";
-    } catch (e) {
-      refineStatus.textContent = " · refine failed: " + (e.message || String(e));
-    } finally {
-      refineBtn.disabled = false;
-    }
-  });
-
-  // ─── Chip palette (engagement-wide; replaces v2 per-tab fields) ─
-  form.appendChild(mkt("div", "skill-form-label", "Bindable fields — click to insert"));
-  var chipsWrap = mk("div", "field-chip-list");
-  form.appendChild(chipsWrap);
-  renderChipPalette(chipsWrap, pillManifestList, tplArea);
-
-  // ─── Detected bindings + live preview ──────────────────────────
-  var bindingsEl = mkt("div", "skill-form-bindings", "");
-  form.appendChild(bindingsEl);
-  form.appendChild(mkt("div", "skill-form-label", "Preview with current engagement data"));
-  var previewBox = mk("pre", "template-preview");
-  form.appendChild(previewBox);
-
-  function refreshBindingsAndPreview() {
-    var serialized = tplArea.serialize();
-    var found = findPlaceholderPaths(serialized);
-    bindingsEl.textContent = found.length === 0
-      ? "No {{template.bindings}} detected."
-      : "Detected bindings: " + found.map(function(p) { return "{{" + p + "}}"; }).join(", ");
-    var ctx = buildEngagementCtxForPreview(state.parameters);
-    previewBox.textContent = resolveTemplate(serialized, ctx, { skillId: existing ? existing.skillId : "skl-draft-1" })
-      || "(empty — write a template above, or click a field chip to insert)";
+      dataSelector.appendChild(groupWrap);
+    });
   }
 
-  // ─── Parameters editor (v3.1 NEW per CH31) ─────────────────────
-  form.appendChild(mkt("div", "skill-form-label", "Parameters (user-supplied at invoke time)"));
-  form.appendChild(mkt("div", "settings-help-inline",
-    "Zero or more parameters the user fills in when running this skill from the chat. " +
-    "Reference them in the template by name (paramName) wrapped in double-braces. " +
-    "Pick the entityId type to bind a parameter to a real gap / driver / instance / " +
-    "environment selected at run time."));
-  var paramsWrap = mk("div", "skill-form-parameters");
-  form.appendChild(paramsWrap);
-  var addParamBtn = mkt("button", "btn-outline skill-form-add-param", "+ Add parameter");
-  form.appendChild(addParamBtn);
+  function renderOutputFormat() {
+    outputWrap.innerHTML = "";
+    OUTPUT_FORMATS.forEach(function(opt) {
+      var optRow = mk("label", "skill-form-output-format-row");
+      var radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = "skill-output-format";
+      radio.value = opt.id;
+      radio.checked = (state.outputFormat === opt.id);
+      radio.setAttribute("data-skill-output-format", "");
+      radio.setAttribute("data-output-format-value", opt.id);
+      radio.addEventListener("change", function() {
+        state.outputFormat = opt.id;
+        // Conditional mutation-policy visibility — RENDER iff mutating.
+        // Per V-FLOW-SKILL-V32-AUTHOR-POLICY-1: the test asserts the
+        // radios' own computed display is "none" OR they're absent from
+        // DOM. Conditional rendering (NOT just style hiding) is the
+        // straightforward path that matches both branches of that assertion.
+        var isMutating = (opt.id === "json-array" || opt.id === "scalar");
+        policyGroup.style.display = isMutating ? "" : "none";
+        if (isMutating) renderMutationPolicy();
+        else policyWrap.innerHTML = "";
+      });
+      optRow.appendChild(radio);
+      var labelText = mk("span", "skill-form-output-format-label");
+      labelText.textContent = opt.label;
+      optRow.appendChild(labelText);
+      var hintText = mk("span", "skill-form-output-format-hint");
+      hintText.textContent = opt.hint;
+      optRow.appendChild(hintText);
+      outputWrap.appendChild(optRow);
+    });
+    // Set initial conditional visibility — group hidden + radios NOT rendered
+    // when output is text (the default).
+    var isMutating = (state.outputFormat === "json-array" || state.outputFormat === "scalar");
+    policyGroup.style.display = isMutating ? "" : "none";
+    if (isMutating) renderMutationPolicy();
+    else policyWrap.innerHTML = "";
+  }
 
-  // ─── outputTarget radio (v3.1 NEW per CH31) ────────────────────
-  form.appendChild(mkt("div", "skill-form-label", "Output target"));
-  form.appendChild(mkt("div", "settings-help-inline",
-    "Where the response renders. Only 'chat-bubble' is implemented in this release; the " +
-    "others are surfaced for visibility and will land in a future release."));
-  var outputTargetWrap = mk("div", "skill-form-output-target");
-  form.appendChild(outputTargetWrap);
-
-  // ─── Test button + result panel ────────────────────────────────
-  // rc.7-arc-1 (2026-05-06): Mock|Real provider toggle removed per
-  // feedback_no_mocks.md (LOCKED 2026-05-05). Test button always
-  // invokes the active real provider per Settings → AI Providers.
-  var testRow = mk("div", "skill-form-test-row");
-  var testBtn = mkt("button", "btn-secondary", "Test skill now");
-  testRow.appendChild(testBtn);
-  form.appendChild(testRow);
-  var testOut = mk("div", "ai-skill-result skill-form-test-out");
-  testOut.style.display = "none";
-  form.appendChild(testOut);
-
-  // Form-local state — drives parameters editor + outputTarget radio.
-  var state = {
-    parameters:   existing && Array.isArray(existing.parameters) ? existing.parameters.slice() : [],
-    outputTarget: existing && existing.outputTarget                ? existing.outputTarget       : "chat-bubble"
-  };
+  function renderMutationPolicy() {
+    policyWrap.innerHTML = "";
+    MUTATION_POLICIES.forEach(function(opt) {
+      var optRow = mk("label", "skill-form-mutation-policy-row");
+      var radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = "skill-mutation-policy";
+      radio.value = opt.id;
+      radio.checked = (state.mutationPolicy === opt.id);
+      radio.setAttribute("data-skill-mutation-policy", "");
+      radio.setAttribute("data-policy-value", opt.id);
+      radio.addEventListener("change", function() { state.mutationPolicy = opt.id; });
+      optRow.appendChild(radio);
+      var labelText = mk("span", "skill-form-mutation-policy-label");
+      labelText.textContent = opt.label;
+      optRow.appendChild(labelText);
+      var hintText = mk("span", "skill-form-mutation-policy-hint");
+      hintText.textContent = opt.hint;
+      optRow.appendChild(hintText);
+      policyWrap.appendChild(optRow);
+    });
+  }
 
   function renderParameters() {
     paramsWrap.innerHTML = "";
@@ -367,19 +438,20 @@ function renderEditForm(adminRoot, list, existing, onChange) {
       paramsWrap.appendChild(renderParameterRow(p, idx));
     });
   }
+
   function renderParameterRow(p, idx) {
     var row = mk("div", "skill-param-row");
     // name
-    var nameG = mk("div", "skill-param-cell skill-param-name");
+    var nameG = mk("div", "skill-param-cell");
     nameG.appendChild(mkt("label", "skill-form-label", "Name"));
     var nameI = mk("input", "settings-input");
     nameI.type = "text"; nameI.value = p.name || "";
-    nameI.placeholder = "e.g. gap";
-    nameI.addEventListener("input", function() { state.parameters[idx].name = nameI.value; invalidateTest(); refreshBindingsAndPreview(); });
+    nameI.placeholder = "e.g. rfpBody";
+    nameI.addEventListener("input", function() { state.parameters[idx].name = nameI.value; });
     nameG.appendChild(nameI);
     row.appendChild(nameG);
     // type
-    var typeG = mk("div", "skill-param-cell skill-param-type");
+    var typeG = mk("div", "skill-param-cell");
     typeG.appendChild(mkt("label", "skill-form-label", "Type"));
     var typeS = mk("select", "settings-input");
     PARAMETER_TYPES.forEach(function(t) {
@@ -388,193 +460,215 @@ function renderEditForm(adminRoot, list, existing, onChange) {
       if (t.id === p.type) o.selected = true;
       typeS.appendChild(o);
     });
-    typeS.addEventListener("change", function() { state.parameters[idx].type = typeS.value; invalidateTest(); });
+    typeS.addEventListener("change", function() {
+      state.parameters[idx].type = typeS.value;
+      renderParameters();
+    });
     typeG.appendChild(typeS);
     row.appendChild(typeG);
     // description
-    var descG = mk("div", "skill-param-cell skill-param-desc");
+    var descG = mk("div", "skill-param-cell");
     descG.appendChild(mkt("label", "skill-form-label", "Description"));
     var descI = mk("input", "settings-input");
     descI.type = "text"; descI.value = p.description || "";
-    descI.placeholder = "e.g. Pick a gap";
-    descI.addEventListener("input", function() { state.parameters[idx].description = descI.value; invalidateTest(); });
+    descI.placeholder = "e.g. Customer install-base CSV";
+    descI.addEventListener("input", function() { state.parameters[idx].description = descI.value; });
     descG.appendChild(descI);
     row.appendChild(descG);
+    // accepts (file type only)
+    if (p.type === "file") {
+      var accG = mk("div", "skill-param-cell");
+      accG.appendChild(mkt("label", "skill-form-label", "Accepts"));
+      var accI = mk("input", "settings-input");
+      accI.type = "text"; accI.value = p.accepts || ".xlsx,.csv,.txt,.pdf";
+      accI.placeholder = ".xlsx,.csv,.txt,.pdf";
+      accI.addEventListener("input", function() { state.parameters[idx].accepts = accI.value; });
+      accG.appendChild(accI);
+      row.appendChild(accG);
+    }
     // required
     var reqG = mk("div", "skill-param-cell skill-param-required");
     var reqL = mkt("label", "skill-param-required-label", "Required");
     var reqI = document.createElement("input");
     reqI.type = "checkbox"; reqI.checked = !!p.required;
-    reqI.addEventListener("change", function() { state.parameters[idx].required = reqI.checked; invalidateTest(); });
+    reqI.addEventListener("change", function() { state.parameters[idx].required = reqI.checked; });
     reqL.prepend(reqI);
     reqG.appendChild(reqL);
     row.appendChild(reqG);
     // remove
     var rmBtn = mkt("button", "btn-danger skill-param-remove", "Remove");
+    rmBtn.type = "button";
     rmBtn.addEventListener("click", function() {
       state.parameters.splice(idx, 1);
       renderParameters();
-      invalidateTest(); refreshBindingsAndPreview();
     });
     row.appendChild(rmBtn);
     return row;
   }
+
+  // ─── Wire toggles + buttons ─────────────────────────────────────
+
+  toggleStdBtn.addEventListener("click", function() {
+    state.dataView = "standard";
+    toggleStdBtn.classList.add("is-active");
+    toggleAdvBtn.classList.remove("is-active");
+    renderDataPoints();
+  });
+  toggleAdvBtn.addEventListener("click", function() {
+    state.dataView = "advanced";
+    toggleAdvBtn.classList.add("is-active");
+    toggleStdBtn.classList.remove("is-active");
+    renderDataPoints();
+  });
+
   addParamBtn.addEventListener("click", function() {
     state.parameters.push({ name: "", type: "string", description: "", required: false });
     renderParameters();
-    invalidateTest();
   });
-  renderParameters();
 
-  function renderOutputTarget() {
-    outputTargetWrap.innerHTML = "";
-    OUTPUT_TARGETS.forEach(function(opt) {
-      var optRow = mk("label", "skill-form-output-target-row" + (opt.enabled ? "" : " is-disabled"));
-      var radio = document.createElement("input");
-      radio.type = "radio"; radio.name = "outputTarget";
-      radio.value = opt.id;
-      radio.checked = (state.outputTarget === opt.id);
-      radio.disabled = !opt.enabled;
-      radio.addEventListener("change", function() { state.outputTarget = opt.id; invalidateTest(); });
-      optRow.appendChild(radio);
-      var labelText = mk("span", "skill-form-output-target-label");
-      labelText.textContent = opt.label;
-      optRow.appendChild(labelText);
-      var hintText = mk("span", "skill-form-output-target-hint");
-      hintText.textContent = opt.enabled ? opt.hint : "(deferred to GA — " + opt.hint + ")";
-      optRow.appendChild(hintText);
-      outputTargetWrap.appendChild(optRow);
-    });
-  }
-  renderOutputTarget();
-
-  // ─── Test gate state ───────────────────────────────────────────
-  var lastTestedSignature = null;
-  function currentSignature() {
-    return JSON.stringify([
-      tplArea.serialize(),
-      (nameInput.value || "").trim(),
-      (descInput.value || "").trim(),
-      JSON.stringify(state.parameters),
-      state.outputTarget
-    ]);
-  }
-  function invalidateTest() {
-    lastTestedSignature = null;
-    refreshSaveGate();
-  }
-
-  testBtn.addEventListener("click", async function() {
-    var signatureAtStart = currentSignature();
-    testBtn.disabled = true;
-    var originalLabel = testBtn.textContent;
-    testBtn.textContent = "Testing…";
-    testOut.style.display = "block";
-    testOut.className = "ai-skill-result skill-form-test-out running";
-    testOut.textContent = "Running with current engagement…";
+  // Improve button — real LLM call (CH36.b · feedback_no_mocks.md)
+  improveBtn.addEventListener("click", async function() {
+    var seed = (seedArea.value || "").trim();
+    var hasDataPoints = state.dataPoints.length > 0;
+    // Pre-flight per SPEC §S46.5: seed non-empty + ≥1 data point
+    if (!seed || !hasDataPoints) {
+      improveError.style.display = "block";
+      improveError.className = "skill-form-improve-error err";
+      improveError.textContent = "Add a seed prompt and select at least one data point first.";
+      return;
+    }
+    improveError.style.display = "none";
+    improveError.textContent = "";
+    improveBtn.disabled = true;
+    improveStatus.textContent = " · improving via " + (loadAiConfig().activeProvider || "AI") + "…";
     try {
-      var ctx = await buildRunCtx();
-      var draftSkill = {
-        skillId:        existing && existing.skillId      ? existing.skillId      : "skl-draft-1",
-        label:          (nameInput.value || "Draft").trim(),
-        version:        "1.0.0",
-        promptTemplate: tplArea.serialize() || "Hello {{customer.name}}!",
-        parameters:     state.parameters.slice(),
-        outputContract: "free-text",
-        outputTarget:   state.outputTarget
-      };
-      var params  = prefillParamValuesFor(state.parameters, ctx.engagement);
-      // rc.7-arc-1 (2026-05-06): always-real per feedback_no_mocks.md.
-      var provider = createRealLLMProvider();
-      var envelope = await runSkill(draftSkill, ctx, provider, {
-        params: params,
-        runTimestamp: new Date().toISOString(),
-        runIdSeed:    "skill-builder-test-" + draftSkill.skillId
+      var cfg = loadAiConfig();
+      var active = cfg.providers[cfg.activeProvider];
+      var dataPointDescriptions = state.dataPoints.map(function(d) { return d.path; }).join(", ");
+      var systemPrompt =
+        "You are a prompt-engineering assistant for a presales discovery tool. " +
+        "Rewrite the user's seed prompt into a CARE-structured prompt with " +
+        "Anthropic XML wire tags. Use exactly four sections: <context> (engagement " +
+        "framing), <task> (the imperative), <format> (output constraints), and " +
+        "<examples> (1-2 worked examples). Reference the listed data points by " +
+        "their schema-keyed paths (e.g. {{gap.urgency}}). Output ONLY the four " +
+        "XML blocks; no preamble, no postscript.";
+      var res = await chatCompletion({
+        providerKey: cfg.activeProvider,
+        baseUrl:     active.baseUrl,
+        model:       active.model,
+        apiKey:      active.apiKey,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user",   content:
+              "Seed prompt:\n---\n" + seed + "\n---\n\n" +
+              "Selected data points (schema-keyed paths):\n" + dataPointDescriptions
+          }
+        ]
       });
-      testOut.innerHTML = "";
-      testOut.className = "ai-skill-result skill-form-test-out ok";
-      testOut.appendChild(mkt("div", "ai-skill-result-head",
-        "Test output · " + (envelope.provenance && envelope.provenance.model || "unknown") + " (draft — not saved)"));
-      var body = mk("pre", "ai-skill-result-body");
-      body.textContent = typeof envelope.value === "string"
-        ? envelope.value
-        : JSON.stringify(envelope.value, null, 2);
-      testOut.appendChild(body);
-      if (currentSignature() === signatureAtStart) {
-        lastTestedSignature = signatureAtStart;
-        refreshSaveGate();
-      }
+      improvedArea.value = (res && res.text) || "";
+      improvedArea.setAttribute("readonly", "");
+      improveStatus.textContent = "";
     } catch (e) {
-      testOut.innerHTML = "";
-      testOut.className = "ai-skill-result skill-form-test-out err";
-      testOut.textContent = (e instanceof ProviderNotConfiguredError)
-        ? "Real provider not configured. Open Settings → AI Providers to set one, or switch the test selector to Mock."
-        : "Test failed: " + (e.message || String(e));
+      // Per SPEC §S46.5: inline error chip + Retry button; Improved field NOT cleared
+      improveError.style.display = "block";
+      improveError.className = "skill-form-improve-error err";
+      improveError.innerHTML = "";
+      var msg = mkt("span", "skill-form-improve-error-msg",
+        "Improve failed: " + (e.message || String(e)) + ". Try again, or check Settings → LLM providers.");
+      improveError.appendChild(msg);
+      var retryBtn = mkt("button", "btn-secondary skill-form-improve-retry", "Retry");
+      retryBtn.type = "button";
+      retryBtn.addEventListener("click", function() { improveBtn.click(); });
+      improveError.appendChild(retryBtn);
+      improveStatus.textContent = "";
     } finally {
-      testBtn.disabled = false;
-      testBtn.textContent = originalLabel;
+      improveBtn.disabled = false;
     }
   });
 
-  // ─── Save gate + buttons ───────────────────────────────────────
-  nameInput.addEventListener("input",  invalidateTest);
-  descInput.addEventListener("input",  invalidateTest);
+  // Edit button — unfreezes the Improved textarea for hand-edits
+  editBtn.addEventListener("click", function() {
+    improvedArea.removeAttribute("readonly");
+    improvedArea.focus();
+  });
 
+  // Re-improve button — re-locks + re-runs Improve
+  redoBtn.addEventListener("click", function() {
+    improvedArea.setAttribute("readonly", "");
+    improveBtn.click();
+  });
+
+  // ─── Test button (R3 stub; full wiring at R6 per user direction) ─
+  var testRow = mk("div", "skill-form-test-row");
+  var testBtn = mkt("button", "btn-secondary", "Test skill now");
+  testBtn.type = "button";
+  testBtn.setAttribute("data-skill-test", "");
+  testRow.appendChild(testBtn);
+  form.appendChild(testRow);
+  var testOut = mk("div", "ai-skill-result skill-form-test-out");
+  testOut.style.display = "none";
+  form.appendChild(testOut);
+  testBtn.addEventListener("click", function() {
+    testOut.style.display = "block";
+    testOut.className = "ai-skill-result skill-form-test-out";
+    testOut.textContent = "Test wiring lands at rc.8.b R6 (run-time execution sub-arc). " +
+      "Today the skill saves; running happens via Canvas Chat → Skills tab once R5 + R6 land.";
+  });
+
+  // ─── Save + Cancel ───────────────────────────────────────────────
   var actions = mk("div", "form-actions");
   var cancelBtn = mkt("button", "btn-secondary", "Cancel");
+  cancelBtn.type = "button";
   cancelBtn.addEventListener("click", function() { form.remove(); });
   var saveBtn = mkt("button", "btn-primary", existing ? "Save changes" : "Create skill");
+  saveBtn.type = "button";
+  saveBtn.setAttribute("data-skill-save", "");
   var saveHint = mkt("span", "save-gate-hint", "");
-
-  function refreshSaveGate() {
-    var needsTest = lastTestedSignature !== currentSignature();
-    var isNewSkill = !existing;
-    var gated = isNewSkill && needsTest;
-    saveBtn.disabled = gated;
-    if (gated) {
-      saveBtn.classList.add("save-disabled");
-      saveHint.textContent = lastTestedSignature === null
-        ? "← New skill — click 'Test skill now' and verify the output before creating."
-        : "← Changes detected — re-run the test to enable Create.";
-      saveHint.className = "save-gate-hint save-gate-hint-error";
-    } else if (needsTest) {
-      saveBtn.classList.remove("save-disabled");
-      saveHint.textContent = "⚠ Untested changes — saving without re-test is OK for tweaks; click 'Test skill now' first for behaviour changes.";
-      saveHint.className = "save-gate-hint save-gate-hint-warn";
-    } else {
-      saveBtn.classList.remove("save-disabled");
-      saveHint.textContent = lastTestedSignature === null
-        ? "✓ Safe to save — run 'Test skill now' any time to verify."
-        : "✓ Tested — safe to save.";
-      saveHint.className = "save-gate-hint save-gate-hint-ok";
-    }
-  }
-  refreshSaveGate();
+  actions.appendChild(cancelBtn);
+  actions.appendChild(saveBtn);
+  actions.appendChild(saveHint);
+  form.appendChild(actions);
 
   saveBtn.addEventListener("click", function() {
-    var label = (nameInput.value || "").trim();
-    var tpl   = (tplArea.serialize() || "").trim();
+    var label = (labelInput.value || "").trim();
+    var description = (descInput.value || "").trim();
+    var seedPrompt = (seedArea.value || "").trim();
+    var improvedPrompt = (improvedArea.value || "").trim();
     if (!label) { alert("Label is required."); return; }
-    if (!tpl)   { alert("Prompt template is required — click a field chip or type text."); return; }
-
-    // skillId: existing keeps its id; new skills derive from label.
+    if (!description) { alert("Description is required."); return; }
+    if (!seedPrompt) { alert("Seed prompt is required."); return; }
+    if (state.outputFormat === "json-array" || state.outputFormat === "scalar") {
+      if (!state.mutationPolicy) { alert("Pick a mutation policy (output format is mutating)."); return; }
+    }
     var skillId = existing && existing.skillId
       ? existing.skillId
       : ("skl-" + label.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24) + "-" + Math.floor(Math.random() * 1000));
-
     var draft = {
-      skillId:         skillId,
-      label:           label,
-      description:     (descInput.value || "").trim(),
-      promptTemplate:  tpl,
-      parameters:      state.parameters.slice(),
-      outputTarget:    state.outputTarget,
-      outputContract:  "free-text"
+      skillId:        skillId,
+      label:          label,
+      description:    description,
+      seedPrompt:     seedPrompt,
+      dataPoints:     state.dataPoints.slice(),
+      improvedPrompt: improvedPrompt,
+      outputFormat:   state.outputFormat,
+      mutationPolicy: (state.outputFormat === "json-array" || state.outputFormat === "scalar")
+                        ? state.mutationPolicy
+                        : null,
+      parameters:     state.parameters.slice(),
+      outputContract: "free-text"
     };
     var manifest = generateManifest();
-    var result = saveV3Skill(draft, { manifest: manifest });
-    if (!result.ok) {
-      alert("Save failed: " + (result.errors || []).map(function(e) { return e.message || e; }).join("; "));
+    var result;
+    try { result = saveV3Skill(draft, { manifest: manifest }); }
+    catch (e) {
+      // R3 expectation: schema/skill.js will reject the new shape until R4
+      // lands. Surface the error inline rather than silently swallowing.
+      alert("Save failed (schema not yet extended for the new shape — lands at R4): " + (e && e.message || e));
+      return;
+    }
+    if (!result || !result.ok) {
+      alert("Save failed: " + ((result && result.errors) || []).map(function(e) { return e.message || e; }).join("; "));
       return;
     }
     form.remove();
@@ -582,213 +676,17 @@ function renderEditForm(adminRoot, list, existing, onChange) {
     if (onChange) onChange();
   });
 
-  actions.appendChild(cancelBtn);
-  actions.appendChild(saveBtn);
-  actions.appendChild(saveHint);
-  form.appendChild(actions);
-
   adminRoot.appendChild(form);
-  nameInput.focus();
-  refreshBindingsAndPreview();
+
+  // Initial paints — renderOutputFormat() handles conditional mutation
+  // policy rendering based on state.outputFormat (default "text" → no
+  // policy radios in DOM at first paint).
+  renderDataPoints();
+  renderOutputFormat();
+  renderParameters();
+  labelInput.focus();
 }
 
-// CARE-rewrite diff panel (preserved verbatim from v2 SkillAdmin).
-function renderRefineDiff(host, draft, refined, onDecision) {
-  host.innerHTML = "";
-  host.appendChild(mkt("div", "refine-diff-title", "Refined with CARE framework — review before accepting"));
-  var grid = mk("div", "refine-diff-grid");
-  var left = mk("div", "refine-side");
-  left.appendChild(mkt("div", "refine-side-head", "Your draft"));
-  var leftBox = mk("pre", "refine-side-body"); leftBox.textContent = draft;
-  left.appendChild(leftBox);
-  grid.appendChild(left);
-
-  var right = mk("div", "refine-side");
-  right.appendChild(mkt("div", "refine-side-head", "Refined (editable)"));
-  var rightBox = mk("textarea", "refine-side-body refine-side-edit");
-  rightBox.value = refined;
-  rightBox.rows = 10;
-  right.appendChild(rightBox);
-  grid.appendChild(right);
-  host.appendChild(grid);
-
-  var actions = mk("div", "form-actions");
-  var keepBtn = mkt("button", "btn-secondary", "Keep my draft");
-  keepBtn.addEventListener("click", function() { onDecision(null); });
-  var acceptBtn = mkt("button", "btn-primary", "Replace my draft with refined");
-  acceptBtn.addEventListener("click", function() { onDecision(rightBox.value); });
-  actions.appendChild(keepBtn);
-  actions.appendChild(acceptBtn);
-  host.appendChild(actions);
-}
-
-// ─── chip palette helpers (engagement-wide v3 manifest) ─────────────
-function buildPillEditorManifest(canvasManifest) {
-  // Produce an array of { path, label, kind } the createPillEditor + chip
-  // palette can render. Sources: sessionPaths + per-entity-kind ownPaths +
-  // linkedPaths. Drop placeholder/duplicate paths.
-  var out = [];
-  (canvasManifest.sessionPaths || []).forEach(function(p) {
-    out.push({ path: p.path, label: p.label || p.path, kind: p.type || "scalar", group: "Engagement-wide" });
-  });
-  Object.keys(canvasManifest.byEntityKind || {}).forEach(function(kind) {
-    var entry = canvasManifest.byEntityKind[kind] || {};
-    (entry.ownPaths || []).forEach(function(p) {
-      out.push({ path: p.path, label: p.label || p.path, kind: p.type || "scalar", group: kind });
-    });
-    (entry.linkedPaths || []).forEach(function(p) {
-      out.push({ path: p.path, label: (p.label || p.path) + " (linked)", kind: p.type || "scalar", group: kind + " (linked)" });
-    });
-  });
-  return out;
-}
-
-function renderChipPalette(container, manifest, tplArea) {
-  container.innerHTML = "";
-  if (manifest.length === 0) {
-    container.appendChild(mkt("div", "settings-help-inline",
-      "No bindable paths declared — generateManifest() returned empty."));
-    return;
-  }
-  // Group by `group` label.
-  var groups = {};
-  manifest.forEach(function(m) {
-    if (!groups[m.group]) groups[m.group] = [];
-    groups[m.group].push(m);
-  });
-  Object.keys(groups).forEach(function(g) {
-    container.appendChild(mkt("div", "skill-chip-group-head", g));
-    var groupWrap = mk("div", "skill-chip-group");
-    groups[g].forEach(function(f) {
-      var chip = mkt("button", "field-chip" + (f.kind === "array" ? " is-array" : ""), f.label);
-      chip.type = "button";
-      chip.title = "Click: insert labeled pill for " + f.label + ". Alt-click: insert bare {{" + f.path + "}} pill.";
-      chip.addEventListener("click", function(e) {
-        e.preventDefault();
-        tplArea.insertPillAtCursor(f.path, e.altKey);
-      });
-      chip.setAttribute("data-path", f.path);
-      groupWrap.appendChild(chip);
-    });
-    container.appendChild(groupWrap);
-  });
-}
-
-function findPlaceholderPaths(template) {
-  var seen = new Set();
-  var out = [];
-  var re = /\{\{([^{}]+?)\}\}/g;
-  var m;
-  while ((m = re.exec(template)) !== null) {
-    var path = m[1].trim();
-    if (seen.has(path)) continue;
-    seen.add(path);
-    out.push(path);
-  }
-  return out;
-}
-
-// Build a resolver context for the live preview / Test button. Falls back
-// to the demo engagement when no active engagement exists yet.
-async function buildRunCtx() {
-  var eng = getActiveEngagement() || loadDemo();
-  var dellCat = await loadCatalog("DELL_PRODUCT_TAXONOMY");
-  return {
-    engagement:      eng,
-    customer:        eng.customer,
-    engagementMeta:  eng.meta,
-    catalogVersions: {
-      DELL_PRODUCT_TAXONOMY: dellCat.catalogVersion,
-      BUSINESS_DRIVERS:      "2026.04",
-      ENV_CATALOG:           "2026.04"
-    },
-    dellTaxonomyIds: new Set(dellCat.entries.map(function(e) { return e.id; }))
-  };
-}
-
-function buildEngagementCtxForPreview(parameters) {
-  var eng = getActiveEngagement() || loadDemo();
-  var ctx = {
-    engagement:     eng,
-    customer:       eng.customer,
-    engagementMeta: eng.meta,
-    context:        {}
-  };
-  // Pre-fill {{paramName}} placeholders with sensible sample values so the
-  // preview reads like a real run rather than literal {{paramName}}.
-  (parameters || []).forEach(function(p) {
-    if (!p || !p.name) return;
-    if (p.type === "entityId") {
-      var key = entityKindKeyFromHint(p.description);
-      if (key && eng[key] && eng[key].allIds && eng[key].allIds[0]) {
-        var firstId = eng[key].allIds[0];
-        ctx[p.name] = firstId;
-        var entity = eng[key].byId && eng[key].byId[firstId];
-        if (entity) ctx.context[p.name] = entity;
-      } else {
-        ctx[p.name] = "[entity-id]";
-      }
-    } else if (p.type === "number")  { ctx[p.name] = 0; }
-      else if (p.type === "boolean") { ctx[p.name] = true; }
-      else                            { ctx[p.name] = "[example]"; }
-  });
-  return ctx;
-}
-
-function prefillParamValuesFor(parameters, eng) {
-  var out = {};
-  (parameters || []).forEach(function(p) {
-    if (!p || !p.name) return;
-    if (p.type === "entityId") {
-      var key = entityKindKeyFromHint(p.description);
-      if (key && eng[key] && eng[key].allIds && eng[key].allIds[0]) {
-        out[p.name] = eng[key].allIds[0];
-      }
-    } else if (p.type === "number")  { out[p.name] = 0; }
-      else if (p.type === "boolean") { out[p.name] = true; }
-      else                            { out[p.name] = "[example]"; }
-  });
-  return out;
-}
-
-function entityKindKeyFromHint(description) {
-  if (typeof description !== "string") return null;
-  var lower = description.toLowerCase();
-  if (lower.indexOf("gap") >= 0)         return "gaps";
-  if (lower.indexOf("driver") >= 0)      return "drivers";
-  if (lower.indexOf("environment") >= 0) return "environments";
-  if (lower.indexOf("instance") >= 0)    return "instances";
-  return null;
-}
-
-// ─── Tiny form helpers (preserved from v2 SkillAdmin) ──────────────
+// ─── Tiny form helpers (preserved from legacy) ─────────────────────
 function mk(tag, cls)        { var el = document.createElement(tag); if (cls) el.className = cls; return el; }
 function mkt(tag, cls, txt)  { var el = mk(tag, cls); if (txt != null) el.textContent = txt; return el; }
-
-function mkField(parent, label, type, value, hint) {
-  var group = mk("div", "skill-form-field");
-  group.appendChild(mkt("label", "skill-form-label", label));
-  if (hint) group.appendChild(mkt("div", "settings-help-inline", hint));
-  var input = mk("input", "settings-input");
-  input.type = type;
-  input.value = value || "";
-  group.appendChild(input);
-  parent.appendChild(group);
-  return input;
-}
-
-function mkSelect(parent, label, options, value) {
-  var group = mk("div", "skill-form-field");
-  if (label) group.appendChild(mkt("label", "skill-form-label", label));
-  var sel = mk("select", "settings-input");
-  options.forEach(function(o) {
-    var opt = document.createElement("option");
-    opt.value = o.value;
-    opt.textContent = o.label;
-    if (o.value === value) opt.selected = true;
-    sel.appendChild(opt);
-  });
-  group.appendChild(sel);
-  parent.appendChild(group);
-  return sel;
-}
