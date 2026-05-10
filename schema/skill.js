@@ -1,254 +1,109 @@
-// schema/skill.js — v3.1 · SPEC sec S7.1 + §S29
+// schema/skill.js — rc.8.b / R4 (SPEC §S46.3 + RULES §16 CH36)
 //
-// SkillSchema validates persisted skill records.
+// Skills Builder v3.2 schema. Clean replace per user direction 2026-05-10:
+// "(b) replace, drop outputContract, outputFormat is canonical".
 //
-// **v3.1 architecture (per SPEC §S29, 2026-05-02 LATE EVENING)**:
-// click-to-run scope is RETIRED — single skill scope, parameterized by
-// optional user-supplied arguments. Output rendering is now explicit
-// via `outputTarget` ("chat-bubble" ships in v3.1; "structured-card",
-// "reporting-panel", "proposed-changes" are reserved for rc.4+).
+// DROPPED from the v3.1 shape (no production users, no migration):
+//   outputContract  — replaced by outputFormat (CH36.d enum lock)
+//   outputTarget    — replaced by outputFormat (chat-bubble was the only
+//                     ever-enabled v3.1 value; v3.2 expands to 4 render
+//                     targets driven by outputFormat)
+//   promptTemplate  — replaced by improvedPrompt (the LLM-generated
+//                     CARE-structured Anthropic-XML prompt)
+//   bindings        — replaced by dataPoints (the Standard/Advanced
+//                     curation list IS the binding declaration)
 //
-// **Migration policy**:
-// `migrateSkillToV31(raw)` translates v3.0 shape (skillType + entityKind)
-// to v3.1 (outputTarget + parameters[]). Applied at the load/save
-// boundaries in state/v3SkillStore.js so downstream code (Skill Builder
-// UI, runner) sees only v3.1 shape after this commit lands. Per S29.3:
-// click-to-run + entityKind=<X> → parameters: [{name:"entity",
-// type:"entityId", description:"Pick a <X>", required:true}].
-// session-wide → empty parameters.
+// ADDED (per SPEC §S46.3 — 8 author form fields):
+//   description     — required string; surfaced in launcher description-confirm
+//   seedPrompt      — required string; author's raw idea
+//   dataPoints[]    — array of {path, scope}; selected schema-keyed paths
+//   improvedPrompt  — string (default ""); LLM Improve-button output
+//   outputFormat    — enum (text/dimensional/json-array/scalar); CH36.d
+//   mutationPolicy  — nullable enum (ask/auto-tag); required-non-null iff
+//                     outputFormat ∈ {json-array, scalar} (CH36.e)
+//
+// Migration helpers REMOVED:
+//   migrateSkillToV31  — no v3.0 → v3.1 compat needed
+//   migrateV2SkillToV31 — no v2 → v3.x compat needed
+// All legacy migration tests retired in lock-step (V-SKILL-V3-2 + V-SKILL-V3-14
+// + V-MIGRATE-V2-V3-1..4 retired in this same R4 commit).
+//
+// Authority: docs/v3.0/SPEC.md §S46.3 + §S46.6 + §S46.10 · docs/RULES.md §16 CH36.
 
 import { z } from "zod";
 import { crossCuttingFieldsSchema, defaultCrossCuttingFields } from "./helpers/crossCuttingFields.js";
 
-const BindingSchema = z.object({
-  path:   z.string().min(1),
-  source: z.enum(["session", "entity", "linked", "catalog", "parameter"])  // "parameter" added in v3.1
+// SPEC §S46.4 / CH36.c — DataPoint binding shape (subset of the
+// dataContract DataPoint descriptor; only the path + scope are persisted
+// with the skill, full descriptor is re-derived on demand).
+const DataPointSchema = z.object({
+  path:  z.string().min(1),
+  scope: z.enum(["standard", "advanced"])
 });
 
-const OutputContractSchema = z.union([
-  z.literal("free-text"),
-  z.object({ schemaRef: z.string().min(1) })
-]);
+// SPEC §S46.6 / CH36.d — output format enum (locked).
+const OutputFormatEnum = z.enum(["text", "dimensional", "json-array", "scalar"]);
 
-// SPEC §S29.2 — output rendering target. Only "chat-bubble" is actively
-// supported in v3.1; the other three are placeholders for rc.4 / GA so
-// authored skills aren't blocked by future schema migration.
-const OutputTargetEnum = z.enum([
-  "chat-bubble", "structured-card", "reporting-panel", "proposed-changes"
-]);
+// SPEC §S46.10 / CH36.e — mutation policy enum (locked).
+//   nullable: required-non-null only when outputFormat ∈ {json-array, scalar};
+//   for non-mutating output formats (text/dimensional) it persists as null.
+const MutationPolicyEnum = z.enum(["ask", "auto-tag"]).nullable();
 
-// SPEC §S29.2 — parameter at invocation time. The author defines zero-
-// or-more parameters; the user supplies values when invoking the skill
-// from the chat right-rail.
+// SPEC §S46.3 / §S46.8 / CH36.j — parameter schema with file-type added.
+//   - file type accepts client-side run-time uploads; declared with `accepts`
+//     extension list (e.g. ".xlsx,.csv,.txt,.pdf"). NEVER persisted with
+//     skill; consumed at run-time only (per CH36.j).
 const ParameterSchema = z.object({
   name:        z.string().min(1),
-  type:        z.enum(["string", "number", "boolean", "entityId"]),
+  type:        z.enum(["string", "number", "boolean", "entityId", "file"]),
   description: z.string().default(""),
-  required:    z.boolean().default(false)
+  required:    z.boolean().default(false),
+  // Optional metadata for file-type parameters; ignored for other types.
+  accepts:     z.string().optional()
 });
 
 const SCHEMA_VERSION_RE = /^\d+\.\d+$/;
 
+// SPEC §S46.3 — the 8 author form fields + cross-cutting metadata.
 export const SkillSchema = z.object({
   ...crossCuttingFieldsSchema,
-  skillId:              z.string().min(1),                    // user-visible id "skl-..."
+  // Identity + cross-cutting
+  skillId:              z.string().min(1),
   label:                z.string().min(1),
+  description:          z.string().min(1),                 // §S46.3 field 2
   version:              z.string().default("1.0.0"),
-  // v3.1 NEW:
-  outputTarget:         OutputTargetEnum.default("chat-bubble"),
+  // Authoring fields (§S46.3 fields 3..5)
+  seedPrompt:           z.string().min(1),                 // field 3 (required)
+  dataPoints:           z.array(DataPointSchema).default([]),  // field 4
+  improvedPrompt:       z.string().default(""),            // field 5 (filled by Improve)
+  // Run-time inputs (§S46.3 field 6)
   parameters:           z.array(ParameterSchema).default([]),
-  // PRESERVED across v3.0 → v3.1:
-  promptTemplate:       z.string().min(1),
-  bindings:             z.array(BindingSchema).default([]),
-  outputContract:       OutputContractSchema.default("free-text"),
-  validatedAgainst:     z.string().regex(SCHEMA_VERSION_RE).default("3.1"),
+  // Output + mutation contract (§S46.3 fields 7..8 / §S46.6 / §S46.10)
+  outputFormat:         OutputFormatEnum,                  // field 7 (locked enum)
+  mutationPolicy:       MutationPolicyEnum.default(null),  // field 8 (conditional)
+  // Schema versioning
+  validatedAgainst:     z.string().regex(SCHEMA_VERSION_RE).default("3.2"),
   outdatedSinceVersion: z.string().regex(SCHEMA_VERSION_RE).nullable().default(null)
 }).strict();
 
-// SPEC §S29.3 — migration policy. Translates a v3.0 skill record to
-// v3.1 shape. Idempotent: a v3.1 record passes through unchanged. Pure
-// function (no side effects); safe at load + save boundaries.
-//
-//   v3.0 click-to-run + entityKind=<X>
-//     → v3.1 parameters: [{name:"entity", type:"entityId",
-//                           description:"Pick a <X>", required:true}]
-//
-//   v3.0 session-wide
-//     → v3.1 parameters: []  (no user input at invocation)
-//
-//   outputTarget defaults to "chat-bubble" for migrated skills (the
-//   only target that actually renders in v3.1).
-//
-//   bindings + outputContract + promptTemplate + cross-cutting fields
-//   are preserved verbatim. validatedAgainst bumps to "3.1".
-export function migrateSkillToV31(raw) {
-  if (!raw || typeof raw !== "object") return raw;
-  // True early-return: record is ALREADY in pure v3.1 shape (has new
-  // fields AND no legacy fields lurking). This keeps the function
-  // referentially equal for idempotent calls.
-  const hasLegacy = ("skillType" in raw) || ("entityKind" in raw);
-  if ("outputTarget" in raw && Array.isArray(raw.parameters) && !hasLegacy) {
-    return raw;
-  }
-
-  const out = { ...raw };
-
-  // 1. Add v3.1 fields with sensible defaults.
-  out.outputTarget = out.outputTarget || "chat-bubble";
-  if (!Array.isArray(out.parameters)) out.parameters = [];
-
-  // 2. Translate legacy skillType + entityKind into parameters[].
-  //    Only auto-fill parameters when none were already declared so a
-  //    caller that supplies BOTH new + legacy fields keeps the new.
-  //    Parameter NAME = entityKind (e.g. "gap", "driver") so legacy
-  //    prompt templates referencing {{context.gap.description}} keep
-  //    resolving cleanly post-migration. The runner binds
-  //    context.<paramName> = looked-up-entity at invocation time.
-  if (raw.skillType === "click-to-run" && raw.entityKind && out.parameters.length === 0) {
-    out.parameters = [{
-      name:        raw.entityKind,
-      type:        "entityId",
-      description: "Pick a " + raw.entityKind,
-      required:    true
-    }];
-  }
-
-  // 3. Drop v3.0-only fields.
-  delete out.skillType;
-  delete out.entityKind;
-
-  // 4. Bump validatedAgainst marker.
-  out.validatedAgainst = "3.1";
-
-  return out;
-}
-
-// SPEC §S35.4 / RULES §16 CH31 — translate a v2.x skill record (from
-// `core/skillStore.js`) to v3.1 shape. Pure function; no side effects.
-// Idempotent on v3.1 input (round-trips). Used by the evolved Skill
-// Builder (rc.4-dev Arc 4) to give v2 records an opt-in migration path
-// surfaced as a per-row "Migrate" button under the "Legacy (v2)"
-// section of the Settings → Skills builder pill.
-//
-// v2.x → v3.1 field map:
-//   name           → label
-//   description    → description (cross-cutting passthrough; skill schema
-//                    doesn't have its own `description`, so it lands on
-//                    cross-cutting `description` field if helpers expose it)
-//   promptTemplate → promptTemplate (verbatim)
-//   bindings       → bindings (shape-compatible; both use {path, source})
-//   responseFormat → outputContract:
-//                      "text-brief" / undefined → "free-text"
-//                      "json-scalars" / "json-commands" → { schemaRef: <hint or fallback> }
-//   tab            → DROPPED (no v3 equivalent; chat-rail is engagement-wide)
-//   applyPolicy    → DROPPED (structured outputs are per outputTarget in v3)
-//   deployed       → DROPPED (no v3 deploy gate; all saved skills surface)
-//   outputSchema   → DROPPED (replaced by outputContract.schemaRef)
-//   providerKey    → DROPPED (per-skill provider override is rc.5+ scope)
-//   systemPrompt   → DROPPED (folded into role-section directives in v3)
-//
-// New v3.1 fields default to:
-//   parameters       []
-//   outputTarget     "chat-bubble"
-//   validatedAgainst "3.1"
-//
-// `_droppedFromV2` non-strict-schema field carries the audit list so the
-// migrated row's UI can surface what was lost. Saved-but-non-validated;
-// strip before SkillSchema.parse if needed.
-export function migrateV2SkillToV31(v2Record) {
-  if (!v2Record || typeof v2Record !== "object") return v2Record;
-
-  const dropped = [];
-  const out = {};
-
-  // 1. label (v2.x `name`).
-  out.label = (typeof v2Record.label === "string" && v2Record.label.length > 0)
-    ? v2Record.label
-    : (typeof v2Record.name === "string" ? v2Record.name : "Untitled");
-
-  // 2. skillId — v2 uses a uid string ("skill-xxxx"); v3 uses a
-  //    user-visible id. Reuse if present; else derive from label.
-  out.skillId = (typeof v2Record.skillId === "string" && v2Record.skillId.length > 0)
-    ? v2Record.skillId
-    : (typeof v2Record.id === "string" && v2Record.id.length > 0
-        ? v2Record.id
-        : "skl-migrated-" + (out.label || "x").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24));
-
-  // 3. version: preserve or default.
-  out.version = (typeof v2Record.version === "string") ? v2Record.version : "1.0.0";
-
-  // 4. promptTemplate: verbatim.
-  out.promptTemplate = (typeof v2Record.promptTemplate === "string")
-    ? v2Record.promptTemplate
-    : "";
-
-  // 5. bindings: passthrough ({path, source}) extracted by
-  //    skillEngine.extractBindings on save in the evolved Skill Builder;
-  //    empty if absent on the v2 record.
-  out.bindings = Array.isArray(v2Record.bindings) ? v2Record.bindings.slice() : [];
-
-  // 6. outputContract: derive from responseFormat + outputSchema hint.
-  if (v2Record.responseFormat === "json-scalars" || v2Record.responseFormat === "json-commands") {
-    // v2 schema-bearing skills carry an outputSchema array. We don't
-    // have a stable schemaRef for arbitrary v2 skills; default to
-    // "DellSolutionListSchema" if outputSchema looks Dell-shaped, else
-    // fall back to free-text rather than emit a broken schemaRef.
-    const looksDellShaped = Array.isArray(v2Record.outputSchema)
-      && v2Record.outputSchema.some(e => e && typeof e.path === "string" && /products|dell|solution/i.test(e.path));
-    out.outputContract = looksDellShaped
-      ? { schemaRef: "DellSolutionListSchema" }
-      : "free-text";
-  } else {
-    out.outputContract = "free-text";
-  }
-
-  // 7. New v3.1 fields with sensible defaults.
-  out.outputTarget = "chat-bubble";
-  out.parameters = [];
-
-  // 8. validatedAgainst marker.
-  out.validatedAgainst = "3.1";
-  out.outdatedSinceVersion = null;
-
-  // 9. Audit: record dropped-on-migration v2 fields so the UI can show
-  //    "this v2 field didn't survive migration" hints. Non-schema field;
-  //    strip before SkillSchema.parse if a strict path needs it.
-  if (v2Record.tab != null && v2Record.tab !== "")           dropped.push({ field: "tab",          value: v2Record.tab });
-  if (v2Record.applyPolicy != null && v2Record.applyPolicy !== "") dropped.push({ field: "applyPolicy",  value: v2Record.applyPolicy });
-  if (v2Record.deployed != null)                              dropped.push({ field: "deployed",     value: v2Record.deployed });
-  if (Array.isArray(v2Record.outputSchema) && v2Record.outputSchema.length > 0) dropped.push({ field: "outputSchema", value: v2Record.outputSchema });
-  if (v2Record.providerKey != null && v2Record.providerKey !== "")   dropped.push({ field: "providerKey",  value: v2Record.providerKey });
-  if (typeof v2Record.systemPrompt === "string" && v2Record.systemPrompt.length > 0) dropped.push({ field: "systemPrompt", value: v2Record.systemPrompt });
-  out._droppedFromV2 = dropped;
-
-  return out;
-}
-
-// createEmptySkill emits a v3.1-shaped skill. Callers that supply
-// legacy v3.0 fields (skillType / entityKind) are auto-migrated via
-// migrateSkillToV31 BEFORE schema validation, so existing call sites
-// continue to work until they're rewritten in rc.3 commit #4.
+// createEmptySkill — emits a v3.2-shaped draft. Defaults are sensible for
+// a "blank" new skill the user immediately fills in.
 export function createEmptySkill(overrides = {}) {
   const base = defaultCrossCuttingFields(overrides);
-  // Build the candidate FIRST, then run migration if legacy fields present.
-  let candidate = {
+  const candidate = {
     ...base,
     skillId:              overrides.skillId              ?? "skl-new-001",
     label:                overrides.label                ?? "New skill",
+    description:          overrides.description          ?? "(describe what this skill does)",
     version:              overrides.version              ?? "1.0.0",
-    promptTemplate:       overrides.promptTemplate       ?? "Hello {{customer.name}}!",
-    bindings:             overrides.bindings             ?? [],
-    outputContract:       overrides.outputContract       ?? "free-text",
-    validatedAgainst:     overrides.validatedAgainst     ?? "3.1",
-    outdatedSinceVersion: overrides.outdatedSinceVersion ?? null,
-    outputTarget:         overrides.outputTarget         ?? "chat-bubble",
-    parameters:           overrides.parameters           ?? []
+    seedPrompt:           overrides.seedPrompt           ?? "(describe what you want the AI to do)",
+    dataPoints:           overrides.dataPoints           ?? [],
+    improvedPrompt:       overrides.improvedPrompt       ?? "",
+    parameters:           overrides.parameters           ?? [],
+    outputFormat:         overrides.outputFormat         ?? "text",
+    mutationPolicy:       overrides.mutationPolicy       ?? null,
+    validatedAgainst:     overrides.validatedAgainst     ?? "3.2",
+    outdatedSinceVersion: overrides.outdatedSinceVersion ?? null
   };
-  // If the caller passed legacy fields, fold them through the migrator.
-  if ("skillType" in overrides || "entityKind" in overrides) {
-    candidate.skillType   = overrides.skillType;
-    candidate.entityKind  = overrides.entityKind;
-    candidate = migrateSkillToV31(candidate);
-  }
   return SkillSchema.parse(candidate);
 }

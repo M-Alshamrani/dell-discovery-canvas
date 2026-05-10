@@ -12893,80 +12893,17 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       const result = validateSkillSave(skill, generateManifest());
       assert(result.ok === true, "driver entity-scoped path resolves: " + JSON.stringify(result));
     });
-    it("V-PATH-3 · skill with '{{nonsense.path}}' blocks save with structured error", () => {
-      const skill = createEmptySkill({
-        skillId: "skl-v-path-3",
-        promptTemplate: "Bad path: {{nonsense.path}}"
-      });
-      const result = validateSkillSave(skill, generateManifest());
-      assertEqual(result.ok, false, "save blocked");
-      assert(result.errors.length === 1, "exactly one error");
-      assertEqual(result.errors[0].path, "nonsense.path", "error path captured");
-    });
-    it("V-PATH-4 · skill entityKind:'driver' cannot use context.gap.* paths (cross-kind blocked)", () => {
-      const skill = createEmptySkill({
-        skillId: "skl-v-path-4",
-        skillType: "click-to-run",
-        entityKind: "driver",
-        promptTemplate: "Cross-kind: {{context.gap.description}}"
-      });
-      const result = validateSkillSave(skill, generateManifest());
-      assertEqual(result.ok, false, "cross-kind path blocked");
-      assertEqual(result.errors[0].path, "context.gap.description",
-        "rejection points at the wrong-kind path");
-    });
-    it("V-PATH-5 · save error envelope includes validPaths list", () => {
-      const skill = createEmptySkill({
-        skillId: "skl-v-path-5",
-        promptTemplate: "Bad: {{nonsense.x}}"
-      });
-      const result = validateSkillSave(skill, generateManifest());
-      assertEqual(result.ok, false, "blocked");
-      assert(Array.isArray(result.errors[0].validPaths) && result.errors[0].validPaths.length > 0,
-        "error envelope includes validPaths list (UI surfaces these as suggestions)");
-      assert(result.errors[0].validPaths.includes("customer.name"),
-        "validPaths includes customer.name (sample sessionPaths entry)");
-    });
+    it("V-PATH-3 · RETIRED rc.8.b / R4 (legacy {{path}} placeholder save-time validation gone in v3.2; binding declaration is now via dataPoints[] curation per SPEC §S46.3 field 4 / §S46.4; new author surface contracts covered by V-FLOW-SKILL-V32-AUTHOR-DATA-1 + V-FLOW-SKILL-V32-CURATION-1/2)", () => {});
+    it("V-PATH-4 · RETIRED rc.8.b / R4 (same as V-PATH-3 — entityKind cross-kind blocking is a v3.0/v3.1 path-validation concept; v3.2 has no entityKind, just dataPoints[] curation)", () => {});
+    it("V-PATH-5 · RETIRED rc.8.b / R4 (same as V-PATH-3 — validPaths suggestion list is a v3.1 save-error envelope detail; gone with the placeholder-validation surface)", () => {});
     it("V-PATH-6 · driver entity kind valid path saves; invalid blocks", () => {});
     it("V-PATH-7 · currentInstance entity kind valid path saves; invalid blocks", () => {});
     it("V-PATH-8 · desiredInstance entity kind valid path saves; invalid blocks", () => {});
     it("V-PATH-9 · gap entity kind valid path saves; invalid blocks", () => {});
     it("V-PATH-10 · environment entity kind valid path saves; invalid blocks", () => {});
     it("V-PATH-11 · project entity kind valid path saves; invalid blocks", () => {});
-    it("V-PATH-12 · session-wide skill rejects entityKind-scoped path", () => {
-      const skill = createEmptySkill({
-        skillId: "skl-v-path-12",
-        skillType: "session-wide",
-        entityKind: null,
-        promptTemplate: "Bad: {{context.driver.priority}}"
-      });
-      const result = validateSkillSave(skill, generateManifest());
-      assertEqual(result.ok, false, "session-wide can't use entity-scoped path");
-      assertEqual(result.errors[0].path, "context.driver.priority",
-        "rejection points at the entity-scoped path");
-    });
-    it("V-PATH-13 · createEmptySkill auto-migrates legacy click-to-run + entityKind to v3.1 parameters[] (per SPEC §S29.3)", () => {
-      // Pre-rc.3: SkillSchema's superRefine rejected this draft because
-      // click-to-run + null entityKind violated the v3.0 invariant.
-      // Post-rc.3 (SPEC §S29): the (skillType, entityKind) tuple is
-      // RETIRED. createEmptySkill auto-migrates legacy drafts to the
-      // v3.1 shape (parameters[] derived from entityKind). A click-to-run
-      // skill with null entityKind = a v3.1 skill with NO parameters.
-      const skill = createEmptySkill({
-        skillId:        "skl-v-path-13",
-        skillType:      "click-to-run",
-        entityKind:     null,                  // dropped by migration
-        promptTemplate: "Hello"
-      });
-      assert(typeof skill.skillType === "undefined",
-        "v3.1 skill SHALL NOT carry legacy skillType field");
-      assert(typeof skill.entityKind === "undefined",
-        "v3.1 skill SHALL NOT carry legacy entityKind field");
-      assertEqual(skill.outputTarget, "chat-bubble",
-        "outputTarget defaults to chat-bubble");
-      assert(Array.isArray(skill.parameters) && skill.parameters.length === 0,
-        "click-to-run + null entityKind migrates to parameters: [] (effectively session-wide)");
-    });
+    it("V-PATH-12 · RETIRED rc.8.b / R4 (legacy session-wide vs entity-scoped path validation; v3.2 has no skillType/entityKind concept, dataPoints[] curation replaces this)", () => {});
+    it("V-PATH-13 · RETIRED rc.8.b / R4 (createEmptySkill auto-migration of click-to-run+entityKind→parameters[] is gone with the migrate helpers; v3.2 schema has no skillType/entityKind/outputTarget — clean replace per user direction 2026-05-10)", () => {});
     it("V-PATH-14 · validateSkillSave derives entity-kind context from parameters[] (per SPEC §S29.2)", () => {
       // Pre-rc.3: validator read skill.skillType + skill.entityKind to
       // decide which entity-scoped paths were valid.
@@ -14147,24 +14084,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "care-builder output round-trips through validateSkillSave: " +
         JSON.stringify(result.errors || ""));
     });
-    it("V-PROD-11 · care-builder output bindings[] reference paths that all exist in the manifest", () => {
-      const careOutput = createEmptySkill({
-        skillId:        "skl-care-bindings",
-        skillType:      "session-wide",
-        entityKind:     null,
-        promptTemplate: "Hi {{customer.name}}",
-        bindings: [
-          { path: "customer.name",     source: "session" },
-          { path: "customer.vertical", source: "session" }
-        ]
-      });
-      const manifest = generateManifest();
-      const sessionPathSet = new Set(manifest.sessionPaths.map(p => p.path));
-      careOutput.bindings.forEach(b => {
-        assert(sessionPathSet.has(b.path),
-          "binding path '" + b.path + "' must exist in manifest sessionPaths");
-      });
-    });
+    it("V-PROD-11 · RETIRED rc.8.b / R4 (legacy bindings[] field dropped from v3.2 schema; binding declaration is now via dataPoints[] curation per SPEC §S46.3 field 4 / §S46.4; care-builder output contract evolves at R6 to emit dataPoints[] instead of bindings[])", () => {});
   });
 
   // -------------------------------------------------------------------
@@ -16014,35 +15934,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     // -----------------------------------------------------------------
     describe("§T29 · V-SKILL-V3 · Skill schema v3.1 (parameterized + outputTarget)", () => {
 
-      it("V-SKILL-V3-1 · SkillSchema strict-parses a v3.1 skill (outputTarget + parameters[]); strict-rejects extra fields like skillType/entityKind", async () => {
-        const { SkillSchema } = await import("../schema/skill.js");
-        const v31Skill = {
-          id:           "00000000-0000-4000-8000-0000000ab001",
-          engagementId: "00000000-0000-4000-8000-0000000ab001",
-          createdAt:    "2026-05-02T00:00:00.000Z",
-          updatedAt:    "2026-05-02T00:00:00.000Z",
-          skillId:      "skl-v3-1",
-          label:        "v3.1 native skill",
-          version:      "1.0.0",
-          outputTarget: "chat-bubble",
-          parameters:   [
-            { name: "gap", type: "entityId", description: "Pick a gap to map to Dell solutions", required: true }
-          ],
-          promptTemplate:       "Map gap to Dell: {{context.gap.description}}",
-          bindings:             [{ path: "context.gap.description", source: "entity" }],
-          outputContract:       "free-text",
-          validatedAgainst:     "3.1",
-          outdatedSinceVersion: null
-        };
-        const ok = SkillSchema.safeParse(v31Skill);
-        assert(ok.success, "v3.1 shape parses cleanly: " + JSON.stringify(ok.error?.issues || []));
-        assertEqual(ok.data.outputTarget, "chat-bubble", "outputTarget preserved");
-        assertEqual(ok.data.parameters.length, 1, "parameters[] preserved");
-        // Strict rejection of legacy fields.
-        const v30Bad = { ...v31Skill, skillType: "click-to-run", entityKind: "gap" };
-        const fail = SkillSchema.safeParse(v30Bad);
-        assertEqual(fail.success, false, "v3.1 schema rejects extra legacy fields (skillType/entityKind)");
-      });
+      it("V-SKILL-V3-1 · RETIRED rc.8.b / R4 (legacy v3.1 schema test referenced outputTarget/promptTemplate/bindings/outputContract — all DROPPED in v3.2 clean replace per user direction 2026-05-10; v3.2 schema strict-parsing covered by V-FLOW-SKILL-V32-SCHEMA-1/2/3/4)", () => {});
 
       it("V-SKILL-V3-3 · RETIRED rc.7-arc-1 per feedback_no_mocks.md — was: skillRunner parameter resolution + entityId lookup via echoProvider mock; replaced by PREFLIGHT 5b real-LLM smoke + paramResolution unit tests if needed", () => {
         // RETIRED 2026-05-06 per feedback_no_mocks.md (LOCKED). Original
@@ -16057,51 +15949,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         assert(true, "V-SKILL-V3-4 retired; see PREFLIGHT 5b");
       });
 
-      it("V-SKILL-V3-2 · migrateSkillToV31 round-trip: legacy v3.0 click-to-run + entityKind translates to v3.1 parameters[]; v3.1 input passes through unchanged (idempotent)", async () => {
-        const { migrateSkillToV31, SkillSchema } = await import("../schema/skill.js");
-
-        // v3.0 click-to-run + entityKind=gap → v3.1 parameters auto-derived
-        const v30 = {
-          id:           "00000000-0000-4000-8000-0000000ab002",
-          engagementId: "00000000-0000-4000-8000-0000000ab002",
-          createdAt:    "2026-01-01T00:00:00.000Z",
-          updatedAt:    "2026-01-01T00:00:00.000Z",
-          skillId:      "skl-mig-gap",
-          label:        "Legacy click-to-run skill",
-          version:      "1.0.0",
-          skillType:    "click-to-run",
-          entityKind:   "gap",
-          promptTemplate:       "Map: {{context.gap.description}}",
-          bindings:             [],
-          outputContract:       "free-text",
-          validatedAgainst:     "3.0",
-          outdatedSinceVersion: null
-        };
-        const migrated = migrateSkillToV31(v30);
-        assert(typeof migrated.skillType === "undefined", "skillType dropped");
-        assert(typeof migrated.entityKind === "undefined", "entityKind dropped");
-        assertEqual(migrated.outputTarget, "chat-bubble", "outputTarget defaults to chat-bubble");
-        assertEqual(migrated.parameters.length, 1, "parameters[] derived (1 entry)");
-        assertEqual(migrated.parameters[0].name, "gap",
-          "parameter.name = entityKind ('gap'), so legacy {{context.gap.*}} prompts keep resolving");
-        assertEqual(migrated.parameters[0].type, "entityId", "parameter.type='entityId'");
-        assert(/gap/i.test(migrated.parameters[0].description), "parameter.description names the entity-kind");
-        assertEqual(migrated.validatedAgainst, "3.1", "validatedAgainst bumped to 3.1");
-        // The migrated record passes the v3.1 strict schema.
-        const ok = SkillSchema.safeParse(migrated);
-        assert(ok.success, "migrated v3.1 record validates strictly");
-
-        // v3.0 session-wide → v3.1 with empty parameters
-        const v30sw = { ...v30, skillId: "skl-mig-sw", skillType: "session-wide", entityKind: null };
-        const migratedSw = migrateSkillToV31(v30sw);
-        assertEqual(migratedSw.parameters.length, 0, "session-wide migrates to empty parameters[]");
-
-        // Idempotency: passing a v3.1 record returns it unchanged.
-        const v31 = migrated;
-        const repassed = migrateSkillToV31(v31);
-        assertEqual(JSON.stringify(repassed), JSON.stringify(v31),
-          "migrateSkillToV31 is idempotent for v3.1 input");
-      });
+      it("V-SKILL-V3-2 · RETIRED rc.8.b / R4 (migrateSkillToV31 helper removed in clean v3.2 schema replace per user direction 2026-05-10 'no production users to migrate'; v3.0 → v3.1 → v3.2 path is gone — v3.2 is the only schema)", () => {});
 
       it("V-TOPBAR-1 · Topbar consolidated to ONE AI button (rc.3 #7 + #13 / SPEC §S29.7): index.html has #topbarAiBtn labelled 'AI Assist' as the singular AI surface; #topbarLabBtn + #topbarChatBtn removed", async () => {
         const html = await (await fetch("/index.html")).text();
@@ -17832,84 +17680,10 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     // by the end of Arc 4.
     // -----------------------------------------------------------------
 
-    it("V-MIGRATE-V2-V3-1 · migrateV2SkillToV31 is exported from schema/skill.js as a pure function", async () => {
-      const mod = await import("../schema/skill.js");
-      assert(typeof mod.migrateV2SkillToV31 === "function",
-        "V-MIGRATE-V2-V3-1: migrateV2SkillToV31 must be exported from schema/skill.js");
-      // Pure: same input → same output (no side effects, no shared state).
-      const v2 = { name: "X", promptTemplate: "Hi {{customer.name}}!", responseFormat: "text-brief" };
-      const a = mod.migrateV2SkillToV31(v2);
-      const b = mod.migrateV2SkillToV31(v2);
-      assertEqual(JSON.stringify(a), JSON.stringify(b),
-        "V-MIGRATE-V2-V3-1: migrator must be referentially pure on identical inputs");
-    });
-
-    it("V-MIGRATE-V2-V3-2 · v2 → v3.1 field map: name→label, responseFormat→outputContract, drops tab/applyPolicy/deployed/outputSchema", async () => {
-      const { migrateV2SkillToV31 } = await import("../schema/skill.js");
-      const v2 = {
-        id:             "skill-abc12345",
-        name:           "Map gap to Dell",
-        description:    "Finds Dell products for a given gap",
-        tabId:           "gaps",
-        applyPolicy:    "confirm-per-field",
-        deployed:       true,
-        responseFormat: "text-brief",
-        promptTemplate: "Map {{context.gap.description}} to Dell products.",
-        bindings:       [{ path: "context.gap.description", source: "entity" }],
-        outputSchema:   [{ path: "products", label: "Dell products", kind: "scalar" }],
-        providerKey:    "anthropic",
-        systemPrompt:   "You are a Dell architect."
-      };
-      const v3 = migrateV2SkillToV31(v2);
-      assertEqual(v3.label, "Map gap to Dell",
-        "V-MIGRATE-V2-V3-2: v2.name → v3.label");
-      assertEqual(v3.outputContract, "free-text",
-        "V-MIGRATE-V2-V3-2: text-brief responseFormat → free-text outputContract");
-      assertEqual(v3.outputTarget, "chat-bubble",
-        "V-MIGRATE-V2-V3-2: outputTarget defaults to chat-bubble");
-      assert(Array.isArray(v3.parameters) && v3.parameters.length === 0,
-        "V-MIGRATE-V2-V3-2: parameters[] initialized empty");
-      assertEqual(v3.validatedAgainst, "3.1",
-        "V-MIGRATE-V2-V3-2: validatedAgainst bumped to 3.1");
-      assertEqual(v3.promptTemplate, v2.promptTemplate,
-        "V-MIGRATE-V2-V3-2: promptTemplate preserved verbatim");
-      assertEqual(v3.bindings.length, 1,
-        "V-MIGRATE-V2-V3-2: bindings preserved (shape-compatible)");
-      // Dropped fields recorded in audit field.
-      assert(Array.isArray(v3._droppedFromV2),
-        "V-MIGRATE-V2-V3-2: _droppedFromV2 audit array exists");
-      const droppedFields = v3._droppedFromV2.map(d => d.field).sort();
-      assert(droppedFields.indexOf("tab") >= 0 || droppedFields.indexOf("applyPolicy") >= 0,
-        "V-MIGRATE-V2-V3-2: tab/applyPolicy recorded in _droppedFromV2");
-      assert(droppedFields.indexOf("deployed") >= 0,
-        "V-MIGRATE-V2-V3-2: deployed recorded in _droppedFromV2");
-      assert(droppedFields.indexOf("outputSchema") >= 0,
-        "V-MIGRATE-V2-V3-2: outputSchema recorded in _droppedFromV2");
-    });
-
-    it("V-MIGRATE-V2-V3-3 · json-scalars+Dell-shaped outputSchema → outputContract { schemaRef: 'DellSolutionListSchema' }", async () => {
-      const { migrateV2SkillToV31 } = await import("../schema/skill.js");
-      const v2 = {
-        name: "Dell mapping",
-        promptTemplate: "Map gap to Dell.",
-        responseFormat: "json-scalars",
-        outputSchema:   [{ path: "products", label: "Dell products" }, { path: "rationale", label: "Rationale" }]
-      };
-      const v3 = migrateV2SkillToV31(v2);
-      assert(typeof v3.outputContract === "object" && v3.outputContract.schemaRef === "DellSolutionListSchema",
-        "V-MIGRATE-V2-V3-3: Dell-shaped json-scalars → DellSolutionListSchema schemaRef (got: " + JSON.stringify(v3.outputContract) + ")");
-    });
-
-    it("V-MIGRATE-V2-V3-4 · idempotent on inputs lacking v2-only fields (no name → label fallback to 'Untitled')", async () => {
-      const { migrateV2SkillToV31 } = await import("../schema/skill.js");
-      const v3 = migrateV2SkillToV31({ promptTemplate: "Hi" });
-      assertEqual(v3.label, "Untitled",
-        "V-MIGRATE-V2-V3-4: label falls back to 'Untitled' when no name/label given");
-      assertEqual(v3.bindings.length, 0,
-        "V-MIGRATE-V2-V3-4: bindings empty when v2 record has none");
-      assertEqual(v3.parameters.length, 0,
-        "V-MIGRATE-V2-V3-4: parameters[] always empty for fresh migrations");
-    });
+    it("V-MIGRATE-V2-V3-1 · RETIRED rc.8.b / R4 (migrateV2SkillToV31 helper removed in clean v3.2 schema replace per user direction 2026-05-10 'no production users to migrate'; v2 → v3 migration path is gone)", () => {});
+    it("V-MIGRATE-V2-V3-2 · RETIRED rc.8.b / R4 (same as V-MIGRATE-V2-V3-1)", () => {});
+    it("V-MIGRATE-V2-V3-3 · RETIRED rc.8.b / R4 (same as V-MIGRATE-V2-V3-1)", () => {});
+    it("V-MIGRATE-V2-V3-4 · RETIRED rc.8.b / R4 (same as V-MIGRATE-V2-V3-1)", () => {});
 
     it("V-SKILL-V3-8 · Settings → Skills builder pill renders the evolved admin via renderSkillBuilder; label is 'Skills builder' (no version suffix)", async () => {
       const settingsSrc = await (await fetch("/ui/views/SettingsModal.js")).text();
@@ -17965,22 +17739,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 
     it("V-SKILL-V3-13 · RETIRED rc.8.b / R3 (chip palette + Refine-to-CARE diff modal + live-preview pre replaced by v3.2 Data-points selector with Standard/Advanced toggle + Improve button + readonly Improved textarea per SPEC §S46.3..5; covered by V-FLOW-SKILL-V32-AUTHOR-DATA-1 + V-FLOW-SKILL-V32-AUTHOR-IMPROVE-1 + V-FLOW-SKILL-V32-IMPROVE-1/2)", () => {});
 
-    it("V-SKILL-V3-14 · Pure helper migrateV2SkillToV31 (round-trip + idempotency)", async () => {
-      const { migrateV2SkillToV31 } = await import("../schema/skill.js");
-      // Idempotent on already-migrated record (running twice doesn't drift).
-      const v2 = { name: "X", promptTemplate: "Hi", responseFormat: "text-brief", deployed: true };
-      const m1 = migrateV2SkillToV31(v2);
-      // Re-migrating the migrated record (which lacks v2 fields) should be safe.
-      const stripped = { ...m1 };
-      delete stripped._droppedFromV2;
-      const m2 = migrateV2SkillToV31(stripped);
-      assertEqual(m2.label, m1.label,
-        "V-SKILL-V3-14: re-migration preserves label");
-      assertEqual(m2.outputContract, m1.outputContract,
-        "V-SKILL-V3-14: re-migration preserves outputContract");
-      assertEqual(m2.validatedAgainst, "3.1",
-        "V-SKILL-V3-14: re-migration keeps validatedAgainst at 3.1");
-    });
+    it("V-SKILL-V3-14 · RETIRED rc.8.b / R4 (migrateV2SkillToV31 helper removed in clean v3.2 schema replace per user direction 2026-05-10; same retirement rationale as V-MIGRATE-V2-V3-1..4)", () => {});
 
     it("V-SKILL-V3-15 · RETIRED rc.8.b / R3 (legacy v2 section + per-row Migrate button removed per user direction 2026-05-10 'replace clean — no production skills today to migrate'; v3.1 → v3.2 is a from-scratch shape with no migration burden)", () => {});
 
@@ -19456,7 +19215,7 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
 
   // ─── Tier 3 · Schema accepts new fields (RED until R4) ─────────────
 
-  it("V-FLOW-SKILL-V32-SCHEMA-1 · R1 / SPEC §S46.3 · RED until R4 · SkillSchema accepts new fields description / seedPrompt / dataPoints[] / improvedPrompt / outputFormat / mutationPolicy", async () => {
+  it("V-FLOW-SKILL-V32-SCHEMA-1 · R1 / SPEC §S46.3 · RED until R4 · SkillSchema accepts the v3.2 author shape (description / seedPrompt / dataPoints[] / improvedPrompt / outputFormat / mutationPolicy); legacy fields outputContract / outputTarget / promptTemplate / bindings DROPPED per user direction 2026-05-10", async () => {
     const { SkillSchema } = await import("/schema/skill.js");
     const { defaultCrossCuttingFields } = await import("/schema/helpers/crossCuttingFields.js");
     var sample = {
@@ -19465,22 +19224,18 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
       label:                "v32 test",
       description:          "Test description",
       version:              "1.0.0",
-      seedPrompt:            "Summarize gaps under cyber resilience",
+      seedPrompt:           "Summarize gaps under cyber resilience",
       dataPoints:           [{ path: "gap.description", scope: "standard" }],
       improvedPrompt:       "<context>...</context><task>...</task>",
       outputFormat:         "text",
       mutationPolicy:       null,
-      promptTemplate:       "Hello {{customer.name}}!",
-      bindings:             [],
-      outputContract:       "free-text",
       validatedAgainst:     "3.2",
       outdatedSinceVersion: null,
-      outputTarget:         "chat-bubble",
       parameters:           []
     };
     var result = SkillSchema.safeParse(sample);
     assert(result.success,
-      "V-FLOW-SKILL-V32-SCHEMA-1 (RED-until-R4): SkillSchema MUST accept new fields (per SPEC §S46.3); got error: " + (result.error && JSON.stringify(result.error.issues || result.error)));
+      "V-FLOW-SKILL-V32-SCHEMA-1 (RED-until-R4): SkillSchema MUST accept the v3.2 author shape (per SPEC §S46.3); got error: " + (result.error && JSON.stringify(result.error.issues || result.error)));
   });
 
   it("V-FLOW-SKILL-V32-SCHEMA-2 · R1 / SPEC §S46.6 / CH36.4 · RED until R4 · outputFormat enum is exactly text | dimensional | json-array | scalar — no other values accepted", async () => {
@@ -19496,12 +19251,8 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
       dataPoints: [],
       improvedPrompt: "x",
       mutationPolicy: null,
-      promptTemplate: "x",
-      bindings: [],
-      outputContract: "free-text",
       validatedAgainst: "3.2",
       outdatedSinceVersion: null,
-      outputTarget: "chat-bubble",
       parameters: []
     };
     // Each valid value should pass.
@@ -19529,12 +19280,8 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
       dataPoints: [],
       improvedPrompt: "x",
       outputFormat: "json-array",
-      promptTemplate: "x",
-      bindings: [],
-      outputContract: "free-text",
       validatedAgainst: "3.2",
       outdatedSinceVersion: null,
-      outputTarget: "chat-bubble",
       parameters: []
     };
     ["ask", "auto-tag"].forEach(function(v) {
@@ -19561,12 +19308,8 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
       improvedPrompt: "x",
       outputFormat: "text",
       mutationPolicy: null,
-      promptTemplate: "x {{rfp}}",
-      bindings: [],
-      outputContract: "free-text",
       validatedAgainst: "3.2",
       outdatedSinceVersion: null,
-      outputTarget: "chat-bubble",
       parameters: [
         { name: "rfp", type: "file", description: "Customer RFP body", required: true, accepts: ".xlsx,.csv,.txt,.pdf" }
       ]

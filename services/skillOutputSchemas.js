@@ -1,34 +1,25 @@
-// services/skillOutputSchemas.js — v3.1 · SPEC sec S7.4 + §S29.3
+// services/skillOutputSchemas.js — rc.8.b / R4 (SPEC §S46 + RULES §16 CH36)
 //
-// Registry mapping outputContract.schemaRef strings to Zod schemas.
-// The skill runner consults this to validate structured LLM outputs
-// before stamping provenance.
+// Registry mapping schemaRef strings to Zod schemas. The skill runner
+// consults this to validate structured LLM outputs before stamping
+// provenance.
 //
-// **v3.1 transition (per SPEC §S29.3)**: LLM outputs may carry v3.0
-// shape (skillType + entityKind) OR v3.1 shape (parameters[] +
-// outputTarget). The SkillSchema entry below is wrapped with
-// z.preprocess(migrateSkillToV31, ...) so both shapes parse cleanly.
-// Other registered schemas (DellSolutionListSchema, etc.) are
-// unaffected.
+// **rc.8.b / R4** — migrateSkillToV31 preprocess RETIRED in lock-step
+// with the schema clean-replace. SkillSchema is v3.2 strict; LLM outputs
+// claiming SkillSchema must already be v3.2-shaped (no v3.0 / v3.1
+// auto-migration). Per user direction 2026-05-10 ("clean replace, no
+// production users to migrate").
 //
 // New schemas are added by:
 //   1. Authoring schema/aiOutputs/<name>.js with a Zod export
 //   2. Importing + registering here
 
-import { z } from "zod";
 import { DellSolutionListSchema } from "../schema/aiOutputs/dellSolutionList.js";
-import { SkillSchema, migrateSkillToV31 } from "../schema/skill.js";
-
-// Auto-migrating wrapper around SkillSchema. v3.0-shaped output passes
-// through the migrator before SkillSchema's v3.1 strict parse.
-const MigratedSkillSchema = z.preprocess(
-  (raw) => (raw && typeof raw === "object" ? migrateSkillToV31(raw) : raw),
-  SkillSchema
-);
+import { SkillSchema } from "../schema/skill.js";
 
 const REGISTRY = Object.freeze({
   DellSolutionListSchema,
-  SkillSchema: MigratedSkillSchema    // care-builder generates save-able skill records
+  SkillSchema    // care-builder generates save-able skill records (v3.2)
 });
 
 export function getOutputSchema(schemaRef) {

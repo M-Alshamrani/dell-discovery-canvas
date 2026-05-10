@@ -655,8 +655,7 @@ function renderEditForm(adminRoot, list, existing, onChange) {
       mutationPolicy: (state.outputFormat === "json-array" || state.outputFormat === "scalar")
                         ? state.mutationPolicy
                         : null,
-      parameters:     state.parameters.slice(),
-      outputContract: "free-text"
+      parameters:     state.parameters.slice()
     };
     var manifest = generateManifest();
     var result;
