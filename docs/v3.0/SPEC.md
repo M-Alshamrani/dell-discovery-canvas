@@ -4427,36 +4427,39 @@ When the running skill's LLM output asks a clarifying question (e.g. *"I see 47 
 
 The chat dialog inside the dynamic Skill tab is functionally identical to the Chat tab's dialog (same DOM shape, same message renderer, same provenance breadcrumb on completion). The ONLY difference is the right-rail Skill panel (description / parameters / file slot / output preview).
 
-### S46.10 · Mutation policy (per-skill author setting)
+### S46.10 · Mutation policy (per-skill author setting · AMENDED rc.8.b R7 2026-05-10)
 
-Visible in the author form ONLY when `outputFormat ∈ {json-array, scalar}` (CH36.5). Two values:
+Visible in the author form ONLY when `outputFormat ∈ {json-array, scalar}` (CH36.e). Two values; **the policy controls the GATE, not the tag — both policies stamp `aiTag` on every mutated instance** (per user direction 2026-05-10: "any mutated by AI, whether it is auto populated by AI or approved before auto mutation, should have the [tag] on them"):
 
-- `ask` — when the run produces mutations, runtime opens an approval modal listing every proposed change (`+ <path> = <value>`, `~ <path> = <oldValue> → <newValue>`); user clicks Apply or Discard. Apply commits via `commitAction` per CH34. (Aligns with v3-pure architecture; provenance fields populate via `aiTag`.)
-- `auto-tag` — runtime applies mutations immediately + tags each mutated entity with `aiTag: { skillId, runId, mutatedAt }`. The user reviews after-the-fact via the "Done by AI" badge on affected tiles (CH36.8).
+- `ask` — runtime opens an approval modal `[data-mutation-approve]` listing every proposed mutation (single batch confirm at MVP per Q-R7-2; per-row toggle deferred to post-R7 polish arc); engineer reviews + clicks Apply or Discard. On Apply: route through `commitAction(applyAiInstanceMutation, ...)` per CH34, stamp `aiTag` on each mutated instance.
+- `auto-tag` — runtime applies mutations immediately (no modal), stamps `aiTag`. Same `commitAction` route.
 
 Default for new skills: `ask` (the safer pre-flight option).
 
-`aiTag` shape (locked):
+**Mutation scope is INSTANCES ONLY** (rc.8.b R7 scope narrowing per user direction 2026-05-10: "Limit aiTag scope to instance entities only (currentInstances + desiredInstances). Mutations only happen during data ingestion (RFP, Excel ... etc) populating dispositions and items in current/desired state. Nothing else gets aiTag (drivers, environments, gaps stay out of scope for now)."). Proposals targeting drivers / environments / gaps / customer / engagementMeta are silently SKIPPED with a console.warn; the mutation path has no equivalent action helper for those entity kinds in v3.0 GA.
+
+`aiTag` shape (locked at instance scope):
 ```
-{
-  skillId:   "skl-trace-env-drivers",     // FK to v3SkillStore
+instance.aiTag = {
+  skillId:   "skl-extract-rfp",            // FK to v3SkillStore
   runId:     "run-2026-05-10T14-32-09Z",   // unique per launch
   mutatedAt: "2026-05-10T14:32:09.421Z"    // ISO instant
 }
 ```
 
-Tag persists in the engagement (audit trail). Cleared only by explicit user action (later arc — undo / clear-tag operations are NOT in MVP).
+Lives on `schema/instance.js` only (NOT cross-cutting; NOT on driver/environment/gap/customer/engagementMeta schemas).
 
-### S46.11 · AI-tagging visual contract
+### S46.11 · AI-tagging visual contract (AMENDED rc.8.b R7 2026-05-10)
 
-Entities mutated under `auto-tag` policy gain a "Done by AI" badge rendered on every tile that displays the entity:
+Instances mutated by AI (via `applyMutations` under EITHER policy — `ask`-then-approved OR `auto-tag` immediate) gain a "Done by AI" badge rendered on the instance tile in **MatrixView** (current state + desired state grids). The badge sources from `instance.aiTag` and survives re-render across the engagement's lifetime — until cleared.
 
-- Context view: driver chips + environment cards
-- Current state / Desired state matrix: instance tiles
-- Gaps view: gap cards
-- Reporting: roadmap rows referencing tagged entities
+**Auto-clear contract** (per user direction 2026-05-10 Q-R7-1 "auto-clear on save"): any engineer-initiated mutation of the tagged instance via `state/collections/instanceActions.js updateInstance` automatically strips `aiTag`. The badge disappears in the next render. No explicit clear-tag operation, no undo command. Ownership transfer is implicit on save; "the engineer reviewed it and saved" = `aiTag` cleared.
 
-Badge shape: small Dell-blue-soft chip with mono-uppercase text "DONE BY AI" + tooltip showing skill label + run timestamp. Survives re-render (sourced from `aiTag` field on the entity). NOT removable from UI in MVP (audit trail).
+Implementation site: `state/collections/instanceActions.js updateInstance` returns the merged instance with `aiTag: null` regardless of caller. The ONLY path that re-stamps `aiTag` is `applyAiInstanceMutation` (the dedicated AI-write action; ALSO in `instanceActions.js`).
+
+Badge shape: small Dell-blue chip with mono-uppercase text "AI" in the top-right corner of the instance tile + dashed Dell-blue outline on the tile itself + tooltip showing skill id + mutation timestamp + auto-clear hint. CSS lives in `styles.css` under `.ai-tag-badge` + `.instance-tile.ai-tagged`.
+
+**Out of scope for v3.0 GA** (per CH36.h scope rule): drivers, environments, gaps, customer, engagementMeta, reporting roadmap, gap-link surfaces. No `aiTag` field on those schemas; no badges render anywhere outside MatrixView.
 
 ### S46.12 · Marketplace export — abstract goal (no UX in v3.0 GA)
 
@@ -4499,8 +4502,11 @@ Saved skill JSON MUST NOT contain UUID literals in `seedPrompt`, `improvedPrompt
 | 6 | V-FLOW-SKILL-V32-RUN-1 | Skill run uses real LLM with improved prompt + parameter substitution; source-grep negation: skill runner has no mock provider import | R6 |
 | 6 | V-FLOW-SKILL-V32-RUN-2 | Parameter `type:"file"` accepts `.xlsx,.csv,.txt,.pdf` filter at the file picker; file content reads via `FileReader` | R6 |
 | 7 | V-FLOW-SKILL-V32-MUTATE-1 | `mutationPolicy:"ask"` produces an approval modal `[data-mutation-approve]` before any commit | R7 |
-| 7 | V-FLOW-SKILL-V32-MUTATE-2 | `mutationPolicy:"auto-tag"` writes mutations + populates `aiTag: {skillId, runId, mutatedAt}` on each affected entity | R7 |
-| 7 | V-FLOW-SKILL-V32-MUTATE-3 | Tagged entities render the "Done by AI" badge in Context / Current state / Desired state / Gaps tile renderers | R7 |
+| 7 | V-FLOW-SKILL-V32-MUTATE-2 | `applyMutations` under either policy writes mutations + populates `aiTag: {skillId, runId, mutatedAt}` on the mutated INSTANCE (scope narrowed at R7 per user direction 2026-05-10; drivers/envs/gaps/customer out of scope) | R7 |
+| 7 | V-FLOW-SKILL-V32-MUTATE-3 | MatrixView tile renderer surfaces the "Done by AI" badge for instances carrying `aiTag` (scope narrowed: instances-only, MatrixView-only) | R7 |
+| 7 | V-FLOW-SKILL-V32-MUTATE-4 | Engineer save via `updateInstance` strips `aiTag` (auto-clear contract per CH36.h; no explicit clear-tag operation per Q-R7-1 'auto-clear on save') | R7 |
+
+(R7 amendment 2026-05-10: total tests 23 → 24; MUTATE-2 subject narrowed from gap to instance; MUTATE-3 source-grep narrowed from 3 view files to MatrixView only; MUTATE-4 added for the auto-clear regression guard.)
 
 ### S46.15 · Trace
 

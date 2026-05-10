@@ -19473,7 +19473,7 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
     }
   });
 
-  it("V-FLOW-SKILL-V32-MUTATE-2 · R1 / SPEC §S46.10 / CH36.8 · RED until R7 · mutationPolicy='auto-tag' applies mutations + populates aiTag={skillId,runId,mutatedAt} on each affected entity", async () => {
+  it("V-FLOW-SKILL-V32-MUTATE-2 · R1 / SPEC §S46.10/§S46.11 / CH36.h · RED until R7 · applyMutations under EITHER policy stamps aiTag={skillId,runId,mutatedAt} on the mutated INSTANCE (mutation scope is instances-only per user direction 2026-05-10; drivers/envs/gaps/customer/engagementMeta out of scope)", async () => {
     const mod = await import("/ui/views/CanvasChatOverlay.js");
     assertEqual(typeof mod.applyMutations, "function",
       "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): CanvasChatOverlay.js MUST export applyMutations()");
@@ -19482,44 +19482,64 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
       const { loadDemo } = await import("/core/demoEngagement.js");
       setActiveEngagement(loadDemo());
       var eng = getActiveEngagement();
-      var firstGapId = eng.gaps && eng.gaps.allIds && eng.gaps.allIds[0];
-      assert(firstGapId, "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): demo MUST have at least one gap to test against");
+      var firstInstId = eng.instances && eng.instances.allIds && eng.instances.allIds[0];
+      assert(firstInstId, "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): demo MUST have at least one instance");
       var runMeta = { skillId: "skl-mutate-test", runId: "run-mutate-test", mutatedAt: "2026-05-10T12:00:00.000Z" };
       mod.applyMutations(
-        [{ op: "set", path: "gaps.byId." + firstGapId + ".urgency", value: "High" }],
+        [{ op: "set", path: "instances.byId." + firstInstId + ".criticality", value: "High" }],
         "auto-tag",
         runMeta
       );
       var engAfter = getActiveEngagement();
-      var gap = engAfter.gaps.byId[firstGapId];
-      assert(gap, "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): gap entity MUST exist post-mutation");
-      assert(gap.aiTag, "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): mutated entity MUST gain aiTag field (per CH36.8)");
-      assertEqual(gap.aiTag.skillId, "skl-mutate-test",
+      var inst = engAfter.instances.byId[firstInstId];
+      assert(inst, "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): instance MUST exist post-mutation");
+      assertEqual(inst.criticality, "High",
+        "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): mutation MUST apply (criticality changed to High)");
+      assert(inst.aiTag, "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): mutated instance MUST gain aiTag field (per CH36.h)");
+      assertEqual(inst.aiTag.skillId, "skl-mutate-test",
         "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): aiTag.skillId MUST match runMeta");
-      assertEqual(gap.aiTag.runId, "run-mutate-test",
+      assertEqual(inst.aiTag.runId, "run-mutate-test",
         "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): aiTag.runId MUST match runMeta");
-      assertEqual(gap.aiTag.mutatedAt, "2026-05-10T12:00:00.000Z",
+      assertEqual(inst.aiTag.mutatedAt, "2026-05-10T12:00:00.000Z",
         "V-FLOW-SKILL-V32-MUTATE-2 (RED-until-R7): aiTag.mutatedAt MUST match runMeta");
     }
   });
 
-  it("V-FLOW-SKILL-V32-MUTATE-3 · R1 / SPEC §S46.11 / CH36.8 · RED until R7 · tile renderers in Context / Current state / Desired state / Gaps surface a 'Done by AI' badge for entities carrying aiTag", async () => {
-    // Source-grep contract: the tile renderers MUST contain a code path
-    // that branches on entity.aiTag and renders the badge.
-    var paths = [
-      "/ui/views/ContextView.js",
-      "/ui/views/MatrixView.js",
-      "/ui/views/GapsEditView.js"
-    ];
-    for (var i = 0; i < paths.length; i++) {
-      var p = paths[i];
-      var src;
-      try { src = await (await fetch(p)).text(); }
-      catch (e) { throw new Error("V-FLOW-SKILL-V32-MUTATE-3: failed to fetch " + p + ": " + (e && e.message || e)); }
-      var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
-      assert(/aiTag/.test(stripped),
-        "V-FLOW-SKILL-V32-MUTATE-3 (RED-until-R7): " + p + " MUST reference aiTag in its render code (per CH36.8 'Done by AI' badge)");
-    }
+  it("V-FLOW-SKILL-V32-MUTATE-3 · R1 / SPEC §S46.11 / CH36.h · RED until R7 · MatrixView tile renderer surfaces a 'Done by AI' badge for instances carrying aiTag (scope narrowed to instances per user direction 2026-05-10; ContextView/GapsEditView out of scope)", async () => {
+    // Source-grep contract: the MatrixView tile renderer MUST contain a
+    // code path that branches on instance.aiTag and renders the badge.
+    // Scope narrowed at R7: aiTag lives ONLY on instances, so only the
+    // MatrixView (current state + desired state grids) needs the badge.
+    var src;
+    try { src = await (await fetch("/ui/views/MatrixView.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-SKILL-V32-MUTATE-3: failed to fetch MatrixView.js: " + (e && e.message || e)); }
+    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    assert(/aiTag/.test(stripped),
+      "V-FLOW-SKILL-V32-MUTATE-3 (RED-until-R7): /ui/views/MatrixView.js MUST reference aiTag in its render code (per CH36.h 'Done by AI' badge on instance tiles)");
+    assert(/ai-tag-badge|ai-tagged/.test(stripped),
+      "V-FLOW-SKILL-V32-MUTATE-3 (RED-until-R7): MatrixView MUST render a .ai-tag-badge or .ai-tagged class on AI-tagged tiles");
+  });
+
+  it("V-FLOW-SKILL-V32-MUTATE-4 · R7 / SPEC §S46.11 / CH36.h auto-clear contract · RED until R7 · engineer save on an AI-tagged instance via state/collections/instanceActions.js updateInstance MUST strip aiTag (ownership transfer; no explicit clear-tag operation per user direction 2026-05-10 Q-R7-1 'auto-clear on save')", async () => {
+    const { applyAiInstanceMutation, updateInstance } = await import("/state/collections/instanceActions.js");
+    const { loadDemo } = await import("/core/demoEngagement.js");
+    var eng = loadDemo();
+    var firstInstId = eng.instances.allIds[0];
+    assert(firstInstId, "V-FLOW-SKILL-V32-MUTATE-4: demo MUST have at least one instance");
+    // Step 1: AI-tag the instance via applyAiInstanceMutation
+    var runMeta = { skillId: "skl-autoclear-test", runId: "run-autoclear-test", mutatedAt: "2026-05-10T12:00:00.000Z" };
+    var aiResult = applyAiInstanceMutation(eng, firstInstId, { criticality: "High" }, runMeta);
+    assert(aiResult.ok, "V-FLOW-SKILL-V32-MUTATE-4: applyAiInstanceMutation MUST succeed");
+    var taggedInst = aiResult.engagement.instances.byId[firstInstId];
+    assert(taggedInst.aiTag, "V-FLOW-SKILL-V32-MUTATE-4: aiTag MUST be present after AI mutation");
+    // Step 2: engineer save — updateInstance with any patch — strips aiTag
+    var savedResult = updateInstance(aiResult.engagement, firstInstId, { notes: "engineer review notes" });
+    assert(savedResult.ok, "V-FLOW-SKILL-V32-MUTATE-4: updateInstance MUST succeed");
+    var savedInst = savedResult.engagement.instances.byId[firstInstId];
+    assertEqual(savedInst.aiTag, null,
+      "V-FLOW-SKILL-V32-MUTATE-4: aiTag MUST be null after engineer save (auto-clear contract per CH36.h)");
+    assertEqual(savedInst.notes, "engineer review notes",
+      "V-FLOW-SKILL-V32-MUTATE-4: engineer's patch MUST apply alongside the auto-clear");
   });
 
 });

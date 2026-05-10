@@ -25,6 +25,20 @@ const DellMappingSchema = z.object({
   products:  z.array(z.string()).default([])           // FKs to DELL_PRODUCT_TAXONOMY entries
 });
 
+// rc.8.b / R7 (per SPEC §S46.10/§S46.11 + RULES §16 CH36.h) — aiTag
+// provenance for AI-authored mutations. Stamped by applyMutations under
+// EITHER mutation policy ('ask' approved or 'auto-tag' immediate); auto-
+// cleared on the next engineer save (instanceActions.updateInstance
+// strips it). Renders as a "Done by AI" badge in MatrixView tile.
+// Scope: instances ONLY (drivers / environments / gaps / customer /
+// engagementMeta are out of scope for v3.0 GA per user direction
+// 2026-05-10).
+const AiTagSchema = z.object({
+  skillId:   z.string().min(1),
+  runId:     z.string().min(1),
+  mutatedAt: z.string().min(1)   // ISO instant
+});
+
 export const InstanceSchema = z.object({
   ...crossCuttingFieldsSchema,
   state:         z.enum(["current", "desired"]),
@@ -45,7 +59,11 @@ export const InstanceSchema = z.object({
   mappedAssetIds: z.array(z.string().uuid()).default([]),
 
   // AI-authored (SPEC sec S8.1):
-  aiSuggestedDellMapping: provenanceWrapper(DellMappingSchema).nullable().default(null)
+  aiSuggestedDellMapping: provenanceWrapper(DellMappingSchema).nullable().default(null),
+
+  // rc.8.b / R7 - AI-mutation provenance (SPEC §S46.10/§S46.11 / CH36.h).
+  // Stamped by applyMutations; cleared on engineer save in instanceActions.
+  aiTag:                 AiTagSchema.nullable().default(null)
 }).strict().superRefine((inst, ctx) => {
   // R3.5.a — originId only on desired
   if (inst.state === "current" && inst.originId !== null) {
@@ -86,7 +104,8 @@ export function createEmptyInstance(overrides = {}) {
     originId:      overrides.originId      ?? null,
     priority:      overrides.priority      ?? null,
     mappedAssetIds: overrides.mappedAssetIds ?? [],
-    aiSuggestedDellMapping: overrides.aiSuggestedDellMapping ?? null
+    aiSuggestedDellMapping: overrides.aiSuggestedDellMapping ?? null,
+    aiTag:                  overrides.aiTag                  ?? null
   });
 }
 

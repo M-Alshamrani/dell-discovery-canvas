@@ -283,9 +283,25 @@ export function renderMatrixView(left, right, _legacySession, opts) {
 
     var cls = "instance-tile vg-" + vg + (inst.id === selectedInstId ? " selected" : "");
     if (critLevel) cls += " crit-" + critLevel;
+    // rc.8.b / R7 (per SPEC §S46.11 + CH36.h): instances mutated by AI
+    // gain an "ai-tagged" CSS modifier; the .ai-tag-badge inside surfaces
+    // the "Done by AI" chip. aiTag clears on the next engineer save
+    // (auto-clear contract; instanceActions.updateInstance strips it).
+    if (inst.aiTag) cls += " ai-tagged";
 
     var tile = mk("div", cls);
     tile.setAttribute("data-instance-id", inst.id);
+
+    // rc.8.b / R7: "Done by AI" badge on AI-mutated instances.
+    if (inst.aiTag) {
+      var aiBadge = mk("span", "ai-tag-badge");
+      aiBadge.setAttribute("data-ai-tag-badge", "");
+      aiBadge.title = "Mutated by AI · skill " + (inst.aiTag.skillId || "?") +
+        " · " + (inst.aiTag.mutatedAt || "?") +
+        " - clears when you save the next edit on this tile.";
+      aiBadge.textContent = "AI";
+      tile.appendChild(aiBadge);
+    }
 
     var lbl = mk("span", "tile-label"); lbl.textContent = inst.label; tile.appendChild(lbl);
 

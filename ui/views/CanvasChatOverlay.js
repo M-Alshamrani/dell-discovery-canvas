@@ -23,6 +23,7 @@
 
 import { openOverlay, closeOverlay }         from "../components/Overlay.js";
 import { getActiveEngagement }                from "../../state/engagementStore.js";
+import { commitAiInstanceMutation }           from "../../state/adapter.js";
 import {
   loadTranscript, saveTranscript, clearTranscript, summarizeIfNeeded
 }                                              from "../../state/chatMemory.js";
@@ -1126,6 +1127,147 @@ function _renderSkillRunOutput(skill, panelHost, responseText) {
   }
   // Unknown format — surface as plain AI turn so the user sees the response.
   _appendSkillDialogTurn("ai", responseText);
+}
+
+// ─── rc.8.b / R7 · applyMutations (per SPEC §S46.10/§S46.11 / CH36.h) ──
+//
+// Applies a list of AI-authored mutations to the active engagement.
+// Routes through commitAction(applyAiInstanceMutation, ...) per CH34
+// (v3-pure architecture) so the engagement update propagates to all
+// subscribers + persists to localStorage.
+//
+// Both mutation policies stamp aiTag = runMeta on every mutated
+// instance:
+//   policy='ask'      → render approval modal [data-mutation-approve]
+//                       with single batch confirm; on Apply, commit all
+//                       proposals; on Discard, drop them all.
+//   policy='auto-tag' → commit all proposals immediately (no modal).
+//
+// Scope: instances ONLY (per user direction 2026-05-10 + CH36.h).
+// Proposals targeting drivers / environments / gaps / customer /
+// engagementMeta are silently SKIPPED (logged to console, no commit).
+//
+// Proposal shape: { op, path, value }
+//   op: 'set' | 'addInstance' (R7 supports both; addInstance creates a
+//       new instance with the value object, applies aiTag)
+//   path: 'instances.byId.<id>.<field>' for 'set'
+//         'instances.<state>'           for 'addInstance'
+//   value: the new field value (for 'set') or full instance shape
+//          (for 'addInstance')
+//
+// runMeta: { skillId, runId, mutatedAt }
+//   Stamped onto each affected instance's aiTag. Required.
+export function applyMutations(proposals, policy, runMeta) {
+  if (!Array.isArray(proposals) || proposals.length === 0) return;
+  if (!runMeta || !runMeta.skillId || !runMeta.runId || !runMeta.mutatedAt) {
+    console.warn("[applyMutations] runMeta { skillId, runId, mutatedAt } required; skipping");
+    return;
+  }
+  if (policy === "ask") {
+    _showMutationApprovalModal(proposals, runMeta);
+    return;
+  }
+  // 'auto-tag' — apply immediately
+  _commitAiMutations(proposals, runMeta);
+}
+
+function _showMutationApprovalModal(proposals, runMeta) {
+  // Single-batch confirm modal (per user direction 2026-05-10 Q-R7-2 = a;
+  // per-row toggle deferred to post-R7 polish arc).
+  var existing = document.querySelector("[data-mutation-approve]");
+  if (existing) existing.remove();
+
+  var modal = document.createElement("div");
+  modal.className = "mutation-approve-modal";
+  modal.setAttribute("data-mutation-approve", "");
+
+  var card = document.createElement("div");
+  card.className = "mutation-approve-card";
+
+  var title = document.createElement("div");
+  title.className = "mutation-approve-title";
+  title.textContent = "Apply " + proposals.length + " AI-proposed mutation(s)?";
+  card.appendChild(title);
+
+  var subtitle = document.createElement("div");
+  subtitle.className = "mutation-approve-subtitle";
+  subtitle.textContent = "Each mutated instance will carry a 'Done by AI' badge until you save the next edit on it.";
+  card.appendChild(subtitle);
+
+  var list = document.createElement("ul");
+  list.className = "mutation-approve-list";
+  proposals.slice(0, 50).forEach(function(p) {
+    var li = document.createElement("li");
+    li.textContent = (p.op || "set") + " · " + (p.path || "(no path)") +
+      (p.value !== undefined ? " = " + _summarizeValue(p.value) : "");
+    list.appendChild(li);
+  });
+  if (proposals.length > 50) {
+    var more = document.createElement("li");
+    more.className = "mutation-approve-more";
+    more.textContent = "+ " + (proposals.length - 50) + " more...";
+    list.appendChild(more);
+  }
+  card.appendChild(list);
+
+  var actions = document.createElement("div");
+  actions.className = "mutation-approve-actions";
+  var discard = document.createElement("button");
+  discard.type = "button";
+  discard.className = "btn-secondary";
+  discard.setAttribute("data-mutation-discard", "");
+  discard.textContent = "Discard";
+  discard.addEventListener("click", function() { modal.remove(); });
+  var apply = document.createElement("button");
+  apply.type = "button";
+  apply.className = "btn-primary";
+  apply.setAttribute("data-mutation-apply", "");
+  apply.textContent = "Apply all";
+  apply.addEventListener("click", function() {
+    modal.remove();
+    _commitAiMutations(proposals, runMeta);
+  });
+  actions.appendChild(discard);
+  actions.appendChild(apply);
+  card.appendChild(actions);
+
+  modal.appendChild(card);
+  document.body.appendChild(modal);
+}
+
+function _summarizeValue(v) {
+  if (v === null || v === undefined) return "(empty)";
+  if (typeof v === "string") return v.length > 40 ? v.slice(0, 37) + "..." : v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  return JSON.stringify(v).slice(0, 60) + (JSON.stringify(v).length > 60 ? "..." : "");
+}
+
+function _commitAiMutations(proposals, runMeta) {
+  var applied = 0;
+  var skipped = 0;
+  proposals.forEach(function(p) {
+    if (!p || !p.path) { skipped++; return; }
+    // Parse 'instances.byId.<id>.<field>' for 'set' on existing instance.
+    var setMatch = /^instances\.byId\.([^.]+)\.([^.]+)$/.exec(p.path);
+    if ((p.op === "set" || !p.op) && setMatch) {
+      var instanceId = setMatch[1];
+      var field = setMatch[2];
+      var patch = {};
+      patch[field] = p.value;
+      var result = commitAiInstanceMutation(instanceId, patch, runMeta);
+      if (result && result.ok) applied++; else skipped++;
+      return;
+    }
+    // Out-of-scope: proposals targeting drivers / envs / gaps / customer /
+    // engagementMeta. Log + skip per CH36.h scope rule.
+    console.warn("[applyMutations] proposal out of scope (instances-only):", p);
+    skipped++;
+  });
+  // Surface a summary turn into the dialog so the user sees the outcome.
+  _appendSkillDialogTurn("ai",
+    "Applied " + applied + " mutation(s)" +
+    (skipped > 0 ? "; skipped " + skipped + " (out-of-scope or invalid)" : "") +
+    ". Mutated instances now carry a 'Done by AI' badge in the matrix tile.");
 }
 
 function buildFooter() {

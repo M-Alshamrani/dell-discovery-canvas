@@ -5983,6 +5983,89 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
   color: #FFD6DA;
   font-size: 12px;
 }
+
+/* rc.8.b / R7 - AI-mutation approval modal (per SPEC §S46.10 'ask' policy) */
+.mutation-approve-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 42, 74, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+.mutation-approve-card {
+  background: var(--canvas, #FFF);
+  border-radius: var(--radius-lg, 8px);
+  box-shadow: var(--shadow-lg);
+  padding: 24px 28px;
+  max-width: 600px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.mutation-approve-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink, #0B2A4A);
+  margin-bottom: 6px;
+}
+.mutation-approve-subtitle {
+  font-size: 12.5px;
+  color: var(--ink-soft, #3E4C62);
+  margin-bottom: 14px;
+}
+.mutation-approve-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px 0;
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 11.5px;
+  color: var(--ink, #0B2A4A);
+  background: var(--canvas-soft, #FAFBFC);
+  border: 1px solid var(--rule, #E4E8EE);
+  border-radius: var(--radius-md, 5px);
+  padding: 8px 10px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.mutation-approve-list li {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--rule, #E4E8EE);
+}
+.mutation-approve-list li:last-child { border-bottom: 0; }
+.mutation-approve-more {
+  font-style: italic;
+  color: var(--ink-mute, #6B7A90) !important;
+}
+.mutation-approve-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* rc.8.b / R7 - "Done by AI" badge on AI-mutated instance tiles in MatrixView */
+.instance-tile.ai-tagged {
+  position: relative;
+  outline: 1.5px dashed var(--dell-blue, #0076CE);
+  outline-offset: 1px;
+}
+.ai-tag-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: var(--dell-blue, #0076CE);
+  color: #FFF;
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 1px 4px;
+  border-radius: 2px;
+  cursor: help;
+  z-index: 1;
+  line-height: 1.1;
+}
 .canvas-chat-skill-panel {
   flex: 0 0 320px;
   border-left: 1px solid var(--rule, #E4E8EE);

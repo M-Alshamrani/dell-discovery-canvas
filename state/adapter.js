@@ -40,7 +40,8 @@ import {
   updateInstance,
   removeInstance,
   linkOrigin,
-  mapWorkloadAssets
+  mapWorkloadAssets,
+  applyAiInstanceMutation
 } from "./collections/instanceActions.js";
 import {
   addGap,
@@ -234,6 +235,16 @@ export function commitInstanceEdit(_layerId, _envId, instancePatch) {
 
 export function commitWorkloadMapping(workloadId, mappedAssetIds) {
   return commitAction(mapWorkloadAssets, workloadId, mappedAssetIds);
+}
+
+// rc.8.b / R7 (per SPEC §S46.10/§S46.11 + CH36.h + CH34) - AI-mutation
+// commit helper. Routes through commitAction so the Canvas Chat layer
+// (which is forbidden from importing state/collections/* per CH2) can
+// dispatch AI mutations via this adapter helper. Stamps aiTag on the
+// mutated instance; downstream subscribers re-render including the
+// MatrixView "Done by AI" badge.
+export function commitAiInstanceMutation(instanceId, patch, runMeta) {
+  return commitAction(applyAiInstanceMutation, instanceId, patch, runMeta);
 }
 
 export function commitGapEdit(gapId, patch) {

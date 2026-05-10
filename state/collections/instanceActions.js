@@ -71,9 +71,14 @@ export function updateInstance(engagement, instanceId, patch) {
     return { ok: false, errors: [{ path: "instanceId", message: "Instance not found", code: "not_found" }] };
   }
   const now = new Date().toISOString();
+  // rc.8.b / R7 (per SPEC §S46.11 / CH36.h auto-clear contract):
+  // engineer save on an AI-tagged instance strips aiTag. Ownership
+  // transfers from AI to engineer the moment they commit a change.
+  // applyAiInstanceMutation below is the ONLY path that re-stamps aiTag.
   const merged = { ...existing, ...patch,
                    id: existing.id, engagementId: existing.engagementId,
-                   createdAt: existing.createdAt, updatedAt: now };
+                   createdAt: existing.createdAt, updatedAt: now,
+                   aiTag: null };
   const result = InstanceSchema.safeParse(merged);
   if (!result.success) {
     return {
@@ -230,4 +235,58 @@ export function mapWorkloadAssets(engagement, workloadInstanceId, assetIds) {
   }
   // All invariants pass · delegate to updateInstance for the actual commit.
   return updateInstance(engagement, workloadInstanceId, { mappedAssetIds: dedupedAssetIds });
+}
+
+// ─── rc.8.b / R7 · applyAiInstanceMutation (per SPEC §S46.10/§S46.11 / CH36.h) ──
+//
+// AI-authored mutation path. Stamps `aiTag = runMeta` on the mutated
+// instance. Distinct from updateInstance — that one STRIPS aiTag (auto-
+// clear contract). Used by ui/views/CanvasChatOverlay.js applyMutations
+// for both 'ask' (post-approval) and 'auto-tag' (immediate) policies.
+//
+// Scope: instances ONLY. Drivers / environments / gaps / customer /
+// engagementMeta have NO equivalent action; AI mutations against them
+// are forbidden in v3.0 GA.
+//
+// Shape: applyAiInstanceMutation(engagement, instanceId, patch, runMeta)
+//   runMeta = { skillId, runId, mutatedAt }
+export function applyAiInstanceMutation(engagement, instanceId, patch, runMeta) {
+  const existing = engagement.instances.byId[instanceId];
+  if (!existing) {
+    return { ok: false, errors: [{ path: "instanceId",
+      message: "Instance not found", code: "not_found" }] };
+  }
+  if (!runMeta || typeof runMeta !== "object" ||
+      !runMeta.skillId || !runMeta.runId || !runMeta.mutatedAt) {
+    return { ok: false, errors: [{ path: "runMeta",
+      message: "runMeta { skillId, runId, mutatedAt } required for AI mutation",
+      code: "missing_runmeta" }] };
+  }
+  const now = new Date().toISOString();
+  const merged = { ...existing, ...(patch || {}),
+                   id: existing.id, engagementId: existing.engagementId,
+                   createdAt: existing.createdAt, updatedAt: now,
+                   aiTag: { skillId: runMeta.skillId, runId: runMeta.runId, mutatedAt: runMeta.mutatedAt } };
+  const result = InstanceSchema.safeParse(merged);
+  if (!result.success) {
+    return {
+      ok: false,
+      errors: result.error.issues.map(i => ({
+        path: i.path.join("."), message: i.message, code: i.code
+      }))
+    };
+  }
+  const newById = { ...engagement.instances.byId, [instanceId]: result.data };
+  return {
+    ok: true,
+    engagement: {
+      ...engagement,
+      instances: {
+        byId:    newById,
+        allIds:  engagement.instances.allIds,
+        byState: rebuildByState(newById, engagement.instances.allIds)
+      },
+      meta: { ...engagement.meta, updatedAt: now }
+    }
+  };
 }
