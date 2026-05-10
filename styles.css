@@ -5959,6 +5959,30 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
   color: #6E7681;
   font-size: 12.5px;
 }
+/* rc.8.b / R6 - skill run dialog turn styling (dark surface) */
+.canvas-chat-skill-dialog-turn {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md, 5px);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.canvas-chat-skill-dialog-user {
+  background: #21262D;
+  border-left: 3px solid var(--dell-blue, #0076CE);
+  color: #E6EDF3;
+}
+.canvas-chat-skill-dialog-ai {
+  background: #161B22;
+  border-left: 3px solid #00843D;
+  color: #E6EDF3;
+}
+.canvas-chat-skill-dialog-error {
+  background: #2D1F22;
+  border-left: 3px solid #C8102E;
+  color: #FFD6DA;
+  font-size: 12px;
+}
 .canvas-chat-skill-panel {
   flex: 0 0 320px;
   border-left: 1px solid var(--rule, #E4E8EE);

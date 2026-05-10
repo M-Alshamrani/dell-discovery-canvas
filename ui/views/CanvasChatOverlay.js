@@ -29,6 +29,7 @@ import {
 import { streamChat }                          from "../../services/chatService.js";
 import { createRealChatProvider }             from "../../services/realChatProvider.js";
 import { loadAiConfig, saveAiConfig, isActiveProviderReady, PROVIDERS } from "../../core/aiConfig.js";
+import { chatCompletion }                      from "../../services/aiService.js";
 import { openSettingsModal }                   from "./SettingsModal.js";
 import { confirmAction }                       from "../components/Notify.js";
 // SPEC §S20.17 + RULES §16 CH18 — markdown rendering on assistant bubbles
@@ -880,7 +881,7 @@ export function renderSkillPanelForRun(skill, host) {
   }
   host.appendChild(paramsSection);
 
-  // Run button (R5 stub)
+  // Run button (rc.8.b / R6 · real-LLM wiring per CH36.b · feedback_no_mocks.md)
   var runRow = document.createElement("div");
   runRow.className = "canvas-chat-skill-panel-run-row";
   var runBtn = document.createElement("button");
@@ -888,15 +889,16 @@ export function renderSkillPanelForRun(skill, host) {
   runBtn.className = "btn-primary canvas-chat-skill-panel-run";
   runBtn.setAttribute("data-skill-panel-run", "");
   runBtn.textContent = "Run skill";
-  runBtn.addEventListener("click", function() {
-    var stub = host.querySelector(".canvas-chat-skill-panel-run-stub");
-    if (!stub) {
-      stub = document.createElement("div");
-      stub.className = "canvas-chat-skill-panel-run-stub";
-      runRow.appendChild(stub);
+  runBtn.addEventListener("click", async function() {
+    runBtn.disabled = true;
+    var origLabel = runBtn.textContent;
+    runBtn.textContent = "Running...";
+    try {
+      await runSkill(skill, host);
+    } finally {
+      runBtn.disabled = false;
+      runBtn.textContent = origLabel;
     }
-    stub.textContent = "Run wiring lands at rc.8.b R6 (real-LLM streaming + " +
-      "outputFormat renderers + mutation apply). Today this is a stub.";
   });
   runRow.appendChild(runBtn);
   host.appendChild(runRow);
@@ -962,6 +964,168 @@ export function _closeCanvasChatForTests() {
     _activeRunningSkill = null;
     closeOverlay();
   } catch (_e) { /* best-effort */ }
+}
+
+// ─── rc.8.b / R6 · skill run-time (real-LLM, no mocks per CH36.b) ─────
+
+// runSkill(skill, panelHost) - per SPEC §S46.7 / §S46.5 run-time wiring.
+//
+// Reads parameter inputs from the skill panel right-rail (panelHost),
+// substitutes them into the saved skill.improvedPrompt (LLM-generated
+// CARE-structured Anthropic-XML prompt authored at R3), calls the real
+// LLM via services/aiService.js chatCompletion, and renders the response
+// into the dynamic Skill tab's left chat dialog.
+//
+// Output format dispatch (per SPEC §S46.6 / CH36.d):
+//   text          → render as AI turn in the chat dialog
+//   dimensional   → render as JSON in the Skill panel output area
+//                   (full heatmap renderer deferred to a polish arc)
+//   json-array    → render as proposed-mutation list; R7's applyMutations
+//                   wires the apply-gate per skill.mutationPolicy
+//   scalar        → same as json-array (single-mutation case)
+//
+// File parameters (SPEC §S46.8 / CH36.j) are read client-side via
+// FileReader.readAsText at run-time; content NEVER persists with the
+// skill.
+//
+// NO mock providers anywhere in this path (per feedback_no_mocks.md).
+// The chatCompletion call routes through whatever provider is active in
+// loadAiConfig() (Anthropic / OpenAI-compat / Gemini / Local A/B / Dell
+// Sales Chat) — same transport the regular Chat tab uses.
+export async function runSkill(skill, panelHost) {
+  if (!skill || typeof skill !== "object") return;
+  if (typeof skill.improvedPrompt !== "string" || !skill.improvedPrompt.trim()) {
+    _appendSkillDialogTurn("error",
+      "This skill has no improved prompt. Open Settings → Skills builder, click Improve, then Save.");
+    return;
+  }
+
+  // Step 1 — collect parameter values (file params resolve via FileReader).
+  var paramValues;
+  try {
+    paramValues = await _collectSkillParamValues(skill, panelHost);
+  } catch (e) {
+    _appendSkillDialogTurn("error", "Failed to read parameters: " + (e && e.message || e));
+    return;
+  }
+
+  // Step 2 — substitute {{paramName}} placeholders in improvedPrompt.
+  var resolvedPrompt = _substituteSkillParams(skill.improvedPrompt, paramValues);
+
+  // Step 3 — render the user turn (the resolved prompt) in the dialog.
+  _appendSkillDialogTurn("user", resolvedPrompt);
+
+  // Step 4 — real LLM call.
+  try {
+    var cfg = loadAiConfig();
+    var activeKey = cfg && cfg.activeProvider;
+    var active = cfg && cfg.providers && cfg.providers[activeKey];
+    if (!active) {
+      _appendSkillDialogTurn("error",
+        "No active LLM provider configured. Open Settings → AI Providers to set one up.");
+      return;
+    }
+    var res = await chatCompletion({
+      providerKey: activeKey,
+      baseUrl:     active.baseUrl,
+      model:       active.model,
+      apiKey:      active.apiKey,
+      messages: [
+        { role: "system", content: "You are running a saved skill. Follow the instructions in the user message; produce output in the format the skill specifies." },
+        { role: "user",   content: resolvedPrompt }
+      ]
+    });
+    var responseText = (res && res.text) || "";
+    _renderSkillRunOutput(skill, panelHost, responseText);
+  } catch (e) {
+    _appendSkillDialogTurn("error", "Run failed: " + (e && e.message || e) +
+      ". Try again, or check Settings → AI Providers.");
+  }
+}
+
+// Reads parameter values from the panel's input rows.
+// File-type params resolve via FileReader.readAsText (returns "" when
+// no file picked).
+async function _collectSkillParamValues(skill, host) {
+  var values = {};
+  var params = (skill && Array.isArray(skill.parameters)) ? skill.parameters : [];
+  for (var i = 0; i < params.length; i++) {
+    var p = params[i];
+    if (!p || !p.name) continue;
+    var input = host && host.querySelector("[data-skill-param='" + p.name + "']");
+    if (!input) { values[p.name] = ""; continue; }
+    if (p.type === "file") {
+      var f = input.files && input.files[0];
+      values[p.name] = f ? await _readFileAsText(f) : "";
+    } else if (p.type === "boolean") {
+      values[p.name] = input.checked ? "true" : "false";
+    } else if (p.type === "number") {
+      var n = input.valueAsNumber;
+      values[p.name] = (typeof n === "number" && !isNaN(n)) ? String(n) : "0";
+    } else {
+      values[p.name] = input.value || "";
+    }
+  }
+  return values;
+}
+
+function _readFileAsText(file) {
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function() { resolve(reader.result || ""); };
+    reader.onerror = function() { reject(reader.error || new Error("FileReader failed")); };
+    reader.readAsText(file);
+  });
+}
+
+// String replace on {{paramName}} placeholders. Unknown names pass
+// through unchanged so the user can see what didn't substitute.
+function _substituteSkillParams(template, values) {
+  if (typeof template !== "string") return "";
+  return template.replace(/\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}/g, function(match, name) {
+    return Object.prototype.hasOwnProperty.call(values, name) ? values[name] : match;
+  });
+}
+
+// Append a turn into the active dynamic Skill tab's left chat dialog.
+// Roles: "user" (the resolved prompt), "ai" (LLM response), "error".
+function _appendSkillDialogTurn(role, content) {
+  var dialog = document.querySelector("[data-canvas-chat-skill-dialog]");
+  if (!dialog) return;
+  var emptyHint = dialog.querySelector(".canvas-chat-skill-dialog-empty");
+  if (emptyHint) emptyHint.remove();
+  var turn = document.createElement("div");
+  turn.className = "canvas-chat-skill-dialog-turn canvas-chat-skill-dialog-" + role;
+  turn.textContent = content == null ? "" : String(content);
+  dialog.appendChild(turn);
+  dialog.scrollTop = dialog.scrollHeight;
+}
+
+// Per-outputFormat dispatch. R6 hands proposals + scalars off to R7 by
+// rendering them into the panel output area; R7 wires applyMutations()
+// + the ask/auto-tag policy gate on top.
+function _renderSkillRunOutput(skill, panelHost, responseText) {
+  var format = skill && skill.outputFormat;
+  if (format === "text") {
+    _appendSkillDialogTurn("ai", responseText);
+    return;
+  }
+  var output = panelHost && panelHost.querySelector("[data-skill-panel-output]");
+  if (format === "dimensional") {
+    _appendSkillDialogTurn("ai",
+      "Dimensional output produced (heatmap renderer deferred to a polish arc).");
+    if (output) output.textContent = responseText;
+    return;
+  }
+  if (format === "json-array" || format === "scalar") {
+    _appendSkillDialogTurn("ai",
+      "Proposed mutations (apply gate lands at rc.8.b R7 per skill.mutationPolicy='" +
+      (skill.mutationPolicy || "(none)") + "'):");
+    if (output) output.textContent = responseText;
+    return;
+  }
+  // Unknown format — surface as plain AI turn so the user sees the response.
+  _appendSkillDialogTurn("ai", responseText);
 }
 
 function buildFooter() {
