@@ -87,6 +87,10 @@ import { getHealthSummary }                     from "../../services/healthMetri
 import { computeMixByLayer }                    from "../../services/vendorMixService.js";
 import { groupProjectsByProgram }               from "../../services/programsService.js";
 import { getEngagementAsSession }               from "../../state/projection.js";
+// PICKER_METADATA tells _buildEngagementDataBlock which entity each
+// selected path belongs to so it can group the path under the right
+// markdown table (relational rows fix, 2026-05-11).
+import { PICKER_METADATA as PICKER_METADATA_LOCAL } from "../../core/dataContract.js";
 
 // Module-scope state for the open overlay. Only one chat overlay is
 // open at a time; Overlay.js enforces the singleton pattern.
@@ -1130,29 +1134,248 @@ export function _buildSkillUserMessage(skill, paramValues, engagement) {
   // Substitute {{paramName}} placeholders for run-time parameters.
   var resolvedPrompt = _substituteSkillParams(dataResolved, paramValues);
   // Prepend the engagement-data block (the runtime safety net per
-  // SPEC §S46.5 BUG-2 Path B 2026-05-11).
-  var dataBlock = _buildEngagementDataBlock(skill.dataPoints, skillCtx, skill.skillId);
+  // SPEC §S46.5 BUG-2 Path B 2026-05-11). Pass engagement so the block
+  // builder can iterate per-record + emit relational markdown tables
+  // when multiple fields from the same collection are selected
+  // (2026-05-11 row-structure fix).
+  var dataBlock = _buildEngagementDataBlock(skill.dataPoints, skillCtx, skill.skillId, engagement);
   return dataBlock ? dataBlock + "\n\n" + resolvedPrompt : resolvedPrompt;
 }
 
-// Builds the <engagement-data> block from skill.dataPoints. Each
-// selected dataPoint resolves against the active engagement; missing /
-// empty values render as "[not set]". Empty dataPoints[] → returns ""
-// (no block injected).
-export function _buildEngagementDataBlock(dataPoints, skillCtx, skillId) {
+// ─── <engagement-data> block builder (RELATIONAL ROWS · 2026-05-11) ──
+//
+// Builds the <engagement-data> block from skill.dataPoints. Mixes two
+// serialization styles per the row-binding-preserves-relationships fix:
+//
+//   1. Singletons + 1-field collections + insights → flat
+//      `path: value` lines (unchanged from the original block).
+//
+//   2. 2+ fields picked from the same collection (driver / environment /
+//      instance / gap) → wrapped in <entityKind>s>...</entityKind>s> and
+//      rendered as a MARKDOWN TABLE where each row is ONE entity and
+//      columns are the selected fields. Preserves row-binding so the
+//      LLM can filter / cross-reference across columns.
+//
+// Why this matters: before the row-structure fix, picking 4 fields on
+// instance.* emitted 4 parallel newline-joined lists with no row
+// alignment. The LLM couldn't answer "what's the disposition of the
+// desired instances in Primary DC" because the per-field lists weren't
+// joined. Now the table makes the relational shape explicit.
+//
+// Authority: feedback_test_or_it_didnt_ship.md + the row-structure
+// architecture call 2026-05-11. Guarded by V-FLOW-SKILL-V32-DATA-INJECT-5
+// (row-structured for 3+ collection fields) +
+// V-FLOW-SKILL-V32-DATA-INJECT-6 (flat for singletons / single-field).
+export function _buildEngagementDataBlock(dataPoints, skillCtx, skillId, engagement) {
   if (!Array.isArray(dataPoints) || dataPoints.length === 0) return "";
-  var lines = ["<engagement-data>"];
+
+  // Group selected paths by entity. PICKER_METADATA tells us which entity
+  // each path belongs to ("customer" / "engagementMeta" / "driver" /
+  // "environment" / "instance" / "gap" / "insights").
+  var byEntity = {
+    customer: [], engagementMeta: [],
+    driver: [], environment: [], instance: [], gap: [],
+    insights: [], _unknown: []
+  };
   dataPoints.forEach(function(dp) {
     if (!dp || !dp.path) return;
-    var resolved = resolveTemplate("{{" + dp.path + "}}", skillCtx,
-      { skillId: skillId || "data-block" });
-    var displayValue = (resolved === "[?]" || resolved === "" || resolved == null)
-      ? "[not set]"
-      : resolved;
-    lines.push(dp.path + ": " + displayValue);
+    var meta = PICKER_METADATA_LOCAL && PICKER_METADATA_LOCAL[dp.path];
+    var entity = (meta && meta.entity) || _entityFromPath(dp.path);
+    if (!byEntity[entity]) byEntity[entity] = [];
+    byEntity[entity].push(dp.path);
   });
+
+  var lines = ["<engagement-data>"];
+  var hasContent = false;
+
+  // ─── Singletons + scalars → flat key: value lines ──────────────────
+  // customer, engagementMeta, insights, and any _unknown paths render
+  // as the original key:value style. These are aggregates / singletons
+  // with no row-binding to preserve.
+  ["customer", "engagementMeta", "insights", "_unknown"].forEach(function(entity) {
+    (byEntity[entity] || []).forEach(function(path) {
+      var resolved = resolveTemplate("{{" + path + "}}", skillCtx,
+        { skillId: skillId || "data-block" });
+      var displayValue = (resolved === "[?]" || resolved === "" || resolved == null)
+        ? "[not set]"
+        : resolved;
+      lines.push(path + ": " + displayValue);
+      hasContent = true;
+    });
+  });
+
+  // ─── Collections → flat (1 field) OR markdown table (2+ fields) ────
+  ["driver", "environment", "instance", "gap"].forEach(function(entity) {
+    var paths = byEntity[entity] || [];
+    if (paths.length === 0) return;
+
+    if (paths.length === 1) {
+      // Single field selected → flat key:value (newline-joined across
+      // records). No row-binding to preserve when there's one column.
+      var path = paths[0];
+      var resolved = resolveTemplate("{{" + path + "}}", skillCtx,
+        { skillId: skillId || "data-block" });
+      var displayValue = (resolved === "[?]" || resolved === "" || resolved == null)
+        ? "[not set]"
+        : resolved;
+      lines.push(path + ": " + displayValue);
+      hasContent = true;
+      return;
+    }
+
+    // 2+ fields from the same collection → markdown table.
+    var records = _getCollectionRecords(entity, engagement);
+    if (records.length === 0) {
+      // No records to put in the table — fall back to per-field [not set] lines.
+      paths.forEach(function(path) {
+        lines.push(path + ": [not set]");
+      });
+      hasContent = true;
+      return;
+    }
+
+    var fieldNames = paths.map(function(p) { return p.split(".").pop(); });
+    if (lines[lines.length - 1] !== "<engagement-data>") lines.push("");   // blank-line separator
+    lines.push("<" + entity + "s>");
+    // Header row + alignment row.
+    lines.push("| " + fieldNames.join(" | ") + " |");
+    lines.push("|" + fieldNames.map(function() { return "---"; }).join("|") + "|");
+    // Data rows — one per record.
+    records.forEach(function(record) {
+      var row = paths.map(function(path) {
+        var fieldName = path.split(".").pop();
+        var value = _resolveRecordField(entity, fieldName, record, engagement);
+        if (value == null || value === "") return "-";
+        // Escape pipes + collapse newlines so the table row stays on one line.
+        return String(value).replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+      });
+      lines.push("| " + row.join(" | ") + " |");
+    });
+    lines.push("</" + entity + "s>");
+    hasContent = true;
+  });
+
+  if (!hasContent) return "";
   lines.push("</engagement-data>");
   return lines.join("\n");
+}
+
+// Helper · derive entity from path when PICKER_METADATA is unavailable.
+function _entityFromPath(path) {
+  if (!path || typeof path !== "string") return "_unknown";
+  var head = path.split(".")[0];
+  if (head === "customer" || head === "engagementMeta" || head === "insights") return head;
+  if (head === "driver" || head === "environment" || head === "instance" || head === "gap") return head;
+  return "_unknown";
+}
+
+// Helper · returns the engagement's records for one collection entity.
+function _getCollectionRecords(entity, engagement) {
+  if (!engagement) return [];
+  var key = (entity === "driver") ? "drivers"
+          : (entity === "environment") ? "environments"
+          : (entity === "instance") ? "instances"
+          : (entity === "gap") ? "gaps"
+          : null;
+  if (!key) return [];
+  var coll = engagement[key];
+  if (!coll || !Array.isArray(coll.allIds) || !coll.byId) return [];
+  return coll.allIds.map(function(id) { return coll.byId[id]; }).filter(Boolean);
+}
+
+// Helper · resolve ONE record's field for the table. Mirrors the
+// singular-accessor logic in _buildXxxAccessor but for a single
+// record instead of joining across the collection.
+function _resolveRecordField(entity, fieldName, record, engagement) {
+  if (!record) return "";
+
+  if (entity === "driver") {
+    if (fieldName === "name") {
+      var dm = (BUSINESS_DRIVERS_CAT || []).find(function(bd) { return bd.id === record.businessDriverId; });
+      return dm ? dm.label : (record.businessDriverId || "");
+    }
+    if (fieldName === "hint") {
+      var dm2 = (BUSINESS_DRIVERS_CAT || []).find(function(bd) { return bd.id === record.businessDriverId; });
+      return dm2 ? (dm2.hint || dm2.shortHint || "") : "";
+    }
+    return record[fieldName] != null ? String(record[fieldName]) : "";
+  }
+
+  if (entity === "environment") {
+    if (fieldName === "name") {
+      if (record.alias && record.alias.length > 0) return record.alias;
+      var ec = (ENV_CATALOG_CAT || []).find(function(c) { return c.id === record.envCatalogId; });
+      return ec ? ec.label : (record.envCatalogId || "");
+    }
+    if (fieldName === "kindLabel") {
+      var ec2 = (ENV_CATALOG_CAT || []).find(function(c) { return c.id === record.envCatalogId; });
+      return ec2 ? ec2.label : (record.envCatalogId || "");
+    }
+    return record[fieldName] != null ? String(record[fieldName]) : "";
+  }
+
+  if (entity === "instance") {
+    if (fieldName === "layerLabel") {
+      var lm = (LAYERS_CAT || []).find(function(l) { return l.id === record.layerId; });
+      return lm ? lm.label : (record.layerId || "");
+    }
+    if (fieldName === "environmentName") {
+      var envRec = engagement && engagement.environments && engagement.environments.byId && engagement.environments.byId[record.environmentId];
+      if (envRec && envRec.alias && envRec.alias.length > 0) return envRec.alias;
+      var ec3 = envRec ? (ENV_CATALOG_CAT || []).find(function(c) { return c.id === envRec.envCatalogId; }) : null;
+      return ec3 ? ec3.label : (record.environmentId || "");
+    }
+    if (fieldName === "dispositionLabel") {
+      if (!record.disposition) return "";
+      var dm3 = (DISPOSITION_ACTIONS_CAT || []).find(function(a) { return a.id === record.disposition; });
+      return dm3 ? dm3.label : record.disposition;
+    }
+    return record[fieldName] != null ? String(record[fieldName]) : "";
+  }
+
+  if (entity === "gap") {
+    if (fieldName === "gapTypeLabel") {
+      var gt = (GAP_TYPES_CAT || []).find(function(t) { return t.id === record.gapType; });
+      return gt ? gt.label : (record.gapType || "");
+    }
+    if (fieldName === "layerLabel") {
+      var lm2 = (LAYERS_CAT || []).find(function(l) { return l.id === record.layerId; });
+      return lm2 ? lm2.label : (record.layerId || "");
+    }
+    if (fieldName === "driverName") {
+      if (!record.driverId) return "";
+      var drv = engagement && engagement.drivers && engagement.drivers.byId && engagement.drivers.byId[record.driverId];
+      if (!drv) return "";
+      var dmGap = (BUSINESS_DRIVERS_CAT || []).find(function(bd) { return bd.id === drv.businessDriverId; });
+      return dmGap ? dmGap.label : drv.businessDriverId;
+    }
+    if (fieldName === "affectedLayerLabels") {
+      if (!Array.isArray(record.affectedLayers)) return "";
+      return record.affectedLayers.map(function(lid) {
+        var lm3 = (LAYERS_CAT || []).find(function(l) { return l.id === lid; });
+        return lm3 ? lm3.label : lid;
+      }).join(", ");
+    }
+    if (fieldName === "affectedEnvironmentNames") {
+      if (!Array.isArray(record.affectedEnvironments)) return "";
+      return record.affectedEnvironments.map(function(eid) {
+        var ev = engagement && engagement.environments && engagement.environments.byId && engagement.environments.byId[eid];
+        if (ev && ev.alias && ev.alias.length > 0) return ev.alias;
+        var ec4 = ev ? (ENV_CATALOG_CAT || []).find(function(c) { return c.id === ev.envCatalogId; }) : null;
+        return ec4 ? ec4.label : eid;
+      }).join(", ");
+    }
+    if (fieldName === "servicesLabels") {
+      if (!Array.isArray(record.services)) return "";
+      return record.services.map(function(sid) {
+        var sv = (SERVICE_TYPES_CAT || []).find(function(s) { return s.id === sid; });
+        return sv ? sv.label : sid;
+      }).join(", ");
+    }
+    return record[fieldName] != null ? String(record[fieldName]) : "";
+  }
+
+  return record[fieldName] != null ? String(record[fieldName]) : "";
 }
 
 // ─── Skill-run resolver context (REBUILT 2026-05-11 greenlight) ──────

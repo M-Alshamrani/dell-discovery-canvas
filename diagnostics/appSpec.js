@@ -19652,6 +19652,107 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
       "V-FLOW-SKILL-V32-DATA-INJECT-4: customer.vertical MUST resolve to the actual value");
   });
 
+  it("V-FLOW-SKILL-V32-DATA-INJECT-5 · 3+ fields from the same collection produce a ROW-STRUCTURED markdown table — preserves per-record relationships across columns so the LLM can filter/cross-reference (architecture call 2026-05-11)", async () => {
+    var overlay = await import("/ui/views/CanvasChatOverlay.js");
+    var schema  = await import("/schema/engagement.js");
+    var driverActions   = await import("/state/collections/driverActions.js");
+    var envActions      = await import("/state/collections/environmentActions.js");
+    var instanceActions = await import("/state/collections/instanceActions.js");
+    // Build a realistic engagement with 3 instances across 2 environments.
+    var eng = schema.createEmptyEngagement();
+    eng.customer = Object.assign({}, eng.customer, { name: "Rowstruct Co", vertical: "healthcare" });
+    var addRes;
+    addRes = driverActions.addDriver(eng, { businessDriverId: "cyber_resilience", catalogVersion: "2026.04", priority: "High" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    addRes = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    var coreUuid = eng.environments.allIds[0];
+    addRes = envActions.addEnvironment(eng, { envCatalogId: "drDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    var drUuid = eng.environments.allIds[1];
+    addRes = instanceActions.addInstance(eng, { state: "current", layerId: "compute", environmentId: coreUuid, label: "Oracle DB", vendor: "Oracle", vendorGroup: "nonDell", criticality: "High" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    addRes = instanceActions.addInstance(eng, { state: "current", layerId: "compute", environmentId: drUuid, label: "Backup DB", vendor: "Oracle", vendorGroup: "nonDell", criticality: "Medium" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    addRes = instanceActions.addInstance(eng, { state: "desired", layerId: "compute", environmentId: coreUuid, label: "PowerStore T1000", vendor: "Dell", vendorGroup: "dell", criticality: "Low", disposition: "introduce", priority: "Now" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+
+    var skill = {
+      skillId: "test-rowstruct",
+      improvedPrompt: "List the instances.",
+      dataPoints: [
+        { path: "instance.label" },
+        { path: "instance.environmentName" },
+        { path: "instance.state" },
+        { path: "instance.criticality" }
+      ]
+    };
+    var userMsg = overlay._buildSkillUserMessage(skill, {}, eng);
+
+    // Table must be present + wrapped in <instances>...</instances>.
+    assert(/<instances>/.test(userMsg) && /<\/instances>/.test(userMsg),
+      "V-FLOW-SKILL-V32-DATA-INJECT-5: 2+ collection fields MUST emit a <instances>...</instances> block (got: " + userMsg.slice(0, 500) + ")");
+    // Header row with the 4 field names.
+    var headerRe = /\|\s*label\s*\|\s*environmentName\s*\|\s*state\s*\|\s*criticality\s*\|/;
+    assert(headerRe.test(userMsg),
+      "V-FLOW-SKILL-V32-DATA-INJECT-5: table MUST have header row with field names (label / environmentName / state / criticality)");
+    // Alignment row.
+    assert(/\|---\|---\|---\|---\|/.test(userMsg),
+      "V-FLOW-SKILL-V32-DATA-INJECT-5: table MUST have markdown alignment row");
+    // One row per instance — 3 records, so 3 data rows + 1 header + 1 alignment = 5 table lines.
+    // Spot-check each instance shows up with its env + state in the same row.
+    var oracleLine = userMsg.split("\n").find(function(l) { return /Oracle DB/.test(l); });
+    assert(oracleLine && /Primary Data Center/.test(oracleLine) && /current/.test(oracleLine),
+      "V-FLOW-SKILL-V32-DATA-INJECT-5: row for 'Oracle DB' MUST bind to Primary Data Center + current state (row-binding preserved). Got line: " + oracleLine);
+    var backupLine = userMsg.split("\n").find(function(l) { return /Backup DB/.test(l); });
+    assert(backupLine && /Disaster Recovery Site/.test(backupLine) && /current/.test(backupLine),
+      "V-FLOW-SKILL-V32-DATA-INJECT-5: row for 'Backup DB' MUST bind to DR site + current state. Got line: " + backupLine);
+    var psLine = userMsg.split("\n").find(function(l) { return /PowerStore T1000/.test(l); });
+    assert(psLine && /Primary Data Center/.test(psLine) && /desired/.test(psLine),
+      "V-FLOW-SKILL-V32-DATA-INJECT-5: row for 'PowerStore T1000' MUST bind to Primary Data Center + desired state. Got line: " + psLine);
+    // Forbidden: the legacy flat-per-field output. There should NOT be
+    // multiple "instance.label: " key:value lines for the multi-field case.
+    var flatLabelLineCount = (userMsg.match(/instance\.label:/g) || []).length;
+    assertEqual(flatLabelLineCount, 0,
+      "V-FLOW-SKILL-V32-DATA-INJECT-5: multi-field selection MUST NOT emit the legacy 'instance.label: ...' flat line (got " + flatLabelLineCount + " occurrences). Got: " + userMsg.slice(0, 600));
+  });
+
+  it("V-FLOW-SKILL-V32-DATA-INJECT-6 · singletons + single-field collection selections KEEP the flat `path: value` shape (table format is opt-in via multi-field selection, not forced on every block)", async () => {
+    var overlay = await import("/ui/views/CanvasChatOverlay.js");
+    var schema  = await import("/schema/engagement.js");
+    var driverActions = await import("/state/collections/driverActions.js");
+    var eng = schema.createEmptyEngagement();
+    eng.customer = Object.assign({}, eng.customer, { name: "Flat Co", vertical: "healthcare" });
+    eng.meta = Object.assign({}, eng.meta, { presalesOwner: "Test Owner" });
+    var addRes = driverActions.addDriver(eng, { businessDriverId: "cyber_resilience", catalogVersion: "2026.04", priority: "High" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    // Singletons + ONE single-field-collection path.
+    var skill = {
+      skillId: "test-flat",
+      improvedPrompt: "Hello.",
+      dataPoints: [
+        { path: "customer.name" },                  // singleton scalar
+        { path: "customer.verticalLabel" },         // singleton scalar (catalog-resolved)
+        { path: "engagementMeta.presalesOwner" },   // engagementMeta singleton
+        { path: "driver.priority" }                 // single-field collection
+      ]
+    };
+    var userMsg = overlay._buildSkillUserMessage(skill, {}, eng);
+
+    // Flat key:value lines required.
+    assert(/customer\.name: Flat Co/.test(userMsg),
+      "V-FLOW-SKILL-V32-DATA-INJECT-6: singleton customer.name MUST emit flat 'customer.name: Flat Co' (got: " + userMsg.slice(0, 400) + ")");
+    assert(/customer\.verticalLabel: Healthcare/.test(userMsg),
+      "V-FLOW-SKILL-V32-DATA-INJECT-6: customer.verticalLabel MUST emit flat 'customer.verticalLabel: Healthcare' (label-resolved)");
+    assert(/engagementMeta\.presalesOwner: Test Owner/.test(userMsg),
+      "V-FLOW-SKILL-V32-DATA-INJECT-6: engagementMeta.presalesOwner MUST emit flat key:value");
+    assert(/driver\.priority: High/.test(userMsg),
+      "V-FLOW-SKILL-V32-DATA-INJECT-6: single-field collection (driver.priority) MUST emit flat 'driver.priority: High', NOT a table");
+    // Forbidden: a <drivers>...</drivers> wrapper for a single-field selection.
+    assert(!/<drivers>/.test(userMsg),
+      "V-FLOW-SKILL-V32-DATA-INJECT-6: single-field collection MUST NOT emit a <drivers> table wrapper (table format is only for 2+ collection fields)");
+  });
+
   it("V-FLOW-SKILL-V32-OUTPUT-CLEAN-1 · BUG-6 · runSkill MUST NOT render the resolved prompt as a 'user turn' in the chat dialog (only AI responses + errors appear); source-grep regression guard", async () => {
     var src;
     try { src = await (await fetch("/ui/views/CanvasChatOverlay.js")).text(); }
