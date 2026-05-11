@@ -2259,7 +2259,9 @@ V-NAME-1 in TESTS.md §T24.
 
 ## §S25 · Data contract — LLM grounding meta-model (SPEC-only annex)
 
-**Status**: NEW 2026-05-02. SPEC-only annex. Authored as the centerpiece of Canvas Chat perfection per user direction:
+**Status**: NEW 2026-05-02. SPEC-only annex. **Extended 2026-05-11** with `PICKER_METADATA` + `RELATIONSHIPS_METADATA` + `LABEL_RESOLVED_PATHS` + `INSIGHTS_PATHS` exports + the rebuild of `_buildSkillRunCtx` to route through the contract instead of walking the engagement directly. See `docs/SESSION_LOG_2026-05-11.md` for the design contract + test-vector ledger of the 2026-05-11 extension. The original §S25 invariants (top-level await on catalogs, deterministic FNV-1a checksum, validateContract throws on drift, module-cached) are preserved by the rebuilt contract; the original pre-rebuild contract is preserved verbatim at `core/dataContract.reference.js`.
+
+Authored as the centerpiece of Canvas Chat perfection per user direction:
 
 > "AI Chat does not seem to be aware of the full data model definitions, bindings, and what is related to what and how, as data metamodel and metadata. This has to happen initially as a standard backend prompt pushed to the AI when we click on chat. It becomes environment aware, and context aware and can query the environment for the data points it needs to provide accurate answers without hallucinating."
 
@@ -4213,11 +4215,20 @@ Vectors live in TESTS.md §T43 (added inline with this spec):
 
 ---
 
-## §S46 · Skills Builder v3.2 — rebooted (rc.8.b · LOCKED 2026-05-10)
+## §S46 · Skills Builder v3.2 — rebooted (rc.8.b · LOCKED 2026-05-10; polished 2026-05-11)
 
 ### S46.0 · Status + authority
 
 **Status**: AUTHORED 2026-05-10 as the rc.8.b opening arc. SPEC + RULES + RED tests land first per `feedback_spec_and_test_first.md`; sub-arc R2..R7 implementation lands after user reviews this section + the §S46.4 `STANDARD_MUTABLE_PATHS` first-cut list. Supersedes the reverted §S44 / §S45.
+
+**2026-05-11 polish arc** (5 commits, banner 1220→1250) extended §S46 with:
+- §S46.3 picker UX rebuilt as ServiceNow-style two-pane shell across all three authoring steps (Data Points / Output Format / Parameters)
+- §S46.4 data-points curation extended with `PICKER_METADATA` + `RELATIONSHIPS_METADATA` structured runtime data feeding the picker right pane + the Improve meta-skill priming
+- §S46.5 skill run-time rebuilt for contract-fidelity: `_buildSkillRunCtx` routes through `core/dataContract.js` + `core/labelResolvers.js` + catalog snapshots + §S5 selectors (singular collection accessors + Insights namespace) instead of walking the engagement directly
+- §S46.5 `<engagement-data>` block emits markdown tables (relational rows) when 2+ fields from the same collection are selected; preserves row-binding across columns
+- Improve meta-skill system prompt primed with R1..R7 relationship rules (anchor binding / level-vs-phase / state-conditional / label-vs-FK / cross-cutting / derived / multi-hop)
+
+See `docs/SESSION_LOG_2026-05-11.md` for the design contract + test-vector ledger.
 
 **Authority**: user direction 2026-05-10 verbal SPEC §3.1 (transcribed in §S46.2) — the canonical product description for the Skills Builder. The rc.8 (S1 + S2.0..S2.3) work was rejected entirely; this section is the from-scratch redesign anchored to a different mental model:
 - Authoring is a **Settings → Skills section** surface (admin/write), separate from runtime.
