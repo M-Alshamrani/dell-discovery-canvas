@@ -19680,6 +19680,160 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
       "V-FLOW-SKILL-V32-IMPROVE-3: Improve prompt MUST direct the meta-skill to use clearly-fake placeholder names in <examples>");
   });
 
+  // ── 2026-05-11 · WB-1..WB-4 wiring-bug regression guards (UI_DATA_TRACE r6) ──
+  //
+  // Per feedback_test_or_it_didnt_ship.md: every bug fix ships with a test
+  // that would have caught the original incident. Each of these source-greps
+  // a specific file for the post-fix shape so a future commit can't silently
+  // revert the wiring.
+
+  it("V-WB-1-PRESALESOWNER-WIRED · ContextView presales-owner input is wired to engagementMeta.presalesOwner via commitContextEdit({meta}) — was dead pre-2026-05-11 (UI_DATA_TRACE r6 WB-1; source-grep across ContextView + adapter + engagementMetaActions)", async () => {
+    var ctxSrc, adapterSrc, actionsSrc;
+    try {
+      ctxSrc     = await (await fetch("/ui/views/ContextView.js")).text();
+      adapterSrc = await (await fetch("/state/adapter.js")).text();
+      actionsSrc = await (await fetch("/state/collections/engagementMetaActions.js")).text();
+    } catch (e) { throw new Error("V-WB-1-PRESALESOWNER-WIRED: source fetch failed: " + (e && e.message || e)); }
+    var ctxStripped     = ctxSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    var adapterStripped = adapterSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    // (1) ContextView declares the input with the engagementMeta data-field.
+    assert(/data-field=["']engagementMeta\.presalesOwner["']|"engagementMeta\.presalesOwner"/.test(ctxStripped),
+      "V-WB-1-PRESALESOWNER-WIRED: ContextView.js MUST bind the presales-owner input to data-field='engagementMeta.presalesOwner' (was 'sessionMeta.presalesOwner' / writes-ignored pre-fix)");
+    // (2) The save handler builds a metaPatch and routes it through commitContextEdit({meta}).
+    assert(/metaPatch/.test(ctxStripped) && /commitContextEdit\(\{[\s\S]*meta/.test(ctxStripped),
+      "V-WB-1-PRESALESOWNER-WIRED: ContextView.js save handler MUST collect a metaPatch and pass it to commitContextEdit({meta:...})");
+    // (3) adapter.commitContextEdit must handle patch.meta.
+    assert(/patch\.meta/.test(adapterStripped) && /updateEngagementMeta/.test(adapterStripped),
+      "V-WB-1-PRESALESOWNER-WIRED: state/adapter.js commitContextEdit MUST route patch.meta through updateEngagementMeta");
+    // (4) engagementMetaActions.js exists and exports updateEngagementMeta.
+    assert(/export\s+function\s+updateEngagementMeta/.test(actionsSrc),
+      "V-WB-1-PRESALESOWNER-WIRED: state/collections/engagementMetaActions.js MUST export updateEngagementMeta");
+  });
+
+  it("V-WB-2-CUSTOMER-NOTES-INPUT · ContextView exposes customer.notes via a textarea — was missing (schema-only) pre-2026-05-11 (UI_DATA_TRACE r6 WB-2; source-grep)", async () => {
+    var src;
+    try { src = await (await fetch("/ui/views/ContextView.js")).text(); }
+    catch (e) { throw new Error("V-WB-2-CUSTOMER-NOTES-INPUT: fetch failed: " + (e && e.message || e)); }
+    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    assert(/data-field=["']customer\.notes["']|"customer\.notes"/.test(stripped),
+      "V-WB-2-CUSTOMER-NOTES-INPUT: ContextView.js MUST bind a textarea (or input) to data-field='customer.notes' so authors can edit the field");
+    // Also assert it's a textarea (free-text best fits a multi-line surface).
+    assert(/createElement\(["']textarea["']\)|mk\(["']textarea/.test(stripped) || /notesInput/.test(stripped),
+      "V-WB-2-CUSTOMER-NOTES-INPUT: ContextView.js customer.notes binding SHOULD be a textarea (free-text multi-line)");
+  });
+
+  it("V-WB-3-GAP-TYPE-FILTER · Tab 4 gap-type filter uses 'introduce' (schema enum) not 'newCap' (legacy id) — was mismatched pre-2026-05-11 (UI_DATA_TRACE r6 WB-3; source-grep)", async () => {
+    var src;
+    try { src = await (await fetch("/ui/views/GapsEditView.js")).text(); }
+    catch (e) { throw new Error("V-WB-3-GAP-TYPE-FILTER: fetch failed: " + (e && e.message || e)); }
+    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    // Forbidden: "newCap" as a filter option id (anywhere in the file).
+    assert(!/id:\s*["']newCap["']/.test(stripped),
+      "V-WB-3-GAP-TYPE-FILTER: GapsEditView.js MUST NOT use 'newCap' as a gap-type filter id; schema enum is 'introduce'");
+    // Required: "introduce" appears as a filter option id in renderFilterBar.
+    assert(/id:\s*["']introduce["']/.test(stripped),
+      "V-WB-3-GAP-TYPE-FILTER: GapsEditView.js MUST include 'introduce' as a gap-type filter id (matches schema enum)");
+  });
+
+  it("V-WB-4-HEATMAP-DELL-SOLUTIONS · SummaryHealthView heatmap detail uses derived effectiveDellSolutions, not legacy gap.mappedDellSolutions — was stale-v2-read pre-2026-05-11 (UI_DATA_TRACE r6 WB-4; source-grep)", async () => {
+    var src;
+    try { src = await (await fetch("/ui/views/SummaryHealthView.js")).text(); }
+    catch (e) { throw new Error("V-WB-4-HEATMAP-DELL-SOLUTIONS: fetch failed: " + (e && e.message || e)); }
+    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    // (1) Forbidden: reading g.mappedDellSolutions (legacy v2 field).
+    assert(!/g\.mappedDellSolutions/.test(stripped) && !/gap\.mappedDellSolutions/.test(stripped),
+      "V-WB-4-HEATMAP-DELL-SOLUTIONS: SummaryHealthView.js MUST NOT read gap.mappedDellSolutions (v2 legacy field; v3 schema uses gap.aiMappedDellSolutions + derived effectiveDellSolutions)");
+    // (2) Required: imports + calls effectiveDellSolutions.
+    assert(/effectiveDellSolutions/.test(stripped),
+      "V-WB-4-HEATMAP-DELL-SOLUTIONS: SummaryHealthView.js MUST use effectiveDellSolutions(g, session) for the heatmap detail's Active-gaps Dell-solutions row");
+  });
+
+  // ── 2026-05-11 · constitution promotion guards (dataContract.next.js → dataContract.js) ──
+  //
+  // The original dataContract was promoted to dataContract.reference.js
+  // (REFERENCE ONLY, not imported) and the rebuilt contract was promoted
+  // into core/dataContract.js. These tests assert the new exports are
+  // present + the reference file is not accidentally re-imported.
+
+  it("V-CONTRACT-EXTENDED-EXPORTS · core/dataContract.js exports the rebuilt-contract surface: LABEL_RESOLVED_PATHS + INSIGHTS_PATHS + getInsightsDataPoints + getLabelResolvedPaths (added 2026-05-11)", async () => {
+    var mod = await import("/core/dataContract.js");
+    assert(mod.LABEL_RESOLVED_PATHS && typeof mod.LABEL_RESOLVED_PATHS === "object",
+      "V-CONTRACT-EXTENDED-EXPORTS: LABEL_RESOLVED_PATHS MUST be exported as an object");
+    assert(mod.INSIGHTS_PATHS && typeof mod.INSIGHTS_PATHS === "object",
+      "V-CONTRACT-EXTENDED-EXPORTS: INSIGHTS_PATHS MUST be exported as an object");
+    assertEqual(typeof mod.getInsightsDataPoints, "function",
+      "V-CONTRACT-EXTENDED-EXPORTS: getInsightsDataPoints MUST be exported as a function");
+    assertEqual(typeof mod.getLabelResolvedPaths, "function",
+      "V-CONTRACT-EXTENDED-EXPORTS: getLabelResolvedPaths MUST be exported as a function");
+    // Spot-check key entries.
+    assert(mod.LABEL_RESOLVED_PATHS["driver.name"],
+      "V-CONTRACT-EXTENDED-EXPORTS: LABEL_RESOLVED_PATHS MUST include 'driver.name' (catalog-resolved label from BUSINESS_DRIVERS)");
+    assert(mod.INSIGHTS_PATHS["insights.coverage.percent"],
+      "V-CONTRACT-EXTENDED-EXPORTS: INSIGHTS_PATHS MUST include 'insights.coverage.percent' (from roadmapService.computeDiscoveryCoverage)");
+    assert(mod.getInsightsDataPoints().length >= 10,
+      "V-CONTRACT-EXTENDED-EXPORTS: getInsightsDataPoints() MUST return at least 10 entries (Tab 5 derived values)");
+  });
+
+  it("V-CONTRACT-EXTENDED-STANDARD-PATHS · STANDARD_MUTABLE_PATHS expanded with the audit-locked Standard set — catalog-resolved labels + Insights category companions (added 2026-05-11)", async () => {
+    var mod = await import("/core/dataContract.js");
+    var set = new Set(mod.STANDARD_MUTABLE_PATHS);
+    // Spot-check the audit-locked additions; each path SHOULD trace to a real
+    // canvas surface per docs/UI_DATA_TRACE.md r6.
+    var requiredAdditions = [
+      "driver.name",                    // BUSINESS_DRIVERS catalog label join
+      "customer.verticalLabel",         // CUSTOMER_VERTICALS catalog label join
+      "environment.name",               // alias-or-catalog-label fallback
+      "instance.layerLabel",            // LAYERS catalog label join
+      "instance.environmentName",       // environments-collection alias join
+      "instance.dispositionLabel",      // DISPOSITION_ACTIONS label join (desired-only)
+      "gap.gapTypeLabel",               // GAP_TYPES catalog label join
+      "gap.layerLabel",                 // LAYERS catalog label join
+      "gap.driverName",                 // multi-hop label join through engagement.drivers
+      "gap.affectedEnvironmentNames",   // array of resolved env labels
+      "gap.affectedLayerLabels",        // array of resolved layer labels
+      "gap.servicesLabels"              // array of resolved SERVICE_TYPES labels
+    ];
+    requiredAdditions.forEach(function(p) {
+      assert(set.has(p),
+        "V-CONTRACT-EXTENDED-STANDARD-PATHS: STANDARD_MUTABLE_PATHS MUST include '" + p + "' (added 2026-05-11 from UI_DATA_TRACE r6 audit)");
+    });
+    // Also assert it's bigger than the pre-rebuild 26-path set.
+    assert(mod.STANDARD_MUTABLE_PATHS.length >= 30,
+      "V-CONTRACT-EXTENDED-STANDARD-PATHS: STANDARD_MUTABLE_PATHS MUST be at least 30 entries post-rebuild (was 26 pre-2026-05-11)");
+  });
+
+  it("V-CONSTITUTION-REFERENCE-PRESERVED · core/dataContract.reference.js exists with REFERENCE ONLY header and is NOT imported anywhere in the live module graph (preserves the original pre-rebuild contract for historical comparison)", async () => {
+    var refSrc;
+    try { refSrc = await (await fetch("/core/dataContract.reference.js")).text(); }
+    catch (e) { throw new Error("V-CONSTITUTION-REFERENCE-PRESERVED: failed to fetch dataContract.reference.js: " + (e && e.message || e)); }
+    // The reference file must declare its non-active status in the header.
+    assert(/REFERENCE ONLY|NOT ACTIVE|DO NOT IMPORT/.test(refSrc),
+      "V-CONSTITUTION-REFERENCE-PRESERVED: dataContract.reference.js MUST declare REFERENCE ONLY / NOT ACTIVE / DO NOT IMPORT in its header");
+    // Walk a representative set of import paths to ensure no live module imports the reference file.
+    var importsToCheck = [
+      "/services/systemPromptAssembler.js",
+      "/services/chatService.js",
+      "/services/labelResolvers.js",
+      "/state/adapter.js",
+      "/state/engagementStore.js",
+      "/ui/views/CanvasChatOverlay.js",
+      "/ui/views/SkillBuilder.js",
+      "/core/dataContract.js"
+    ];
+    for (var i = 0; i < importsToCheck.length; i++) {
+      var src;
+      try { src = await (await fetch(importsToCheck[i])).text(); }
+      catch (e) { continue; }   // file may not exist on every layout; skip
+      // Strip comments (block + line) so a passing prose mention of the
+      // reference filename in a header doc-comment doesn't false-positive
+      // against an actual import.
+      var srcStripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+      assert(!/from\s+["'][^"']*dataContract\.reference[^"']*["']/.test(srcStripped) &&
+             !/import\s+["'][^"']*dataContract\.reference[^"']*["']/.test(srcStripped),
+        "V-CONSTITUTION-REFERENCE-PRESERVED: " + importsToCheck[i] + " MUST NOT import from core/dataContract.reference.js (reference is historical, not live)");
+    }
+  });
+
 });
 
 // v2.4.5 · Foundations Refresh · register the human-surface demo suite

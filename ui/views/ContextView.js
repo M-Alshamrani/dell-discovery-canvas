@@ -86,7 +86,8 @@ export function renderContextView(left, right, _legacySession) {
     "Capture the essentials. Add the drivers that matter to the customer, then open each to map outcomes."));
 
   var form = mk("div", "context-form");
-  var customer = (eng && eng.customer) || { name: "", vertical: "", region: "" };
+  var customer = (eng && eng.customer) || { name: "", vertical: "", region: "", notes: "" };
+  var engMeta  = (eng && eng.meta) || {};
 
   var row1 = mk("div", "context-row-2");
   row1.appendChild(fg("Customer name",
@@ -98,12 +99,28 @@ export function renderContextView(left, right, _legacySession) {
   var row2 = mk("div", "context-row-2");
   row2.appendChild(fg("Region",
     inputF("customer.region", customer.region || "", "e.g. EMEA, North America")));
-  // sessionMeta.presalesOwner is v2-only for now; v3 engagement.meta
-  // doesn't carry it. The input is a no-op placeholder (writes ignored)
-  // until v3 grows the field. Kept in DOM for layout parity.
+  // WB-1 fix (2026-05-11) · presalesOwner is now wired through to
+  // engagement.meta.presalesOwner via commitContextEdit({meta:{...}}).
+  // The schema field exists, the executive-summary selector reads it,
+  // and the Reporting cover surface will pick it up.
+  // Authority: docs/UI_DATA_TRACE.md r6 WB-1.
   row2.appendChild(fg("Presales owner",
-    inputF("sessionMeta.presalesOwner", "", "Your name")));
+    inputF("engagementMeta.presalesOwner", engMeta.presalesOwner || "", "Your name")));
   form.appendChild(row2);
+
+  // WB-2 fix (2026-05-11) · customer.notes was schema-real but had no
+  // UI input. Migrator preserves v2.x segment/industry content into
+  // this field; UI now exposes it for editing. Full-width row 3 since
+  // notes is free-text and benefits from horizontal space.
+  // Authority: docs/UI_DATA_TRACE.md r6 WB-2.
+  var row3 = mk("div", "context-row-1");
+  var notesInput = mk("textarea", "form-textarea");
+  notesInput.setAttribute("data-field", "customer.notes");
+  notesInput.rows = 3;
+  notesInput.placeholder = "Anything else worth remembering about this customer - context, history, sensitivities, prior engagements...";
+  notesInput.value = customer.notes || "";
+  row3.appendChild(fg("Customer notes (optional)", notesInput));
+  form.appendChild(row3);
 
   idCard.appendChild(form);
 
@@ -112,25 +129,34 @@ export function renderContextView(left, right, _legacySession) {
   saveIdBtn.style.marginTop = "8px";
   saveIdBtn.addEventListener("click", function() {
     var customerPatch = {};
+    var metaPatch     = {};
     form.querySelectorAll("[data-field]").forEach(function(input) {
       var path = input.getAttribute("data-field").split(".");
       if (path.length === 2 && path[0] === "customer") {
         customerPatch[path[1]] = input.value;
+      } else if (path.length === 2 && path[0] === "engagementMeta") {
+        metaPatch[path[1]] = input.value;
       }
     });
 
-    // Detect actual change against current customer fields. No-op save
-    // (clicking Save with the demo's own values intact) preserves
-    // isDemo + skips the commit -- matches v2's PR1 behavior.
+    // Detect actual change against current values. No-op save (clicking
+    // Save with the demo's own values intact) preserves isDemo + skips
+    // the commit, matches v2's PR1 behavior, extended to meta fields.
     var preEng = getActiveEngagement();
     var preCustomer = (preEng && preEng.customer) || {};
-    var changed = false;
-    Object.keys(customerPatch).forEach(function(k) {
-      if ((preCustomer[k] || "") !== (customerPatch[k] || "")) changed = true;
+    var preMeta     = (preEng && preEng.meta)     || {};
+    var customerChanged = Object.keys(customerPatch).some(function(k) {
+      return (preCustomer[k] || "") !== (customerPatch[k] || "");
+    });
+    var metaChanged = Object.keys(metaPatch).some(function(k) {
+      return (preMeta[k] || "") !== (metaPatch[k] || "");
     });
 
-    if (changed) {
-      commitContextEdit({ customer: customerPatch });
+    if (customerChanged || metaChanged) {
+      commitContextEdit({
+        customer: customerChanged ? customerPatch : undefined,
+        meta:     metaChanged     ? metaPatch     : undefined
+      });
       // Flip isDemo only when the user actually edited a field AND
       // customer.name is non-empty (the v2 PR1 contract: typing your
       // own customer name signals "this is a real session").

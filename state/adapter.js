@@ -32,6 +32,7 @@ import { selectMatrixView }    from "../selectors/matrix.js";
 import { selectHealthSummary } from "../selectors/healthSummary.js";
 import { commitAction, getActiveEngagement } from "./engagementStore.js";
 import { updateCustomer }      from "./collections/customerActions.js";
+import { updateEngagementMeta } from "./collections/engagementMetaActions.js";
 // rc.7 / 7e-2 · v3-pure adapter completion per SPEC §S40 — full
 // instance + gap write surface (no v2 dual-running). MatrixView /
 // GapsEditView / desiredStateSync consume these in 7e-3..7e-4.
@@ -163,10 +164,22 @@ export function adaptReportingView(eng) {
 // ─── write-through helpers (R19.1 write side, R19.4) ─────────────────────────
 
 export function commitContextEdit(patch) {
+  // Accepts { customer?, meta? } — either or both. When both are present,
+  // both commits land (each routes through commitAction independently so
+  // the emit cascade fires once per sub-write). Returns the last commit's
+  // result (or null if patch was empty).
+  //
+  // The `meta` branch was added 2026-05-11 to close WB-1 (presalesOwner
+  // dead input). The previous version only handled `patch.customer` and
+  // silently dropped any meta-level edits. See UI_DATA_TRACE.md r6 WB-1.
+  let last = null;
   if (patch && patch.customer) {
-    return commitAction(updateCustomer, patch.customer);
+    last = commitAction(updateCustomer, patch.customer);
   }
-  return null;
+  if (patch && patch.meta) {
+    last = commitAction(updateEngagementMeta, patch.meta);
+  }
+  return last;
 }
 
 // rc.7 / 7b · Tab 1 Context migration · driver write helpers.

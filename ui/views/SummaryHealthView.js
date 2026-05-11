@@ -6,6 +6,12 @@ import { getEngagementAsSession, getVisibleEnvsFromEngagement } from "../../stat
 import { getHealthSummary, computeBucketMetrics, scoreToRiskLabel, scoreToClass } from "../../services/healthMetrics.js";
 import { helpButton } from "./HelpModal.js";
 import { renderDemoBanner } from "../components/DemoBanner.js";
+// WB-4 fix (2026-05-11) · derived Dell-solutions resolver replaces the
+// legacy `gap.mappedDellSolutions` v2 field read at L238 below. The v3
+// canvas everywhere else uses effectiveDellSolutions(gap, session)
+// (walks linked desired tiles filtered by vendorGroup="dell").
+// Authority: docs/UI_DATA_TRACE.md r6 WB-4.
+import { effectiveDellSolutions } from "../../services/programsService.js";
 
 export function renderSummaryHealthView(left, right, sessionArg) {
   // v3-pure: derive session-shape from active engagement at render time.
@@ -235,8 +241,13 @@ function renderDetail(right, layerId, envId, session) {
       var row = mk("div", "detail-row");
       row.appendChild(mkt("span", "urgency-badge " + urgClass(g.urgency), g.urgency));
       row.appendChild(mkt("span", "detail-row-label", g.description));
-      if (g.mappedDellSolutions) {
-        row.appendChild(mkt("div", "detail-solutions", "Dell: " + g.mappedDellSolutions));
+      // WB-4 fix · was: if (g.mappedDellSolutions) { ... "Dell: " + g.mappedDellSolutions }
+      // which read a legacy v2 field that does not exist in v3 schema.
+      // Replaced with derived effectiveDellSolutions resolver, matching
+      // every other surface on the canvas. See UI_DATA_TRACE.md r6 WB-4.
+      var derivedSols = effectiveDellSolutions(g, session);
+      if (derivedSols && derivedSols.length > 0) {
+        row.appendChild(mkt("div", "detail-solutions", "Dell: " + derivedSols.join(", ")));
       }
       panel.appendChild(row);
     });

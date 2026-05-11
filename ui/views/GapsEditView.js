@@ -272,11 +272,16 @@ export function renderGapsEditView(left, right, session) {
           return { id: e.uuid, label: e.label };
         }) },
       { id: "gapType",  label: "Gap type",
+        // WB-3 fix (2026-05-11) · was: { id:"newCap", label:"New capability" }
+        // which never matched any gap (schema enum is "introduce", not
+        // "newCap"). Detail-form dropdown at L745 already used "introduce";
+        // only this filter was stale. Aligned with GAP_TYPES catalog now.
+        // Authority: docs/UI_DATA_TRACE.md r6 WB-3.
         options: [
-          { id: "replace",  label: "Replace" },
-          { id: "enhance",  label: "Enhance" },
-          { id: "ops",      label: "Operational / services" },
-          { id: "newCap",   label: "New capability" },
+          { id: "replace",     label: "Replace"     },
+          { id: "enhance",     label: "Enhance"     },
+          { id: "ops",         label: "Operational / services" },
+          { id: "introduce",   label: "Introduce"   },
           { id: "consolidate", label: "Consolidate" }
         ] },
       { id: "urgency",  label: "Urgency",
