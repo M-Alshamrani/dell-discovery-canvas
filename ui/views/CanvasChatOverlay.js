@@ -61,6 +61,33 @@ import { buildLabelMap, buildManifestLabelMap, scrubUuidsInProse } from "../../s
 // SPEC §S34 R34.8-R34.11 (rc.4-dev / Arc 3b) - dynamic try-asking.
 import { generateTryAskingPrompts }            from "../../services/tryAskingPrompts.js";
 
+// ─── 2026-05-11 greenlight · skill-runtime contract-fidelity rebuild ──
+// _buildSkillRunCtx now routes through catalog snapshots + selectors
+// instead of walking the engagement directly. These imports feed the
+// label-resolved + insights namespaces in the resolver context.
+import BUSINESS_DRIVERS_SNAP                    from "../../catalogs/snapshots/business_drivers.js";
+import ENV_CATALOG_SNAP                         from "../../catalogs/snapshots/env_catalog.js";
+import LAYERS_SNAP                              from "../../catalogs/snapshots/layers.js";
+import GAP_TYPES_SNAP                           from "../../catalogs/snapshots/gap_types.js";
+import DISPOSITION_ACTIONS_SNAP                 from "../../catalogs/snapshots/disposition_actions.js";
+import SERVICE_TYPES_SNAP                       from "../../catalogs/snapshots/service_types.js";
+import CUSTOMER_VERTICALS_SNAP                  from "../../catalogs/snapshots/customer_verticals.js";
+// Unwrap the {catalogId, catalogVersion, entries[]} shape to the
+// `entries` array; the helpers below treat them as flat catalog lists.
+var BUSINESS_DRIVERS_CAT    = (BUSINESS_DRIVERS_SNAP    && BUSINESS_DRIVERS_SNAP.entries)    || [];
+var ENV_CATALOG_CAT         = (ENV_CATALOG_SNAP         && ENV_CATALOG_SNAP.entries)         || [];
+var LAYERS_CAT              = (LAYERS_SNAP              && LAYERS_SNAP.entries)              || [];
+var GAP_TYPES_CAT           = (GAP_TYPES_SNAP           && GAP_TYPES_SNAP.entries)           || [];
+var DISPOSITION_ACTIONS_CAT = (DISPOSITION_ACTIONS_SNAP && DISPOSITION_ACTIONS_SNAP.entries) || [];
+var SERVICE_TYPES_CAT       = (SERVICE_TYPES_SNAP       && SERVICE_TYPES_SNAP.entries)       || [];
+var CATALOGS_CUSTOMER_VERTICALS = (CUSTOMER_VERTICALS_SNAP && CUSTOMER_VERTICALS_SNAP.entries) || [];
+// Selectors for the insights namespace (Tab 5 Reporting machinery).
+import { computeDiscoveryCoverage, computeRiskPosture, buildProjects, generateSessionBrief } from "../../services/roadmapService.js";
+import { getHealthSummary }                     from "../../services/healthMetrics.js";
+import { computeMixByLayer }                    from "../../services/vendorMixService.js";
+import { groupProjectsByProgram }               from "../../services/programsService.js";
+import { getEngagementAsSession }               from "../../state/projection.js";
+
 // Module-scope state for the open overlay. Only one chat overlay is
 // open at a time; Overlay.js enforces the singleton pattern.
 //
@@ -1128,25 +1155,318 @@ export function _buildEngagementDataBlock(dataPoints, skillCtx, skillId) {
   return lines.join("\n");
 }
 
+// ─── Skill-run resolver context (REBUILT 2026-05-11 greenlight) ──────
+//
 // Builds the resolver context for a skill run. resolveTemplate walks
 // `ctx.<path>` so we expose engagement collections at the top level
-// (NOT under ctx.engagement.<path>). Customer + engagementMeta are the
-// session-wide singletons; drivers / environments / instances / gaps
-// are exposed as flat arrays (formatValue joins them with newlines).
-function _buildSkillRunCtx(engagement) {
+// (NOT under ctx.engagement.<path>). The rebuild:
+//   · Customer + engagementMeta still live as singletons (preserved).
+//   · NEW: singular accessors (ctx.driver / .environment / .instance /
+//     .gap) for the picker's Standard paths. Each property iterates
+//     the collection and joins values with newlines — schema-keyed paths
+//     like "driver.priority" or "gap.urgency" finally resolve at runtime.
+//   · NEW: label-resolved paths route through core/labelResolvers.js +
+//     catalog snapshots so a skill bound to "driver.name" sees "Cyber
+//     Resilience" not "cyber_resilience".
+//   · NEW: insights namespace (ctx.insights.*) for derived selectors
+//     (coverage / risk / totals / Dell density / projects / brief).
+//
+// Authority: SPEC §S25 contract-fidelity. R12 discipline rule.
+//            docs/UI_DATA_TRACE.md r6 audit. docs/UI_DATA_KNOWLEDGE_BASE.md r1.
+//            core/dataContract.js STANDARD_MUTABLE_PATHS + INSIGHTS_PATHS +
+//            LABEL_RESOLVED_PATHS + PICKER_METADATA.
+export function _buildSkillRunCtx(engagement) {
   if (!engagement) return {};
+
   var collFlat = function(coll) {
     if (!coll || !Array.isArray(coll.allIds) || !coll.byId) return [];
     return coll.allIds.map(function(id) { return coll.byId[id]; }).filter(Boolean);
   };
-  return {
+
+  // Base collections (preserved for any callers relying on plural form).
+  var drivers      = collFlat(engagement.drivers);
+  var environments = collFlat(engagement.environments);
+  var instances    = collFlat(engagement.instances);
+  var gaps         = collFlat(engagement.gaps);
+
+  // Customer singleton with the label-resolved verticalLabel attached.
+  var customer = Object.assign({}, engagement.customer || {});
+  if (customer.vertical) {
+    // CUSTOMER_VERTICALS catalog lookup (best-effort; falls back to id).
+    try {
+      var v = (CATALOGS_CUSTOMER_VERTICALS || []).find(function(c) { return c.id === customer.vertical; });
+      customer.verticalLabel = v ? v.label : customer.vertical;
+    } catch (_e) {
+      customer.verticalLabel = customer.vertical;
+    }
+  }
+
+  var ctx = {
     engagement:     engagement,
-    customer:       engagement.customer || {},
+    customer:       customer,
     engagementMeta: engagement.meta || {},
-    drivers:        collFlat(engagement.drivers),
-    environments:   collFlat(engagement.environments),
-    instances:      collFlat(engagement.instances),
-    gaps:           collFlat(engagement.gaps)
+    drivers:        drivers,
+    environments:   environments,
+    instances:      instances,
+    gaps:           gaps,
+    // NEW: singular accessors with label-resolved properties.
+    driver:         _buildDriverAccessor(drivers),
+    environment:    _buildEnvironmentAccessor(environments),
+    instance:       _buildInstanceAccessor(instances, engagement),
+    gap:            _buildGapAccessor(gaps, engagement, drivers, environments),
+    // NEW: insights namespace (derived selectors).
+    insights:       _buildInsightsAccessor(engagement)
+  };
+
+  return ctx;
+}
+
+// Singular accessor for the driver collection. Iterates all drivers and
+// returns a synthetic object whose properties are newline-joined across
+// the collection. Label-resolved paths (driver.name) go through the
+// BUSINESS_DRIVERS catalog.
+function _buildDriverAccessor(drivers) {
+  if (!Array.isArray(drivers) || drivers.length === 0) return {};
+  var join = function(values) {
+    return values.filter(function(v) { return v != null && v !== ""; }).join("\n");
+  };
+  return {
+    name: join(drivers.map(function(d) {
+      var meta = (BUSINESS_DRIVERS_CAT || []).find(function(bd) { return bd.id === d.businessDriverId; });
+      return meta ? meta.label : (d.businessDriverId || "");
+    })),
+    hint: join(drivers.map(function(d) {
+      var meta = (BUSINESS_DRIVERS_CAT || []).find(function(bd) { return bd.id === d.businessDriverId; });
+      return meta ? (meta.hint || meta.shortHint || "") : "";
+    })),
+    priority: join(drivers.map(function(d) { return d.priority || ""; })),
+    outcomes: join(drivers.map(function(d) { return d.outcomes || ""; })),
+    businessDriverId: join(drivers.map(function(d) { return d.businessDriverId || ""; }))
+  };
+}
+
+// Singular accessor for the environment collection. Includes both the
+// raw fields (alias / location / sizeKw / etc.) and the synthetic "name"
+// path (alias || catalog label).
+function _buildEnvironmentAccessor(environments) {
+  if (!Array.isArray(environments) || environments.length === 0) return {};
+  var join = function(values) {
+    return values.filter(function(v) { return v != null && v !== ""; }).join("\n");
+  };
+  return {
+    name: join(environments.map(function(e) {
+      if (e.alias && e.alias.length > 0) return e.alias;
+      var meta = (ENV_CATALOG_CAT || []).find(function(c) { return c.id === e.envCatalogId; });
+      return meta ? meta.label : (e.envCatalogId || "");
+    })),
+    alias:    join(environments.map(function(e) { return e.alias || ""; })),
+    location: join(environments.map(function(e) { return e.location || ""; })),
+    tier:     join(environments.map(function(e) { return e.tier || ""; })),
+    sizeKw:   join(environments.map(function(e) { return e.sizeKw != null ? String(e.sizeKw) : ""; })),
+    sqm:      join(environments.map(function(e) { return e.sqm != null ? String(e.sqm) : ""; })),
+    notes:    join(environments.map(function(e) { return e.notes || ""; })),
+    envCatalogId: join(environments.map(function(e) { return e.envCatalogId || ""; })),
+    kindLabel: join(environments.map(function(e) {
+      var meta = (ENV_CATALOG_CAT || []).find(function(c) { return c.id === e.envCatalogId; });
+      return meta ? meta.label : (e.envCatalogId || "");
+    }))
+  };
+}
+
+// Singular accessor for the instance collection. Joins via labelResolvers
+// for layer + environment + disposition label paths.
+function _buildInstanceAccessor(instances, engagement) {
+  if (!Array.isArray(instances) || instances.length === 0) return {};
+  var join = function(values) {
+    return values.filter(function(v) { return v != null && v !== ""; }).join("\n");
+  };
+  return {
+    label:        join(instances.map(function(i) { return i.label || ""; })),
+    vendor:       join(instances.map(function(i) { return i.vendor || ""; })),
+    vendorGroup:  join(instances.map(function(i) { return i.vendorGroup || ""; })),
+    criticality:  join(instances.map(function(i) { return i.criticality || ""; })),
+    notes:        join(instances.map(function(i) { return i.notes || ""; })),
+    priority:     join(instances.map(function(i) { return i.priority || ""; })),
+    state:        join(instances.map(function(i) { return i.state || ""; })),
+    layerId:      join(instances.map(function(i) { return i.layerId || ""; })),
+    layerLabel:   join(instances.map(function(i) {
+      var meta = (LAYERS_CAT || []).find(function(l) { return l.id === i.layerId; });
+      return meta ? meta.label : (i.layerId || "");
+    })),
+    environmentName: join(instances.map(function(i) {
+      var env = engagement.environments && engagement.environments.byId && engagement.environments.byId[i.environmentId];
+      if (env && env.alias && env.alias.length > 0) return env.alias;
+      var cat = env ? (ENV_CATALOG_CAT || []).find(function(c) { return c.id === env.envCatalogId; }) : null;
+      return cat ? cat.label : (i.environmentId || "");
+    })),
+    dispositionLabel: join(instances.map(function(i) {
+      if (!i.disposition) return "";
+      var meta = (DISPOSITION_ACTIONS_CAT || []).find(function(a) { return a.id === i.disposition; });
+      return meta ? meta.label : i.disposition;
+    })),
+    disposition: join(instances.map(function(i) { return i.disposition || ""; }))
+  };
+}
+
+// Singular accessor for the gap collection. Includes multi-hop labels
+// (gap.driverName joins through drivers collection to BUSINESS_DRIVERS)
+// and array-resolved label paths (affectedEnvironmentNames, etc.).
+function _buildGapAccessor(gaps, engagement, drivers, environments) {
+  if (!Array.isArray(gaps) || gaps.length === 0) return {};
+  var join = function(values) {
+    return values.filter(function(v) { return v != null && v !== ""; }).join("\n");
+  };
+  var driversById = {};
+  if (engagement.drivers && engagement.drivers.byId) driversById = engagement.drivers.byId;
+  var envsById = {};
+  if (engagement.environments && engagement.environments.byId) envsById = engagement.environments.byId;
+  return {
+    description: join(gaps.map(function(g) { return g.description || ""; })),
+    urgency:     join(gaps.map(function(g) { return g.urgency || ""; })),
+    phase:       join(gaps.map(function(g) { return g.phase || ""; })),
+    status:      join(gaps.map(function(g) { return g.status || ""; })),
+    notes:       join(gaps.map(function(g) { return g.notes || ""; })),
+    origin:      join(gaps.map(function(g) { return g.origin || ""; })),
+    reviewed:    join(gaps.map(function(g) { return String(g.reviewed === true); })),
+    urgencyOverride: join(gaps.map(function(g) { return String(g.urgencyOverride === true); })),
+    gapType:     join(gaps.map(function(g) { return g.gapType || ""; })),
+    layerId:     join(gaps.map(function(g) { return g.layerId || ""; })),
+    driverId:    join(gaps.map(function(g) { return g.driverId || ""; })),
+    gapTypeLabel: join(gaps.map(function(g) {
+      var meta = (GAP_TYPES_CAT || []).find(function(t) { return t.id === g.gapType; });
+      return meta ? meta.label : (g.gapType || "");
+    })),
+    layerLabel: join(gaps.map(function(g) {
+      var meta = (LAYERS_CAT || []).find(function(l) { return l.id === g.layerId; });
+      return meta ? meta.label : (g.layerId || "");
+    })),
+    driverName: join(gaps.map(function(g) {
+      if (!g.driverId) return "";
+      var driver = driversById[g.driverId];
+      if (!driver) return "";
+      var meta = (BUSINESS_DRIVERS_CAT || []).find(function(bd) { return bd.id === driver.businessDriverId; });
+      return meta ? meta.label : driver.businessDriverId;
+    })),
+    affectedLayerLabels: join(gaps.map(function(g) {
+      if (!Array.isArray(g.affectedLayers) || g.affectedLayers.length === 0) return "";
+      return g.affectedLayers.map(function(lid) {
+        var meta = (LAYERS_CAT || []).find(function(l) { return l.id === lid; });
+        return meta ? meta.label : lid;
+      }).join(", ");
+    })),
+    affectedEnvironmentNames: join(gaps.map(function(g) {
+      if (!Array.isArray(g.affectedEnvironments) || g.affectedEnvironments.length === 0) return "";
+      return g.affectedEnvironments.map(function(eid) {
+        var env = envsById[eid];
+        if (env && env.alias && env.alias.length > 0) return env.alias;
+        var cat = env ? (ENV_CATALOG_CAT || []).find(function(c) { return c.id === env.envCatalogId; }) : null;
+        return cat ? cat.label : eid;
+      }).join(", ");
+    })),
+    servicesLabels: join(gaps.map(function(g) {
+      if (!Array.isArray(g.services) || g.services.length === 0) return "";
+      return g.services.map(function(sid) {
+        var meta = (SERVICE_TYPES_CAT || []).find(function(s) { return s.id === sid; });
+        return meta ? meta.label : sid;
+      }).join(", ");
+    }))
+  };
+}
+
+// Insights accessor — wraps the §S5 selectors. Lazy: only the paths
+// the resolver template actually touches will trigger their underlying
+// computation (each property is computed eagerly here for now; can be
+// lazy-getter later if perf bites).
+function _buildInsightsAccessor(engagement) {
+  // The selectors expect v2-shape session; getEngagementAsSession()
+  // projects from v3. Coverage / risk / summary / projects all accept
+  // session; brief assembles the rollup rows.
+  var session = null;
+  try { session = getEngagementAsSession(); } catch (_e) { session = null; }
+  if (!session) return {};
+  // Defensive: services may throw on incomplete sessions.
+  var coverage = {};
+  var risk = {};
+  var summary = {};
+  var projects = [];
+  var dellByLayer = {};
+  var brief = [];
+  try { coverage = computeDiscoveryCoverage(session) || {}; } catch (_e) {}
+  try { risk     = computeRiskPosture(session) || {};     } catch (_e) {}
+  try { summary  = getHealthSummary(session, LAYERS_CAT || [], ENV_CATALOG_CAT || []) || {}; } catch (_e) {}
+  try { projects = (buildProjects(session, {}) || {}).projects || []; } catch (_e) {}
+  try { brief    = generateSessionBrief(session) || []; } catch (_e) {}
+  try {
+    (LAYERS_CAT || []).forEach(function(layer) {
+      var mix = computeMixByLayer({ stateFilter: "combined", layerIds: [layer.id] });
+      var row = (mix && mix[0]) || null;
+      if (row && row.total > 0) {
+        dellByLayer[layer.id] = Math.round(100 * (row.dell || 0) / row.total);
+      } else {
+        dellByLayer[layer.id] = 0;
+      }
+    });
+  } catch (_e) {}
+  // Overall Dell density.
+  var dellTotal = 0, total = 0;
+  (engagement.instances && engagement.instances.allIds || []).forEach(function(id) {
+    var inst = engagement.instances.byId[id];
+    if (!inst) return;
+    total++;
+    if (inst.vendorGroup === "dell") dellTotal++;
+  });
+  var dellDensityPercent = total > 0 ? Math.round(100 * dellTotal / total) : 0;
+  // Group projects by phase + by driver.
+  var byPhase = { now: [], next: [], later: [] };
+  projects.forEach(function(p) {
+    if (byPhase[p.phase]) byPhase[p.phase].push(p.name || p.label);
+  });
+  var byDriver = {};
+  try {
+    var grouped = groupProjectsByProgram(projects, session) || {};
+    Object.keys(grouped).forEach(function(key) {
+      if (key === "unassigned") {
+        byDriver["unassigned"] = (grouped[key] || []).map(function(p) { return p.name || p.label; });
+        return;
+      }
+      // Resolve driver id → name via BUSINESS_DRIVERS catalog.
+      var driverRec = engagement.drivers && engagement.drivers.byId && engagement.drivers.byId[key];
+      var meta = driverRec ? (BUSINESS_DRIVERS_CAT || []).find(function(bd) { return bd.id === driverRec.businessDriverId; }) : null;
+      var driverName = meta ? meta.label : key;
+      byDriver[driverName] = (grouped[key] || []).map(function(p) { return p.name || p.label; });
+    });
+  } catch (_e) {}
+  return {
+    coverage: {
+      percent: coverage.percent != null ? coverage.percent : 0,
+      actions: (coverage.actions || []).join("\n")
+    },
+    risk: {
+      level: risk.level || "",
+      actions: (risk.actions || []).join("\n")
+    },
+    totals: {
+      currentInstances: summary.totalCurrent != null ? summary.totalCurrent : 0,
+      desiredInstances: summary.totalDesired != null ? summary.totalDesired : 0,
+      gaps:             summary.totalGaps    != null ? summary.totalGaps    : 0,
+      highUrgencyGaps:  summary.highRiskGaps != null ? summary.highRiskGaps : 0,
+      unreviewedGaps:   (engagement.gaps && engagement.gaps.allIds || []).filter(function(id) {
+        var g = engagement.gaps.byId[id];
+        return g && g.reviewed === false && g.status === "open";
+      }).length
+    },
+    dellDensity: {
+      percent: dellDensityPercent,
+      byLayer: dellByLayer
+    },
+    projects: {
+      names: projects.map(function(p) { return p.name || p.label; }).join("\n"),
+      byPhase: JSON.stringify(byPhase),
+      byDriver: JSON.stringify(byDriver)
+    },
+    executiveSummary: {
+      brief: brief.map(function(r) { return (r.label || "") + ": " + (r.text || ""); }).join("\n")
+    }
   };
 }
 

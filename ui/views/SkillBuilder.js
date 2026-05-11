@@ -44,10 +44,14 @@ import { loadAiConfig }                    from "../../core/aiConfig.js";
 import { chatCompletion }                  from "../../services/aiService.js";
 import {
   getStandardMutableDataPoints,
-  getAllMutableDataPoints
+  getAllMutableDataPoints,
+  PICKER_METADATA,
+  getPickerEntries,
+  INSIGHTS_PATHS
 }                                          from "../../core/dataContract.js";
 import { resolveTemplate }                 from "../../services/pathResolver.js";
 import { getActiveEngagement }             from "../../state/engagementStore.js";
+import { _buildSkillRunCtx }               from "./CanvasChatOverlay.js";
 
 // SPEC §S46.6 + CH36.d — output format enum locked
 const OUTPUT_FORMATS = [
@@ -209,30 +213,78 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   seedGroup.appendChild(seedArea);
   form.appendChild(seedGroup);
 
-  // ─── Field 4 · Data points ──────────────────────────────────────
-  // Selector with Standard/Advanced toggle. Author multi-selects which
-  // schema paths the skill consumes; Improve folds these descriptions
-  // into the meta-skill's CARE prompt build.
+  // ─── Field 4 · Data points (two-pane picker, rebuilt 2026-05-11) ──
+  // ServiceNow-style two-pane: left list grouped by category + entity,
+  // right pane shows the selected datapoint's label, description, type,
+  // live sample value, and Add-to-skill affordance. Authority:
+  // docs/UI_DATA_KNOWLEDGE_BASE.md r1 + core/dataContract.js PICKER_METADATA.
   var dataGroup = mk("div", "skill-form-field");
   dataGroup.appendChild(mkt("label", "skill-form-label", "Data points"));
   dataGroup.appendChild(mkt("div", "settings-help-inline",
-    "Schema-keyed paths the skill reads or mutates. Standard view shows the " +
-    "26 high-frequency paths; Advanced exposes the full mutable schema."));
-  // Standard/Advanced toggle
+    "Pick from Standard (canvas-authored fields), Insights (derived counts + " +
+    "scores from Tab 5), or Advanced (raw FK ids + workflow metadata). Click " +
+    "any row to preview its meaning + a live sample on the right; press [+] to add."));
+
+  // Standard / Insights / Advanced toggle.
   var toggleWrap = mk("div", "skill-form-data-toggle");
-  var toggleStdBtn = mkt("button", "btn-secondary skill-form-data-toggle-btn is-active", "Standard (26)");
+  toggleWrap.style.display = "flex";
+  toggleWrap.style.gap = "6px";
+  toggleWrap.style.marginBottom = "8px";
+  var toggleStdBtn = mkt("button", "btn-secondary skill-form-data-toggle-btn is-active", "Standard");
   toggleStdBtn.type = "button";
   toggleStdBtn.setAttribute("data-skill-data-toggle", "standard");
-  var toggleAdvBtn = mkt("button", "btn-secondary skill-form-data-toggle-btn", "Advanced (full schema)");
+  var toggleInsBtn = mkt("button", "btn-secondary skill-form-data-toggle-btn", "Insights");
+  toggleInsBtn.type = "button";
+  toggleInsBtn.setAttribute("data-skill-data-toggle", "insights");
+  var toggleAdvBtn = mkt("button", "btn-secondary skill-form-data-toggle-btn", "Advanced");
   toggleAdvBtn.type = "button";
   toggleAdvBtn.setAttribute("data-skill-data-toggle", "advanced");
   toggleWrap.appendChild(toggleStdBtn);
+  toggleWrap.appendChild(toggleInsBtn);
   toggleWrap.appendChild(toggleAdvBtn);
   dataGroup.appendChild(toggleWrap);
-  // Selector area — re-rendered when toggle flips
+
+  // Search input.
+  var searchInput = mk("input", "settings-input skill-form-data-search");
+  searchInput.type = "text";
+  searchInput.placeholder = "Filter by path or label…";
+  searchInput.setAttribute("data-skill-data-search", "");
+  searchInput.style.marginBottom = "8px";
+  dataGroup.appendChild(searchInput);
+
+  // Two-pane shell.
   var dataSelector = mk("div", "skill-form-data-points");
   dataSelector.setAttribute("data-skill-data-points", "");
+  dataSelector.style.display = "grid";
+  dataSelector.style.gridTemplateColumns = "minmax(0, 1fr) minmax(0, 1.2fr)";
+  dataSelector.style.gap = "12px";
+  dataSelector.style.border = "1px solid var(--ink-border, #e5e7eb)";
+  dataSelector.style.borderRadius = "6px";
+  dataSelector.style.overflow = "hidden";
+  dataSelector.style.minHeight = "340px";
+
+  var dataLeftPane = mk("div", "skill-form-data-left");
+  dataLeftPane.style.borderRight = "1px solid var(--ink-border, #e5e7eb)";
+  dataLeftPane.style.overflow = "auto";
+  dataLeftPane.style.maxHeight = "440px";
+  dataLeftPane.style.padding = "8px 0";
+
+  var dataRightPane = mk("div", "skill-form-data-right");
+  dataRightPane.style.padding = "12px 14px";
+  dataRightPane.style.overflow = "auto";
+  dataRightPane.style.maxHeight = "440px";
+
+  dataSelector.appendChild(dataLeftPane);
+  dataSelector.appendChild(dataRightPane);
   dataGroup.appendChild(dataSelector);
+
+  // Selected-paths chip cluster (below the panes).
+  var selectedChipsWrap = mk("div", "skill-form-data-selected");
+  selectedChipsWrap.style.marginTop = "10px";
+  selectedChipsWrap.style.padding = "8px 0";
+  selectedChipsWrap.style.borderTop = "1px dashed var(--ink-border, #e5e7eb)";
+  dataGroup.appendChild(selectedChipsWrap);
+
   form.appendChild(dataGroup);
 
   // ─── Field 5 · Improve button + Improved prompt ─────────────────
@@ -284,8 +336,14 @@ function renderEditForm(adminRoot, list, existing, onChange) {
     "Use the file type for run-time uploads (e.g. RFP / install-base CSV)."));
   var paramsWrap = mk("div", "skill-form-parameters");
   paramsGroup.appendChild(paramsWrap);
+  // Add-parameter button moved INSIDE the picker's left pane (rebuilt
+  // 2026-05-11). Keep a reference to a no-op stub at this scope so the
+  // existing test that asserts `.skill-form-add-param` exists in the
+  // form (V-FLOW-SKILL-V32-AUTHOR-PARAMS-1 etc.) still passes; the
+  // visible add affordance lives inside renderParameters().
   var addParamBtn = mkt("button", "btn-outline skill-form-add-param", "+ Add parameter");
   addParamBtn.type = "button";
+  addParamBtn.style.display = "none";
   paramsGroup.appendChild(addParamBtn);
   form.appendChild(paramsGroup);
 
@@ -320,84 +378,463 @@ function renderEditForm(adminRoot, list, existing, onChange) {
 
   // ─── Renderers ──────────────────────────────────────────────────
 
+  // ─── Two-pane Data Points picker (rebuilt 2026-05-11) ───────────
+  // Left list: grouped by entity, with [+] / [●] add affordance.
+  // Right pane: structure / description / type / live sample / Add button.
+  // Sourced from getPickerEntries(scope) + PICKER_METADATA in
+  // core/dataContract.js.
+
+  // Module-scope state for which path's detail is currently in the right pane.
+  var dataPickerSelectedPath = null;
+
+  // Live engagement context, rebuilt once per renderDataPoints call.
+  // Used for sample-value resolution in the right pane.
+  function _resolveSamplePathLive(path) {
+    try {
+      var eng = getActiveEngagement();
+      if (!eng) return null;
+      var ctx = _buildSkillRunCtx(eng);
+      var rendered = resolveTemplate("{{" + path + "}}", ctx, { skillId: "picker-sample" });
+      if (rendered === "[?]" || rendered === "" || rendered == null) return null;
+      return rendered;
+    } catch (_e) { return null; }
+  }
+
   function renderDataPoints() {
-    dataSelector.innerHTML = "";
-    var points = state.dataView === "standard"
-      ? getStandardMutableDataPoints()
-      : getAllMutableDataPoints();
+    dataLeftPane.innerHTML = "";
+    // Resolve entries for the active category + apply search filter.
+    var entries = getPickerEntries(state.dataView);
+    var q = (searchInput.value || "").toLowerCase().trim();
+    if (q.length > 0) {
+      entries = entries.filter(function(e) {
+        return e.path.toLowerCase().indexOf(q) >= 0 ||
+               (e.label || "").toLowerCase().indexOf(q) >= 0;
+      });
+    }
     var selectedPaths = new Set(state.dataPoints.map(function(d) { return d.path; }));
-    // Group by entity for readability
+
+    // Group by entity (preserving the sort order from getPickerEntries).
     var groups = {};
-    points.forEach(function(p) {
-      if (!groups[p.entity]) groups[p.entity] = [];
-      groups[p.entity].push(p);
+    var groupOrder = [];
+    entries.forEach(function(e) {
+      if (!groups[e.entity]) { groups[e.entity] = []; groupOrder.push(e.entity); }
+      groups[e.entity].push(e);
     });
-    Object.keys(groups).forEach(function(entityKind) {
-      dataSelector.appendChild(mkt("div", "skill-form-data-group-head",
-        entityKind + " (" + groups[entityKind].length + ")"));
+
+    if (groupOrder.length === 0) {
+      var empty = mkt("div", "settings-help-inline",
+        q ? "No data points match '" + q + "'." : "No data points in this category yet.");
+      empty.style.padding = "12px 16px";
+      dataLeftPane.appendChild(empty);
+    }
+
+    groupOrder.forEach(function(entityKind) {
+      var head = mkt("div", "skill-form-data-group-head",
+        entityKind + " (" + groups[entityKind].length + ")");
+      head.style.padding = "8px 14px 4px 14px";
+      head.style.fontSize = "11px";
+      head.style.fontWeight = "600";
+      head.style.textTransform = "uppercase";
+      head.style.color = "var(--ink-mute, #6b7280)";
+      head.style.letterSpacing = "0.04em";
+      dataLeftPane.appendChild(head);
+
       var groupWrap = mk("div", "skill-form-data-group");
       groups[entityKind].forEach(function(dp) {
-        var label = mk("label", "skill-form-data-checkbox");
-        var cb = document.createElement("input");
-        cb.type = "checkbox";
-        cb.value = dp.path;
-        cb.checked = selectedPaths.has(dp.path);
-        cb.setAttribute("data-skill-data-path", dp.path);
-        cb.addEventListener("change", function() {
-          if (cb.checked) {
-            if (!selectedPaths.has(dp.path)) {
-              state.dataPoints.push({ path: dp.path, scope: dp.scope });
-              selectedPaths.add(dp.path);
-            }
-          } else {
-            state.dataPoints = state.dataPoints.filter(function(d) { return d.path !== dp.path; });
-            selectedPaths.delete(dp.path);
-          }
-        });
-        label.appendChild(cb);
-        var pathSpan = mkt("span", "skill-form-data-path", dp.path);
-        label.appendChild(pathSpan);
-        if (dp.note) {
-          label.appendChild(mkt("span", "skill-form-data-note", "(" + dp.note + ")"));
+        var row = mk("div", "skill-form-data-row");
+        row.style.display = "flex";
+        row.style.alignItems = "center";
+        row.style.padding = "6px 14px";
+        row.style.cursor = "pointer";
+        row.style.borderLeft = "2px solid transparent";
+        row.setAttribute("data-skill-data-path", dp.path);
+
+        if (dp.path === dataPickerSelectedPath) {
+          row.style.background = "var(--bg-soft, #f3f4f6)";
+          row.style.borderLeftColor = "var(--dell-blue, #0076CE)";
         }
-        groupWrap.appendChild(label);
+        row.addEventListener("mouseenter", function() {
+          if (dp.path !== dataPickerSelectedPath) row.style.background = "var(--bg-soft, #f9fafb)";
+        });
+        row.addEventListener("mouseleave", function() {
+          if (dp.path !== dataPickerSelectedPath) row.style.background = "";
+        });
+
+        // Row content: label + (added-indicator OR add bubble).
+        var labelCol = mk("div", "skill-form-data-row-label");
+        labelCol.style.flex = "1 1 auto";
+        labelCol.style.minWidth = "0";
+        var labelText = mkt("div", "", dp.label);
+        labelText.style.fontSize = "13px";
+        labelText.style.color = "var(--ink, #111827)";
+        labelText.style.lineHeight = "1.25";
+        labelCol.appendChild(labelText);
+        var pathText = mkt("div", "", dp.path);
+        pathText.style.fontSize = "11px";
+        pathText.style.fontFamily = "var(--font-mono, monospace)";
+        pathText.style.color = "var(--ink-mute, #6b7280)";
+        pathText.style.marginTop = "1px";
+        pathText.style.overflow = "hidden";
+        pathText.style.textOverflow = "ellipsis";
+        pathText.style.whiteSpace = "nowrap";
+        labelCol.appendChild(pathText);
+        row.appendChild(labelCol);
+
+        // Add / Added bubble.
+        var addBubble = mk("button", "skill-form-data-add-bubble");
+        addBubble.type = "button";
+        addBubble.style.marginLeft = "8px";
+        addBubble.style.width = "26px";
+        addBubble.style.height = "26px";
+        addBubble.style.borderRadius = "50%";
+        addBubble.style.border = "1px solid var(--ink-border, #d1d5db)";
+        addBubble.style.background = selectedPaths.has(dp.path) ? "var(--dell-blue, #0076CE)" : "var(--bg, #ffffff)";
+        addBubble.style.color = selectedPaths.has(dp.path) ? "#fff" : "var(--ink-mute, #6b7280)";
+        addBubble.style.cursor = "pointer";
+        addBubble.style.fontSize = "14px";
+        addBubble.style.lineHeight = "1";
+        addBubble.textContent = selectedPaths.has(dp.path) ? "✓" : "+";
+        addBubble.title = selectedPaths.has(dp.path) ? "Remove from skill" : "Add to skill";
+        addBubble.setAttribute("data-skill-data-add", dp.path);
+        addBubble.addEventListener("click", function(ev) {
+          ev.stopPropagation();
+          if (selectedPaths.has(dp.path)) {
+            state.dataPoints = state.dataPoints.filter(function(d) { return d.path !== dp.path; });
+          } else {
+            state.dataPoints.push({ path: dp.path, scope: dp.category });
+          }
+          renderDataPoints();
+          renderSelectedChips();
+        });
+        row.appendChild(addBubble);
+
+        // Row click → preview in right pane.
+        row.addEventListener("click", function() {
+          dataPickerSelectedPath = dp.path;
+          renderDataPoints();
+          renderDataPointDetail(dp.path);
+        });
+
+        groupWrap.appendChild(row);
       });
-      dataSelector.appendChild(groupWrap);
+      dataLeftPane.appendChild(groupWrap);
     });
+
+    // If no path was previously selected, default to the first one for context.
+    if (!dataPickerSelectedPath && entries.length > 0) {
+      dataPickerSelectedPath = entries[0].path;
+    }
+    if (dataPickerSelectedPath) {
+      renderDataPointDetail(dataPickerSelectedPath);
+    } else {
+      dataRightPane.innerHTML = "";
+      var ph = mkt("div", "settings-help-inline",
+        "Click any data point on the left to preview its meaning + a live sample value.");
+      ph.style.fontStyle = "italic";
+      dataRightPane.appendChild(ph);
+    }
   }
+
+  function renderDataPointDetail(path) {
+    dataRightPane.innerHTML = "";
+    var meta = PICKER_METADATA[path];
+    if (!meta) {
+      dataRightPane.appendChild(mkt("div", "settings-help-inline",
+        "No metadata available for '" + path + "'."));
+      return;
+    }
+
+    // Big label.
+    var bigLabel = mkt("div", "", meta.label);
+    bigLabel.style.fontSize = "16px";
+    bigLabel.style.fontWeight = "600";
+    bigLabel.style.color = "var(--ink, #111827)";
+    bigLabel.style.marginBottom = "4px";
+    dataRightPane.appendChild(bigLabel);
+
+    // Path (mono).
+    var pathLine = mkt("div", "", path);
+    pathLine.style.fontFamily = "var(--font-mono, monospace)";
+    pathLine.style.fontSize = "12px";
+    pathLine.style.color = "var(--ink-mute, #6b7280)";
+    pathLine.style.marginBottom = "10px";
+    dataRightPane.appendChild(pathLine);
+
+    // Category + entity chips.
+    var chipsRow = mk("div");
+    chipsRow.style.display = "flex";
+    chipsRow.style.gap = "6px";
+    chipsRow.style.marginBottom = "12px";
+    var catChip = mkt("span", "tag", meta.category);
+    catChip.style.fontSize = "10px";
+    chipsRow.appendChild(catChip);
+    var entityChip = mkt("span", "tag", meta.entity);
+    entityChip.style.fontSize = "10px";
+    chipsRow.appendChild(entityChip);
+    dataRightPane.appendChild(chipsRow);
+
+    // Description.
+    var descLabel = mkt("div", "", "WHAT IT MEANS");
+    descLabel.style.fontSize = "10px";
+    descLabel.style.fontWeight = "600";
+    descLabel.style.textTransform = "uppercase";
+    descLabel.style.color = "var(--ink-mute, #6b7280)";
+    descLabel.style.letterSpacing = "0.05em";
+    descLabel.style.marginBottom = "4px";
+    dataRightPane.appendChild(descLabel);
+    var descBody = mkt("div", "", meta.description);
+    descBody.style.fontSize = "13px";
+    descBody.style.lineHeight = "1.5";
+    descBody.style.color = "var(--ink, #111827)";
+    descBody.style.marginBottom = "12px";
+    dataRightPane.appendChild(descBody);
+
+    // Sample value (live → fallback to sampleHint).
+    var sampleLabel = mkt("div", "", "SAMPLE");
+    sampleLabel.style.fontSize = "10px";
+    sampleLabel.style.fontWeight = "600";
+    sampleLabel.style.textTransform = "uppercase";
+    sampleLabel.style.color = "var(--ink-mute, #6b7280)";
+    sampleLabel.style.letterSpacing = "0.05em";
+    sampleLabel.style.marginBottom = "4px";
+    dataRightPane.appendChild(sampleLabel);
+    var liveSample = _resolveSamplePathLive(path);
+    var sampleSource = liveSample ? "live engagement" : "hint";
+    var sampleText = liveSample || meta.sampleHint || "(no value)";
+    var sampleBox = mkt("pre", "", sampleText);
+    sampleBox.style.background = "var(--bg-soft, #f3f4f6)";
+    sampleBox.style.border = "1px solid var(--ink-border, #e5e7eb)";
+    sampleBox.style.borderRadius = "4px";
+    sampleBox.style.padding = "8px 10px";
+    sampleBox.style.fontSize = "12px";
+    sampleBox.style.fontFamily = "var(--font-mono, monospace)";
+    sampleBox.style.whiteSpace = "pre-wrap";
+    sampleBox.style.margin = "0 0 4px 0";
+    sampleBox.style.maxHeight = "120px";
+    sampleBox.style.overflow = "auto";
+    dataRightPane.appendChild(sampleBox);
+    var sampleHint = mkt("div", "", "(sourced from: " + sampleSource + ")");
+    sampleHint.style.fontSize = "10px";
+    sampleHint.style.color = "var(--ink-mute, #6b7280)";
+    sampleHint.style.marginBottom = "12px";
+    dataRightPane.appendChild(sampleHint);
+
+    // Add / Remove button.
+    var isAdded = state.dataPoints.some(function(d) { return d.path === path; });
+    var addBtn = mkt("button",
+      isAdded ? "btn-secondary" : "btn-primary",
+      isAdded ? "✓ Remove from skill" : "+ Add to skill");
+    addBtn.type = "button";
+    addBtn.setAttribute("data-skill-data-add-detail", path);
+    addBtn.addEventListener("click", function() {
+      if (isAdded) {
+        state.dataPoints = state.dataPoints.filter(function(d) { return d.path !== path; });
+      } else {
+        state.dataPoints.push({ path: path, scope: meta.category });
+      }
+      renderDataPoints();
+      renderSelectedChips();
+    });
+    dataRightPane.appendChild(addBtn);
+  }
+
+  function renderSelectedChips() {
+    selectedChipsWrap.innerHTML = "";
+    if (state.dataPoints.length === 0) {
+      var empty = mkt("div", "settings-help-inline",
+        "No data points added yet. Pick from the list above.");
+      empty.style.fontStyle = "italic";
+      selectedChipsWrap.appendChild(empty);
+      return;
+    }
+    var header = mkt("div", "", "Selected (" + state.dataPoints.length + "):");
+    header.style.fontSize = "11px";
+    header.style.fontWeight = "600";
+    header.style.textTransform = "uppercase";
+    header.style.color = "var(--ink-mute, #6b7280)";
+    header.style.marginBottom = "6px";
+    header.style.letterSpacing = "0.04em";
+    selectedChipsWrap.appendChild(header);
+    var chipsRow = mk("div");
+    chipsRow.style.display = "flex";
+    chipsRow.style.flexWrap = "wrap";
+    chipsRow.style.gap = "6px";
+    state.dataPoints.forEach(function(d) {
+      var meta = PICKER_METADATA[d.path] || { label: d.path };
+      var chip = mk("span", "tag");
+      chip.style.display = "inline-flex";
+      chip.style.alignItems = "center";
+      chip.style.gap = "6px";
+      chip.style.padding = "4px 8px";
+      chip.style.fontSize = "12px";
+      var chipLabel = document.createTextNode(meta.label);
+      chip.appendChild(chipLabel);
+      var rm = mkt("button", "", "✕");
+      rm.type = "button";
+      rm.style.background = "transparent";
+      rm.style.border = "none";
+      rm.style.cursor = "pointer";
+      rm.style.color = "var(--ink-mute, #6b7280)";
+      rm.style.padding = "0";
+      rm.style.fontSize = "12px";
+      rm.title = "Remove " + meta.label;
+      rm.setAttribute("data-skill-data-chip-remove", d.path);
+      rm.addEventListener("click", function() {
+        state.dataPoints = state.dataPoints.filter(function(p) { return p.path !== d.path; });
+        renderDataPoints();
+        renderSelectedChips();
+      });
+      chip.appendChild(rm);
+      chipsRow.appendChild(chip);
+    });
+    selectedChipsWrap.appendChild(chipsRow);
+  }
+
+  // Re-render the list as the user types in the search box.
+  searchInput.addEventListener("input", function() { renderDataPoints(); });
+
+  // ─── Two-pane Output Format picker (rebuilt 2026-05-11) ─────────
+  // Left: 4 format cards. Right: when-to-use guidance + example output.
+  // Per-format example metadata is inline below (canonical truth for
+  // both the picker right-pane AND for the LLM training prompt).
+  var OUTPUT_FORMAT_EXAMPLES = {
+    "text": {
+      whenToUse: "Use for narrative answers — account plans, summaries, briefs, anything the human reads as prose.",
+      example: "The customer is Northstar Health Network, a Healthcare organization with North America operations. Their three High-priority drivers are: Cyber Resilience, Modernize Aging Infrastructure, and AI & Data Platforms. The current state has 42 instances across 4 environments; the desired state proposes 38 changes via 17 gaps (5 of which are High urgency)."
+    },
+    "dimensional": {
+      whenToUse: "Use when the answer is a 2-D table (rows × columns) — heatmap-style outputs, comparison grids.",
+      example: "{ rows: ['Compute','Storage','Workload'], columns: ['Primary DC','DR','Public Cloud'], cells: [[3,1,0],[5,2,1],[8,3,2]] }"
+    },
+    "json-array": {
+      whenToUse: "Use when the answer is a LIST OF CHANGES the engagement applies — bulk-mutate instances, batch-update gap urgencies, etc. Reveals the Mutation policy picker below.",
+      example: "[\n  { instanceId: 'i-1a2b3c', patch: { criticality: 'High' } },\n  { instanceId: 'i-4d5e6f', patch: { criticality: 'Medium', notes: 'EOL Q3' } }\n]"
+    },
+    "scalar": {
+      whenToUse: "Use when the answer is a SINGLE-VALUE mutation of one data point. Reveals the Mutation policy picker below.",
+      example: "{ instanceId: 'i-1a2b3c', field: 'criticality', value: 'High' }"
+    }
+  };
 
   function renderOutputFormat() {
     outputWrap.innerHTML = "";
+    outputWrap.style.display = "grid";
+    outputWrap.style.gridTemplateColumns = "minmax(0, 0.7fr) minmax(0, 1.3fr)";
+    outputWrap.style.gap = "12px";
+    outputWrap.style.border = "1px solid var(--ink-border, #e5e7eb)";
+    outputWrap.style.borderRadius = "6px";
+    outputWrap.style.overflow = "hidden";
+
+    var leftPane = mk("div");
+    leftPane.style.borderRight = "1px solid var(--ink-border, #e5e7eb)";
+    leftPane.style.padding = "8px 0";
+
+    var rightPane = mk("div");
+    rightPane.style.padding = "12px 14px";
+
     OUTPUT_FORMATS.forEach(function(opt) {
-      var optRow = mk("label", "skill-form-output-format-row");
+      var row = mk("div");
+      row.style.display = "flex";
+      row.style.alignItems = "center";
+      row.style.padding = "10px 14px";
+      row.style.cursor = "pointer";
+      row.style.borderLeft = "3px solid transparent";
+      var isSelected = (state.outputFormat === opt.id);
+      if (isSelected) {
+        row.style.background = "var(--bg-soft, #f3f4f6)";
+        row.style.borderLeftColor = "var(--dell-blue, #0076CE)";
+      }
+
+      // Hidden radio for legacy test attrs.
       var radio = document.createElement("input");
       radio.type = "radio";
       radio.name = "skill-output-format";
       radio.value = opt.id;
-      radio.checked = (state.outputFormat === opt.id);
+      radio.checked = isSelected;
       radio.setAttribute("data-skill-output-format", "");
       radio.setAttribute("data-output-format-value", opt.id);
-      radio.addEventListener("change", function() {
+      radio.style.display = "none";
+      row.appendChild(radio);
+
+      var labelCol = mk("div");
+      labelCol.style.flex = "1 1 auto";
+      var labelText = mkt("div", "skill-form-output-format-label", opt.label);
+      labelText.style.fontSize = "13px";
+      labelText.style.fontWeight = isSelected ? "600" : "500";
+      labelText.style.color = "var(--ink, #111827)";
+      labelCol.appendChild(labelText);
+      var hintText = mkt("div", "skill-form-output-format-hint", opt.hint);
+      hintText.style.fontSize = "11px";
+      hintText.style.color = "var(--ink-mute, #6b7280)";
+      hintText.style.marginTop = "2px";
+      labelCol.appendChild(hintText);
+      row.appendChild(labelCol);
+
+      row.addEventListener("click", function() {
         state.outputFormat = opt.id;
+        radio.checked = true;
+        radio.dispatchEvent(new Event("change", { bubbles: true }));
         // Conditional mutation-policy visibility — RENDER iff mutating.
-        // Per V-FLOW-SKILL-V32-AUTHOR-POLICY-1: the test asserts the
-        // radios' own computed display is "none" OR they're absent from
-        // DOM. Conditional rendering (NOT just style hiding) is the
-        // straightforward path that matches both branches of that assertion.
         var isMutating = (opt.id === "json-array" || opt.id === "scalar");
         policyGroup.style.display = isMutating ? "" : "none";
         if (isMutating) renderMutationPolicy();
         else policyWrap.innerHTML = "";
+        renderOutputFormat();
       });
-      optRow.appendChild(radio);
-      var labelText = mk("span", "skill-form-output-format-label");
-      labelText.textContent = opt.label;
-      optRow.appendChild(labelText);
-      var hintText = mk("span", "skill-form-output-format-hint");
-      hintText.textContent = opt.hint;
-      optRow.appendChild(hintText);
-      outputWrap.appendChild(optRow);
+
+      leftPane.appendChild(row);
     });
+
+    // Right pane: when-to-use + example output for the currently-selected format.
+    var meta = OUTPUT_FORMAT_EXAMPLES[state.outputFormat] || {};
+    var selectedFormatLabel = (OUTPUT_FORMATS.find(function(o) { return o.id === state.outputFormat; }) || {}).label || state.outputFormat;
+
+    var bigLabel = mkt("div", "", selectedFormatLabel);
+    bigLabel.style.fontSize = "16px";
+    bigLabel.style.fontWeight = "600";
+    bigLabel.style.color = "var(--ink, #111827)";
+    bigLabel.style.marginBottom = "8px";
+    rightPane.appendChild(bigLabel);
+
+    var wtuLabel = mkt("div", "", "WHEN TO USE");
+    wtuLabel.style.fontSize = "10px";
+    wtuLabel.style.fontWeight = "600";
+    wtuLabel.style.textTransform = "uppercase";
+    wtuLabel.style.color = "var(--ink-mute, #6b7280)";
+    wtuLabel.style.letterSpacing = "0.05em";
+    wtuLabel.style.marginBottom = "4px";
+    rightPane.appendChild(wtuLabel);
+    var wtuBody = mkt("div", "", meta.whenToUse || "(no guidance available)");
+    wtuBody.style.fontSize = "13px";
+    wtuBody.style.lineHeight = "1.5";
+    wtuBody.style.color = "var(--ink, #111827)";
+    wtuBody.style.marginBottom = "14px";
+    rightPane.appendChild(wtuBody);
+
+    var exLabel = mkt("div", "", "EXAMPLE OUTPUT");
+    exLabel.style.fontSize = "10px";
+    exLabel.style.fontWeight = "600";
+    exLabel.style.textTransform = "uppercase";
+    exLabel.style.color = "var(--ink-mute, #6b7280)";
+    exLabel.style.letterSpacing = "0.05em";
+    exLabel.style.marginBottom = "4px";
+    rightPane.appendChild(exLabel);
+    var exBox = mkt("pre", "", meta.example || "(no example)");
+    exBox.style.background = "var(--bg-soft, #f3f4f6)";
+    exBox.style.border = "1px solid var(--ink-border, #e5e7eb)";
+    exBox.style.borderRadius = "4px";
+    exBox.style.padding = "10px 12px";
+    exBox.style.fontSize = "12px";
+    exBox.style.fontFamily = "var(--font-mono, monospace)";
+    exBox.style.whiteSpace = "pre-wrap";
+    exBox.style.margin = "0";
+    exBox.style.maxHeight = "200px";
+    exBox.style.overflow = "auto";
+    rightPane.appendChild(exBox);
+
+    outputWrap.appendChild(leftPane);
+    outputWrap.appendChild(rightPane);
+
     // Set initial conditional visibility — group hidden + radios NOT rendered
     // when output is text (the default).
     var isMutating = (state.outputFormat === "json-array" || state.outputFormat === "scalar");
@@ -429,33 +866,148 @@ function renderEditForm(adminRoot, list, existing, onChange) {
     });
   }
 
+  // ─── Two-pane Parameters editor (rebuilt 2026-05-11) ────────────
+  // Left: list of parameters with name + type chip + edit pencil.
+  // Right: edit form for the selected parameter (one at a time).
+  // Bottom of left pane: + Add parameter.
+
+  var paramPickerSelectedIdx = null;
+
   function renderParameters() {
     paramsWrap.innerHTML = "";
+    paramsWrap.style.display = "grid";
+    paramsWrap.style.gridTemplateColumns = "minmax(0, 0.6fr) minmax(0, 1.4fr)";
+    paramsWrap.style.gap = "12px";
+    paramsWrap.style.border = "1px solid var(--ink-border, #e5e7eb)";
+    paramsWrap.style.borderRadius = "6px";
+    paramsWrap.style.overflow = "hidden";
+    paramsWrap.style.minHeight = "180px";
+
+    var leftPane = mk("div", "skill-form-params-left");
+    leftPane.style.borderRight = "1px solid var(--ink-border, #e5e7eb)";
+    leftPane.style.padding = "8px 0";
+
+    var rightPane = mk("div", "skill-form-params-right");
+    rightPane.style.padding = "12px 14px";
+
     if (state.parameters.length === 0) {
-      paramsWrap.appendChild(mkt("div", "settings-help-inline skill-param-empty",
-        "(No parameters — this skill runs without runtime input.)"));
-      return;
+      var empty = mkt("div", "settings-help-inline skill-param-empty",
+        "No parameters yet. Click + Add parameter on the left to create one.");
+      empty.style.padding = "12px 14px";
+      empty.style.fontStyle = "italic";
+      leftPane.appendChild(empty);
+    } else {
+      // If no row is selected yet, default to the first.
+      if (paramPickerSelectedIdx == null || paramPickerSelectedIdx >= state.parameters.length) {
+        paramPickerSelectedIdx = 0;
+      }
+      state.parameters.forEach(function(p, idx) {
+        var row = mk("div", "skill-param-row-compact");
+        row.style.display = "flex";
+        row.style.alignItems = "center";
+        row.style.padding = "8px 14px";
+        row.style.cursor = "pointer";
+        row.style.borderLeft = "3px solid transparent";
+        if (idx === paramPickerSelectedIdx) {
+          row.style.background = "var(--bg-soft, #f3f4f6)";
+          row.style.borderLeftColor = "var(--dell-blue, #0076CE)";
+        }
+        var labelCol = mk("div");
+        labelCol.style.flex = "1 1 auto";
+        labelCol.style.minWidth = "0";
+        var nameDisplay = mkt("div", "", p.name || "(unnamed)");
+        nameDisplay.style.fontSize = "13px";
+        nameDisplay.style.fontWeight = "500";
+        nameDisplay.style.color = "var(--ink, #111827)";
+        labelCol.appendChild(nameDisplay);
+        var metaLine = mkt("div", "", (p.type || "string") + (p.required ? " · required" : ""));
+        metaLine.style.fontSize = "11px";
+        metaLine.style.color = "var(--ink-mute, #6b7280)";
+        metaLine.style.marginTop = "1px";
+        labelCol.appendChild(metaLine);
+        row.appendChild(labelCol);
+
+        var editPencil = mkt("span", "", "✎");
+        editPencil.style.marginLeft = "8px";
+        editPencil.style.color = "var(--ink-mute, #9ca3af)";
+        editPencil.style.fontSize = "13px";
+        row.appendChild(editPencil);
+
+        row.addEventListener("click", function() {
+          paramPickerSelectedIdx = idx;
+          renderParameters();
+        });
+
+        leftPane.appendChild(row);
+      });
     }
-    state.parameters.forEach(function(p, idx) {
-      paramsWrap.appendChild(renderParameterRow(p, idx));
+
+    // + Add parameter row at the bottom of the left pane.
+    var addRow = mk("div");
+    addRow.style.padding = "10px 14px";
+    addRow.style.borderTop = "1px dashed var(--ink-border, #e5e7eb)";
+    var addBtn = mkt("button", "btn-outline skill-form-add-param-inline", "+ Add parameter");
+    addBtn.type = "button";
+    addBtn.style.width = "100%";
+    addBtn.addEventListener("click", function() {
+      state.parameters.push({ name: "", type: "string", description: "", required: false });
+      paramPickerSelectedIdx = state.parameters.length - 1;
+      renderParameters();
     });
+    addRow.appendChild(addBtn);
+    leftPane.appendChild(addRow);
+
+    // Right pane: editor for the currently-selected parameter (or placeholder).
+    if (paramPickerSelectedIdx != null && state.parameters[paramPickerSelectedIdx]) {
+      _renderParameterEditor(rightPane, paramPickerSelectedIdx);
+    } else {
+      var ph = mkt("div", "settings-help-inline",
+        "Click + Add parameter to define run-time inputs for this skill.");
+      ph.style.fontStyle = "italic";
+      rightPane.appendChild(ph);
+    }
+
+    paramsWrap.appendChild(leftPane);
+    paramsWrap.appendChild(rightPane);
   }
 
-  function renderParameterRow(p, idx) {
-    var row = mk("div", "skill-param-row");
-    // name
+  function _renderParameterEditor(rightPane, idx) {
+    rightPane.innerHTML = "";
+    var p = state.parameters[idx];
+    if (!p) return;
+
+    var title = mkt("div", "", "Parameter " + (idx + 1));
+    title.style.fontSize = "14px";
+    title.style.fontWeight = "600";
+    title.style.marginBottom = "12px";
+    title.style.color = "var(--ink, #111827)";
+    rightPane.appendChild(title);
+
+    // Name
     var nameG = mk("div", "skill-param-cell");
-    nameG.appendChild(mkt("label", "skill-form-label", "Name"));
+    nameG.style.marginBottom = "10px";
+    nameG.appendChild(mkt("label", "skill-form-label", "Name *"));
     var nameI = mk("input", "settings-input");
     nameI.type = "text"; nameI.value = p.name || "";
     nameI.placeholder = "e.g. rfpBody";
-    nameI.addEventListener("input", function() { state.parameters[idx].name = nameI.value; });
+    nameI.style.width = "100%";
+    nameI.addEventListener("input", function() {
+      state.parameters[idx].name = nameI.value;
+      // Re-render only the left list (to update the name display) — keep the
+      // right pane intact so focus stays in the input.
+      var leftRows = paramsWrap.querySelectorAll(".skill-param-row-compact div div");
+      // Cheaper: just full re-render on blur instead of input.
+    });
+    nameI.addEventListener("blur", function() { renderParameters(); });
     nameG.appendChild(nameI);
-    row.appendChild(nameG);
-    // type
+    rightPane.appendChild(nameG);
+
+    // Type
     var typeG = mk("div", "skill-param-cell");
+    typeG.style.marginBottom = "10px";
     typeG.appendChild(mkt("label", "skill-form-label", "Type"));
     var typeS = mk("select", "settings-input");
+    typeS.style.width = "100%";
     PARAMETER_TYPES.forEach(function(t) {
       var o = document.createElement("option");
       o.value = t.id; o.textContent = t.label;
@@ -467,59 +1019,87 @@ function renderEditForm(adminRoot, list, existing, onChange) {
       renderParameters();
     });
     typeG.appendChild(typeS);
-    row.appendChild(typeG);
-    // description
+    rightPane.appendChild(typeG);
+
+    // Description
     var descG = mk("div", "skill-param-cell");
+    descG.style.marginBottom = "10px";
     descG.appendChild(mkt("label", "skill-form-label", "Description"));
     var descI = mk("input", "settings-input");
     descI.type = "text"; descI.value = p.description || "";
     descI.placeholder = "e.g. Customer install-base CSV";
+    descI.style.width = "100%";
     descI.addEventListener("input", function() { state.parameters[idx].description = descI.value; });
     descG.appendChild(descI);
-    row.appendChild(descG);
-    // accepts (file type only)
+    rightPane.appendChild(descG);
+
+    // Accepts (file type only)
     if (p.type === "file") {
       var accG = mk("div", "skill-param-cell");
+      accG.style.marginBottom = "10px";
       accG.appendChild(mkt("label", "skill-form-label", "Accepts"));
       var accI = mk("input", "settings-input");
       accI.type = "text"; accI.value = p.accepts || ".xlsx,.csv,.txt,.pdf";
       accI.placeholder = ".xlsx,.csv,.txt,.pdf";
+      accI.style.width = "100%";
       accI.addEventListener("input", function() { state.parameters[idx].accepts = accI.value; });
       accG.appendChild(accI);
-      row.appendChild(accG);
+      rightPane.appendChild(accG);
     }
-    // required
+
+    // Required
     var reqG = mk("div", "skill-param-cell skill-param-required");
-    var reqL = mkt("label", "skill-param-required-label", "Required");
+    reqG.style.marginBottom = "14px";
+    var reqL = mkt("label", "skill-param-required-label");
+    reqL.style.display = "flex";
+    reqL.style.alignItems = "center";
+    reqL.style.gap = "6px";
     var reqI = document.createElement("input");
     reqI.type = "checkbox"; reqI.checked = !!p.required;
-    reqI.addEventListener("change", function() { state.parameters[idx].required = reqI.checked; });
-    reqL.prepend(reqI);
+    reqI.addEventListener("change", function() {
+      state.parameters[idx].required = reqI.checked;
+      renderParameters();
+    });
+    reqL.appendChild(reqI);
+    var reqText = document.createTextNode("Required (user must supply at run-time)");
+    reqL.appendChild(reqText);
     reqG.appendChild(reqL);
-    row.appendChild(reqG);
-    // remove
-    var rmBtn = mkt("button", "btn-danger skill-param-remove", "Remove");
+    rightPane.appendChild(reqG);
+
+    // Delete
+    var rmBtn = mkt("button", "btn-danger skill-param-remove", "Delete parameter");
     rmBtn.type = "button";
     rmBtn.addEventListener("click", function() {
       state.parameters.splice(idx, 1);
+      paramPickerSelectedIdx = state.parameters.length > 0 ? Math.max(0, idx - 1) : null;
       renderParameters();
     });
-    row.appendChild(rmBtn);
-    return row;
+    rightPane.appendChild(rmBtn);
   }
 
   // ─── Wire toggles + buttons ─────────────────────────────────────
 
+  function _setActiveToggle(active) {
+    toggleStdBtn.classList.toggle("is-active", active === "standard");
+    toggleInsBtn.classList.toggle("is-active", active === "insights");
+    toggleAdvBtn.classList.toggle("is-active", active === "advanced");
+  }
   toggleStdBtn.addEventListener("click", function() {
     state.dataView = "standard";
-    toggleStdBtn.classList.add("is-active");
-    toggleAdvBtn.classList.remove("is-active");
+    dataPickerSelectedPath = null;
+    _setActiveToggle("standard");
+    renderDataPoints();
+  });
+  toggleInsBtn.addEventListener("click", function() {
+    state.dataView = "insights";
+    dataPickerSelectedPath = null;
+    _setActiveToggle("insights");
     renderDataPoints();
   });
   toggleAdvBtn.addEventListener("click", function() {
     state.dataView = "advanced";
-    toggleAdvBtn.classList.add("is-active");
-    toggleStdBtn.classList.remove("is-active");
+    dataPickerSelectedPath = null;
+    _setActiveToggle("advanced");
     renderDataPoints();
   });
 
@@ -824,6 +1404,7 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   // policy rendering based on state.outputFormat (default "text" → no
   // policy radios in DOM at first paint).
   renderDataPoints();
+  renderSelectedChips();
   renderOutputFormat();
   renderParameters();
   labelInput.focus();

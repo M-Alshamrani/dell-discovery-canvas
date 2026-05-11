@@ -19802,6 +19802,164 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
       "V-CONTRACT-EXTENDED-STANDARD-PATHS: STANDARD_MUTABLE_PATHS MUST be at least 30 entries post-rebuild (was 26 pre-2026-05-11)");
   });
 
+  // ── 2026-05-11 · contract-fidelity arc (rebuilt Skill Builder picker) ──
+  //
+  // R12 (proposed) discipline guard: every Standard + Insights path
+  // exposed by the contract MUST resolve to a non-empty, non-placeholder
+  // value when the active engagement carries data for it. These are the
+  // tests that would have caught the rc.8.b drift before it shipped.
+  //
+  // Strategy: build a minimal but realistic v3 engagement, then probe
+  // every path via _buildSkillRunCtx + resolveTemplate. Empty values
+  // for paths that depend on optional / not-yet-populated fields are
+  // tolerated; what's NOT tolerated is the bare "[?]" sentinel — that
+  // signals the resolver couldn't even walk to the property.
+
+  it("V-FLOW-CONTRACT-FIDELITY-STANDARD-1 · every Standard path in core/dataContract.js resolves through _buildSkillRunCtx without returning the bare '[?]' sentinel against a realistic engagement (catches the rc.8.b singular-collection mismatch + label-resolution gaps)", async () => {
+    var contract = await import("/core/dataContract.js");
+    var overlay  = await import("/ui/views/CanvasChatOverlay.js");
+    var resolver = await import("/services/pathResolver.js");
+    var schema   = await import("/schema/engagement.js");
+    // Build a minimal-but-populated v3 engagement so every Standard
+    // path has something to resolve against.
+    var eng = schema.createEmptyEngagement();
+    eng.customer = Object.assign({}, eng.customer, {
+      name: "Test Customer", vertical: "healthcare", region: "North America", notes: "test notes"
+    });
+    eng.meta = Object.assign({}, eng.meta, {
+      presalesOwner: "Test Owner"
+    });
+    // Inject one driver via commit helpers so collection shape is correct.
+    var driverActions    = await import("/state/collections/driverActions.js");
+    var envActions       = await import("/state/collections/environmentActions.js");
+    var instanceActions  = await import("/state/collections/instanceActions.js");
+    var gapActions       = await import("/state/collections/gapActions.js");
+    var addRes;
+    addRes = driverActions.addDriver(eng, { businessDriverId: "cyber_resilience", catalogVersion: "2026.04", priority: "High", outcomes: "Test outcomes" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    addRes = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04", location: "Test City", tier: "Tier III", sizeKw: 5, sqm: 320, notes: "Test env notes" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    var envUuid = eng.environments.allIds[0];
+    addRes = instanceActions.addInstance(eng, { state: "current", layerId: "compute", environmentId: envUuid, label: "Test Server", vendor: "Dell", vendorGroup: "dell", criticality: "High", notes: "Test inst notes" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    var instUuid = eng.instances.allIds[0];
+    addRes = gapActions.addGap(eng, { description: "Test gap", gapType: "replace", urgency: "High", phase: "now", status: "open", layerId: "compute", affectedLayers: ["compute"], affectedEnvironments: [envUuid], relatedCurrentInstanceIds: [instUuid] });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+
+    var ctx = overlay._buildSkillRunCtx(eng);
+    var failures = [];
+    contract.STANDARD_MUTABLE_PATHS.forEach(function(path) {
+      var rendered = resolver.resolveTemplate("{{" + path + "}}", ctx, { skillId: "fidelity-test" });
+      // Specifically forbid the bare "[?]" sentinel — that means
+      // resolveTemplate couldn't walk to the property at all (the
+      // rc.8.b singular-collection bug). Empty strings are OK (means
+      // the field exists but is unset on this engagement).
+      if (rendered === "[?]") failures.push(path);
+    });
+    assertEqual(failures.length, 0,
+      "V-FLOW-CONTRACT-FIDELITY-STANDARD-1: every Standard path MUST resolve through _buildSkillRunCtx (got [?] for: " + failures.join(", ") + ")");
+  });
+
+  it("V-FLOW-CONTRACT-FIDELITY-INSIGHTS-1 · every Insights path resolves through _buildSkillRunCtx against a realistic engagement — coverage / risk / totals / Dell-density / projects / brief all wired", async () => {
+    var contract = await import("/core/dataContract.js");
+    var overlay  = await import("/ui/views/CanvasChatOverlay.js");
+    var resolver = await import("/services/pathResolver.js");
+    var schema   = await import("/schema/engagement.js");
+    var eng = schema.createEmptyEngagement();
+    eng.customer = Object.assign({}, eng.customer, { name: "Insights Test", vertical: "healthcare", region: "EMEA" });
+    var ctx = overlay._buildSkillRunCtx(eng);
+    var failures = [];
+    Object.keys(contract.INSIGHTS_PATHS).forEach(function(path) {
+      var rendered = resolver.resolveTemplate("{{" + path + "}}", ctx, { skillId: "insights-fidelity" });
+      if (rendered === "[?]") failures.push(path);
+    });
+    assertEqual(failures.length, 0,
+      "V-FLOW-CONTRACT-FIDELITY-INSIGHTS-1: every Insights path MUST resolve via _buildSkillRunCtx (got [?] for: " + failures.join(", ") + ")");
+  });
+
+  it("V-FLOW-CONTRACT-FIDELITY-LABEL-RESOLVED-1 · catalog-resolved paths return human labels NOT raw FK ids — driver.name → 'Cyber Resilience' not 'cyber_resilience'; customer.verticalLabel → 'Healthcare' not 'healthcare'; etc.", async () => {
+    var overlay  = await import("/ui/views/CanvasChatOverlay.js");
+    var resolver = await import("/services/pathResolver.js");
+    var schema   = await import("/schema/engagement.js");
+    var driverActions = await import("/state/collections/driverActions.js");
+    var eng = schema.createEmptyEngagement();
+    eng.customer = Object.assign({}, eng.customer, { name: "Label Test", vertical: "healthcare" });
+    var addRes = driverActions.addDriver(eng, { businessDriverId: "cyber_resilience", catalogVersion: "2026.04", priority: "High" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    var ctx = overlay._buildSkillRunCtx(eng);
+    var verticalLabel = resolver.resolveTemplate("{{customer.verticalLabel}}", ctx, { skillId: "label-test" });
+    var driverName    = resolver.resolveTemplate("{{driver.name}}", ctx, { skillId: "label-test" });
+    // Healthcare catalog id is "healthcare"; label is "Healthcare" (capitalized).
+    // The exact label depends on CUSTOMER_VERTICALS catalog content; assert it's
+    // NOT the raw id and contains the right shape.
+    assert(verticalLabel && verticalLabel !== "healthcare" && verticalLabel !== "[?]",
+      "V-FLOW-CONTRACT-FIDELITY-LABEL-RESOLVED-1: customer.verticalLabel MUST resolve to a human label, not the raw FK id 'healthcare' (got '" + verticalLabel + "')");
+    assert(driverName === "Cyber Resilience",
+      "V-FLOW-CONTRACT-FIDELITY-LABEL-RESOLVED-1: driver.name MUST resolve through BUSINESS_DRIVERS catalog to 'Cyber Resilience' (got '" + driverName + "')");
+  });
+
+  it("V-FLOW-PICKER-METADATA-1 · PICKER_METADATA + getPickerEntries() are exported and align with STANDARD_MUTABLE_PATHS + INSIGHTS_PATHS (every path the picker reads has metadata; no orphan entries)", async () => {
+    var mod = await import("/core/dataContract.js");
+    assert(mod.PICKER_METADATA && typeof mod.PICKER_METADATA === "object",
+      "V-FLOW-PICKER-METADATA-1: PICKER_METADATA MUST be exported as an object");
+    assertEqual(typeof mod.getPickerEntries, "function",
+      "V-FLOW-PICKER-METADATA-1: getPickerEntries MUST be exported as a function");
+    // Every Standard path MUST have picker metadata so the right pane can render.
+    var missingStandard = [];
+    mod.STANDARD_MUTABLE_PATHS.forEach(function(path) {
+      var m = mod.PICKER_METADATA[path];
+      if (!m || !m.label || !m.description) missingStandard.push(path);
+    });
+    assertEqual(missingStandard.length, 0,
+      "V-FLOW-PICKER-METADATA-1: every Standard path MUST have picker metadata (label + description). Missing: " + missingStandard.join(", "));
+    // Every Insights path MUST have picker metadata.
+    var missingInsights = [];
+    Object.keys(mod.INSIGHTS_PATHS).forEach(function(path) {
+      var m = mod.PICKER_METADATA[path];
+      if (!m || !m.label || !m.description) missingInsights.push(path);
+    });
+    assertEqual(missingInsights.length, 0,
+      "V-FLOW-PICKER-METADATA-1: every Insights path MUST have picker metadata. Missing: " + missingInsights.join(", "));
+    // getPickerEntries("standard") returns >= 30 entries.
+    var stdEntries = mod.getPickerEntries("standard");
+    assert(stdEntries.length >= 30,
+      "V-FLOW-PICKER-METADATA-1: getPickerEntries('standard') MUST return at least 30 entries (got " + stdEntries.length + ")");
+    // getPickerEntries("insights") returns >= 10 entries.
+    var insEntries = mod.getPickerEntries("insights");
+    assert(insEntries.length >= 10,
+      "V-FLOW-PICKER-METADATA-1: getPickerEntries('insights') MUST return at least 10 entries (got " + insEntries.length + ")");
+  });
+
+  it("V-FLOW-SKILL-BUILDER-PICKER-1 · SkillBuilder.js Data Points picker uses the two-pane shell (left list + right detail pane) with category toggle (Standard / Insights / Advanced) and search — source-grep regression guard against returning to the legacy checkbox list", async () => {
+    var src;
+    try { src = await (await fetch("/ui/views/SkillBuilder.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-SKILL-BUILDER-PICKER-1: fetch failed: " + (e && e.message || e)); }
+    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    // Three toggle buttons with the right data-skill-data-toggle values.
+    assert(/data-skill-data-toggle["']\s*,\s*["']standard/.test(stripped) ||
+           /data-skill-data-toggle["'],\s*["']standard/.test(stripped) ||
+           /"data-skill-data-toggle",\s*"standard"/.test(stripped),
+      "V-FLOW-SKILL-BUILDER-PICKER-1: SkillBuilder MUST declare data-skill-data-toggle='standard'");
+    assert(/"data-skill-data-toggle",\s*"insights"/.test(stripped),
+      "V-FLOW-SKILL-BUILDER-PICKER-1: SkillBuilder MUST declare data-skill-data-toggle='insights' (new category added 2026-05-11)");
+    assert(/"data-skill-data-toggle",\s*"advanced"/.test(stripped),
+      "V-FLOW-SKILL-BUILDER-PICKER-1: SkillBuilder MUST declare data-skill-data-toggle='advanced'");
+    // Search input wired.
+    assert(/data-skill-data-search/.test(stripped),
+      "V-FLOW-SKILL-BUILDER-PICKER-1: SkillBuilder picker MUST include a search input with data-skill-data-search");
+    // Two-pane layout: left + right panes exist.
+    assert(/dataLeftPane/.test(stripped) && /dataRightPane/.test(stripped),
+      "V-FLOW-SKILL-BUILDER-PICKER-1: SkillBuilder picker MUST construct dataLeftPane + dataRightPane (the two-pane shell)");
+    // Imports PICKER_METADATA + getPickerEntries from the contract.
+    assert(/PICKER_METADATA/.test(stripped) && /getPickerEntries/.test(stripped),
+      "V-FLOW-SKILL-BUILDER-PICKER-1: SkillBuilder MUST import PICKER_METADATA + getPickerEntries from core/dataContract.js (contract-fidelity)");
+    // Forbidden: the legacy "skill-form-data-checkbox" class (was the
+    // pre-rebuild checkbox-list affordance). Its presence would mean we
+    // partially reverted to the legacy layout.
+    assert(!/skill-form-data-checkbox/.test(stripped),
+      "V-FLOW-SKILL-BUILDER-PICKER-1: SkillBuilder MUST NOT contain the legacy 'skill-form-data-checkbox' class — the rebuilt picker uses click-row + add-bubble affordances");
+  });
+
   it("V-CONSTITUTION-REFERENCE-PRESERVED · core/dataContract.reference.js exists with REFERENCE ONLY header and is NOT imported anywhere in the live module graph (preserves the original pre-rebuild contract for historical comparison)", async () => {
     var refSrc;
     try { refSrc = await (await fetch("/core/dataContract.reference.js")).text(); }
