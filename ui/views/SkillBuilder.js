@@ -47,7 +47,9 @@ import {
   getAllMutableDataPoints,
   PICKER_METADATA,
   getPickerEntries,
-  INSIGHTS_PATHS
+  INSIGHTS_PATHS,
+  RELATIONSHIPS_METADATA,
+  getMandatorySetFor
 }                                          from "../../core/dataContract.js";
 import { resolveTemplate }                 from "../../services/pathResolver.js";
 import { getActiveEngagement }             from "../../state/engagementStore.js";
@@ -619,6 +621,17 @@ function renderEditForm(adminRoot, list, existing, onChange) {
     sampleHint.style.marginBottom = "12px";
     dataRightPane.appendChild(sampleHint);
 
+    // ─── NEW: RELATIONSHIPS section ─────────────────────────────────
+    // Renders the picker-side view of RELATIONSHIPS_METADATA for the
+    // selected path: FK pair, multi-hop chain diagram, state-conditional
+    // warning, derived-from source, cross-cutting flag, provenance flag.
+    var rel = RELATIONSHIPS_METADATA[path];
+    if (rel) {
+      _renderRelationshipsSection(dataRightPane, path, rel);
+      _renderMandatoryPairingsSection(dataRightPane, path, rel);
+      _renderOrderingSection(dataRightPane, rel);
+    }
+
     // Add / Remove button.
     var isAdded = state.dataPoints.some(function(d) { return d.path === path; });
     var addBtn = mkt("button",
@@ -636,6 +649,284 @@ function renderEditForm(adminRoot, list, existing, onChange) {
       renderSelectedChips();
     });
     dataRightPane.appendChild(addBtn);
+  }
+
+  // ─── Right-pane helpers (2026-05-11 PM) · RELATIONSHIPS metadata ──
+
+  function _sectionEyebrow(text) {
+    var el = mkt("div", "", text);
+    el.style.fontSize = "10px";
+    el.style.fontWeight = "600";
+    el.style.textTransform = "uppercase";
+    el.style.color = "var(--ink-mute, #6b7280)";
+    el.style.letterSpacing = "0.05em";
+    el.style.marginBottom = "4px";
+    el.style.marginTop = "12px";
+    return el;
+  }
+
+  // RELATIONSHIPS section — FK pair, multi-hop chain diagram,
+  // state-conditional warning, derived-from source, cross-cutting,
+  // provenance flag. Hidden entirely when the path has no relationships
+  // to surface.
+  function _renderRelationshipsSection(host, path, rel) {
+    var hasContent = rel.fkPair || rel.multiHop || rel.stateConditional ||
+                     rel.derivedFrom || rel.crossCutting || rel.provenance;
+    if (!hasContent) return;
+
+    host.appendChild(_sectionEyebrow("RELATIONSHIPS"));
+
+    // FK pair (one-click swap link).
+    if (rel.fkPair) {
+      var fkRow = mk("div");
+      fkRow.style.fontSize = "12px";
+      fkRow.style.marginBottom = "6px";
+      fkRow.style.color = "var(--ink, #111827)";
+      fkRow.setAttribute("data-rel-fk-pair", rel.fkPair);
+      var diamond = mkt("span", "", "◆ ");
+      diamond.style.color = "var(--dell-blue, #0076CE)";
+      fkRow.appendChild(diamond);
+      fkRow.appendChild(document.createTextNode("FK pair: "));
+      var swapLink = mkt("button", "", rel.fkPair);
+      swapLink.type = "button";
+      swapLink.style.background = "none";
+      swapLink.style.border = "none";
+      swapLink.style.padding = "0";
+      swapLink.style.cursor = "pointer";
+      swapLink.style.color = "var(--dell-blue, #0076CE)";
+      swapLink.style.textDecoration = "underline";
+      swapLink.style.fontFamily = "var(--font-mono, monospace)";
+      swapLink.style.fontSize = "12px";
+      swapLink.title = "Switch to the FK counterpart";
+      swapLink.addEventListener("click", function() {
+        dataPickerSelectedPath = rel.fkPair;
+        renderDataPoints();
+      });
+      fkRow.appendChild(swapLink);
+      host.appendChild(fkRow);
+    }
+
+    // Multi-hop chain diagram. Renders as a horizontal flow with arrows
+    // between nodes. For gap.driverName: gap.driverId → driver record →
+    // BUSINESS_DRIVERS → .label.
+    if (Array.isArray(rel.multiHop) && rel.multiHop.length > 0) {
+      var mhWrap = mk("div");
+      mhWrap.style.marginBottom = "8px";
+      mhWrap.setAttribute("data-rel-multihop", "true");
+      var mhEyebrow = mk("div");
+      mhEyebrow.style.fontSize = "12px";
+      mhEyebrow.style.color = "var(--ink, #111827)";
+      mhEyebrow.style.marginBottom = "4px";
+      var mhDiamond = mkt("span", "", "◆ ");
+      mhDiamond.style.color = "var(--dell-blue, #0076CE)";
+      mhEyebrow.appendChild(mhDiamond);
+      mhEyebrow.appendChild(document.createTextNode(
+        rel.multiHop.length > 2 ? "Multi-hop catalog join:" : "Catalog join:"));
+      mhWrap.appendChild(mhEyebrow);
+
+      var diagramRow = mk("div");
+      diagramRow.style.display = "flex";
+      diagramRow.style.flexWrap = "wrap";
+      diagramRow.style.alignItems = "center";
+      diagramRow.style.gap = "6px";
+      diagramRow.style.padding = "8px 10px";
+      diagramRow.style.background = "var(--bg-soft, #f9fafb)";
+      diagramRow.style.border = "1px solid var(--ink-border, #e5e7eb)";
+      diagramRow.style.borderRadius = "4px";
+      diagramRow.style.fontSize = "11px";
+      diagramRow.style.fontFamily = "var(--font-mono, monospace)";
+
+      rel.multiHop.forEach(function(node, idx) {
+        if (idx > 0) {
+          var arrow = mkt("span", "", "→");
+          arrow.style.color = "var(--ink-mute, #6b7280)";
+          arrow.style.fontSize = "14px";
+          arrow.style.fontFamily = "var(--font-sans, sans-serif)";
+          diagramRow.appendChild(arrow);
+        }
+        var nodePill = mk("span");
+        nodePill.style.padding = "3px 7px";
+        nodePill.style.borderRadius = "3px";
+        nodePill.style.background = (node.kind === "catalog") ? "var(--dell-blue-light, #DBEAFE)"
+                                  : (node.kind === "result")  ? "var(--success-light, #DCFCE7)"
+                                  :                              "var(--bg, #ffffff)";
+        nodePill.style.border = "1px solid var(--ink-border, #d1d5db)";
+        nodePill.style.color = "var(--ink, #111827)";
+        nodePill.textContent = node.label || node.path || node.catalogId || node.field || "?";
+        nodePill.title = node.kind + (node.path ? " · " + node.path : "");
+        diagramRow.appendChild(nodePill);
+      });
+      mhWrap.appendChild(diagramRow);
+      host.appendChild(mhWrap);
+    }
+
+    // State-conditional warning.
+    if (rel.stateConditional) {
+      var scRow = mk("div");
+      scRow.style.fontSize = "12px";
+      scRow.style.color = "var(--ink, #111827)";
+      scRow.style.marginBottom = "6px";
+      scRow.style.padding = "6px 10px";
+      scRow.style.background = "var(--bg-warn-soft, #FEF9C3)";
+      scRow.style.border = "1px solid var(--warn-border, #FDE68A)";
+      scRow.style.borderRadius = "4px";
+      scRow.setAttribute("data-rel-state-conditional", rel.stateConditional.onField);
+      var scIcon = mkt("strong", "", "⚠ Conditional: ");
+      scIcon.style.color = "var(--warn, #B45309)";
+      scRow.appendChild(scIcon);
+      scRow.appendChild(document.createTextNode(rel.stateConditional.description || ""));
+      host.appendChild(scRow);
+    }
+
+    // Derived-from source.
+    if (rel.derivedFrom) {
+      var dfRow = mk("div");
+      dfRow.style.fontSize = "12px";
+      dfRow.style.color = "var(--ink, #111827)";
+      dfRow.style.marginBottom = "6px";
+      dfRow.setAttribute("data-rel-derived-from", "true");
+      var dfDiamond = mkt("span", "", "◆ ");
+      dfDiamond.style.color = "var(--dell-blue, #0076CE)";
+      dfRow.appendChild(dfDiamond);
+      dfRow.appendChild(document.createTextNode("Derived from "));
+      var dfSrc = mkt("code", "", rel.derivedFrom.selector || "");
+      dfSrc.style.fontFamily = "var(--font-mono, monospace)";
+      dfSrc.style.fontSize = "11px";
+      dfRow.appendChild(dfSrc);
+      var dfDesc = mkt("div", "", rel.derivedFrom.description || "");
+      dfDesc.style.fontSize = "11px";
+      dfDesc.style.color = "var(--ink-mute, #6b7280)";
+      dfDesc.style.marginTop = "2px";
+      dfDesc.style.paddingLeft = "14px";
+      host.appendChild(dfRow);
+      host.appendChild(dfDesc);
+    }
+
+    // Cross-cutting flag.
+    if (rel.crossCutting) {
+      var ccRow = mk("div");
+      ccRow.style.fontSize = "12px";
+      ccRow.style.color = "var(--ink, #111827)";
+      ccRow.style.marginBottom = "6px";
+      ccRow.setAttribute("data-rel-cross-cutting", "true");
+      var ccDiamond = mkt("span", "", "◆ ");
+      ccDiamond.style.color = "var(--dell-blue, #0076CE)";
+      ccRow.appendChild(ccDiamond);
+      ccRow.appendChild(mkt("strong", "", "Cross-cutting: "));
+      ccRow.appendChild(document.createTextNode(
+        "one record spans multiple categories. Skills must NOT duplicate the record per category."));
+      host.appendChild(ccRow);
+    }
+
+    // Provenance flag.
+    if (rel.provenance) {
+      var pvRow = mk("div");
+      pvRow.style.fontSize = "12px";
+      pvRow.style.color = "var(--ink, #111827)";
+      pvRow.style.marginBottom = "6px";
+      pvRow.setAttribute("data-rel-provenance", rel.provenance);
+      var pvDiamond = mkt("span", "", "◆ ");
+      pvDiamond.style.color = "var(--dell-blue, #0076CE)";
+      pvRow.appendChild(pvDiamond);
+      pvRow.appendChild(mkt("strong", "", "Provenance: "));
+      pvRow.appendChild(document.createTextNode(
+        rel.provenance === "system"
+          ? "system-set, not authored. Read for auditing."
+          : rel.provenance === "ai"
+            ? "AI-set, cleared on next engineer save."
+            : String(rel.provenance)));
+      host.appendChild(pvRow);
+    }
+  }
+
+  // MANDATORY PAIRINGS section — soft warning + one-click "Add suggested
+  // set" button. The set is computed via getMandatorySetFor (recursive)
+  // and minus what's already in state.dataPoints.
+  function _renderMandatoryPairingsSection(host, path, rel) {
+    var pairings = Array.isArray(rel.mandatoryWith) ? rel.mandatoryWith : [];
+    if (pairings.length === 0) return;
+
+    host.appendChild(_sectionEyebrow("MANDATORY PAIRINGS"));
+    var mpRow = mk("div");
+    mpRow.style.fontSize = "12px";
+    mpRow.style.marginBottom = "6px";
+    mpRow.setAttribute("data-rel-mandatory-with", pairings.join(","));
+
+    var lede = mkt("div", "", "Pick these alongside for the LLM to anchor each row correctly:");
+    lede.style.color = "var(--ink, #111827)";
+    lede.style.marginBottom = "6px";
+    mpRow.appendChild(lede);
+
+    var list = mk("ul");
+    list.style.margin = "0";
+    list.style.paddingLeft = "16px";
+    list.style.fontSize = "12px";
+    pairings.forEach(function(p) {
+      var li = mk("li");
+      li.style.marginBottom = "2px";
+      var added = state.dataPoints.some(function(d) { return d.path === p; });
+      var dot = mkt("span", "", added ? "✓ " : "○ ");
+      dot.style.color = added ? "var(--success, #16A34A)" : "var(--ink-mute, #9ca3af)";
+      li.appendChild(dot);
+      var meta = PICKER_METADATA[p];
+      li.appendChild(document.createTextNode((meta ? meta.label : p) + " "));
+      var pathCode = mkt("code", "", "(" + p + ")");
+      pathCode.style.fontFamily = "var(--font-mono, monospace)";
+      pathCode.style.fontSize = "11px";
+      pathCode.style.color = "var(--ink-mute, #6b7280)";
+      li.appendChild(pathCode);
+      list.appendChild(li);
+    });
+    mpRow.appendChild(list);
+    host.appendChild(mpRow);
+
+    // "Add suggested set" button (only when at least one pairing isn't already added).
+    var missing = pairings.filter(function(p) {
+      return !state.dataPoints.some(function(d) { return d.path === p; });
+    });
+    if (missing.length > 0) {
+      var addSetBtn = mkt("button", "btn-secondary", "+ Add suggested set (" + missing.length + ")");
+      addSetBtn.type = "button";
+      addSetBtn.style.marginTop = "8px";
+      addSetBtn.style.fontSize = "12px";
+      addSetBtn.setAttribute("data-rel-add-suggested-set", "true");
+      addSetBtn.addEventListener("click", function() {
+        missing.forEach(function(p) {
+          var m = PICKER_METADATA[p] || {};
+          state.dataPoints.push({ path: p, scope: m.category || "standard" });
+        });
+        renderDataPoints();
+        renderSelectedChips();
+      });
+      host.appendChild(addSetBtn);
+    }
+  }
+
+  // ORDERING section — the locked glossary (level vs phase vs categorical
+  // vs free-text vs numeric vs boolean). Critical for prompt authoring.
+  function _renderOrderingSection(host, rel) {
+    if (!rel.ordering || !rel.ordering.kind) return;
+    host.appendChild(_sectionEyebrow("ORDERING"));
+    var ordRow = mk("div");
+    ordRow.style.fontSize = "12px";
+    ordRow.style.color = "var(--ink, #111827)";
+    ordRow.style.marginBottom = "6px";
+    ordRow.setAttribute("data-rel-ordering-kind", rel.ordering.kind);
+    var kindChip = mkt("span", "tag", rel.ordering.kind);
+    kindChip.style.fontSize = "10px";
+    kindChip.style.padding = "2px 6px";
+    kindChip.style.marginRight = "6px";
+    // Color-code: level (yellow warning) / phase (blue ordered) / other (neutral).
+    if (rel.ordering.kind === "level") {
+      kindChip.style.background = "var(--bg-warn-soft, #FEF9C3)";
+      kindChip.style.color = "var(--warn, #B45309)";
+    } else if (rel.ordering.kind === "phase") {
+      kindChip.style.background = "var(--dell-blue-light, #DBEAFE)";
+      kindChip.style.color = "var(--dell-blue, #0076CE)";
+    }
+    ordRow.appendChild(kindChip);
+    ordRow.appendChild(document.createTextNode(rel.ordering.note || ""));
+    host.appendChild(ordRow);
   }
 
   function renderSelectedChips() {
@@ -1175,7 +1466,55 @@ function renderEditForm(adminRoot, list, existing, onChange) {
         "etc.) since the LLM may confuse them with actual data.\n" +
         "  5. Output ONLY the four XML blocks (in order: <context>, " +
         "<task>, <format>, <examples>). No preamble, no postscript, no " +
-        "code fences, no explanation.";
+        "code fences, no explanation.\n\n" +
+        // ─── 2026-05-11 PM · RELATIONSHIP-RULE PRIMING ────────────
+        // Sourced from RELATIONSHIPS_METADATA. The generated prompt
+        // MUST honor these constraints or the runtime engagement-data
+        // block will produce relationally-broken output.
+        "RELATIONSHIP RULES (derived from core/dataContract.js " +
+        "RELATIONSHIPS_METADATA):\n" +
+        "  R1 · ANCHOR BINDING. Every collection-entity reference MUST " +
+        "include the entity's anchor field so each row has an " +
+        "identifying subject. Anchors: driver.name (drivers), " +
+        "environment.name (environments), instance.label (instances), " +
+        "gap.description (gaps), customer.name (customer singleton). " +
+        "NEVER write 'the disposition is X' without 'the disposition of " +
+        "<instance.label> is X'.\n" +
+        "  R2 · LEVEL vs PHASE. driver.priority, instance.criticality, " +
+        "and gap.urgency are High/Medium/Low LEVELS — NOT ranks. " +
+        "Multiple records can simultaneously be 'High'. Use 'list the " +
+        "High-priority drivers' or 'the drivers and their priority " +
+        "levels'; NEVER 'the top-priority driver' or 'rank drivers by " +
+        "priority'. instance.priority (Now/Next/Later) and gap.phase " +
+        "(now/next/later) ARE ordered phase-of-life sequences — those " +
+        "you may rank.\n" +
+        "  R3 · STATE-CONDITIONAL FIELDS. instance.disposition + " +
+        ".dispositionLabel + .priority + .originId are DESIRED-state " +
+        "ONLY; current-state instances have null values. " +
+        "instance.mappedAssetIds[] is WORKLOAD-LAYER-only. When " +
+        "referencing these fields, qualify with instance.state " +
+        "(or instance.layerId for the workload case) so the LLM " +
+        "answer doesn't mislead about null rows.\n" +
+        "  R4 · LABEL vs RAW FK. Use the label-resolved paths " +
+        "(driver.name, gap.gapTypeLabel, instance.layerLabel, " +
+        "customer.verticalLabel, etc.) in narrative output — NEVER the " +
+        "raw FK id form (driver.businessDriverId, gap.gapType, " +
+        "instance.layerId, customer.vertical). Raw ids are for " +
+        "id-matching skills only.\n" +
+        "  R5 · CROSS-CUTTING CARDINALITY. gap.affectedEnvironments[] / " +
+        "gap.affectedLayers[] / instance.mappedAssetIds[] are arrays " +
+        "where ONE record spans multiple categories. A gap that touches " +
+        "Primary DC + DR is ONE gap, not two. NEVER duplicate the record " +
+        "per category in the prompt's narration.\n" +
+        "  R6 · DERIVED FIELDS. gap.urgency (when urgencyOverride=false) " +
+        "is derived from the linked current's criticality; gap.gapType " +
+        "(when origin='autoDraft') is derived from the source " +
+        "disposition. All insights.* paths are derived from §S5 " +
+        "selectors. NEVER frame these as author-editable in the prompt.\n" +
+        "  R7 · MULTI-HOP LABELS. gap.driverName is a 3-hop join (gap → " +
+        "driver record → BUSINESS_DRIVERS.label). The runtime resolves " +
+        "this; the generated prompt should reference gap.driverName " +
+        "directly, NEVER walk through gap.driverId in the prompt body.\n";
       var res = await chatCompletion({
         providerKey: cfg.activeProvider,
         baseUrl:     active.baseUrl,

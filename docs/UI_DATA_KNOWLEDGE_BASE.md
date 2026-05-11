@@ -1,10 +1,10 @@
 # UI_DATA_KNOWLEDGE_BASE — working
 
 **Document**: `docs/UI_DATA_KNOWLEDGE_BASE.md`
-**Revision**: r1
-**Hash (FNV-1a 32-bit hex over file content, with the `__HASH_HERE__` placeholder string literal in this line)**: `490efc8a`
+**Revision**: r2
+**Hash (FNV-1a 32-bit hex over file content, with the `__HASH_HERE__` placeholder string literal in this line)**: `be052564`
 **Date**: 2026-05-11
-**Status**: WORKING — initial cut. Refined as the Skill Builder picker UX evolves and as new data points land via constitutional amendments.
+**Status**: WORKING — r2 adds the Relationships and Bindings section feeding both the picker right pane + the Improve meta-skill system prompt.
 
 ## Purpose
 
@@ -793,11 +793,165 @@ If any future contributor (human or AI) confuses these, point them to this secti
 
 ---
 
+# Relationships and Bindings
+
+This section is the human-readable companion to `RELATIONSHIPS_METADATA` in `core/dataContract.js`. It catalogs every binding rule the picker right pane surfaces + that the Improve meta-skill system prompt is primed with. Skills authored against these rules produce LLM output that respects entity-anchor binding, FK-pair semantics, state-conditional applicability, cross-cutting cardinality, and the level-vs-phase semantic distinction.
+
+## The 8 relationship categories
+
+### 1 · Anchor binding (most important)
+
+Each collection entity has an identifying anchor field. Skills that reference any other field on that entity MUST also pick the anchor — otherwise rows in the engagement-data table have no subject and the LLM can't compose answers.
+
+| Entity | Anchor | Why |
+|---|---|---|
+| customer | `customer.name` | The most-referenced field in the workshop. Without it, "Healthcare vertical" attaches to no one. |
+| driver | `driver.name` | Without driver name, "High priority" attaches to no driver. |
+| environment | `environment.name` | Locations / tiers / power footprints need a site name to mean anything. |
+| instance | `instance.label` | Without label, criticality / disposition / notes float free. |
+| gap | `gap.description` | Without description, the gap is a row of metadata with no subject. |
+
+### 2 · FK pair bindings (raw id ↔ label-resolved)
+
+Most catalog FKs come in pairs: a raw FK id (for id-matching skills) and a label-resolved companion (for narrative output). The picker right pane shows the pairing with a one-click swap link. **Authors should default to the label-resolved form for narrative.**
+
+| Raw FK id | Label-resolved | Catalog |
+|---|---|---|
+| `customer.vertical` | `customer.verticalLabel` | CUSTOMER_VERTICALS |
+| `driver.businessDriverId` | `driver.name` | BUSINESS_DRIVERS |
+| `environment.envCatalogId` | `environment.kindLabel` / `environment.name` | ENV_CATALOG |
+| `instance.layerId` | `instance.layerLabel` | LAYERS |
+| `instance.environmentId` | `instance.environmentName` | (engagement.environments + ENV_CATALOG) |
+| `instance.disposition` | `instance.dispositionLabel` | DISPOSITION_ACTIONS |
+| `gap.gapType` | `gap.gapTypeLabel` | GAP_TYPES |
+| `gap.layerId` | `gap.layerLabel` | LAYERS |
+| `gap.driverId` | `gap.driverName` | (engagement.drivers + BUSINESS_DRIVERS) |
+| `gap.affectedEnvironments[]` | `gap.affectedEnvironmentNames` | (engagement.environments + ENV_CATALOG) |
+| `gap.affectedLayers[]` | `gap.affectedLayerLabels` | LAYERS |
+| `gap.services[]` | `gap.servicesLabels` | SERVICE_TYPES |
+
+### 3 · Multi-hop joins
+
+Some labels require walking through multiple FKs. The picker shows these as a visual FK chain diagram.
+
+| Path | Hops |
+|---|---|
+| `gap.driverName` | `gap.driverId` → `engagement.drivers.byId[id].businessDriverId` → `BUSINESS_DRIVERS.byId[bid].label` (3 hops) |
+| `instance.environmentName` | `instance.environmentId` → `engagement.environments.byId[id]` → `.alias || ENV_CATALOG.byId[envCatalogId].label` |
+| `gap.affectedEnvironmentNames` | `gap.affectedEnvironments[]` → `engagement.environments.byId[id]` → joined labels |
+
+### 4 · State-conditional fields
+
+Some fields only apply on certain record states. The picker right pane shows a yellow warning chip; if the author also picks the conditioning field (`instance.state`), the engagement-data table makes the empty-cell story self-explanatory.
+
+| Field | Condition | Behavior on the other side |
+|---|---|---|
+| `instance.priority` | `instance.state === "desired"` | Current-state instances have `null`. Picker auto-suggests `instance.state`. |
+| `instance.disposition` / `.dispositionLabel` | `instance.state === "desired"` | Current-state instances render as `-` in the table. |
+| `instance.originId` | `instance.state === "desired"` | System-set when a disposition apply creates a desired counterpart. |
+| `instance.mappedAssetIds[]` | `instance.layerId === "workload"` | Other layers have empty `mappedAssetIds`. |
+
+### 5 · Cross-cutting fields
+
+Fields where one record spans multiple categories. Skills must NOT duplicate the record per category.
+
+| Field | Cardinality | Meaning |
+|---|---|---|
+| `gap.affectedEnvironments[]` | 1 gap : N envs | A gap that touches Primary DC + DR is ONE gap. |
+| `gap.affectedLayers[]` | 1 gap : N layers | G6 invariant: first entry is primary; rest are spillover. |
+| `instance.mappedAssetIds[]` | 1 workload : N assets | Workload's mapped assets MAY span environments. |
+
+### 6 · Derived / computed fields
+
+Not stored; computed every render. Always derived, never authored.
+
+| Path | Derivation source |
+|---|---|
+| `gap.urgency` (when `urgencyOverride=false`) | from `gap.relatedCurrentInstanceIds[0].criticality` |
+| `gap.gapType` (when `origin="autoDraft"`) | from source `instance.disposition` |
+| All `insights.*` paths | from §S5 selectors (`computeDiscoveryCoverage`, `computeRiskPosture`, `getHealthSummary`, `computeMixByLayer`, `buildProjects`, `generateSessionBrief`, `groupProjectsByProgram`) |
+
+The Improve meta-skill prompt is primed with R6: NEVER frame derived fields as author-editable in the generated prompt.
+
+### 7 · Provenance fields (system-set, not authored)
+
+| Path | Source |
+|---|---|
+| `instance.aiTag` | Stamped by AI-mutation skill `applyMutations`; cleared on next engineer save. |
+| `gap.origin` | `manual` set by Add-dialog; `autoDraft` set by disposition apply. |
+| `gap.reviewed` | Workflow flag set true after presales clicks Approve. |
+| `instance.originId` | System-set when a Tab 3 disposition creates a desired counterpart. |
+
+### 8 · Ordering semantics — the locked glossary
+
+The single most important semantic distinction in the schema. The picker right pane color-codes this: yellow for LEVEL (warning — not a rank), blue for PHASE (ordered).
+
+| Field | Type | Values | Ordered? |
+|---|---|---|---|
+| `driver.priority` | level | High / Medium / Low | **NO** — criticality LEVEL. Multiple drivers can all be High. |
+| `instance.criticality` | level | High / Medium / Low | **NO** — LEVEL of this asset. |
+| `gap.urgency` | level | High / Medium / Low | **NO** — urgency LEVEL. |
+| `instance.priority` | phase | Now / Next / Later | **YES** — phase-of-life ordering. |
+| `gap.phase` | phase | now / next / later | **YES** — phase-of-life ordering. |
+
+**Forbidden in skill prompts** (R2 of the Improve priming rules): "the top-priority driver", "rank drivers by priority", "the most-critical instance" — these all imply ordering on LEVEL fields. **Allowed**: "the High-priority drivers", "the drivers and their priority levels", "Now-phase instances".
+
+## How RELATIONSHIPS_METADATA feeds three consumers
+
+```
+core/dataContract.js
+    RELATIONSHIPS_METADATA  (the source of truth)
+            │
+            ├──► Skill Builder picker right pane (ui/views/SkillBuilder.js)
+            │       · FK pair swap link
+            │       · Multi-hop chain diagram
+            │       · State-conditional warning chip
+            │       · Derived-from selector citation
+            │       · Cross-cutting cardinality flag
+            │       · Provenance flag
+            │       · MANDATORY PAIRINGS section + "Add suggested set" button
+            │       · ORDERING section (level / phase / categorical / etc.)
+            │
+            ├──► Improve meta-skill system prompt (ui/views/SkillBuilder.js Field 5)
+            │       · R1 anchor binding
+            │       · R2 level vs phase
+            │       · R3 state-conditional fields
+            │       · R4 label vs raw FK
+            │       · R5 cross-cutting cardinality
+            │       · R6 derived fields
+            │       · R7 multi-hop labels
+            │
+            └──► This document (docs/UI_DATA_KNOWLEDGE_BASE.md)
+                    · Human-readable companion
+                    · AI training material (chat system prompt embedding)
+```
+
+## Audit guarantees
+
+Eight integrity tests in `diagnostics/appSpec.js` lock the catalog against drift:
+
+- **V-FLOW-RELATIONSHIPS-INTEGRITY-1** · every `mandatoryWith` reference points to a real PICKER_METADATA path (no dangling references).
+- **V-FLOW-RELATIONSHIPS-INTEGRITY-2** · every `fkPair` reference is bidirectional (A.fkPair === B → B.fkPair === A).
+- **V-FLOW-RELATIONSHIPS-INTEGRITY-3** · every `stateConditional.onField` is a real path that exists in PICKER_METADATA.
+- **V-FLOW-RELATIONSHIPS-INTEGRITY-4** · every Standard collection-entity path's `mandatoryWith` includes the entity's anchor field.
+- **V-FLOW-RELATIONSHIPS-INTEGRITY-5** · every Insights path has `derivedFrom` set with a non-empty selector.
+- **V-FLOW-RELATIONSHIPS-INTEGRITY-6** · exactly 3 paths have `ordering.kind === "level"` (driver.priority / instance.criticality / gap.urgency); exactly 2 have `ordering.kind === "phase"` (instance.priority / gap.phase).
+- **V-FLOW-RELATIONSHIPS-INTEGRITY-7** · every state-conditional desired-only field in the catalog matches the schema's superRefine invariants (instance.priority + instance.disposition + instance.originId).
+- **V-FLOW-RELATIONSHIPS-INTEGRITY-8** · multi-hop chains all terminate in a `result` node (no broken chains).
+
+Plus two source-grep guards:
+
+- **V-FLOW-RELATIONSHIPS-IMPROVE-PRIMING-1** · the Improve meta-skill system prompt contains references to R1..R7 relationship rules (sourced from RELATIONSHIPS_METADATA semantics).
+- **V-FLOW-RELATIONSHIPS-RIGHT-PANE-1** · SkillBuilder.js picker right pane renders RELATIONSHIPS + MANDATORY PAIRINGS + ORDERING sections (data-rel-* attributes present).
+
+---
+
 # Revision log
 
 | Revision | Date | Author | Scope |
 |---|---|---|---|
 | r1 | 2026-05-11 | Claude | Initial knowledge base. 34 Standard + 15 Insights paths + Advanced overview + authoring conventions + semantic glossary. Cross-referenced to UI_DATA_TRACE.md r6 (hash 4fb8b31d) and core/dataContract.js. |
+| r2 | 2026-05-11 PM | Claude | Added Relationships and Bindings section (8 categories: anchor / FK pair / multi-hop / state-conditional / cross-cutting / derived / provenance / ordering). Feeds RELATIONSHIPS_METADATA in dataContract.js → picker right pane (FK chain diagram + state warning + mandatory-pairings "Add suggested set") + Improve meta-skill prompt (R1..R7 priming rules). 8 integrity tests + 2 source-grep guards in appSpec.js. |
 
 ## Hash computation rule
 

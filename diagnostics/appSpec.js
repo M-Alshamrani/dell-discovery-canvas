@@ -20061,6 +20061,202 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
       "V-FLOW-SKILL-BUILDER-PICKER-1: SkillBuilder MUST NOT contain the legacy 'skill-form-data-checkbox' class — the rebuilt picker uses click-row + add-bubble affordances");
   });
 
+  // ── 2026-05-11 PM · RELATIONSHIPS_METADATA integrity audit ──────────
+  //
+  // 8 integrity tests against RELATIONSHIPS_METADATA in core/dataContract.js
+  // + 2 source-grep guards (Improve priming + picker right pane).
+
+  it("V-FLOW-RELATIONSHIPS-INTEGRITY-1 · every mandatoryWith reference points to a real PICKER_METADATA path (no dangling references)", async () => {
+    var mod = await import("/core/dataContract.js");
+    var rel = mod.RELATIONSHIPS_METADATA || {};
+    var picker = mod.PICKER_METADATA || {};
+    var orphans = [];
+    Object.keys(rel).forEach(function(path) {
+      var entry = rel[path];
+      (entry.mandatoryWith || []).forEach(function(p) {
+        if (!picker[p]) orphans.push(path + " → " + p);
+      });
+    });
+    assertEqual(orphans.length, 0,
+      "V-FLOW-RELATIONSHIPS-INTEGRITY-1: every mandatoryWith reference MUST be a real PICKER_METADATA path. Orphans: " + orphans.join(", "));
+  });
+
+  it("V-FLOW-RELATIONSHIPS-INTEGRITY-2 · every fkPair reference is bidirectional (A.fkPair === B → B.fkPair === A)", async () => {
+    var mod = await import("/core/dataContract.js");
+    var rel = mod.RELATIONSHIPS_METADATA || {};
+    var broken = [];
+    Object.keys(rel).forEach(function(a) {
+      var b = rel[a] && rel[a].fkPair;
+      if (!b) return;
+      if (!rel[b]) { broken.push(a + " → " + b + " (target missing)"); return; }
+      if (rel[b].fkPair !== a) {
+        broken.push(a + " → " + b + " (reverse pointer is " + (rel[b].fkPair || "null") + ")");
+      }
+    });
+    assertEqual(broken.length, 0,
+      "V-FLOW-RELATIONSHIPS-INTEGRITY-2: every fkPair MUST be bidirectional. Broken: " + broken.join(", "));
+  });
+
+  it("V-FLOW-RELATIONSHIPS-INTEGRITY-3 · every stateConditional.onField is a real path that exists in PICKER_METADATA", async () => {
+    var mod = await import("/core/dataContract.js");
+    var rel = mod.RELATIONSHIPS_METADATA || {};
+    var picker = mod.PICKER_METADATA || {};
+    var orphans = [];
+    Object.keys(rel).forEach(function(path) {
+      var sc = rel[path] && rel[path].stateConditional;
+      if (!sc) return;
+      if (!sc.onField || !picker[sc.onField]) orphans.push(path + " → " + (sc.onField || "<null>"));
+    });
+    assertEqual(orphans.length, 0,
+      "V-FLOW-RELATIONSHIPS-INTEGRITY-3: every stateConditional.onField MUST exist in PICKER_METADATA. Orphans: " + orphans.join(", "));
+  });
+
+  it("V-FLOW-RELATIONSHIPS-INTEGRITY-4 · every Standard collection-entity path's mandatoryWith includes the entity's anchor", async () => {
+    var mod = await import("/core/dataContract.js");
+    var rel = mod.RELATIONSHIPS_METADATA || {};
+    var picker = mod.PICKER_METADATA || {};
+    var anchors = { driver: "driver.name", environment: "environment.name", instance: "instance.label", gap: "gap.description" };
+    var failures = [];
+    Object.keys(rel).forEach(function(path) {
+      var pm = picker[path];
+      if (!pm || pm.category !== "standard") return;
+      var entity = pm.entity;
+      var anchor = anchors[entity];
+      if (!anchor) return;                  // singletons + insights have no collection anchor
+      if (rel[path].isAnchor === true) return;  // anchors don't reference themselves
+      var mw = rel[path].mandatoryWith || [];
+      if (mw.indexOf(anchor) < 0) failures.push(path + " (missing anchor " + anchor + ")");
+    });
+    assertEqual(failures.length, 0,
+      "V-FLOW-RELATIONSHIPS-INTEGRITY-4: every Standard collection-entity path MUST list its entity's anchor in mandatoryWith. Failures: " + failures.join(", "));
+  });
+
+  it("V-FLOW-RELATIONSHIPS-INTEGRITY-5 · every Insights path has derivedFrom set with a non-empty selector reference", async () => {
+    var mod = await import("/core/dataContract.js");
+    var rel = mod.RELATIONSHIPS_METADATA || {};
+    var insights = mod.INSIGHTS_PATHS || {};
+    var failures = [];
+    Object.keys(insights).forEach(function(path) {
+      var entry = rel[path];
+      if (!entry) { failures.push(path + " (no RELATIONSHIPS_METADATA entry)"); return; }
+      if (!entry.derivedFrom || !entry.derivedFrom.selector) {
+        failures.push(path + " (derivedFrom missing or empty)");
+      }
+    });
+    assertEqual(failures.length, 0,
+      "V-FLOW-RELATIONSHIPS-INTEGRITY-5: every Insights path MUST have RELATIONSHIPS_METADATA.derivedFrom.selector set (Insights = derived by definition). Failures: " + failures.join(", "));
+  });
+
+  it("V-FLOW-RELATIONSHIPS-INTEGRITY-6 · exactly 3 paths have ordering.kind=='level' (driver.priority + instance.criticality + gap.urgency) and exactly 2 have ordering.kind=='phase' (instance.priority + gap.phase)", async () => {
+    var mod = await import("/core/dataContract.js");
+    var rel = mod.RELATIONSHIPS_METADATA || {};
+    var levels = [];
+    var phases = [];
+    Object.keys(rel).forEach(function(path) {
+      var o = rel[path] && rel[path].ordering;
+      if (!o) return;
+      if (o.kind === "level") levels.push(path);
+      if (o.kind === "phase") phases.push(path);
+    });
+    levels.sort();
+    phases.sort();
+    var expectedLevels = ["driver.priority", "gap.urgency", "instance.criticality"];
+    var expectedPhases = ["gap.phase", "instance.priority"];
+    assertEqual(JSON.stringify(levels), JSON.stringify(expectedLevels),
+      "V-FLOW-RELATIONSHIPS-INTEGRITY-6: exactly 3 level paths expected (driver.priority + gap.urgency + instance.criticality); got " + JSON.stringify(levels));
+    assertEqual(JSON.stringify(phases), JSON.stringify(expectedPhases),
+      "V-FLOW-RELATIONSHIPS-INTEGRITY-6: exactly 2 phase paths expected (gap.phase + instance.priority); got " + JSON.stringify(phases));
+  });
+
+  it("V-FLOW-RELATIONSHIPS-INTEGRITY-7 · state-conditional desired-only fields match the schema's superRefine invariants — instance.priority + instance.disposition + instance.dispositionLabel + instance.originId are all gated on state='desired'", async () => {
+    var mod = await import("/core/dataContract.js");
+    var rel = mod.RELATIONSHIPS_METADATA || {};
+    var expectedDesiredOnly = ["instance.priority", "instance.disposition", "instance.dispositionLabel", "instance.originId"];
+    expectedDesiredOnly.forEach(function(path) {
+      var entry = rel[path];
+      assert(entry, "V-FLOW-RELATIONSHIPS-INTEGRITY-7: RELATIONSHIPS_METADATA MUST have an entry for " + path);
+      assert(entry.stateConditional, "V-FLOW-RELATIONSHIPS-INTEGRITY-7: " + path + " MUST have stateConditional set");
+      assertEqual(entry.stateConditional.onField, "instance.state",
+        "V-FLOW-RELATIONSHIPS-INTEGRITY-7: " + path + ".stateConditional.onField MUST be 'instance.state' (matches the schema superRefine invariant; got " + entry.stateConditional.onField + ")");
+      assertEqual(entry.stateConditional.value, "desired",
+        "V-FLOW-RELATIONSHIPS-INTEGRITY-7: " + path + ".stateConditional.value MUST be 'desired' (got " + entry.stateConditional.value + ")");
+    });
+  });
+
+  it("V-FLOW-RELATIONSHIPS-INTEGRITY-8 · multi-hop chains all terminate in a 'result' node (no broken chains)", async () => {
+    var mod = await import("/core/dataContract.js");
+    var rel = mod.RELATIONSHIPS_METADATA || {};
+    var broken = [];
+    Object.keys(rel).forEach(function(path) {
+      var mh = rel[path] && rel[path].multiHop;
+      if (!Array.isArray(mh) || mh.length === 0) return;
+      var last = mh[mh.length - 1];
+      if (!last || last.kind !== "result") {
+        broken.push(path + " (last node kind=" + (last && last.kind) + ", expected 'result')");
+      }
+    });
+    assertEqual(broken.length, 0,
+      "V-FLOW-RELATIONSHIPS-INTEGRITY-8: every multi-hop chain MUST end with a 'result' node. Broken: " + broken.join(", "));
+  });
+
+  it("V-FLOW-RELATIONSHIPS-IMPROVE-PRIMING-1 · Improve meta-skill system prompt is primed with R1..R7 relationship rules (source-grep regression guard)", async () => {
+    var src;
+    try { src = await (await fetch("/ui/views/SkillBuilder.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-RELATIONSHIPS-IMPROVE-PRIMING-1: fetch failed: " + (e && e.message || e)); }
+    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    // Each rule MUST be referenced in the Improve system prompt by its number AND its semantic keyword.
+    assert(/R1[\s\S]{0,300}ANCHOR/i.test(stripped),
+      "V-FLOW-RELATIONSHIPS-IMPROVE-PRIMING-1: Improve prompt MUST cite R1 ANCHOR BINDING");
+    assert(/R2[\s\S]{0,300}(LEVEL[\s\S]*PHASE|PHASE[\s\S]*LEVEL)/i.test(stripped),
+      "V-FLOW-RELATIONSHIPS-IMPROVE-PRIMING-1: Improve prompt MUST cite R2 LEVEL vs PHASE semantic");
+    assert(/R3[\s\S]{0,300}STATE-CONDITIONAL/i.test(stripped),
+      "V-FLOW-RELATIONSHIPS-IMPROVE-PRIMING-1: Improve prompt MUST cite R3 STATE-CONDITIONAL FIELDS");
+    assert(/R4[\s\S]{0,300}(LABEL[\s\S]*FK|FK[\s\S]*LABEL)/i.test(stripped),
+      "V-FLOW-RELATIONSHIPS-IMPROVE-PRIMING-1: Improve prompt MUST cite R4 LABEL vs RAW FK");
+    assert(/R5[\s\S]{0,300}CROSS-CUTTING/i.test(stripped),
+      "V-FLOW-RELATIONSHIPS-IMPROVE-PRIMING-1: Improve prompt MUST cite R5 CROSS-CUTTING CARDINALITY");
+    assert(/R6[\s\S]{0,300}DERIVED/i.test(stripped),
+      "V-FLOW-RELATIONSHIPS-IMPROVE-PRIMING-1: Improve prompt MUST cite R6 DERIVED FIELDS");
+    assert(/R7[\s\S]{0,300}MULTI-HOP/i.test(stripped),
+      "V-FLOW-RELATIONSHIPS-IMPROVE-PRIMING-1: Improve prompt MUST cite R7 MULTI-HOP LABELS");
+    // Forbidden framing (LEVEL-fields-as-ranks) MUST be explicitly forbidden.
+    assert(/top-priority|rank drivers|rank.*level/i.test(stripped),
+      "V-FLOW-RELATIONSHIPS-IMPROVE-PRIMING-1: Improve prompt MUST explicitly forbid 'top-priority' / 'rank drivers' framing");
+  });
+
+  it("V-FLOW-RELATIONSHIPS-RIGHT-PANE-1 · SkillBuilder picker right pane renders RELATIONSHIPS + MANDATORY PAIRINGS + ORDERING sections (data-rel-* attributes wired)", async () => {
+    var src;
+    try { src = await (await fetch("/ui/views/SkillBuilder.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-RELATIONSHIPS-RIGHT-PANE-1: fetch failed: " + (e && e.message || e)); }
+    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    // The right pane must import + use RELATIONSHIPS_METADATA.
+    assert(/RELATIONSHIPS_METADATA/.test(stripped) && /getMandatorySetFor/.test(stripped),
+      "V-FLOW-RELATIONSHIPS-RIGHT-PANE-1: SkillBuilder.js MUST import RELATIONSHIPS_METADATA + getMandatorySetFor from core/dataContract.js");
+    // The three new section eyebrow strings.
+    assert(/"RELATIONSHIPS"/.test(stripped),
+      "V-FLOW-RELATIONSHIPS-RIGHT-PANE-1: SkillBuilder right pane MUST render a RELATIONSHIPS section eyebrow");
+    assert(/"MANDATORY PAIRINGS"/.test(stripped),
+      "V-FLOW-RELATIONSHIPS-RIGHT-PANE-1: SkillBuilder right pane MUST render a MANDATORY PAIRINGS section eyebrow");
+    assert(/"ORDERING"/.test(stripped),
+      "V-FLOW-RELATIONSHIPS-RIGHT-PANE-1: SkillBuilder right pane MUST render an ORDERING section eyebrow");
+    // The new helper render functions exist.
+    assert(/_renderRelationshipsSection/.test(stripped),
+      "V-FLOW-RELATIONSHIPS-RIGHT-PANE-1: SkillBuilder MUST define _renderRelationshipsSection helper");
+    assert(/_renderMandatoryPairingsSection/.test(stripped),
+      "V-FLOW-RELATIONSHIPS-RIGHT-PANE-1: SkillBuilder MUST define _renderMandatoryPairingsSection helper");
+    assert(/_renderOrderingSection/.test(stripped),
+      "V-FLOW-RELATIONSHIPS-RIGHT-PANE-1: SkillBuilder MUST define _renderOrderingSection helper");
+    // The "Add suggested set" button + data attributes.
+    assert(/data-rel-add-suggested-set/.test(stripped),
+      "V-FLOW-RELATIONSHIPS-RIGHT-PANE-1: SkillBuilder right pane MUST render the 'Add suggested set' button with data-rel-add-suggested-set attribute");
+    assert(/data-rel-fk-pair/.test(stripped),
+      "V-FLOW-RELATIONSHIPS-RIGHT-PANE-1: FK pair section MUST tag with data-rel-fk-pair");
+    assert(/data-rel-multihop/.test(stripped),
+      "V-FLOW-RELATIONSHIPS-RIGHT-PANE-1: Multi-hop diagram MUST tag with data-rel-multihop");
+    assert(/data-rel-ordering-kind/.test(stripped),
+      "V-FLOW-RELATIONSHIPS-RIGHT-PANE-1: Ordering section MUST tag with data-rel-ordering-kind");
+  });
+
   it("V-CONSTITUTION-REFERENCE-PRESERVED · core/dataContract.reference.js exists with REFERENCE ONLY header and is NOT imported anywhere in the live module graph (preserves the original pre-rebuild contract for historical comparison)", async () => {
     var refSrc;
     try { refSrc = await (await fetch("/core/dataContract.reference.js")).text(); }
