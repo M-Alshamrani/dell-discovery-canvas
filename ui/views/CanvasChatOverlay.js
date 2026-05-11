@@ -1010,34 +1010,21 @@ export async function runSkill(skill, panelHost) {
     return;
   }
 
-  // Step 2 — resolve schema-keyed data paths against the active
-  // engagement (BUG-2 fix 2026-05-11). Without this, prompts like
-  // "{{customer.name}}" pass through verbatim to the LLM and the
-  // model echoes the CARE XML template instead of executing it.
-  // resolveTemplate walks {{path}} placeholders + replaces them with
-  // the actual engagement values (e.g. {{customer.name}} → "Northstar
-  // Health Network"); undefined paths render as "[?]" so the user
-  // sees what didn't resolve.
-  //
-  // BUG-2 v2 fix (2026-05-11 same-day): the resolver walks
-  // ctx.customer.name (top-level), NOT ctx.engagement.customer.name.
-  // We must spread engagement collections at the top level of ctx.
-  // Also expose drivers/environments/instances/gaps as flat arrays so
-  // collection-shaped paths can resolve (formatValue joins them with
-  // newlines for the LLM to consume).
+  // Step 2 — build the user message (pure function; exported for tests).
+  // Combines: <engagement-data> block with resolved dataPoint values
+  // (Path B from BUG-6 / BUG-2 evening fix 2026-05-11), plus the data-
+  // path-resolved + parameter-substituted improvedPrompt.
   var engagement = getActiveEngagement();
-  var skillCtx = _buildSkillRunCtx(engagement);
-  var dataResolvedPrompt = resolveTemplate(skill.improvedPrompt,
-    skillCtx, { skillId: skill.skillId });
+  var userMessage = _buildSkillUserMessage(skill, paramValues, engagement);
 
-  // Step 3 — substitute {{paramName}} placeholders for run-time inputs
-  // (the user-supplied parameters; distinct from schema-keyed paths).
-  var resolvedPrompt = _substituteSkillParams(dataResolvedPrompt, paramValues);
+  // Step 3 — BUG-6 fix 2026-05-11 evening: do NOT render the resolved
+  // prompt as a "user turn" in the dialog. The prompt-sent-to-LLM is
+  // internal plumbing; the chat dialog shows ONLY AI responses + any
+  // clarifying turns the user types back. Previously this line was
+  // _appendSkillDialogTurn("user", resolvedPrompt) which leaked the
+  // entire CARE XML into the visible chat.
 
-  // Step 4 — render the user turn (the fully-resolved prompt) in the dialog.
-  _appendSkillDialogTurn("user", resolvedPrompt);
-
-  // Step 5 — real LLM call.
+  // Step 4 — real LLM call.
   try {
     var cfg = loadAiConfig();
     var activeKey = cfg && cfg.activeProvider;
@@ -1060,23 +1047,27 @@ export async function runSkill(skill, panelHost) {
         // execute. Explicit "DO NOT echo" + format directive forces a
         // clean answer-only response.
         { role: "system", content:
-            "You are executing a saved skill. The user message below contains a CARE-structured prompt " +
-            "(<context>, <task>, <format>, <examples>) with engagement data already inlined. Your job is to " +
-            "EXECUTE the <task> using the <context> data, producing ONLY the final answer in the shape the " +
-            "<format> section specifies. " +
+            "You are executing a saved skill. The user message below MAY start with an <engagement-data> " +
+            "block listing concrete values from the user's active engagement. That block is the AUTHORITATIVE " +
+            "context for the task — treat each `path: value` line as ground-truth data. The rest of the user " +
+            "message is a CARE-structured prompt (<context>, <task>, <format>, <examples>) describing what " +
+            "to do. Your job: EXECUTE the <task> using the data in the <engagement-data> block, producing " +
+            "ONLY the final answer in the shape the <format> section specifies." +
             "\n\nSTRICT RULES:\n" +
-            "  1. DO NOT echo the prompt template back. DO NOT include <context>, <task>, <format>, or " +
-            "<examples> XML tags in your response.\n" +
+            "  1. DO NOT echo the prompt template back. DO NOT include <engagement-data>, <context>, <task>, " +
+            "<format>, or <examples> XML tags in your response.\n" +
             "  2. DO NOT explain your reasoning, restate the task, or include preamble like 'Here is the " +
             "answer:' — output the answer directly.\n" +
             "  3. DO NOT generate hypothetical or example values (e.g. fake company names). Only emit " +
-            "values derived from the <context> data provided.\n" +
-            "  4. If the <context> data is missing required information for the <task>, output exactly: " +
-            "'[insufficient data: <what is missing>]' and nothing else.\n" +
+            "values derived from the <engagement-data> block or the <context> data provided.\n" +
+            "  4. If the <engagement-data> block is missing or empty AND the <context> doesn't carry the " +
+            "needed information, output exactly: '[insufficient data: <what is missing>]' and nothing else. " +
+            "If the <engagement-data> block has the value the task asks for, USE IT — do NOT claim data " +
+            "is missing.\n" +
             "  5. Match the <format> exactly: if it says 'single line of plain text', output one line, no " +
             "markdown, no quotes. If it says JSON, output valid JSON only."
         },
-        { role: "user",   content: resolvedPrompt }
+        { role: "user",   content: userMessage }
       ]
     });
     var responseText = (res && res.text) || "";
@@ -1085,6 +1076,56 @@ export async function runSkill(skill, panelHost) {
     _appendSkillDialogTurn("error", "Run failed: " + (e && e.message || e) +
       ". Try again, or check Settings → AI Providers.");
   }
+}
+
+// rc.8.b BUG-2 Path B (2026-05-11 evening) — builds the final user
+// message sent to the LLM. Pure function (testable; no I/O, no LLM).
+// Exported so V-FLOW-SKILL-V32-DATA-INJECT-* tests can assert on its
+// output without invoking the run-time.
+//
+// Output shape:
+//   <engagement-data>
+//   <path-1>: <resolved value>
+//   <path-2>: <resolved value>
+//   </engagement-data>
+//
+//   <CARE prompt with data-paths + parameters substituted in>
+//
+// The <engagement-data> block is omitted entirely when skill.dataPoints
+// is empty or missing. Paths that resolve to empty / "[?]" / null
+// render as "[not set]" in the block (human-readable; avoids the bare
+// pathResolver marker which leaks implementation detail).
+export function _buildSkillUserMessage(skill, paramValues, engagement) {
+  var skillCtx = _buildSkillRunCtx(engagement);
+  // Resolve schema-keyed data paths in the improvedPrompt body.
+  var dataResolved = resolveTemplate(skill.improvedPrompt || "",
+    skillCtx, { skillId: skill.skillId });
+  // Substitute {{paramName}} placeholders for run-time parameters.
+  var resolvedPrompt = _substituteSkillParams(dataResolved, paramValues);
+  // Prepend the engagement-data block (the runtime safety net per
+  // SPEC §S46.5 BUG-2 Path B 2026-05-11).
+  var dataBlock = _buildEngagementDataBlock(skill.dataPoints, skillCtx, skill.skillId);
+  return dataBlock ? dataBlock + "\n\n" + resolvedPrompt : resolvedPrompt;
+}
+
+// Builds the <engagement-data> block from skill.dataPoints. Each
+// selected dataPoint resolves against the active engagement; missing /
+// empty values render as "[not set]". Empty dataPoints[] → returns ""
+// (no block injected).
+export function _buildEngagementDataBlock(dataPoints, skillCtx, skillId) {
+  if (!Array.isArray(dataPoints) || dataPoints.length === 0) return "";
+  var lines = ["<engagement-data>"];
+  dataPoints.forEach(function(dp) {
+    if (!dp || !dp.path) return;
+    var resolved = resolveTemplate("{{" + dp.path + "}}", skillCtx,
+      { skillId: skillId || "data-block" });
+    var displayValue = (resolved === "[?]" || resolved === "" || resolved == null)
+      ? "[not set]"
+      : resolved;
+    lines.push(dp.path + ": " + displayValue);
+  });
+  lines.push("</engagement-data>");
+  return lines.join("\n");
 }
 
 // Builds the resolver context for a skill run. resolveTemplate walks

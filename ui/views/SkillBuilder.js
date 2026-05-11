@@ -547,14 +547,55 @@ function renderEditForm(adminRoot, list, existing, onChange) {
       var cfg = loadAiConfig();
       var active = cfg.providers[cfg.activeProvider];
       var dataPointDescriptions = state.dataPoints.map(function(d) { return d.path; }).join(", ");
+      // rc.8.b BUG-2 Path A (2026-05-11 evening) — hardened Improve
+      // meta-skill prompt. The previous (softer) wording let the LLM
+      // produce CARE templates that:
+      //   - put generic AI-assistant framing in <context> (no actual
+      //     engagement data anywhere)
+      //   - leaked the expected answer value into <format> as a
+      //     "target reference" (e.g. 'directly correspond to
+      //     `Northstar Health Network`'), which the LLM at run-time
+      //     reads as a format spec, not as data
+      //   - used real-looking example names like 'ACME Corporation'
+      //     that the LLM at run-time confused with actual data
+      // Strict rules below force grounded prompts: data embedded in
+      // <context>, never in <format>; examples clearly fake.
       var systemPrompt =
         "You are a prompt-engineering assistant for a presales discovery tool. " +
         "Rewrite the user's seed prompt into a CARE-structured prompt with " +
-        "Anthropic XML wire tags. Use exactly four sections: <context> (engagement " +
-        "framing), <task> (the imperative), <format> (output constraints), and " +
-        "<examples> (1-2 worked examples). Reference the listed data points by " +
-        "their schema-keyed paths (e.g. {{gap.urgency}}). Output ONLY the four " +
-        "XML blocks; no preamble, no postscript.";
+        "Anthropic XML wire tags. Use exactly four sections: <context>, " +
+        "<task>, <format>, <examples>. The result will be sent to an LLM " +
+        "at run-time with engagement data substituted into {{path}} " +
+        "placeholders, plus a separate <engagement-data> block prepended " +
+        "with actual values from the user's engagement." +
+        "\n\nSTRICT RULES:\n" +
+        "  1. <context> MUST embed the user's selected data points as " +
+        "CONCRETE DATA, using {{path}} placeholders that resolve to real " +
+        "engagement values at run-time. Example: 'The customer is " +
+        "{{customer.name}} in vertical {{customer.vertical}}.' NEVER " +
+        "write generic 'You are an AI assistant' framing. NEVER describe " +
+        "the assistant's role; describe the engagement data directly.\n" +
+        "  2. <task> MUST be a single imperative sentence the LLM " +
+        "executes (e.g. 'Identify the customer name from the context " +
+        "above.' or 'Summarize the gaps under cyber resilience as 3-5 " +
+        "exec bullets.'). NEVER ask the LLM to 'extract from a " +
+        "conversation' unless the seed prompt is specifically about " +
+        "parsing conversational input — the engagement data is the " +
+        "context, not a conversation.\n" +
+        "  3. <format> MUST describe ONLY the OUTPUT SHAPE (e.g. " +
+        "'single line of plain text', 'JSON array of {x, y, z} objects'). " +
+        "NEVER include the expected answer value as a target reference. " +
+        "NEVER write 'The desired output should directly correspond to " +
+        "<value>' or anything similar — that's data, not format. Data " +
+        "belongs in <context>.\n" +
+        "  4. <examples> MUST use 1-2 hypothetical input/output pairs. " +
+        "Use OBVIOUSLY FAKE placeholder names like 'Example Corp', " +
+        "'Sample Co.', or 'XYZ Inc.' — never use names that could be " +
+        "real customers ('ACME Corporation', 'Global Solutions Inc.', " +
+        "etc.) since the LLM may confuse them with actual data.\n" +
+        "  5. Output ONLY the four XML blocks (in order: <context>, " +
+        "<task>, <format>, <examples>). No preamble, no postscript, no " +
+        "code fences, no explanation.";
       var res = await chatCompletion({
         providerKey: cfg.activeProvider,
         baseUrl:     active.baseUrl,

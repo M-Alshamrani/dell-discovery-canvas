@@ -19560,6 +19560,126 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
       "V-FLOW-SKILL-V32-MUTATE-4: engineer's patch MUST apply alongside the auto-clear");
   });
 
+  // ─── rc.8.b BUG-2 Path A + Path B + BUG-6 (2026-05-11 evening) ────
+  // Six regression guards covering:
+  //   - DATA-INJECT-1/2/3/4 · _buildSkillUserMessage <engagement-data>
+  //     block construction (single / null-value / empty / multi-path)
+  //   - OUTPUT-CLEAN-1 · runSkill no longer renders the prompt as a
+  //     "user turn" in the dialog (only AI responses + errors appear)
+  //   - IMPROVE-3 · Improve meta-skill system prompt carries the
+  //     strict rules that ground engagement data in <context> and
+  //     prevent value leakage into <format>
+
+  it("V-FLOW-SKILL-V32-DATA-INJECT-1 · BUG-2 Path B · _buildSkillUserMessage prepends an <engagement-data> block with resolved dataPoint values from the active engagement", async () => {
+    const mod = await import("/ui/views/CanvasChatOverlay.js");
+    assertEqual(typeof mod._buildSkillUserMessage, "function",
+      "V-FLOW-SKILL-V32-DATA-INJECT-1: _buildSkillUserMessage MUST be exported (pure function for testing)");
+    const { loadDemo } = await import("/core/demoEngagement.js");
+    var eng = loadDemo();
+    var skill = {
+      skillId:        "skl-data-inject-1",
+      improvedPrompt: "<task>Output the customer name.</task>",
+      dataPoints:     [{ path: "customer.name", scope: "standard" }]
+    };
+    var userMsg = mod._buildSkillUserMessage(skill, {}, eng);
+    assert(/<engagement-data>/.test(userMsg) && /<\/engagement-data>/.test(userMsg),
+      "V-FLOW-SKILL-V32-DATA-INJECT-1: userMessage MUST contain <engagement-data>...</engagement-data> block");
+    assert(userMsg.indexOf("customer.name: " + eng.customer.name) >= 0,
+      "V-FLOW-SKILL-V32-DATA-INJECT-1: block MUST contain 'customer.name: " + eng.customer.name + "' (got: " + userMsg.slice(0, 200) + "...)");
+    assert(userMsg.indexOf("<task>Output the customer name.</task>") >= 0,
+      "V-FLOW-SKILL-V32-DATA-INJECT-1: improvedPrompt body MUST be preserved after the block");
+  });
+
+  it("V-FLOW-SKILL-V32-DATA-INJECT-2 · BUG-2 Path B · paths that don't resolve render as '[not set]' in the engagement-data block (NOT the bare pathResolver '[?]' marker)", async () => {
+    const mod = await import("/ui/views/CanvasChatOverlay.js");
+    const { loadDemo } = await import("/core/demoEngagement.js");
+    var eng = loadDemo();
+    // Path 'customer.missing' doesn't exist on the customer schema → resolver returns [?]
+    var skill = {
+      skillId:        "skl-data-inject-2",
+      improvedPrompt: "<task>x</task>",
+      dataPoints:     [{ path: "customer.missing", scope: "advanced" }]
+    };
+    var userMsg = mod._buildSkillUserMessage(skill, {}, eng);
+    assert(userMsg.indexOf("customer.missing: [not set]") >= 0,
+      "V-FLOW-SKILL-V32-DATA-INJECT-2: unresolved path MUST render '[not set]' (got: " + userMsg.slice(0, 250) + ")");
+    assert(userMsg.indexOf("customer.missing: [?]") === -1,
+      "V-FLOW-SKILL-V32-DATA-INJECT-2: MUST NOT leak the bare pathResolver '[?]' marker to the user");
+  });
+
+  it("V-FLOW-SKILL-V32-DATA-INJECT-3 · BUG-2 Path B · empty skill.dataPoints[] produces NO <engagement-data> block (don't emit empty XML tags)", async () => {
+    const mod = await import("/ui/views/CanvasChatOverlay.js");
+    const { loadDemo } = await import("/core/demoEngagement.js");
+    var eng = loadDemo();
+    var skill = {
+      skillId:        "skl-data-inject-3",
+      improvedPrompt: "<task>Just run me.</task>",
+      dataPoints:     []
+    };
+    var userMsg = mod._buildSkillUserMessage(skill, {}, eng);
+    assert(userMsg.indexOf("<engagement-data>") === -1,
+      "V-FLOW-SKILL-V32-DATA-INJECT-3: empty dataPoints MUST NOT emit <engagement-data> block");
+    assertEqual(userMsg.trim(), "<task>Just run me.</task>",
+      "V-FLOW-SKILL-V32-DATA-INJECT-3: userMessage MUST equal the improvedPrompt verbatim when no dataPoints (got: " + userMsg + ")");
+  });
+
+  it("V-FLOW-SKILL-V32-DATA-INJECT-4 · BUG-2 Path B · multiple dataPoints inject as ordered separate lines; both singleton + nested paths resolve correctly", async () => {
+    const mod = await import("/ui/views/CanvasChatOverlay.js");
+    const { loadDemo } = await import("/core/demoEngagement.js");
+    var eng = loadDemo();
+    var skill = {
+      skillId:        "skl-data-inject-4",
+      improvedPrompt: "<task>x</task>",
+      dataPoints: [
+        { path: "customer.name",     scope: "standard" },
+        { path: "customer.vertical", scope: "standard" },
+        { path: "customer.region",   scope: "standard" }
+      ]
+    };
+    var userMsg = mod._buildSkillUserMessage(skill, {}, eng);
+    // All three paths must appear in order
+    var nameIdx     = userMsg.indexOf("customer.name: ");
+    var verticalIdx = userMsg.indexOf("customer.vertical: ");
+    var regionIdx   = userMsg.indexOf("customer.region: ");
+    assert(nameIdx >= 0 && verticalIdx >= 0 && regionIdx >= 0,
+      "V-FLOW-SKILL-V32-DATA-INJECT-4: all three dataPoints MUST appear in the block");
+    assert(nameIdx < verticalIdx && verticalIdx < regionIdx,
+      "V-FLOW-SKILL-V32-DATA-INJECT-4: dataPoints MUST appear in author-selected order (got name@" + nameIdx + ", vertical@" + verticalIdx + ", region@" + regionIdx + ")");
+    // Values must match the engagement (not [not set] / [?])
+    assert(userMsg.indexOf("customer.name: " + eng.customer.name) >= 0,
+      "V-FLOW-SKILL-V32-DATA-INJECT-4: customer.name MUST resolve to the actual value");
+    assert(userMsg.indexOf("customer.vertical: " + eng.customer.vertical) >= 0,
+      "V-FLOW-SKILL-V32-DATA-INJECT-4: customer.vertical MUST resolve to the actual value");
+  });
+
+  it("V-FLOW-SKILL-V32-OUTPUT-CLEAN-1 · BUG-6 · runSkill MUST NOT render the resolved prompt as a 'user turn' in the chat dialog (only AI responses + errors appear); source-grep regression guard", async () => {
+    var src;
+    try { src = await (await fetch("/ui/views/CanvasChatOverlay.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-SKILL-V32-OUTPUT-CLEAN-1: failed to fetch CanvasChatOverlay.js: " + (e && e.message || e)); }
+    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    // The forbidden line: _appendSkillDialogTurn("user", <anything>)
+    // R6 had this as a "show what was sent to LLM" debug aid; BUG-6 closes it.
+    assert(!/_appendSkillDialogTurn\(\s*["']user["']/.test(stripped),
+      "V-FLOW-SKILL-V32-OUTPUT-CLEAN-1: CanvasChatOverlay.js MUST NOT call _appendSkillDialogTurn('user', ...) — the chat dialog shows ONLY AI responses + clarifying turns (per BUG-6 closure 2026-05-11)");
+  });
+
+  it("V-FLOW-SKILL-V32-IMPROVE-3 · BUG-2 Path A · Improve meta-skill system prompt carries strict rules to embed data in <context>, never leak values into <format>, and use clearly-fake example placeholders (source-grep regression guard)", async () => {
+    var src;
+    try { src = await (await fetch("/ui/views/SkillBuilder.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-SKILL-V32-IMPROVE-3: failed to fetch SkillBuilder.js: " + (e && e.message || e)); }
+    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    // Required directives in the Improve meta-skill system prompt:
+    //   (1) embed CONCRETE DATA in <context>
+    //   (2) NEVER include the expected answer value in <format>
+    //   (3) OBVIOUSLY FAKE placeholder names in <examples>
+    assert(/CONCRETE DATA/.test(stripped),
+      "V-FLOW-SKILL-V32-IMPROVE-3: Improve prompt MUST direct the meta-skill to embed CONCRETE DATA in <context> (per BUG-2 Path A 2026-05-11)");
+    assert(/NEVER include the expected answer value/.test(stripped) || /Data belongs in <context>/.test(stripped),
+      "V-FLOW-SKILL-V32-IMPROVE-3: Improve prompt MUST explicitly forbid putting the expected answer value in <format>");
+    assert(/OBVIOUSLY FAKE/.test(stripped) || /clearly fake/i.test(stripped),
+      "V-FLOW-SKILL-V32-IMPROVE-3: Improve prompt MUST direct the meta-skill to use clearly-fake placeholder names in <examples>");
+  });
+
 });
 
 // v2.4.5 · Foundations Refresh · register the human-surface demo suite
