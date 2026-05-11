@@ -46,6 +46,8 @@ import {
   getStandardMutableDataPoints,
   getAllMutableDataPoints
 }                                          from "../../core/dataContract.js";
+import { resolveTemplate }                 from "../../services/pathResolver.js";
+import { getActiveEngagement }             from "../../state/engagementStore.js";
 
 // SPEC §S46.6 + CH36.d — output format enum locked
 const OUTPUT_FORMATS = [
@@ -638,14 +640,64 @@ function renderEditForm(adminRoot, list, existing, onChange) {
         testOut.textContent = "No active LLM provider configured. Open Settings → AI Providers to set one up.";
         return;
       }
+      // BUG-2 fix 2026-05-11: resolve schema-keyed data paths against
+      // the active engagement BEFORE sending to the LLM. Without this,
+      // {{customer.name}} etc. pass through verbatim and the LLM
+      // echoes the CARE template back. Parameter placeholders
+      // ({{paramName}}) still pass through verbatim at the author
+      // surface — runtime substitution happens via the Skills launcher
+      // flow per CH36.j.
+      //
+      // BUG-2 v2 (2026-05-11 same-day): pathResolver walks ctx.<path>
+      // directly, NOT ctx.engagement.<path>. Build a session-wide ctx
+      // with customer + engagementMeta + collection arrays exposed at
+      // top level so paths like {{customer.name}} resolve correctly.
+      var engagement = getActiveEngagement();
+      var collFlat = function(coll) {
+        if (!coll || !Array.isArray(coll.allIds) || !coll.byId) return [];
+        return coll.allIds.map(function(id) { return coll.byId[id]; }).filter(Boolean);
+      };
+      var skillCtx = engagement ? {
+        engagement:     engagement,
+        customer:       engagement.customer || {},
+        engagementMeta: engagement.meta || {},
+        drivers:        collFlat(engagement.drivers),
+        environments:   collFlat(engagement.environments),
+        instances:      collFlat(engagement.instances),
+        gaps:           collFlat(engagement.gaps)
+      } : {};
+      var resolvedDraft = resolveTemplate(draft, skillCtx,
+        { skillId: existing && existing.skillId || "skl-draft" });
       var res = await chatCompletion({
         providerKey: cfg.activeProvider,
         baseUrl:     active.baseUrl,
         model:       active.model,
         apiKey:      active.apiKey,
         messages: [
-          { role: "system", content: "You are running a saved skill draft. Follow the instructions in the user message; produce output in the format the skill specifies. Note: this is a draft test without parameter substitution; {{paramName}} placeholders pass through verbatim." },
-          { role: "user",   content: draft }
+          // BUG-2 fix 2026-05-11: hardened system prompt prevents the
+          // LLM from echoing the CARE XML template back. See
+          // CanvasChatOverlay.runSkill for the matching contract.
+          { role: "system", content:
+              "You are executing a saved skill DRAFT (author preview; this is a Test run, not a final " +
+              "save). The user message below contains a CARE-structured prompt (<context>, <task>, " +
+              "<format>, <examples>) with engagement data already inlined. Your job is to EXECUTE the " +
+              "<task> using the <context> data, producing ONLY the final answer in the shape the <format> " +
+              "section specifies. " +
+              "\n\nSTRICT RULES:\n" +
+              "  1. DO NOT echo the prompt template back. DO NOT include <context>, <task>, <format>, or " +
+              "<examples> XML tags in your response.\n" +
+              "  2. DO NOT explain your reasoning, restate the task, or include preamble.\n" +
+              "  3. DO NOT generate hypothetical or example values. Only emit values derived from the " +
+              "<context> data provided.\n" +
+              "  4. If the <context> data is missing required information, output exactly: " +
+              "'[insufficient data: <what is missing>]' and nothing else.\n" +
+              "  5. Match the <format> exactly.\n" +
+              "  6. {{paramName}} placeholders (parameters) may still appear in the prompt verbatim " +
+              "(author surface skips parameter substitution); treat them as literal '[parameter value]' " +
+              "placeholders when reasoning — full parameter substitution happens at run-time via the " +
+              "Skills launcher flow."
+          },
+          { role: "user",   content: resolvedDraft }
         ]
       });
       testOut.innerHTML = "";

@@ -26,6 +26,52 @@
 //
 // ---
 //
+// **3.0.0-rc.8-dev** (2026-05-11) — between v3.0.0-rc.7 (TAGGED
+// 2026-05-09 at 1196/1196 GREEN) and the eventual v3.0.0-rc.8 tag.
+// Note: the rejected rc.8 / S1 architecture (capsule library +
+// cascaded vertical-tab rail + pill editor) was reverted before any
+// tag landed. The internal arc naming "rc.8.b" disambiguates the
+// reboot from the rejected design in commit messages, SESSION_LOG,
+// and SPEC §S46. The semver lifecycle is unchanged: rc.7 → rc.8
+// (post-reboot content) → next.
+// In flight: rc.8.b Skills Builder v3.2 reboot. SPEC §S46 + RULES §16
+// CH36 (10 sub-rules a..j); 24 V-FLOW-SKILL-V32-* tests; clean replace
+// of v3.0/v3.1 skill schema (drop outputContract / outputTarget /
+// promptTemplate / bindings; retire migrate helpers); new authoring
+// surface (Seed + Data points with Standard/Advanced toggle + Improve
+// + Improved + output format + mutation policy + parameters incl.
+// file type); Canvas Chat tab system (permanent Chat + permanent
+// Skills launcher + dynamic [Skill:<name>] tab with single-skill
+// invariant); skill run-time (real-LLM via chatCompletion with data-
+// path + parameter substitution; per-outputFormat dispatch); AI-
+// mutation apply with aiTag provenance (instance-only scope) + "Done
+// by AI" badge in MatrixView (current state + desired state tiles) +
+// auto-clear on engineer save. Banner climbed 1196/1196 → 1220/1220
+// across 8 R-commits + 1 hygiene commit + 1 session-log commit.
+//
+// **rc.8 (no .b) was REJECTED + REVERTED** prior to rc.8.b. Local
+// hard-reset to `ab2aaf5` (rc.7 tag). Origin retains the rejected
+// rc.8 / S1.A + S1.B commits (capsule library + cascaded vertical-
+// tab rail + pill editor + portability spec) as historical record
+// per the v2.4.11 rollback precedent. SPEC §S44 and §S45 marked
+// RESERVED to prevent accidental section-number reuse.
+//
+// BUG-1 (legacy Skills toggle in head-extras) closed inline this
+// commit; replaced by the R5 tab system's permanent Skills tab.
+// BUG-2 (skill run-time data-point substitution missing; LLM echoed
+// CARE XML template instead of executing) closed inline this commit
+// via resolveTemplate(improvedPrompt, { engagement }) + hardened
+// system prompt with explicit no-echo rules. BUG-3 / BUG-4 (tab
+// strip contrast + parameters editor look-and-feel) DEFERRED to the
+// UX polish arc per user direction.
+//
+// Per RULES §16 CH24 + PREFLIGHT.md item 1a: this catches up the
+// `-dev` suffix that should have been added at R1 (first commit past
+// the rc.7 tag); the bump was missed in lock-step with the
+// architectural revert + reboot.
+//
+// ---
+//
 // **3.0.0-rc.7-dev** (2026-05-06) — between v3.0.0-rc.6 (TAGGED
 // 2026-05-06 at 1187/1187 GREEN) and the eventual v3.0.0-rc.7 tag.
 // In flight: rc.7-arc-1 mock-purge per `feedback_no_mocks.md` LOCKED
@@ -117,4 +163,4 @@
 //   - At least one real-customer workshop run against a v3.0 engagement
 //   - Real-Anthropic streaming smoke against a live key
 
-export const APP_VERSION = "3.0.0-rc.7";
+export const APP_VERSION = "3.0.0-rc.8-dev";

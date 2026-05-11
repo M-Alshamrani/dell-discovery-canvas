@@ -1010,13 +1010,34 @@ export async function runSkill(skill, panelHost) {
     return;
   }
 
-  // Step 2 — substitute {{paramName}} placeholders in improvedPrompt.
-  var resolvedPrompt = _substituteSkillParams(skill.improvedPrompt, paramValues);
+  // Step 2 — resolve schema-keyed data paths against the active
+  // engagement (BUG-2 fix 2026-05-11). Without this, prompts like
+  // "{{customer.name}}" pass through verbatim to the LLM and the
+  // model echoes the CARE XML template instead of executing it.
+  // resolveTemplate walks {{path}} placeholders + replaces them with
+  // the actual engagement values (e.g. {{customer.name}} → "Northstar
+  // Health Network"); undefined paths render as "[?]" so the user
+  // sees what didn't resolve.
+  //
+  // BUG-2 v2 fix (2026-05-11 same-day): the resolver walks
+  // ctx.customer.name (top-level), NOT ctx.engagement.customer.name.
+  // We must spread engagement collections at the top level of ctx.
+  // Also expose drivers/environments/instances/gaps as flat arrays so
+  // collection-shaped paths can resolve (formatValue joins them with
+  // newlines for the LLM to consume).
+  var engagement = getActiveEngagement();
+  var skillCtx = _buildSkillRunCtx(engagement);
+  var dataResolvedPrompt = resolveTemplate(skill.improvedPrompt,
+    skillCtx, { skillId: skill.skillId });
 
-  // Step 3 — render the user turn (the resolved prompt) in the dialog.
+  // Step 3 — substitute {{paramName}} placeholders for run-time inputs
+  // (the user-supplied parameters; distinct from schema-keyed paths).
+  var resolvedPrompt = _substituteSkillParams(dataResolvedPrompt, paramValues);
+
+  // Step 4 — render the user turn (the fully-resolved prompt) in the dialog.
   _appendSkillDialogTurn("user", resolvedPrompt);
 
-  // Step 4 — real LLM call.
+  // Step 5 — real LLM call.
   try {
     var cfg = loadAiConfig();
     var activeKey = cfg && cfg.activeProvider;
@@ -1032,7 +1053,29 @@ export async function runSkill(skill, panelHost) {
       model:       active.model,
       apiKey:      active.apiKey,
       messages: [
-        { role: "system", content: "You are running a saved skill. Follow the instructions in the user message; produce output in the format the skill specifies." },
+        // BUG-2 fix 2026-05-11: hardened system prompt prevents the LLM
+        // from echoing the CARE XML template back. Original wording was
+        // too soft ("Follow the instructions..."); the model interpreted
+        // the prompt as a pattern to repeat instead of an instruction to
+        // execute. Explicit "DO NOT echo" + format directive forces a
+        // clean answer-only response.
+        { role: "system", content:
+            "You are executing a saved skill. The user message below contains a CARE-structured prompt " +
+            "(<context>, <task>, <format>, <examples>) with engagement data already inlined. Your job is to " +
+            "EXECUTE the <task> using the <context> data, producing ONLY the final answer in the shape the " +
+            "<format> section specifies. " +
+            "\n\nSTRICT RULES:\n" +
+            "  1. DO NOT echo the prompt template back. DO NOT include <context>, <task>, <format>, or " +
+            "<examples> XML tags in your response.\n" +
+            "  2. DO NOT explain your reasoning, restate the task, or include preamble like 'Here is the " +
+            "answer:' — output the answer directly.\n" +
+            "  3. DO NOT generate hypothetical or example values (e.g. fake company names). Only emit " +
+            "values derived from the <context> data provided.\n" +
+            "  4. If the <context> data is missing required information for the <task>, output exactly: " +
+            "'[insufficient data: <what is missing>]' and nothing else.\n" +
+            "  5. Match the <format> exactly: if it says 'single line of plain text', output one line, no " +
+            "markdown, no quotes. If it says JSON, output valid JSON only."
+        },
         { role: "user",   content: resolvedPrompt }
       ]
     });
@@ -1042,6 +1085,28 @@ export async function runSkill(skill, panelHost) {
     _appendSkillDialogTurn("error", "Run failed: " + (e && e.message || e) +
       ". Try again, or check Settings → AI Providers.");
   }
+}
+
+// Builds the resolver context for a skill run. resolveTemplate walks
+// `ctx.<path>` so we expose engagement collections at the top level
+// (NOT under ctx.engagement.<path>). Customer + engagementMeta are the
+// session-wide singletons; drivers / environments / instances / gaps
+// are exposed as flat arrays (formatValue joins them with newlines).
+function _buildSkillRunCtx(engagement) {
+  if (!engagement) return {};
+  var collFlat = function(coll) {
+    if (!coll || !Array.isArray(coll.allIds) || !coll.byId) return [];
+    return coll.allIds.map(function(id) { return coll.byId[id]; }).filter(Boolean);
+  };
+  return {
+    engagement:     engagement,
+    customer:       engagement.customer || {},
+    engagementMeta: engagement.meta || {},
+    drivers:        collFlat(engagement.drivers),
+    environments:   collFlat(engagement.environments),
+    instances:      collFlat(engagement.instances),
+    gaps:           collFlat(engagement.gaps)
+  };
 }
 
 // Reads parameter values from the panel's input rows.
@@ -1354,27 +1419,16 @@ function injectHeaderExtras() {
   });
   slot.appendChild(clearBtn);
 
-  // Skills-rail toggle (Phase 3 scaffold). Flips .is-open on the rail
-  // to show/hide the right column. Phase 4 populates the rail with
-  // saved-skill cards that drop a pre-filled prompt into the chat.
-  const railBtn = document.createElement("button");
-  railBtn.type = "button";
-  railBtn.className = "canvas-chat-rail-toggle";
-  railBtn.title = "Show / hide the Skills shortcut rail";
-  railBtn.innerHTML =
-    '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" ' +
-    'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-    '<rect x="2" y="2" width="12" height="12" rx="1.5"/>' +
-    '<line x1="11" y1="2" x2="11" y2="14"/></svg>' +
-    ' <span>Skills</span>';
-  railBtn.addEventListener("click", function() {
-    const rail = document.querySelector(".overlay[data-kind='canvas-chat'] [data-canvas-chat-rail]");
-    if (!rail) return;
-    const open = rail.classList.toggle("is-open");
-    railBtn.classList.toggle("is-active", open);
-    railBtn.setAttribute("aria-pressed", open ? "true" : "false");
-  });
-  slot.appendChild(railBtn);
+  // rc.8.b BUG-1 (2026-05-11): legacy Skills-rail toggle RETIRED. The
+  // rail itself stayed mounted (dead chrome) since rc.7 even after
+  // R5's Skills tab took over the launcher role. Removing the toggle
+  // from head-extras eliminates the duplicate Skills affordance; the
+  // tab strip's "Skills" tab is now the single launcher entry point
+  // per SPEC §S46.7. The right-rail slide-out itself is left in DOM
+  // for one more arc (legacy paintSkillRail still wires `+ Author new
+  // skill` button which routes to Settings); a follow-up commit can
+  // delete the rail entirely once paintSkillRail's role is fully
+  // absorbed by the Skills tab launcher.
 
   // Ack indicator placeholder (filled by renderAckIndicator on first-turn
   // handshake completion). Empty until the LLM's first response is parsed.
