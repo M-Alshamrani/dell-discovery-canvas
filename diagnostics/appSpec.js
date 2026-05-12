@@ -20257,6 +20257,312 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
       "V-FLOW-RELATIONSHIPS-RIGHT-PANE-1: Ordering section MUST tag with data-rel-ordering-kind");
   });
 
+  // ── 2026-05-12 · SPEC §S47 Import Data workflow · 15 RED-first tests ──
+  //
+  // Authored before any implementation per feedback_spec_and_test_first.md.
+  // The 15 tests below cover: instructions file generation (Path B Step 1),
+  // canonical JSON schema (S47.3), strict drift detection (S47.8.4), preview
+  // modal behavior (S47.5), "Both" semantics + ghost Option B (S47.5.5/.6),
+  // aiTag.kind constitutional amendment (S47.9), framework extensions
+  // (S47.6: import-subset / preview / defaultScope), system skills loader
+  // (S47.7), file-ingest system skill presence (R47.7.4), footer button
+  // (S47.8.1).
+  //
+  // Expected: all 15 RED at scaffold time. Each flips GREEN as the 3-commit
+  // implementation arc lands (C1 framework + importer · C2 system skill +
+  // file-ingest · C3 footer + workflow + constitutional amendment).
+
+  it("V-FLOW-IMPORT-INSTRUCTIONS-1 · S47.4.1 · Path B Step 1 produces a .txt file (NOT .md or .json) named per the dell-canvas-import-instructions-<slug>-<timestamp> convention, with customer name + visible env list embedded", async () => {
+    var mod;
+    try { mod = await import("/services/importInstructionsBuilder.js"); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-INSTRUCTIONS-1: importInstructionsBuilder module MUST exist at services/importInstructionsBuilder.js (RED-first scaffold; lands C3)"); }
+    assertEqual(typeof mod.buildImportInstructions, "function",
+      "V-FLOW-IMPORT-INSTRUCTIONS-1: services/importInstructionsBuilder.js MUST export buildImportInstructions(engagement, opts) -> { filename, content }");
+    var schema  = await import("/schema/engagement.js");
+    var eng = schema.createEmptyEngagement();
+    eng.customer = Object.assign({}, eng.customer, { name: "Acme Healthcare", vertical: "healthcare" });
+    var out = mod.buildImportInstructions(eng, { scope: "desired" });
+    assert(out && typeof out.filename === "string" && /\.txt$/.test(out.filename),
+      "V-FLOW-IMPORT-INSTRUCTIONS-1: filename MUST end in .txt (R47.4.1); got: " + (out && out.filename));
+    assert(/dell-canvas-import-instructions/.test(out.filename),
+      "V-FLOW-IMPORT-INSTRUCTIONS-1: filename MUST contain the canonical prefix dell-canvas-import-instructions (R47.4.2)");
+    assert(typeof out.content === "string" && out.content.indexOf("Acme Healthcare") >= 0,
+      "V-FLOW-IMPORT-INSTRUCTIONS-1: content MUST embed the customer name");
+  });
+
+  it("V-FLOW-IMPORT-INSTRUCTIONS-2 · S47.4.5 · Instructions file's environment-slot list reflects the LIVE engagement at click time (context-aware regeneration)", async () => {
+    var mod;
+    try { mod = await import("/services/importInstructionsBuilder.js"); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-INSTRUCTIONS-2: importInstructionsBuilder module MUST exist (RED-first scaffold)"); }
+    var schema  = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
+    var eng = schema.createEmptyEngagement();
+    eng.customer = Object.assign({}, eng.customer, { name: "CtxTest", vertical: "healthcare" });
+    var addRes = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    addRes = envActions.addEnvironment(eng, { envCatalogId: "drDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    var out = mod.buildImportInstructions(eng, { scope: "desired" });
+    // Content MUST mention both env catalog ids (or their resolved labels).
+    assert(/coreDc|Primary Data Center/.test(out.content),
+      "V-FLOW-IMPORT-INSTRUCTIONS-2: instructions MUST list the live engagement's coreDc env (got content snippet: " + out.content.slice(0, 600) + ")");
+    assert(/drDc|Disaster Recovery/.test(out.content),
+      "V-FLOW-IMPORT-INSTRUCTIONS-2: instructions MUST list the live engagement's drDc env");
+    // And MUST include both UUIDs so the LLM has the FK targets.
+    assertEqual(eng.environments.allIds.length, 2);
+    eng.environments.allIds.forEach(function(uuid) {
+      assert(out.content.indexOf(uuid) >= 0,
+        "V-FLOW-IMPORT-INSTRUCTIONS-2: instructions MUST embed every live env UUID; missing: " + uuid);
+    });
+  });
+
+  it("V-FLOW-IMPORT-INSTRUCTIONS-3 · S47.8.3 · Instructions file contains the strict-match warning verbatim", async () => {
+    var mod;
+    try { mod = await import("/services/importInstructionsBuilder.js"); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-INSTRUCTIONS-3: importInstructionsBuilder module MUST exist (RED-first scaffold)"); }
+    var schema  = await import("/schema/engagement.js");
+    var eng = schema.createEmptyEngagement();
+    var out = mod.buildImportInstructions(eng, { scope: "desired" });
+    // The R47.8.3 strict-match warning text MUST appear verbatim.
+    assert(/Strict matching/i.test(out.content) || /strict-match/i.test(out.content),
+      "V-FLOW-IMPORT-INSTRUCTIONS-3: instructions MUST contain the strict-match warning (R47.8.3)");
+    assert(/re-generate instructions/i.test(out.content),
+      "V-FLOW-IMPORT-INSTRUCTIONS-3: strict-match warning MUST tell the engineer to re-generate instructions on drift");
+  });
+
+  it("V-FLOW-IMPORT-RESPONSE-SCHEMA-1 · S47.3 · canonical import-subset JSON validates via Zod; malformed input is rejected with a clear error", async () => {
+    var mod;
+    try { mod = await import("/services/importResponseParser.js"); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-RESPONSE-SCHEMA-1: importResponseParser module MUST exist at services/importResponseParser.js (RED-first scaffold)"); }
+    assertEqual(typeof mod.parseImportResponse, "function",
+      "V-FLOW-IMPORT-RESPONSE-SCHEMA-1: services/importResponseParser.js MUST export parseImportResponse(jsonString) -> { ok, parsed, errors }");
+    // Valid shape passes.
+    var valid = JSON.stringify({
+      schemaVersion: "1.0", kind: "instance.add", generatedAt: "2026-05-12T10:00:00Z",
+      items: [{ confidence: "high", rationale: "row 12", data: { state: "desired", layerId: "compute", environmentId: "00000000-0000-4000-8000-000000000001", label: "Oracle DB", vendor: "Oracle", vendorGroup: "nonDell", criticality: "High", notes: "" } }]
+    });
+    var goodRes = mod.parseImportResponse(valid);
+    assert(goodRes && goodRes.ok === true,
+      "V-FLOW-IMPORT-RESPONSE-SCHEMA-1: valid import-subset JSON MUST parse with ok=true");
+    // Invalid shape fails with errors.
+    var badRes = mod.parseImportResponse(JSON.stringify({ schemaVersion: "1.0", items: "not an array" }));
+    assert(badRes && badRes.ok === false && Array.isArray(badRes.errors) && badRes.errors.length > 0,
+      "V-FLOW-IMPORT-RESPONSE-SCHEMA-1: malformed JSON MUST reject with ok=false + non-empty errors");
+  });
+
+  it("V-FLOW-IMPORT-DRIFT-1 · S47.8.4 · strict-reject when response references environment UUID not in the LIVE engagement; no partial apply", async () => {
+    var mod;
+    try { mod = await import("/services/importDriftCheck.js"); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-DRIFT-1: importDriftCheck module MUST exist at services/importDriftCheck.js (RED-first scaffold)"); }
+    assertEqual(typeof mod.checkImportDrift, "function",
+      "V-FLOW-IMPORT-DRIFT-1: importDriftCheck MUST export checkImportDrift(parsedResponse, engagement) -> { ok, missingEnvIds }");
+    var schema = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
+    var eng = schema.createEmptyEngagement();
+    var addRes = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    var liveUuid = eng.environments.allIds[0];
+    var ghostUuid = "00000000-0000-4000-8000-DEADBEEFDEAD";
+    // Response references one live + one missing UUID.
+    var response = {
+      schemaVersion: "1.0", kind: "instance.add", generatedAt: "2026-05-12T10:00:00Z",
+      items: [
+        { confidence: "high", rationale: "row 1", data: { state: "desired", layerId: "compute", environmentId: liveUuid,  label: "A", vendor: "Dell", vendorGroup: "dell", criticality: "High", notes: "" } },
+        { confidence: "high", rationale: "row 2", data: { state: "desired", layerId: "storage", environmentId: ghostUuid, label: "B", vendor: "Dell", vendorGroup: "dell", criticality: "Low",  notes: "" } }
+      ]
+    };
+    var drift = mod.checkImportDrift(response, eng);
+    assertEqual(drift.ok, false,
+      "V-FLOW-IMPORT-DRIFT-1: response referencing missing env UUID MUST reject (ok:false) per R47.8.4");
+    assert(Array.isArray(drift.missingEnvIds) && drift.missingEnvIds.indexOf(ghostUuid) >= 0,
+      "V-FLOW-IMPORT-DRIFT-1: missingEnvIds MUST list the unrecognized UUID; got: " + JSON.stringify(drift.missingEnvIds));
+  });
+
+  it("V-FLOW-IMPORT-PREVIEW-1 · S47.5.1 · preview modal component renders one row per items[] entry with confidence chip + LLM-state hint", async () => {
+    var mod;
+    try { mod = await import("/ui/components/ImportPreviewModal.js"); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-PREVIEW-1: ImportPreviewModal component MUST exist at ui/components/ImportPreviewModal.js (RED-first scaffold; lands C1)"); }
+    assertEqual(typeof mod.renderImportPreview, "function",
+      "V-FLOW-IMPORT-PREVIEW-1: ImportPreviewModal MUST export renderImportPreview(host, parsedResponse, opts) -> { applySelected, cancel }");
+    // Source-grep the component for the required structural pieces.
+    var src;
+    try { src = await (await fetch("/ui/components/ImportPreviewModal.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-PREVIEW-1: failed to fetch component source: " + (e && e.message || e)); }
+    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    assert(/data-import-preview-row/.test(stripped),
+      "V-FLOW-IMPORT-PREVIEW-1: preview modal MUST tag each row with data-import-preview-row");
+    assert(/data-import-confidence/.test(stripped),
+      "V-FLOW-IMPORT-PREVIEW-1: preview MUST surface confidence per row via data-import-confidence");
+    assert(/data-import-llm-state-hint/.test(stripped) || /llm.{0,5}state/i.test(stripped),
+      "V-FLOW-IMPORT-PREVIEW-1: preview MUST surface the LLM state hint per row");
+  });
+
+  it("V-FLOW-IMPORT-PREVIEW-2 · S47.5.2 + S47.5.3 · modal apply-scope picker is authoritative; row-state ≠ modal-scope surfaces the ⚠ LLM hint indicator", async () => {
+    var src;
+    try { src = await (await fetch("/ui/components/ImportPreviewModal.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-PREVIEW-2: ImportPreviewModal component MUST exist (RED-first scaffold)"); }
+    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    // The apply-scope picker has 3 options: current / desired / both.
+    assert(/data-import-apply-scope/.test(stripped),
+      "V-FLOW-IMPORT-PREVIEW-2: apply-scope picker MUST tag with data-import-apply-scope");
+    assert(/"current"/.test(stripped) && /"desired"/.test(stripped) && /"both"/.test(stripped),
+      "V-FLOW-IMPORT-PREVIEW-2: apply-scope picker MUST offer current / desired / both options");
+    // The disagreement indicator MUST be present.
+    assert(/data-import-state-disagreement/.test(stripped) || /LLM hinted/i.test(stripped),
+      "V-FLOW-IMPORT-PREVIEW-2: row-state ≠ modal-scope MUST surface a ⚠ 'LLM hinted X' indicator (R47.5.3)");
+  });
+
+  it("V-FLOW-IMPORT-BOTH-1 · S47.5.5 · 'Both' scope creates two truly independent records (state=current + state=desired) with NO originId linkage", async () => {
+    var mod;
+    try { mod = await import("/services/importApplier.js"); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-BOTH-1: importApplier module MUST exist at services/importApplier.js (RED-first scaffold)"); }
+    assertEqual(typeof mod.applyImportItems, "function",
+      "V-FLOW-IMPORT-BOTH-1: importApplier MUST export applyImportItems(engagement, items, opts) -> { engagement, addedInstanceIds }");
+    var schema = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
+    var eng = schema.createEmptyEngagement();
+    var addRes = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    var envUuid = eng.environments.allIds[0];
+    var items = [{
+      confidence: "high", rationale: "test",
+      data: { state: null, layerId: "compute", environmentId: envUuid, label: "Oracle DB", vendor: "Oracle", vendorGroup: "nonDell", criticality: "High", notes: "" }
+    }];
+    var res = mod.applyImportItems(eng, items, { scope: "both", provenance: { kind: "external-llm", source: "dell-internal", runId: "r1", mutatedAt: "2026-05-12T10:00:00Z" } });
+    var post = res.engagement;
+    // Both states present.
+    var currentInsts = post.instances.allIds.map(function(id) { return post.instances.byId[id]; }).filter(function(i) { return i.state === "current"; });
+    var desiredInsts = post.instances.allIds.map(function(id) { return post.instances.byId[id]; }).filter(function(i) { return i.state === "desired"; });
+    assertEqual(currentInsts.length, 1, "V-FLOW-IMPORT-BOTH-1: 'Both' MUST create 1 current instance per items[] entry");
+    assertEqual(desiredInsts.length, 1, "V-FLOW-IMPORT-BOTH-1: 'Both' MUST create 1 desired instance per items[] entry");
+    // Critical: NO originId linkage between them (R47.5.5).
+    assertEqual(desiredInsts[0].originId, null,
+      "V-FLOW-IMPORT-BOTH-1: desired instance from 'Both' import MUST have originId=null (no linkage; R47.5.5). Got: " + desiredInsts[0].originId);
+  });
+
+  it("V-FLOW-IMPORT-GHOST-1 · S47.5.6 · Tab 3 ghost-rendering Option B: when a state='desired' instance with the SAME label exists in the same (layerId, environmentId) cell, the ghost is suppressed", async () => {
+    // Source-grep MatrixView for the Option B rule. Implementation-time
+    // signal: the ghost-loop's predicate is extended to check for any
+    // desired tile with the same label in the same cell, not just one
+    // linked via originId.
+    var src;
+    try { src = await (await fetch("/ui/views/MatrixView.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-GHOST-1: failed to fetch MatrixView: " + (e && e.message || e)); }
+    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    // The original rule checks originId match. The Option B extension MUST
+    // also check label match for same-cell desired tiles. Source-grep for
+    // the new predicate token.
+    assert(/sameLabelDesiredExists|label-match|labelMatchInCell|S47\.5\.6|Option B/i.test(stripped),
+      "V-FLOW-IMPORT-GHOST-1: MatrixView.js MUST encode Option B ghost-suppression rule (R47.5.6). Search the buildGhostTile / ghost-loop for a sameLabelDesiredExists / label-match check or the S47.5.6 / Option B reference comment.");
+  });
+
+  it("V-FLOW-IMPORT-AITAG-KIND-1 · S47.9 · aiTag.kind='external-llm' for Path B-applied mutations; MatrixView tile renders the iLLM badge variant", async () => {
+    var instSchema = await import("/schema/instance.js");
+    // Schema MUST validate the new kind discriminator.
+    var probe = {
+      id: "00000000-0000-4000-8000-000000000001", engagementId: "00000000-0000-4000-8000-000000000000",
+      createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+      state: "desired", layerId: "compute", environmentId: "00000000-0000-4000-8000-000000000002",
+      label: "x", vendor: "Dell", vendorGroup: "dell", criticality: "Low", notes: "", disposition: "introduce",
+      originId: null, priority: "Now", mappedAssetIds: [], aiSuggestedDellMapping: null,
+      aiTag: { kind: "external-llm", source: "dell-internal", runId: "r1", mutatedAt: "2026-05-12T10:00:00Z" }
+    };
+    var res = instSchema.InstanceSchema.safeParse(probe);
+    assert(res.success === true,
+      "V-FLOW-IMPORT-AITAG-KIND-1: InstanceSchema MUST accept aiTag.kind='external-llm' with source='dell-internal' (R47.9 amendment). Errors: " + (res.error && JSON.stringify(res.error.issues)));
+    // Tile renders the iLLM variant.
+    var src;
+    try { src = await (await fetch("/ui/views/MatrixView.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-AITAG-KIND-1: fetch failed: " + (e && e.message || e)); }
+    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    assert(/iLLM|external-llm/i.test(stripped),
+      "V-FLOW-IMPORT-AITAG-KIND-1: MatrixView.js buildTile MUST render a distinct 'iLLM' / external-llm badge variant when aiTag.kind === 'external-llm' (R47.9.3)");
+  });
+
+  it("V-FLOW-IMPORT-AITAG-BACKCOMPAT-1 · S47.9.2 · legacy aiTag records without 'kind' field default to kind:'skill' (Zod default; no DB migration needed)", async () => {
+    var instSchema = await import("/schema/instance.js");
+    // Probe an aiTag with no kind field (legacy shape).
+    var probe = {
+      id: "00000000-0000-4000-8000-000000000001", engagementId: "00000000-0000-4000-8000-000000000000",
+      createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+      state: "desired", layerId: "compute", environmentId: "00000000-0000-4000-8000-000000000002",
+      label: "x", vendor: "Dell", vendorGroup: "dell", criticality: "Low", notes: "", disposition: "introduce",
+      originId: null, priority: "Now", mappedAssetIds: [], aiSuggestedDellMapping: null,
+      aiTag: { skillId: "legacy-skill", runId: "r1", mutatedAt: "2026-05-11T10:00:00Z" }
+    };
+    var res = instSchema.InstanceSchema.safeParse(probe);
+    assert(res.success === true,
+      "V-FLOW-IMPORT-AITAG-BACKCOMPAT-1: InstanceSchema MUST still accept legacy aiTag without kind field (back-compat preserved; R47.9.2). Errors: " + (res.error && JSON.stringify(res.error.issues)));
+    // After parse, the kind default MUST be 'skill'.
+    assertEqual(res.data.aiTag.kind, "skill",
+      "V-FLOW-IMPORT-AITAG-BACKCOMPAT-1: legacy aiTag MUST default to kind='skill' on parse (R47.9.2). Got: " + (res.data && res.data.aiTag && res.data.aiTag.kind));
+  });
+
+  it("V-FLOW-IMPORT-IMPORT-SUBSET-1 · S47.6.1 · 'import-subset' is a valid skill-schema outputFormat value; skills with this value route to the preview modal", async () => {
+    var skillSchema = await import("/schema/skill.js");
+    var probe = {
+      skillId: "test-import-subset", schemaVersion: "3.2",
+      label: "Test", description: "Test", seedPrompt: "x", improvedPrompt: "x",
+      dataPoints: [], parameters: [], outputFormat: "import-subset", mutationPolicy: "ask",
+      preview: "per-row", defaultScope: "desired", kind: "user",
+      createdAt: "2026-05-12T10:00:00Z", updatedAt: "2026-05-12T10:00:00Z"
+    };
+    var res = skillSchema.SkillSchema.safeParse(probe);
+    assert(res.success === true,
+      "V-FLOW-IMPORT-IMPORT-SUBSET-1: SkillSchema MUST accept outputFormat='import-subset' + preview='per-row' + defaultScope='desired' + kind='user' (R47.6 + R47.7.1). Errors: " + (res.error && JSON.stringify(res.error.issues)));
+  });
+
+  it("V-FLOW-IMPORT-SYSTEM-SKILL-LOADER-1 · S47.7.2 · v3SkillStore loads catalogs/skills/*.json as kind='system' skills at boot; user skills with the same skillId shadow the system version", async () => {
+    var mod = await import("/state/v3SkillStore.js");
+    assertEqual(typeof mod.loadV3Skills, "function",
+      "V-FLOW-IMPORT-SYSTEM-SKILL-LOADER-1: v3SkillStore.loadV3Skills MUST be exported as a function");
+    // After C1+C2 land, the system skill catalog will be loaded at module
+    // init. Source-grep the store for the system-skill loader hook.
+    var src;
+    try { src = await (await fetch("/state/v3SkillStore.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-SYSTEM-SKILL-LOADER-1: fetch failed: " + (e && e.message || e)); }
+    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    assert(/catalogs\/skills|kind.{0,10}system|loadSystemSkills/i.test(stripped),
+      "V-FLOW-IMPORT-SYSTEM-SKILL-LOADER-1: v3SkillStore.js MUST load system skills from catalogs/skills/* (R47.7.2). Source-grep for 'catalogs/skills' or 'kind: \"system\"' or 'loadSystemSkills'.");
+  });
+
+  it("V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1 · R47.7.4 · catalogs/skills/file-ingest-instances.json exists + ships as a kind='system' skill + is always present in the launcher in a fresh session", async () => {
+    var res;
+    try { res = await fetch("/catalogs/skills/file-ingest-instances.json"); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1: file fetch failed: " + (e && e.message || e)); }
+    assert(res && res.ok,
+      "V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1: catalogs/skills/file-ingest-instances.json MUST exist (status: " + (res && res.status) + ")");
+    var json;
+    try { json = await res.json(); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1: JSON parse failed: " + (e && e.message || e)); }
+    assertEqual(json.kind, "system",
+      "V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1: file-ingest skill MUST be kind='system'");
+    assertEqual(json.outputFormat, "import-subset",
+      "V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1: file-ingest skill MUST use outputFormat='import-subset'");
+    assertEqual(json.preview, "per-row",
+      "V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1: file-ingest skill MUST use preview='per-row'");
+    assertEqual(json.defaultScope, "desired",
+      "V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1: file-ingest skill MUST default to scope='desired' (user direction: most common workshop case)");
+    var hasFileParam = Array.isArray(json.parameters) && json.parameters.some(function(p) { return p && p.type === "file"; });
+    assert(hasFileParam,
+      "V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1: file-ingest skill MUST have a parameters[] entry of type='file'");
+  });
+
+  it("V-FLOW-IMPORT-FOOTER-BUTTON-1 · S47.8.1 + S47.8.2 · single 📤 Import data footer button exists next to Save/Open + opens modal with Step 1 + Step 2 visible", async () => {
+    var src;
+    try { src = await (await fetch("/index.html")).text(); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-FOOTER-BUTTON-1: fetch failed: " + (e && e.message || e)); }
+    assert(/id=["']importDataBtn["']|data-import-data-btn|Import data/i.test(src),
+      "V-FLOW-IMPORT-FOOTER-BUTTON-1: index.html footer MUST declare the Import data button (id='importDataBtn' or data-import-data-btn attribute)");
+    // App-level wiring: clicking the button opens the modal with both steps.
+    var appSrc;
+    try { appSrc = await (await fetch("/app.js")).text(); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-FOOTER-BUTTON-1: app.js fetch failed: " + (e && e.message || e)); }
+    var stripped = appSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    assert(/importDataBtn|openImportDataModal|wireImportDataBtn/i.test(stripped),
+      "V-FLOW-IMPORT-FOOTER-BUTTON-1: app.js MUST wire the importDataBtn click to open the import modal");
+  });
+
   it("V-CONSTITUTION-REFERENCE-PRESERVED · core/dataContract.reference.js exists with REFERENCE ONLY header and is NOT imported anywhere in the live module graph (preserves the original pre-rebuild contract for historical comparison)", async () => {
     var refSrc;
     try { refSrc = await (await fetch("/core/dataContract.reference.js")).text(); }

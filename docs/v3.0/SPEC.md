@@ -4525,4 +4525,239 @@ Saved skill JSON MUST NOT contain UUID literals in `seedPrompt`, `improvedPrompt
 - **Sections**: §S20 (Canvas Chat — overlay tabs extend its tab strip) · §S25 (data contract — STANDARD_MUTABLE_PATHS lives here) · §S29 (skill architecture v3.1 — schema extension) · §S31 (engagement persistence — `aiTag` persists with engagement) · §S35 (Skill Builder consolidation under Settings — Settings → Skills section is the home, established here) · §S37 (grounding contract — applies to skill-run LLM calls) · §S40 (v3-pure architecture — mutations route through `commitAction`).
 - **Memory anchors**: `feedback_spec_and_test_first.md` (this entire section authored before any implementation) · `feedback_no_mocks.md` (Improve + run = real LLM only) · `feedback_no_patches_flag_first.md` (curation-list location is single source; mid-run cancel modal not silent) · `feedback_test_or_it_didnt_ship.md` (23 tests authored RED at scaffold) · `feedback_principal_architect_discipline.md` (R5 transient-RED; R7 per-commit revertibility — each sub-arc R2..R7 is independently revertible).
 
+---
+
+## §S47 · Import Data workflow — file-driven LLM extraction (LOCKED 2026-05-12)
+
+### S47.0 · Status + authority
+
+**Status**: AUTHORED 2026-05-12 as the rc.8.b post-skill-builder arc. SPEC + RULES + RED tests land first per `feedback_spec_and_test_first.md`; the 3-commit implementation arc lands after this section + V-FLOW-IMPORT-* test scaffolds.
+
+**Authority**: user direction 2026-05-12 — closes the architectural gap where a presales workshop typically begins with an externally-sourced data file (Excel install-base, PDF estate diagram, CSV inventory, vendor quote) that needs intelligent extraction to seed the engagement. Two ingress paths share a unified backend.
+
+### S47.1 · Two ingress paths, one importer
+
+The importer is the same downstream pipeline regardless of source. Differentiation happens only at the entry point + the provenance tag stamped on apply.
+
+**Path A · Skills Builder system skill** (file-ingest-instances): file parameter (`accepts: ".xlsx,.csv,.pdf,.txt"`) → Claude API at runtime → JSON output in the canonical `import-subset` shape → shared importer + preview modal → apply.
+
+**Path B · Footer button workflow** (Dell internal LLM): single footer button "Import data" opens a 2-step modal. Step 1 generates a context-aware `.txt` instructions file. Engineer runs the instructions externally through Dell's internal LLM with their source data. Step 2 accepts the JSON response → shared importer + preview modal → apply.
+
+### S47.2 · Scope (R47.2.1 · LOCKED)
+
+This arc handles **instance entities only**. Drivers, gaps, and environments are out of scope for the import flow. Future arcs MAY extend (with explicit SPEC amendments); the convergent design supports extension without redesign.
+
+### S47.3 · Canonical `import-subset` JSON shape
+
+The shared schema both paths produce + the importer consumes:
+
+```jsonc
+{
+  "schemaVersion": "1.0",
+  "kind": "instance.add",
+  "generatedAt": "2026-05-12T10:23:00Z",
+  "engagementContextSnapshot": {           // present on Path B; recorded at instructions-generation time
+    "customerName": "Northstar Health Network",
+    "environmentSlots": [
+      { "uuid": "abc-123", "label": "Primary Data Center", "envCatalogId": "coreDc" },
+      { "uuid": "def-456", "label": "Disaster Recovery Site", "envCatalogId": "drDc" }
+    ]
+  },
+  "items": [
+    {
+      "confidence": "high",                // enum: "high" | "medium" | "low"
+      "rationale": "Source row reference (e.g. 'Excel sheet Compute, row 12')",
+      "data": {
+        "state": "desired",                // OR "current"; OR null (no LLM signal — modal scope wins)
+        "layerId": "compute",              // FK to LAYERS catalog
+        "environmentId": "abc-123",        // FK; MUST be in engagementContextSnapshot.environmentSlots
+        "label": "Oracle Production DB",   // ≥1 char
+        "vendor": "Oracle",
+        "vendorGroup": "nonDell",          // enum: "dell" | "nonDell" | "custom"
+        "criticality": "High",             // enum: "High" | "Medium" | "Low"
+        "notes": "EOL Q4 2026 per source row 14"
+      }
+    }
+  ]
+}
+```
+
+R47.3.1 · `schemaVersion === "1.0"` for this rev. Bumps on shape changes.
+
+R47.3.2 · `engagementContextSnapshot` is REQUIRED on Path B (records env-slot state at instructions-generation time) and OMITTED on Path A (skill runs against live engagement; no snapshot needed).
+
+R47.3.3 · Each `items[].data.state` is a HINT from the LLM, never authoritative. The modal's apply-scope picker is the final authority (per S47.5.2).
+
+R47.3.4 · `items[].confidence` is required; enum-validated; surfaced in the preview modal as a colored chip (green=high, amber=medium, red=low).
+
+### S47.4 · Instructions file (Path B only)
+
+R47.4.1 · Format is `.txt` (universal; no `.md`-aware viewer assumed). Internal structure uses markdown conventions (`### Heading`, code fences) for readability but the file extension is `.txt`.
+
+R47.4.2 · Filename convention: `dell-canvas-import-instructions-<customer-slug>-<YYYYMMDD>-<HHmmss>.txt` so multiple generations don't collide.
+
+R47.4.3 · Content sections (in order):
+
+1. **Header** · "Dell Discovery Canvas — data extraction instructions"
+2. **Customer context** · `customer.name` + `customer.verticalLabel` + engagement creation date
+3. **Environment slots** (CRITICAL · the LLM MUST map every extracted row to one of these UUIDs)
+   - For each visible env: UUID, label, envCatalogId
+4. **Data schema for `instance` entity** · field list with enum constraints (LAYERS / vendorGroup / criticality)
+5. **Semantic glossary** · sourced verbatim from `RELATIONSHIPS_METADATA` (level vs phase, FK rules)
+6. **Required output JSON shape** · the schema above with field-by-field annotations
+7. **Confidence-rating guidance** · what triggers high/medium/low
+8. **State-hint guidance** · when to mark `state: "current"` vs `"desired"` vs `null` (R47.4.4)
+9. **2-3 worked examples** · synthetic Example Corp / Acme Industries data (NEVER real customer)
+10. **Strict-match warning** · "the JSON response MUST reference the env UUIDs above exactly; engagement changes between generation and import will reject the response"
+11. **System prompt body** · ready-to-paste for the Dell internal LLM
+
+R47.4.4 · State-hint guidance (sourced from S47.3.3):
+
+> Mark `state: "current"` for rows with explicit signals: "currently running", "in production", "EOL", "legacy", "today's environment".
+> Mark `state: "desired"` for rows with explicit signals: "planned", "proposed", "future", "TBD", "Q3 2027 migration", "target architecture".
+> Mark `state: null` when no signal is present. The engineer will apply scope at preview time.
+
+R47.4.5 · Instructions are CONTEXT-AWARE: regenerated against the live engagement at click time. If the engineer adds/removes envs between two instructions-generation clicks, the second download supersedes the first (no version reconciliation logic).
+
+### S47.5 · Preview modal (shared between Path A + Path B)
+
+R47.5.1 · Single modal component (`ui/components/ImportPreviewModal.js`, NEW). Rendered after both paths produce the canonical JSON shape. Layout per the mock in user-confirmed design:
+
+- Top bar: apply-scope picker (`◯ Current  ◉ Desired  ◯ Both`)
+- Body: per-row table (one row per `items[]` entry):
+  - Checkbox (accept/reject toggle; default checked)
+  - Confidence chip
+  - LLM-state hint chip (e.g. `LLM: desired`)
+  - Disagreement warning indicator when `data.state` ≠ modal scope (per R47.5.3)
+  - Editable inline cells: label, vendor, vendorGroup, layerLabel, environmentName, criticality, notes
+- Footer: row count summary + `[Apply N selected]` button
+
+R47.5.2 · The apply-scope picker is AUTHORITATIVE. The engineer's final click determines target state at apply time. The LLM's `data.state` hint per row is informational only.
+
+R47.5.3 · When `items[].data.state` ≠ modal scope (for non-`null` LLM state), inline indicator `⚠ LLM hinted "current"` (or "desired") surfaces on the row. The engineer can deselect the row to skip it OR proceed (modal scope overrides).
+
+R47.5.4 · Default scope per skill: read from `skill.defaultScope` field (per R47.6.4). Path B default is `"desired"` (per user direction — most common workshop case).
+
+R47.5.5 · "Both" semantics: creates **two truly independent records** per `items[]` entry (one with `state="current"`, one with `state="desired"`). No `originId` linkage between them. Engineer can edit either side independently. See R47.5.6 for the ghost-rendering rule that prevents UI collision.
+
+R47.5.6 · **Ghost-rendering Option B** (matrix view rule extension): the existing Tab 3 ghost-tile logic that renders `?Review` for current instances without a desired counterpart is EXTENDED — no ghost rendered when a `state="desired"` instance with the same `label` exists in the same `(layerId, environmentId)` cell. Locked by V-FLOW-IMPORT-GHOST-1.
+
+### S47.6 · Skills Builder framework extensions
+
+This arc lands 3 additive framework extensions, each general-purpose (not a local patch for this skill):
+
+R47.6.1 · **New `outputFormat` value `"import-subset"`** (extension to S46.6). Indicates the skill produces the canonical S47.3 JSON shape. Distinct from `"json-array"` (which mutates existing records) — `"import-subset"` ADDS new records via `commitInstanceAdd` (and future `commitDriverAdd` / `commitGapAdd` if scope expands).
+
+R47.6.2 · **New `preview` field on the skill schema** with enum `"none" | "per-row"` (default `"none"` for back-compat). When `"per-row"`, the skill output opens the import preview modal (S47.5) instead of the existing inline approval modal. Reusable beyond import-subset — any future skill that produces multiple mutations may opt in.
+
+R47.6.3 · **New `defaultScope` field on the skill schema** with enum `"current" | "desired" | "both"` (default `"desired"`). Sets the apply-scope picker's initial state. Authoritative only as the default; engineer's preview-time choice overrides.
+
+R47.6.4 · Schema fields added to `schema/skill.js v3.2`:
+```js
+preview:       z.enum(["none", "per-row"]).default("none"),
+defaultScope:  z.enum(["current", "desired", "both"]).default("desired"),
+```
+
+Existing skills without these fields default per `.default()` semantics (back-compat preserved).
+
+### S47.7 · System skills distribution model
+
+R47.7.1 · `schema/skill.js` gains `kind: z.enum(["system", "user"]).default("user")` field.
+
+R47.7.2 · `state/v3SkillStore.js _rehydrateFromStorage` is extended: BEFORE loading user skills from localStorage, load every `*.json` in `catalogs/skills/` as system skills. User skills with the same `skillId` SHADOW the system version (engineer's saved edits win) but the system version stays present in the registry.
+
+R47.7.3 · The Canvas Chat skills launcher (S46.7) renders system skills with a distinct "System" chip and sorts them ahead of user skills. Save/Edit on a system skill prompts "Save as new user skill" (clone-to-edit); originals are immutable in the system catalog.
+
+R47.7.4 · The file-ingest skill ships as `catalogs/skills/file-ingest-instances.json` with `kind: "system"`. Always available in every new session.
+
+### S47.8 · Footer button + workflow surface
+
+R47.8.1 · **Single footer button** added next to Open file: `📤 Import data`. Opens the modal in R47.8.2.
+
+R47.8.2 · Modal layout (single, 2-step, both visible):
+
+- Header · "Import data" + close X
+- Lede · "Import technology data into your engagement using Dell's internal LLM."
+- **Step 1 · Generate instructions for Dell internal LLM**
+  - Apply-to picker (current / desired / both; default desired)
+  - Source notes input (optional, embedded into the generated file's context)
+  - Inline env chips · live list of visible engagement envs, transparent about what gets exported
+  - `[📋 Download instructions.txt]` button
+- **Step 2 · Import Dell LLM's JSON response**
+  - File picker `[📤 Select JSON file…]`
+  - On select: parse + validate → opens preview modal (S47.5)
+- **Workflow card** · 4-step recipe ("1. Generate instructions · 2. Take to Dell LLM · 3. Save JSON · 4. Return here")
+- **Strict-match warning** · sharp 1-sentence note (per R47.8.3)
+
+R47.8.3 · Strict-match warning text: "Strict matching: the JSON response must reference exactly the environments listed above. If you add/remove environments before importing, the response will be rejected — re-generate instructions."
+
+R47.8.4 · Drift detection on JSON import (Path B only): every `items[].data.environmentId` MUST be present in the LIVE engagement's environments collection. If ANY referenced UUID is missing, the entire import is REJECTED with a 1-line error: "Response references N environment(s) no longer in this engagement. Re-generate instructions and re-run." (No partial-apply, no fuzzy remap — strict per user direction R47.8.3.)
+
+### S47.9 · Provenance — `aiTag.kind` discriminator (CONSTITUTIONAL AMENDMENT to §S25)
+
+R47.9.1 · `schema/instance.js aiTag` extended (back-compat preserved via discriminator default):
+
+```js
+// BEFORE
+aiTag: z.object({
+  skillId:   z.string().min(1),
+  runId:     z.string().min(1),
+  mutatedAt: z.string().min(1)
+}).nullable().default(null)
+
+// AFTER (S47 constitutional amendment)
+aiTag: z.object({
+  kind:      z.enum(["skill", "external-llm"]).default("skill"),
+  skillId:   z.string().optional(),       // present when kind="skill"
+  source:    z.string().optional(),        // present when kind="external-llm" (e.g., "dell-internal")
+  runId:     z.string().min(1),
+  mutatedAt: z.string().min(1)
+}).nullable().default(null)
+```
+
+R47.9.2 · Migrator behavior: persisted engagements with `aiTag.{skillId, runId, mutatedAt}` and no `kind` field → treated as `kind: "skill"` via Zod default. No DB migration script needed; the default kicks in on next load.
+
+R47.9.3 · Tile rendering (`ui/views/MatrixView.js buildTile`): the existing "AI" badge surface stays. Visual differentiation by `kind`:
+
+| `aiTag.kind` | Badge label | Background | Tooltip |
+|---|---|---|---|
+| `"skill"` (default) | `AI` | Dell-blue (existing) | "Mutated by skill <skillId> · runId · mutatedAt" |
+| `"external-llm"` | `iLLM` | Amber/orange | "Imported from external LLM (<source>) · runId · mutatedAt" |
+
+R47.9.4 · Auto-clear behavior on next engineer save (existing rc.8.b R7 contract) is preserved for BOTH kinds. `instanceActions.updateInstance` strips `aiTag` regardless of `kind`.
+
+### S47.10 · Test contract (V-FLOW-IMPORT-* family · 15 tests)
+
+| Test | Verifies |
+|---|---|
+| V-FLOW-IMPORT-INSTRUCTIONS-1 | Path B Step 1 produces a `.txt` file (not `.md` or `.json`) with the customer name + visible env list embedded |
+| V-FLOW-IMPORT-INSTRUCTIONS-2 | Instructions file's env-slot list matches the LIVE engagement at click time (context-aware, per R47.4.5) |
+| V-FLOW-IMPORT-INSTRUCTIONS-3 | Instructions file contains the strict-match warning text verbatim (per R47.8.3) |
+| V-FLOW-IMPORT-RESPONSE-SCHEMA-1 | JSON response validates via Zod against the canonical `import-subset` schema (S47.3); malformed input is rejected with a clear error |
+| V-FLOW-IMPORT-DRIFT-1 | Path B strict-reject: response referencing a missing env UUID rejects with the per-R47.8.4 error message; no partial apply |
+| V-FLOW-IMPORT-PREVIEW-1 | Preview modal renders one row per `items[]` entry with the confidence chip + per-row LLM-state hint |
+| V-FLOW-IMPORT-PREVIEW-2 | Modal apply-scope picker is authoritative; when scope ≠ row's `data.state`, inline `⚠ LLM hinted "X"` indicator appears (per R47.5.3) |
+| V-FLOW-IMPORT-BOTH-1 | "Both" scope creates two truly independent records (state=current + state=desired) with NO `originId` linkage (per R47.5.5) |
+| V-FLOW-IMPORT-GHOST-1 | Tab 3 ghost-rendering Option B: when a `state="desired"` instance with same `label` exists in the same `(layerId, environmentId)` cell, the ghost is suppressed (per R47.5.6) |
+| V-FLOW-IMPORT-AITAG-KIND-1 | `aiTag.kind === "external-llm"` for Path B-applied mutations; tile renders the `iLLM` badge variant (per R47.9) |
+| V-FLOW-IMPORT-AITAG-BACKCOMPAT-1 | Legacy `aiTag` records without `kind` field default to `kind: "skill"` on load (per R47.9.2) |
+| V-FLOW-IMPORT-IMPORT-SUBSET-1 | `outputFormat: "import-subset"` is a valid skill-schema value (per R47.6.1); skills with this value route to the preview modal |
+| V-FLOW-IMPORT-SYSTEM-SKILL-LOADER-1 | `state/v3SkillStore` loads `catalogs/skills/*.json` as `kind: "system"` skills at boot; user skills shadow by `skillId` (per R47.7) |
+| V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1 | `catalogs/skills/file-ingest-instances.json` ships in the system catalog + is always present in the launcher in a fresh session |
+| V-FLOW-IMPORT-FOOTER-BUTTON-1 | A single `📤 Import data` button exists in the footer + its click opens the modal with both Step 1 + Step 2 visible (per R47.8.1, R47.8.2) |
+
+### S47.11 · Trace
+
+- **Principles**: P3 (presentation derived) — preview modal is a derivation of the canonical JSON; never two parallel renderers. P5 (atomic operations) — each row commits via a single `commitInstanceAdd` with provenance envelope. P7 (caller-agnostic) — the importer doesn't know whether the JSON came from Claude (Path A) or paste-back (Path B); same code path.
+- **Sections**: §S25 (constitutional amendment for `aiTag.kind`) · §S46 (Skills Builder framework extensions: import-subset / preview / defaultScope / system skills) · §S20 (Canvas Chat — system-skills chip in launcher) · §S31 (engagement persistence — aiTag with kind persists with engagement).
+- **Memory anchors**: `feedback_spec_and_test_first.md` (this section + 15 RED tests authored before code) · `feedback_no_mocks.md` (skill + Dell LLM are real-LLM only; no synthetic fixtures) · `feedback_no_patches_flag_first.md` (each of the 3 framework extensions is general-purpose, justified, not a local patch).
+
+---
+
+## §S25 amendment 2026-05-12 · `aiTag.kind` constitutional amendment
+
+The §S25 contract is extended at commit time of §S47 implementation arc with the `aiTag.kind` discriminator (see S47.9). This is a CONSTITUTIONAL AMENDMENT (schema change) and lands per the protocol: SPEC §S25 amendment + `[CONSTITUTIONAL AMENDMENT]` commit title + `EXPECTED_CHECKSUM` update in V-CONSTITUTION-CHECKSUM (when that test exists). The original `aiTag` shape is preserved for legacy records via Zod `.default()`; no DB migration needed.
+
+---
+
 End of SPEC.
