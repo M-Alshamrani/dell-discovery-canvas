@@ -874,6 +874,11 @@ export const RELATIONSHIPS_METADATA = Object.freeze({
     mandatoryWith: [], crossCutting: false, provenance: null, derivedFrom: null,
     ordering: _FREE_TEXT("Free-text customer organization name. The most-referenced field; the anchor for the entire engagement narrative.")
   },
+  // BUG-058 FIX 1-4 (2026-05-12) · customer.* are SINGLETON fields ·
+  // mandatoryWith: [] · the engagement context already implies whose
+  // data this is · forcing customer.name as a pairing creates busywork
+  // in the picker without value (anchor pairing rule applies to COLLECTIONS,
+  // not singletons). See docs/CANVAS_DATA_MAP.md r1 §7.2 FIX 1-4.
   "customer.verticalLabel": {
     isAnchor: false, fkPair: "customer.vertical", crossCutting: false, provenance: null, derivedFrom: null,
     stateConditional: null,
@@ -882,29 +887,33 @@ export const RELATIONSHIPS_METADATA = Object.freeze({
       { kind: "catalog", catalogId: "CUSTOMER_VERTICALS", label: "CUSTOMER_VERTICALS catalog" },
       { kind: "result",  field: "label",                  label: "→ .label (resolved)" }
     ],
-    mandatoryWith: ["customer.name"],
+    mandatoryWith: [],
     ordering: _CATEGORICAL("Catalog-resolved industry segment label.")
   },
   "customer.vertical": {
     isAnchor: false, fkPair: "customer.verticalLabel", crossCutting: false, provenance: null, derivedFrom: null,
-    multiHop: null, stateConditional: null, mandatoryWith: ["customer.name"],
+    multiHop: null, stateConditional: null, mandatoryWith: [],
     ordering: _CATEGORICAL("Raw FK id form. Most skills want customer.verticalLabel instead — this is for id-matching skills.")
   },
   "customer.region": {
     isAnchor: false, fkPair: null, multiHop: null, stateConditional: null,
-    mandatoryWith: ["customer.name"], crossCutting: false, provenance: null, derivedFrom: null,
+    mandatoryWith: [], crossCutting: false, provenance: null, derivedFrom: null,
     ordering: _FREE_TEXT("Free-text region. Not validated.")
   },
   "customer.notes": {
     isAnchor: false, fkPair: null, multiHop: null, stateConditional: null,
-    mandatoryWith: ["customer.name"], crossCutting: false, provenance: null, derivedFrom: null,
+    mandatoryWith: [], crossCutting: false, provenance: null, derivedFrom: null,
     ordering: _FREE_TEXT("Free-text catch-all customer context.")
   },
 
   // ─── EngagementMeta (singleton) ───────────────────────────────────
+  // BUG-058 FIX 5 (2026-05-12) · USER-FLAGGED · engagementMeta.presalesOwner
+  // is a SINGLETON field · mandatoryWith: [] · presales-owner is workshop-
+  // level metadata that stands alone semantically (not coupled to customer
+  // narrative). See docs/CANVAS_DATA_MAP.md r1 §7.2 FIX 5.
   "engagementMeta.presalesOwner": {
     isAnchor: false, fkPair: null, multiHop: null, stateConditional: null,
-    mandatoryWith: ["customer.name"], crossCutting: false, provenance: null, derivedFrom: null,
+    mandatoryWith: [], crossCutting: false, provenance: null, derivedFrom: null,
     ordering: _FREE_TEXT("Free-text presales engineer name. Workshop-level metadata.")
   },
 
@@ -1100,12 +1109,18 @@ export const RELATIONSHIPS_METADATA = Object.freeze({
     crossCutting: false, provenance: "system", derivedFrom: null,
     ordering: _CATEGORICAL("Raw UUID. Replace-lifecycle anchor — set automatically by Tab 3 disposition apply.")
   },
+  // BUG-058 FIX 6 (2026-05-12) · crossCutting: false (was true) ·
+  // mapWorkloadAssets enforces I7 invariant (asset.environmentId ===
+  // workload.environmentId) · mapped assets are SAME-ENV only · the pre-
+  // fix claim "MAY span different environments" was directly contradicted
+  // by state/collections/instanceActions.js mapWorkloadAssets I7. See
+  // docs/CANVAS_DATA_MAP.md r1 §7.2 FIX 6.
   "instance.mappedAssetIds": {
     isAnchor: false, fkPair: null, multiHop: null,
     stateConditional: { onField: "instance.layerId", value: "workload", description: "WORKLOAD-LAYER only. Other layers have empty mappedAssetIds." },
     mandatoryWith: ["instance.label"],
-    crossCutting: true, provenance: null, derivedFrom: null,
-    ordering: _CATEGORICAL("Array of FK to instances. CROSS-CUTTING: mapped assets MAY span different environments than the workload itself.")
+    crossCutting: false, provenance: null, derivedFrom: null,
+    ordering: _CATEGORICAL("Array of FK to instances. SAME-ENV: mapWorkloadAssets I7 invariant enforces asset.environmentId === workload.environmentId — mapped assets MUST share the workload's environment. Cross-environment mappings are forbidden by the action layer.")
   },
 
   // ─── Gap (collection) ─────────────────────────────────────────────
@@ -1114,10 +1129,17 @@ export const RELATIONSHIPS_METADATA = Object.freeze({
     mandatoryWith: [], crossCutting: false, provenance: null, derivedFrom: null,
     ordering: _FREE_TEXT("Free-text one-line gap statement. The anchor for any gap-level skill.")
   },
+  // BUG-058 CLARIFY 7 (2026-05-12) · sourceFields use `[*]` (most-recently-
+  // changed wins) instead of the imprecise `[0]` · state/dispositionLogic.js
+  // syncGapsFromCurrentCriticalityAction iterates ALL gaps whose
+  // relatedCurrentInstanceIds contains the changed instance and writes
+  // urgency = curInst.criticality · with multiple linked currents,
+  // last-changed wins (NOT a max-aggregate). See docs/CANVAS_DATA_MAP.md
+  // r1 §7.3 CLARIFY 7.
   "gap.urgency": {
     isAnchor: false, fkPair: null, multiHop: null, stateConditional: null,
     mandatoryWith: ["gap.description"], crossCutting: false, provenance: null,
-    derivedFrom: { selector: "(propagation)", sourceFields: ["gap.relatedCurrentInstanceIds[0].criticality"], description: "Auto-derived from the linked current instance's criticality unless gap.urgencyOverride=true. When override is set, the value is author-pinned." },
+    derivedFrom: { selector: "(propagation)", sourceFields: ["gap.relatedCurrentInstanceIds[*].criticality (most-recently-changed wins)"], description: "Auto-derived from linked current instances' criticality unless gap.urgencyOverride=true. When override is set, the value is author-pinned. With multiple linked currents, the sync logic (state/dispositionLogic.js syncGapsFromCurrentCriticalityAction) updates urgency to match whichever linked current's criticality most recently changed — NOT a max-aggregate." },
     ordering: _LEVEL_ORDERING
   },
   "gap.phase": {
@@ -1130,10 +1152,16 @@ export const RELATIONSHIPS_METADATA = Object.freeze({
     mandatoryWith: ["gap.description"], crossCutting: false, provenance: null, derivedFrom: null,
     ordering: _CATEGORICAL("Workflow state: open / in_progress / closed / deferred.")
   },
+  // BUG-058 CLARIFY 8 (2026-05-12) · description amended to note that
+  // auto-drafted gaps LOCK the field read-only in Tab 4 UI (§8e gap-type
+  // dropdown is disabled when gap.origin==='autoDraft'). To change the
+  // gap-type on an auto-drafted gap, the engineer must change the source
+  // disposition in Tab 3 §8 (which re-derives the gap-type through
+  // commitSyncGapFromDesired). See docs/CANVAS_DATA_MAP.md r1 §7.3 CLARIFY 8.
   "gap.gapTypeLabel": {
     isAnchor: false, fkPair: "gap.gapType", crossCutting: false, provenance: null,
     stateConditional: null, mandatoryWith: ["gap.description"],
-    derivedFrom: { selector: "(disposition source)", sourceFields: ["instance.disposition (when gap.origin=autoDraft)"], description: "Auto-derived from the source disposition for auto-drafted gaps (gap.origin='autoDraft'). Manual gaps have author-set gapType." },
+    derivedFrom: { selector: "(disposition source)", sourceFields: ["instance.disposition (when gap.origin=autoDraft)"], description: "Auto-derived from the source disposition for auto-drafted gaps (gap.origin='autoDraft'). Manual gaps have author-set gapType. Auto-drafted gaps are LOCKED read-only in the Tab 4 UI (§8e dropdown disabled when gap.origin==='autoDraft') — change the source disposition in Tab 3 §8 to change the gap-type, which propagates through commitSyncGapFromDesired." },
     multiHop: [
       { kind: "source",  path: "gap.gapType",      label: "FK id" },
       { kind: "catalog", catalogId: "GAP_TYPES",   label: "GAP_TYPES catalog" },

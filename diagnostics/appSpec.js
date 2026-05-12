@@ -20519,6 +20519,86 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
   // DOM-mount assertions when Path A re-attempts under proper discipline
   // (per feedback_5_forcing_functions.md Rule A + Rule B).
 
+  // BUG-058 constitutional fix regression tests · the 6 FIX + 2 CLARIFY
+  // recommended in docs/CANVAS_DATA_MAP.md r1 §7 (the [CONSTITUTIONAL TOUCH
+  // PROPOSED] Q&A artifact). Each test reads RELATIONSHIPS_METADATA via
+  // the public accessor + asserts the post-fix value. If a future commit
+  // re-introduces the pre-fix value, the test goes RED.
+  //
+  // FIX scope: singleton entities (customer.*, engagementMeta.*) MUST have
+  //   mandatoryWith: [] (anchor pairing is for COLLECTIONS, not singletons).
+  // FIX scope: instance.mappedAssetIds MUST have crossCutting: false
+  //   (mapWorkloadAssets I7 invariant enforces same-environment mapping).
+  // CLARIFY scope: gap.urgency derivedFrom.sourceFields MUST reference
+  //   `[*].criticality` (most-recently-changed wins), not `[0].criticality`.
+  // CLARIFY scope: gap.gapTypeLabel derivedFrom.description MUST mention
+  //   that auto-drafted gaps LOCK the field read-only in Tab 4.
+
+  it("V-FLOW-CONSTITUTION-SINGLETON-MANDATORY-1 · BUG-058 FIX 1-5 · singleton entity fields have mandatoryWith=[] (no anchor pairing forced)", async () => {
+    var dcMod = await import("/core/dataContract.js");
+    var rel = dcMod.getRelationshipsMetadata();
+    var singletonPaths = [
+      "customer.verticalLabel",
+      "customer.vertical",
+      "customer.region",
+      "customer.notes",
+      "engagementMeta.presalesOwner"
+    ];
+    singletonPaths.forEach(function(path) {
+      var entry = rel[path];
+      assert(entry, "V-FLOW-CONSTITUTION-SINGLETON-MANDATORY-1: RELATIONSHIPS_METADATA MUST contain " + path);
+      assert(Array.isArray(entry.mandatoryWith),
+        "V-FLOW-CONSTITUTION-SINGLETON-MANDATORY-1: " + path + ".mandatoryWith MUST be an array; got: " + typeof entry.mandatoryWith);
+      assertEqual(entry.mandatoryWith.length, 0,
+        "V-FLOW-CONSTITUTION-SINGLETON-MANDATORY-1: " + path + ".mandatoryWith MUST be empty array · BUG-058 FIX · singletons have no anchor pairing; got: " + JSON.stringify(entry.mandatoryWith));
+    });
+    // customer.name itself is the anchor · already mandatoryWith=[].
+    var anchor = rel["customer.name"];
+    assertEqual(anchor.isAnchor, true,
+      "V-FLOW-CONSTITUTION-SINGLETON-MANDATORY-1: customer.name MUST remain isAnchor=true (the singleton's identity field, when picked, surfaces customer context for free)");
+  });
+
+  it("V-FLOW-CONSTITUTION-MAPPED-ASSETS-1 · BUG-058 FIX 6 · instance.mappedAssetIds crossCutting=false (I7 invariant enforces same-env mapping)", async () => {
+    var dcMod = await import("/core/dataContract.js");
+    var rel = dcMod.getRelationshipsMetadata();
+    var entry = rel["instance.mappedAssetIds"];
+    assert(entry, "V-FLOW-CONSTITUTION-MAPPED-ASSETS-1: RELATIONSHIPS_METADATA MUST contain instance.mappedAssetIds");
+    assertEqual(entry.crossCutting, false,
+      "V-FLOW-CONSTITUTION-MAPPED-ASSETS-1: instance.mappedAssetIds.crossCutting MUST be false · BUG-058 FIX · mapWorkloadAssets I7 invariant enforces asset.environmentId === workload.environmentId (same-env constraint); pre-fix had crossCutting=true with comment 'MAY span different environments' which contradicted the action code; got: " + entry.crossCutting);
+    // The ordering.note MUST NOT claim cross-environment spanning anymore.
+    assert(entry.ordering && entry.ordering.note,
+      "V-FLOW-CONSTITUTION-MAPPED-ASSETS-1: instance.mappedAssetIds.ordering.note MUST exist");
+    assert(!/MAY span different environments/i.test(entry.ordering.note),
+      "V-FLOW-CONSTITUTION-MAPPED-ASSETS-1: instance.mappedAssetIds.ordering.note MUST NOT claim 'MAY span different environments' (contradicted by I7 invariant); got: " + entry.ordering.note);
+    assert(/same.env|I7|same.environment/i.test(entry.ordering.note),
+      "V-FLOW-CONSTITUTION-MAPPED-ASSETS-1: instance.mappedAssetIds.ordering.note MUST mention same-env constraint OR I7 invariant; got: " + entry.ordering.note);
+  });
+
+  it("V-FLOW-CONSTITUTION-URGENCY-DERIVED-1 · BUG-058 CLARIFY 7 · gap.urgency derivedFrom.sourceFields uses [*] (most-recently-changed wins), not the imprecise [0]", async () => {
+    var dcMod = await import("/core/dataContract.js");
+    var rel = dcMod.getRelationshipsMetadata();
+    var entry = rel["gap.urgency"];
+    assert(entry, "V-FLOW-CONSTITUTION-URGENCY-DERIVED-1: RELATIONSHIPS_METADATA MUST contain gap.urgency");
+    assert(entry.derivedFrom && Array.isArray(entry.derivedFrom.sourceFields),
+      "V-FLOW-CONSTITUTION-URGENCY-DERIVED-1: gap.urgency.derivedFrom.sourceFields MUST be an array");
+    var joined = entry.derivedFrom.sourceFields.join(" | ");
+    assert(/relatedCurrentInstanceIds\[\*\]/.test(joined),
+      "V-FLOW-CONSTITUTION-URGENCY-DERIVED-1: sourceFields MUST reference relatedCurrentInstanceIds[*] (all linked currents, not just [0]) · BUG-058 CLARIFY · syncGapsFromCurrentCriticalityAction iterates ALL linked currents and the most-recently-changed wins; the pre-fix [0] index claim was imprecise; got: " + joined);
+    assert(!/relatedCurrentInstanceIds\[0\]/.test(joined),
+      "V-FLOW-CONSTITUTION-URGENCY-DERIVED-1: sourceFields MUST NOT use the imprecise [0] index; got: " + joined);
+  });
+
+  it("V-FLOW-CONSTITUTION-GAPTYPE-LOCKED-1 · BUG-058 CLARIFY 8 · gap.gapTypeLabel derivedFrom.description notes that auto-drafted gaps LOCK the field read-only", async () => {
+    var dcMod = await import("/core/dataContract.js");
+    var rel = dcMod.getRelationshipsMetadata();
+    var entry = rel["gap.gapTypeLabel"];
+    assert(entry, "V-FLOW-CONSTITUTION-GAPTYPE-LOCKED-1: RELATIONSHIPS_METADATA MUST contain gap.gapTypeLabel");
+    assert(entry.derivedFrom && entry.derivedFrom.description,
+      "V-FLOW-CONSTITUTION-GAPTYPE-LOCKED-1: gap.gapTypeLabel.derivedFrom.description MUST be set");
+    assert(/LOCKED|locked|read.only|immutable/i.test(entry.derivedFrom.description),
+      "V-FLOW-CONSTITUTION-GAPTYPE-LOCKED-1: gap.gapTypeLabel.derivedFrom.description MUST mention LOCKED / read-only behavior for auto-drafted gaps · BUG-058 CLARIFY · Tab 4 §8e UI prevents direct editing of auto-drafted gap-type; the source disposition must change in Tab 3 instead; got: " + entry.derivedFrom.description);
+  });
+
   // BUG-059 · SkillBuilder skill-list rows render UNSTYLED · the JS uses
   // .skill-admin-row / -info / -label / -desc / -meta classes that have
   // ZERO CSS rules · text and meta tags glue together with no separation.
