@@ -19153,22 +19153,25 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
     } finally { host.remove(); }
   });
 
-  it("V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1 · R1 / SPEC §S46.3 + §S46.6 / CH36.4 · RED until R3 · output-format radio renders exactly 4 options (text / dimensional / json-array / scalar)", async () => {
+  it("V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1 · R1 / SPEC §S46.3 + §S46.6 / CH36.4 + §S47.6.1 · output-format radio renders the 5 locked enum options (text / dimensional / json-array / scalar / import-subset)", async () => {
     const { renderSkillBuilder } = await import("/ui/views/SkillBuilder.js");
     var host = document.createElement("div");
     document.body.appendChild(host);
     try {
       renderSkillBuilder(host, function() {});
       var radios = host.querySelectorAll("[data-skill-output-format]");
-      assert(radios.length > 0, "V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1 (RED-until-R3): edit form MUST contain output-format radios with [data-skill-output-format] attribute (per SPEC §S46.6)");
+      assert(radios.length > 0, "V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1: edit form MUST contain output-format radios with [data-skill-output-format] attribute (per SPEC §S46.6)");
       var values = Array.from(radios).map(function(r) { return r.value || r.getAttribute("data-output-format-value"); });
-      var expected = ["text", "dimensional", "json-array", "scalar"];
+      // SPEC §S47.6.1 amendment 2026-05-12 - "import-subset" added to the
+      // OutputFormat enum · the 5-option locked set is now {text, dimensional,
+      // json-array, scalar, import-subset}.
+      var expected = ["text", "dimensional", "json-array", "scalar", "import-subset"];
       expected.forEach(function(v) {
         assert(values.indexOf(v) >= 0,
-          "V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1 (RED-until-R3): output-format option '" + v + "' MUST be present (per CH36.4 enum lock; got: " + values.join(",") + ")");
+          "V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1: output-format option '" + v + "' MUST be present (per CH36.4 enum lock + §S47.6.1 amendment; got: " + values.join(",") + ")");
       });
-      assertEqual(values.length, 4,
-        "V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1 (RED-until-R3): output-format MUST have EXACTLY 4 options (got " + values.length + ": " + values.join(",") + ")");
+      assertEqual(values.length, 5,
+        "V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1: output-format MUST have EXACTLY 5 options post-§S47 (got " + values.length + ": " + values.join(",") + ")");
     } finally { host.remove(); }
   });
 
@@ -20663,6 +20666,36 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
     var closeBtn = modal.querySelector(".import-preview-modal-close");
     if (closeBtn) closeBtn.click();
     if (panelHost.parentNode) panelHost.parentNode.removeChild(panelHost);
+  });
+
+  // SPEC §S47.6.1 + §S47.7.3 · F3 DOM-mount regression test · SkillBuilder
+  // surfaces the system skill in its list (with System chip) AND offers
+  // "Import subset" in its outputFormat picker so the engineer can author
+  // their own import-subset skill. Previously the source-grep tests proved
+  // the SCHEMA accepted the new value, not that the UI offered it.
+  it("V-FLOW-IMPORT-SKILL-BUILDER-IMPORT-SUBSET-1 · S47.6.1 + S47.7.3 · SkillBuilder lists the system file-ingest skill with a System chip + offers 'Import subset' in outputFormat picker", async () => {
+    var storeMod   = await import("/state/v3SkillStore.js");
+    var builderMod = await import("/ui/views/SkillBuilder.js");
+    assertEqual(typeof builderMod.renderSkillBuilder, "function",
+      "V-FLOW-IMPORT-SKILL-BUILDER-IMPORT-SUBSET-1: SkillBuilder.renderSkillBuilder MUST be exported");
+    // Warm the system-skills cache + mount.
+    await storeMod.preloadSystemSkills();
+    var host = document.createElement("div");
+    document.body.appendChild(host);
+    builderMod.renderSkillBuilder(host, function() {});
+    // The list MUST contain the file-ingest skill row with the System chip.
+    var systemChip = host.querySelector('[data-skill-system-chip]');
+    assert(systemChip,
+      "V-FLOW-IMPORT-SKILL-BUILDER-IMPORT-SUBSET-1: SkillBuilder list MUST render a [data-skill-system-chip] for the file-ingest system skill (R47.7.3); rows found: " +
+      Array.from(host.querySelectorAll(".skill-admin-row-label")).map(r => r.textContent).join(", "));
+    // The outputFormat picker (renders in the auto-mounted new-skill form)
+    // MUST include "import-subset" as a selectable option.
+    var importSubsetRadio = host.querySelector('[data-output-format-value="import-subset"]');
+    assert(importSubsetRadio,
+      "V-FLOW-IMPORT-SKILL-BUILDER-IMPORT-SUBSET-1: SkillBuilder outputFormat picker MUST offer 'import-subset' (R47.6.1); options found: " +
+      Array.from(host.querySelectorAll('[data-output-format-value]')).map(r => r.getAttribute("data-output-format-value")).join(", "));
+    // Cleanup.
+    if (host.parentNode) host.parentNode.removeChild(host);
   });
 
   it("V-FLOW-IMPORT-FOOTER-BUTTON-1 · S47.8.1 + S47.8.2 · single 📤 Import data footer button exists next to Save/Open + opens modal with Step 1 + Step 2 visible", async () => {

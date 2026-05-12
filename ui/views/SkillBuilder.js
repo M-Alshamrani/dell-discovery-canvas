@@ -36,8 +36,13 @@
 //
 // Authority: docs/v3.0/SPEC.md §S46 · docs/RULES.md §16 CH36.
 
+// SPEC §S47.7.3 - SkillBuilder reads the merged user+system list via
+// loadAllV3SkillsSync so system catalog skills (e.g. file-ingest-instances)
+// appear alongside user skills with a System chip. Editing a system skill
+// triggers clone-to-edit (Save-as-new-user-skill prompt; originals are
+// immutable in the catalog).
 import {
-  saveV3Skill, loadV3Skills, loadV3SkillById, deleteV3Skill
+  saveV3Skill, loadV3Skills, loadAllV3SkillsSync, loadV3SkillById, deleteV3Skill
 }                                          from "../../state/v3SkillStore.js";
 import { generateManifest }                from "../../services/manifestGenerator.js";
 import { loadAiConfig }                    from "../../core/aiConfig.js";
@@ -55,12 +60,16 @@ import { resolveTemplate }                 from "../../services/pathResolver.js"
 import { getActiveEngagement }             from "../../state/engagementStore.js";
 import { _buildSkillRunCtx }               from "./CanvasChatOverlay.js";
 
-// SPEC §S46.6 + CH36.d — output format enum locked
+// SPEC §S46.6 + CH36.d — output format enum locked.
+// SPEC §S47.6.1 amendment 2026-05-12 — "import-subset" added · skill output
+// is the canonical S47.3 JSON shape; routed to ImportPreviewModal at run-
+// time by CanvasChatOverlay._renderSkillRunOutput.
 const OUTPUT_FORMATS = [
-  { id: "text",        label: "Text reporting",           hint: "Free-form prose into a chat bubble." },
-  { id: "dimensional", label: "Dimensional report",       hint: "Rows × columns into a heatmap / matrix (renderer stub at MVP)." },
-  { id: "json-array",  label: "JSON-array mutation",      hint: "List of changes the engagement applies." },
-  { id: "scalar",      label: "Scalar mutation",          hint: "Single-value mutation of one data point." }
+  { id: "text",          label: "Text reporting",      hint: "Free-form prose into a chat bubble." },
+  { id: "dimensional",   label: "Dimensional report",  hint: "Rows × columns into a heatmap / matrix (renderer stub at MVP)." },
+  { id: "json-array",    label: "JSON-array mutation", hint: "List of changes the engagement applies." },
+  { id: "scalar",        label: "Scalar mutation",     hint: "Single-value mutation of one data point." },
+  { id: "import-subset", label: "Import subset",       hint: "Extract instances from a source file (Excel/CSV/PDF/TXT) via Claude. Output reviewed per-row in the import preview modal." }
 ];
 
 // SPEC §S46.10 + CH36.e — mutation policy enum locked
@@ -115,10 +124,17 @@ export function renderSkillBuilder(container, onChange) {
 
 function renderList(list, onChange) {
   list.innerHTML = "";
-  // loadV3Skills() returns an object map { skillId: skill }, not an array.
-  // Convert to array for iteration.
+  // SPEC §S47.7.3 - load the merged set so system skills (e.g. file-ingest-
+  // instances from catalogs/skills/) appear alongside user skills. Sort
+  // system-first, then alphabetical by label within each group.
   var skills = [];
-  try { skills = Object.values(loadV3Skills() || {}); } catch (_e) { skills = []; }
+  try { skills = Object.values(loadAllV3SkillsSync() || {}); } catch (_e) { skills = []; }
+  skills.sort(function(a, b) {
+    var aSys = (a.kind === "system") ? 0 : 1;
+    var bSys = (b.kind === "system") ? 0 : 1;
+    if (aSys !== bSys) return aSys - bSys;
+    return String(a.label || a.skillId).localeCompare(String(b.label || b.skillId));
+  });
   if (skills.length === 0) {
     list.appendChild(mkt("div", "settings-help-inline",
       "No skills yet — author your first below, then click Save."));
@@ -132,8 +148,19 @@ function renderList(list, onChange) {
 
 function renderRow(skill, list, onChange) {
   var row = mk("div", "skill-admin-row");
+  if (skill.kind === "system") row.classList.add("skill-admin-row-system");
+  row.setAttribute("data-skill-row-kind", skill.kind || "user");
   var info = mk("div", "skill-admin-row-info");
-  info.appendChild(mkt("div", "skill-admin-row-label", skill.label || skill.skillId));
+  var labelEl = mkt("div", "skill-admin-row-label", skill.label || skill.skillId);
+  // SPEC §S47.7.3 - System chip on kind="system" rows.
+  if (skill.kind === "system") {
+    var sysChip = mkt("span", "skill-admin-row-system-chip", "System");
+    sysChip.setAttribute("data-skill-system-chip", "");
+    sysChip.title = "Ships with Dell Discovery Canvas. Editing prompts Save-as-new-user-skill (clone-to-edit); original is immutable.";
+    labelEl.appendChild(document.createTextNode(" "));
+    labelEl.appendChild(sysChip);
+  }
+  info.appendChild(labelEl);
   if (skill.description) info.appendChild(mkt("div", "skill-admin-row-desc", skill.description));
   var meta = mk("div", "skill-admin-row-meta");
   if (skill.outputFormat) meta.appendChild(mkt("span", "tag", skill.outputFormat));
@@ -1004,6 +1031,10 @@ function renderEditForm(adminRoot, list, existing, onChange) {
     "scalar": {
       whenToUse: "Use when the answer is a SINGLE-VALUE mutation of one data point. Reveals the Mutation policy picker below.",
       example: "{ instanceId: 'i-1a2b3c', field: 'criticality', value: 'High' }"
+    },
+    "import-subset": {
+      whenToUse: "Use when the skill INGESTS data from a source file (Excel install-base, CSV inventory, PDF estate diagram, TXT memo) and produces a list of NEW instances to add. Output reviewed per-row in the import preview modal; engineer chooses scope (current/desired/both) at apply time.",
+      example: "{\n  schemaVersion: \"1.0\", kind: \"instance.add\", generatedAt: \"<ISO>\",\n  items: [\n    { confidence: \"high\", rationale: \"Excel row 14\",\n      data: { state: \"desired\", layerId: \"compute\", environmentId: \"<uuid>\",\n              label: \"Oracle Production DB\", vendor: \"Oracle\",\n              vendorGroup: \"nonDell\", criticality: \"High\", notes: \"\" } }\n  ]\n}"
     }
   };
 
@@ -1703,9 +1734,33 @@ function renderEditForm(adminRoot, list, existing, onChange) {
     if (state.outputFormat === "json-array" || state.outputFormat === "scalar") {
       if (!state.mutationPolicy) { alert("Pick a mutation policy (output format is mutating)."); return; }
     }
-    var skillId = existing && existing.skillId
-      ? existing.skillId
-      : ("skl-" + label.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24) + "-" + Math.floor(Math.random() * 1000));
+    // SPEC §S47.7.3 - clone-to-edit for system skills.
+    //   Editing a kind="system" skill MUST NOT mutate the catalog version;
+    //   the original is immutable on disk. The Save flow detects the system
+    //   origin and (a) prompts the engineer to confirm "Save as new user
+    //   skill", (b) mints a fresh skillId so the user-skill rows in
+    //   localStorage do not shadow the catalog version (both stay visible
+    //   in the merged launcher list), (c) saves with kind="user".
+    var isCloneFromSystem = !!(existing && existing.kind === "system");
+    if (isCloneFromSystem) {
+      var ok = confirm(
+        "This is a System skill (ships in the catalog). " +
+        "Saving creates a new user-authored copy you can edit freely; " +
+        "the original System version stays available in the launcher.\n\n" +
+        "Save as new user skill?"
+      );
+      if (!ok) return;
+    }
+    var skillId;
+    if (isCloneFromSystem) {
+      // Mint a fresh skillId so the clone doesn't shadow the system entry.
+      var baseSlug = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24);
+      skillId = "skl-" + baseSlug + "-user-" + Math.floor(Math.random() * 10000);
+    } else if (existing && existing.skillId) {
+      skillId = existing.skillId;
+    } else {
+      skillId = "skl-" + label.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24) + "-" + Math.floor(Math.random() * 1000);
+    }
     var draft = {
       skillId:        skillId,
       label:          label,
@@ -1717,7 +1772,12 @@ function renderEditForm(adminRoot, list, existing, onChange) {
       mutationPolicy: (state.outputFormat === "json-array" || state.outputFormat === "scalar")
                         ? state.mutationPolicy
                         : null,
-      parameters:     state.parameters.slice()
+      parameters:     state.parameters.slice(),
+      // SPEC §S47.7.3 - clones always save as kind="user" (never write
+      // a system skill back to localStorage).
+      kind:           "user",
+      preview:        existing && existing.preview      ? existing.preview      : "none",
+      defaultScope:   existing && existing.defaultScope ? existing.defaultScope : "desired"
     };
     var manifest = generateManifest();
     var result;
