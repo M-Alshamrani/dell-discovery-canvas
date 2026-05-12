@@ -7166,11 +7166,16 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
   /* Wider than the default dialog-box · the workflow content needs room. */
   width: 720px;
   max-width: 95vw;
+  max-height: 90vh;             /* BUG-057 · cap the height */
   padding: 0;
   background: var(--surface, #FFFFFF);
   border-radius: var(--radius-lg, 8px);
   box-shadow: 0 24px 60px rgba(11, 42, 74, 0.18), 0 4px 16px rgba(11, 42, 74, 0.08);
-  overflow: hidden;
+  /* BUG-057 · was `overflow: hidden` which suppressed the scrollbar when
+     content exceeded viewport · switched to overflow-y: auto so the modal
+     scrolls when workflow card + strict-match warning push past 90vh. */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .import-data-modal-head {
   display: flex;
@@ -7448,11 +7453,15 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
 .import-preview-modal-box {
   width: 980px;
   max-width: 98vw;
+  max-height: 90vh;             /* BUG-057 · cap the height */
   padding: 0;
   background: var(--surface, #FFFFFF);
   border-radius: var(--radius-lg, 8px);
   box-shadow: 0 24px 60px rgba(11, 42, 74, 0.18), 0 4px 16px rgba(11, 42, 74, 0.08);
-  overflow: hidden;
+  /* BUG-057 · same overflow fix as .import-data-modal-box · the body has
+     many rows + chips + editable cells; vertical scroll is necessary. */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .import-preview-modal-head {
   display: flex;

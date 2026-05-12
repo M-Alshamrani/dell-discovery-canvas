@@ -20519,6 +20519,46 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
   // DOM-mount assertions when Path A re-attempts under proper discipline
   // (per feedback_5_forcing_functions.md Rule A + Rule B).
 
+  // BUG-057 · Path B Import modal vertical overflow · the modal box currently
+  // sets overflow: hidden which suppresses the scrollbar when content exceeds
+  // max-height: 90vh · content below the viewport is invisible. Fix: switch
+  // to overflow-y: auto so the modal scrolls. Tested by computed-style read
+  // after mount.
+  it("V-FLOW-IMPORT-MODAL-OVERFLOW-1 · BUG-057 · ImportDataModal + ImportPreviewModal allow vertical scroll (overflow-y: auto/scroll, not hidden) when content exceeds viewport", async () => {
+    var modalMod   = await import("/ui/components/ImportDataModal.js");
+    var schemaMod  = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
+    var eng = schemaMod.createEmptyEngagement();
+    var addRes = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    modalMod.openImportDataModal({
+      host: document.body, getActiveEngagement: function() { return eng; }, commitImport: function() {}
+    });
+    try {
+      var modalBox = document.querySelector(".import-data-modal-box");
+      assert(modalBox, "V-FLOW-IMPORT-MODAL-OVERFLOW-1 setup: .import-data-modal-box MUST be mounted");
+      var computed = window.getComputedStyle(modalBox);
+      assert(/auto|scroll/.test(computed.overflowY),
+        "V-FLOW-IMPORT-MODAL-OVERFLOW-1: .import-data-modal-box overflow-y MUST be auto OR scroll (BUG-057 · pre-fix value was hidden which suppressed scrollbar); got: " + computed.overflowY);
+    } finally {
+      document.querySelectorAll(".dialog-overlay").forEach(function(o) { if (o.parentNode) o.parentNode.removeChild(o); });
+    }
+    // Also assert ImportPreviewModal box (same pattern, same fix needed).
+    var preview = await import("/ui/components/ImportPreviewModal.js");
+    var parsed = { schemaVersion: "1.0", kind: "instance.add", generatedAt: "2026-05-12T00:00:00Z",
+      items: [{ confidence: "high", rationale: "ok", data: { state: "current", layerId: "compute", environmentId: eng.environments.allIds[0], label: "Test", vendor: "Dell", vendorGroup: "dell", criticality: "High", notes: "" } }] };
+    preview.renderImportPreview(document.body, parsed, { defaultScope: "current", onApply: function() {}, onCancel: function() {} });
+    try {
+      var previewBox = document.querySelector(".import-preview-modal-box");
+      assert(previewBox, "V-FLOW-IMPORT-MODAL-OVERFLOW-1 setup: .import-preview-modal-box MUST be mounted");
+      var c2 = window.getComputedStyle(previewBox);
+      assert(/auto|scroll/.test(c2.overflowY),
+        "V-FLOW-IMPORT-MODAL-OVERFLOW-1: .import-preview-modal-box overflow-y MUST be auto OR scroll (BUG-057); got: " + c2.overflowY);
+    } finally {
+      document.querySelectorAll(".dialog-overlay").forEach(function(o) { if (o.parentNode) o.parentNode.removeChild(o); });
+    }
+  });
+
   // BUG-055 · LLM Instructions Prompt filename + UI label rename · "instructions"
   // alone undersells what the file is (it's a prompt for an LLM, not a manual
   // for a human). Filename + button label both rename.
