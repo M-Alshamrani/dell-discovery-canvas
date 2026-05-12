@@ -20519,6 +20519,49 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
   // DOM-mount assertions when Path A re-attempts under proper discipline
   // (per feedback_5_forcing_functions.md Rule A + Rule B).
 
+  // BUG-060 · SkillBuilder · the "Test skill now" button is currently
+  // stacked in its own .skill-form-test-row ABOVE the Cancel/Save action
+  // bar; user reports "ugly + not elegant". Fix: move Test into the same
+  // horizontal action bar as Cancel + Save · 3 buttons in a single
+  // flex-direction: row container · Cancel (ghost, left), Test (secondary,
+  // middle), Save (primary, right).
+  it("V-FLOW-SKILL-BUILDER-ACTIONS-LAYOUT-1 · BUG-060 · Test + Cancel + Save are siblings in the same horizontal flex container (not stacked vertically)", async () => {
+    var builderMod = await import("/ui/views/SkillBuilder.js");
+    var host = document.createElement("div");
+    document.body.appendChild(host);
+    try {
+      builderMod.renderSkillBuilder(host, function() {});
+      // All 3 buttons exist.
+      var testBtn   = host.querySelector("[data-skill-test]");
+      var saveBtn   = host.querySelector("[data-skill-save]");
+      assert(testBtn, "V-FLOW-SKILL-BUILDER-ACTIONS-LAYOUT-1: Test button [data-skill-test] MUST exist");
+      assert(saveBtn, "V-FLOW-SKILL-BUILDER-ACTIONS-LAYOUT-1: Save button [data-skill-save] MUST exist");
+      // Locate the Cancel button (no data attr · text-based locate).
+      var allBtns = host.querySelectorAll("button");
+      var cancelBtn = null;
+      for (var i = 0; i < allBtns.length; i++) {
+        if ((allBtns[i].textContent || "").trim() === "Cancel") { cancelBtn = allBtns[i]; break; }
+      }
+      assert(cancelBtn, "V-FLOW-SKILL-BUILDER-ACTIONS-LAYOUT-1: Cancel button MUST exist");
+      // BUG-060 contract: all 3 buttons MUST share the same direct parent
+      // (the action bar) so they render as a horizontal row.
+      var testParent   = testBtn.parentElement;
+      var saveParent   = saveBtn.parentElement;
+      var cancelParent = cancelBtn.parentElement;
+      assert(testParent === saveParent && saveParent === cancelParent,
+        "V-FLOW-SKILL-BUILDER-ACTIONS-LAYOUT-1: Test + Cancel + Save MUST share the same parent container (BUG-060 · was 'Test in skill-form-test-row above Cancel/Save in form-actions'); got: testParent=" +
+        (testParent && testParent.className) + ", saveParent=" + (saveParent && saveParent.className) + ", cancelParent=" + (cancelParent && cancelParent.className));
+      // Parent's computed style MUST be flex-direction: row (not column).
+      var computed = window.getComputedStyle(testParent);
+      assertEqual(computed.display, "flex",
+        "V-FLOW-SKILL-BUILDER-ACTIONS-LAYOUT-1: action-bar parent display MUST be flex; got: " + computed.display);
+      assert(/row/.test(computed.flexDirection) && !/column/.test(computed.flexDirection),
+        "V-FLOW-SKILL-BUILDER-ACTIONS-LAYOUT-1: action-bar flex-direction MUST be row (BUG-060); got: " + computed.flexDirection);
+    } finally {
+      if (host.parentNode) host.parentNode.removeChild(host);
+    }
+  });
+
   // BUG-057 · Path B Import modal vertical overflow · the modal box currently
   // sets overflow: hidden which suppresses the scrollbar when content exceeds
   // max-height: 90vh · content below the viewport is invisible. Fix: switch

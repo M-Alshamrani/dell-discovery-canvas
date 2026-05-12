@@ -1573,12 +1573,14 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   // for full parameter substitution, save the skill + run it via
   // Canvas Chat → Skills tab where parameter inputs render in the
   // Skill panel right-rail.
-  var testRow = mk("div", "skill-form-test-row");
+  // BUG-060 · Test button is appended to the unified action bar below
+  // (Cancel / Test / Save / Save-hint in a single horizontal row) rather
+  // than living in its own skill-form-test-row. The test OUTPUT (testOut)
+  // stays above the action bar so the result is visible to the engineer
+  // without scrolling past the buttons.
   var testBtn = mkt("button", "btn-secondary", "Test skill now");
   testBtn.type = "button";
   testBtn.setAttribute("data-skill-test", "");
-  testRow.appendChild(testBtn);
-  form.appendChild(testRow);
   var testOut = mk("div", "ai-skill-result skill-form-test-out");
   testOut.style.display = "none";
   form.appendChild(testOut);
@@ -1681,7 +1683,10 @@ function renderEditForm(adminRoot, list, existing, onChange) {
     }
   });
 
-  // ─── Save + Cancel ───────────────────────────────────────────────
+  // ─── Action bar · Cancel | Test | Save (BUG-060 · single horizontal row) ──
+  // Order: Cancel (ghost · left, exit-without-saving), Test (secondary ·
+  // middle, validate the prompt), Save (primary · right, commit). Save
+  // hint span surfaces gating reasons next to Save when relevant.
   var actions = mk("div", "form-actions");
   var cancelBtn = mkt("button", "btn-secondary", "Cancel");
   cancelBtn.type = "button";
@@ -1691,6 +1696,7 @@ function renderEditForm(adminRoot, list, existing, onChange) {
   saveBtn.setAttribute("data-skill-save", "");
   var saveHint = mkt("span", "save-gate-hint", "");
   actions.appendChild(cancelBtn);
+  actions.appendChild(testBtn);     // BUG-060 · Test joins the action bar
   actions.appendChild(saveBtn);
   actions.appendChild(saveHint);
   form.appendChild(actions);

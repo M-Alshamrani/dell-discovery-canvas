@@ -1102,7 +1102,17 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
 }
 .form-textarea { resize: vertical; min-height: 70px; }
 .inline-sel    { padding: 4px 8px; font-size: 11px; border-radius: 999px; }
-.form-actions  { display: flex; gap: 8px; margin-top: 4px; }
+/* BUG-060 · action bar now hosts Cancel | Test | Save | hint in one row.
+   Explicit flex-direction + align-items so the saveHint span sits on the
+   same baseline as the buttons; gap bumped to 10px for clarity. */
+.form-actions  {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
 .inline-err    { font-size: 11px; color: var(--high); margin-top: 4px; }
 
 /* ── Segmented control ──────────────────────────────────────── */
