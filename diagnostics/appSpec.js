@@ -20527,7 +20527,100 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
   // Two assertions: (1) buildImportInstructions throws on 0 envs, (2) the
   // modal renders the Download button as disabled + an inline error when
   // mounted against a 0-env engagement.
-  it("V-FLOW-IMPORT-NO-ENVS-GUARD-1 · §S47 + Rule C · Path B disables Download instructions.txt when engagement has 0 environments + buildImportInstructions throws", async () => {
+  // SPEC §S47 + feedback_5_forcing_functions.md Rule C · R3 apply-errors
+  // surfacing. The ImportDataModal calls applyImportItems internally and
+  // then invokes the commitImport callback with the result. Pre-R3, the
+  // call was commitImport(res.engagement) — dropping res.errors and
+  // res.addedInstanceIds on the floor. The app.js handler then fired
+  // notifySuccess unconditionally, claiming "Imported" even when N rows
+  // had silently failed schema validation at addInstance. Rule C: never
+  // claim success on partial failure.
+  //
+  // Test strategy: drive the modal's full apply path with a 2-item
+  // response (item 0 valid, item 1 invalid layerId), capture what the
+  // commitImport callback actually receives, assert it carries the
+  // applier's full result envelope (engagement + addedInstanceIds + errors).
+  it("V-FLOW-IMPORT-APPLY-ERRORS-1 · §S47 + Rule C · ImportDataModal commitImport callback receives the FULL applier result envelope (engagement + addedInstanceIds + errors keys) so app.js can surface partial failures · DOM-mount end-to-end test", async () => {
+    var modalMod   = await import("/ui/components/ImportDataModal.js");
+    var schemaMod  = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
+    var eng = schemaMod.createEmptyEngagement();
+    var addRes = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    var envUuid = eng.environments.allIds[0];
+
+    // Capture whatever ImportDataModal passes to commitImport internally.
+    var capturedArg = null;
+    modalMod.openImportDataModal({
+      host:                document.body,
+      getActiveEngagement: function() { return eng; },
+      commitImport:        function(arg) { capturedArg = arg; },
+      defaultScope:        "desired"
+    });
+
+    // Synthesize a 1-item valid JSON response (parser + drift + applier
+    // all succeed). The test verifies the SHAPE of commitImport's argument
+    // is the full applier-result envelope, not just engagement. Pre-R3
+    // the call was commitImport(res.engagement) which dropped errors +
+    // addedInstanceIds; R3 changes it to commitImport(res) which exposes
+    // all three fields to the app.js handler.
+    var responseJson = JSON.stringify({
+      schemaVersion: "1.0", kind: "instance.add", generatedAt: "2026-05-12T00:00:00Z",
+      items: [
+        { confidence: "high", rationale: "ok", data: { state: "desired", layerId: "compute", environmentId: envUuid, label: "ApplyContractTest", vendor: "Oracle", vendorGroup: "nonDell", criticality: "High", notes: "" } }
+      ]
+    });
+
+    // Drive ImportDataModal's INTERNAL flow: find its file input, simulate
+    // a File pick via DataTransfer + change event, wait for parse+drift+
+    // preview-mount, click Apply on the preview modal.
+    var modalRoot = document.getElementById("import-data-modal");
+    assert(modalRoot, "V-FLOW-IMPORT-APPLY-ERRORS-1 setup: import-data-modal MUST be mounted");
+    var fileInputs = modalRoot.querySelectorAll('input[type="file"]');
+    // The modal's Step 2 file input · find the one that's not the index.html
+    // global #importJsonInput sibling (the modal creates its own).
+    var fileInput = null;
+    for (var i = 0; i < fileInputs.length; i++) {
+      if (!fileInputs[i].id || fileInputs[i].id !== "importJsonInput") {
+        fileInput = fileInputs[i]; break;
+      }
+    }
+    if (!fileInput && fileInputs.length > 0) fileInput = fileInputs[0];
+    assert(fileInput, "V-FLOW-IMPORT-APPLY-ERRORS-1 setup: ImportDataModal MUST have a file input in Step 2");
+    var blob = new Blob([responseJson], { type: "application/json" });
+    var file = new File([blob], "test-response.json", { type: "application/json" });
+    var dt = new DataTransfer();
+    dt.items.add(file);
+    fileInput.files = dt.files;
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    // Wait for FileReader.onload → parseImportResponse → checkImportDrift
+    // → renderImportPreview to all settle.
+    await new Promise(function(r) { setTimeout(r, 500); });
+    var previewModal = document.getElementById("import-preview-modal");
+    assert(previewModal,
+      "V-FLOW-IMPORT-APPLY-ERRORS-1 setup: preview modal MUST be mounted after file pick. Modal inner first 400 chars: " +
+      (modalRoot && modalRoot.innerHTML.slice(0, 400)));
+    var applyBtn = previewModal.querySelector(".import-preview-apply");
+    assert(applyBtn, "V-FLOW-IMPORT-APPLY-ERRORS-1 setup: preview modal MUST have an Apply button");
+    applyBtn.click();
+    await new Promise(function(r) { setTimeout(r, 300); });
+
+    // The CONTRACT under test: commitImport received the FULL applier
+    // result envelope, not just engagement.
+    assert(capturedArg && typeof capturedArg === "object",
+      "V-FLOW-IMPORT-APPLY-ERRORS-1: commitImport MUST receive an object (the applier result envelope), not just engagement; got: " + (typeof capturedArg) + " value: " + JSON.stringify(capturedArg && Object.keys(capturedArg || {})));
+    assert(capturedArg && capturedArg.engagement && typeof capturedArg.engagement === "object",
+      "V-FLOW-IMPORT-APPLY-ERRORS-1: commitImport arg MUST carry .engagement (the updated engagement); got keys: " + JSON.stringify(capturedArg && Object.keys(capturedArg || {})));
+    assert(capturedArg && Array.isArray(capturedArg.addedInstanceIds),
+      "V-FLOW-IMPORT-APPLY-ERRORS-1: commitImport arg MUST carry .addedInstanceIds[] · the app.js handler reads this to report success count; got: " + JSON.stringify(capturedArg && capturedArg.addedInstanceIds));
+    assert(capturedArg && capturedArg.hasOwnProperty("errors"),
+      "V-FLOW-IMPORT-APPLY-ERRORS-1: commitImport arg MUST carry .errors key (null or array) · pre-R3 this field was dropped at the modal layer (commitImport(res.engagement) instead of commitImport(res)) · the app.js handler now reads it and notifyError when non-empty (Rule C: no silent success on partial failure). Got keys: " + JSON.stringify(capturedArg && Object.keys(capturedArg || {})));
+
+    // Cleanup.
+    document.querySelectorAll('.dialog-overlay').forEach(function(o) { if (o.parentNode) o.parentNode.removeChild(o); });
+  });
+
+it("V-FLOW-IMPORT-NO-ENVS-GUARD-1 · §S47 + Rule C · Path B disables Download instructions.txt when engagement has 0 environments + buildImportInstructions throws", async () => {
     // Part 1 · the builder MUST throw on 0 envs (no degraded fallback).
     var builderMod = await import("/services/importInstructionsBuilder.js");
     var schemaMod  = await import("/schema/engagement.js");

@@ -976,15 +976,40 @@ function wireImportDataBtn(importDataBtn) {
     openImportDataModal({
       host:                document.body,
       getActiveEngagement: getActiveEngagement,
-      commitImport:        function(updatedEngagement) {
-        // Commit the post-applier engagement through the v3 store; the
-        // subscribeActiveEngagement chain re-renders the matrix view with
-        // the new instances + their iLLM badges.
-        setActiveEngagement(updatedEngagement);
-        notifySuccess({
-          title: "Imported",
-          body:  "Instances added · click any tile to edit or save to lock in the engineer-confirmed values (the iLLM badge auto-clears on save)."
-        });
+      // SPEC §S47 + feedback_5_forcing_functions.md Rule C · R3 · the
+      // commitImport callback receives the FULL applier result envelope
+      // ({ engagement, addedInstanceIds, errors }) so partial failures
+      // (e.g. row 2 of N failed schema validation at addInstance) surface
+      // to the engineer instead of being silently dropped behind a
+      // notifySuccess. Rule C: never claim success on partial failure.
+      commitImport:        function(applierResult) {
+        var engagement = applierResult && applierResult.engagement;
+        var addedIds   = (applierResult && applierResult.addedInstanceIds) || [];
+        var errors     = (applierResult && applierResult.errors) || null;
+        if (engagement) {
+          // Commit the post-applier engagement through the v3 store; the
+          // subscribeActiveEngagement chain re-renders the matrix view
+          // with the new instances + their iLLM badges.
+          setActiveEngagement(engagement);
+        }
+        if (errors && errors.length > 0) {
+          // Partial-failure path · some rows landed, some didn't.
+          // Notify with the count of each.
+          var failedDetail = errors.slice(0, 3).map(function(e) {
+            var firstMsg = (e.errors && e.errors[0] && e.errors[0].message) || "validation error";
+            return "row " + (e.itemIndex + 1) + ": " + firstMsg;
+          }).join("; ");
+          if (errors.length > 3) failedDetail += " (+ " + (errors.length - 3) + " more)";
+          notifyError({
+            title: "Partial import: " + addedIds.length + " applied, " + errors.length + " failed",
+            body:  failedDetail
+          });
+        } else {
+          notifySuccess({
+            title: "Imported " + addedIds.length + " instance" + (addedIds.length === 1 ? "" : "s"),
+            body:  "Click any tile to edit or save to lock in the engineer-confirmed values (the iLLM badge auto-clears on save)."
+          });
+        }
       },
       defaultScope: "desired"
     });

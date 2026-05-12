@@ -277,7 +277,13 @@ export function openImportDataModal(opts) {
             scope:      finalScope,
             provenance: { kind: "external-llm", source: "dell-internal", runId: "run-" + Date.now(), mutatedAt: new Date().toISOString() }
           });
-          commitImport(res.engagement);
+          // SPEC §S47 + feedback_5_forcing_functions.md Rule C · R3 · pass
+          // the FULL applier result envelope (engagement + addedInstanceIds
+          // + errors) to commitImport so the wired handler in app.js can
+          // surface partial failures · pre-R3 we passed res.engagement here
+          // which dropped errors + addedInstanceIds at the modal layer and
+          // let the app handler claim notifySuccess on partial failure.
+          commitImport(res);
           dismount();
         },
         onCancel: function() { /* preview closed; data modal stays open */ }
