@@ -1887,6 +1887,65 @@ THIRD instance of the "view-local state lost across re-mount" pattern in 2 days:
 
 ---
 
+## BUG-052 · Modal-residue test cluster — 6 intermittent failures tied to overlay/modal teardown ordering (OPEN 2026-05-12)
+
+**Status**: **OPEN** · Reported 2026-05-12 · v3.0.0-rc.8-dev · Scheduled post-rc.8.b S47 implementation arc (do NOT block C1/C2/C3 commits on this)
+**Reporter**: Claude (observed during rc.8.b polish arc smoke runs on 2026-05-11 and during S47 RED scaffold session on 2026-05-12)
+**Severity**: Low (intermittent flake; does not gate any feature; banner reads 1244/1265 with these tests as the deterministic-fail set on the affected runs)
+**Regression**: No — pre-existing flake pattern that surfaces under specific run-ordering conditions; today's S47 RED tests do NOT touch any DOM and are confirmed not to be the cause
+
+### Affected tests (6)
+1. **V-HELP-MODAL-ESC-1** — Help modal Esc-to-close.
+2. **V-CLEAR-CHAT-PERSISTS** — chat persistence after clear/reload sequence.
+3. **V-OVERLAY-STACK-4** — overlay stacking z-order assertion.
+4. **V-FLOW-CHAT-PERSIST-1** — chat persistence across overlay teardown.
+5. **V-FLOW-CHAT-PERSIST-2** — chat persistence on engagement switch.
+6. **V-PILLS-4** — chip-pill state restoration after modal close.
+
+### Repro
+- Run the full appSpec.js suite via the in-app `?spec=run` smoke harness.
+- On most runs all 6 are GREEN.
+- On a subset of runs (estimated ~10-20% sample), one to all six fail with assertions like "modal residue still attached" or "expected detail panel not present after teardown".
+- Refresh + re-run → typically GREEN again with no code changes.
+
+### Expected
+All six tests deterministically GREEN on every run regardless of ordering.
+
+### Actual
+Intermittent state-dependent flake — appears to depend on whether a prior test in the run left a modal/overlay node attached, on the timing of `closeOnEsc` listener installation, or on the chat scroll-restore microtask completing before the next test bootstraps.
+
+### Suspected root cause
+Cluster shares one of three families (all involve teardown sequencing in the modal/overlay stack):
+- **Family A (most likely):** modal teardown asynchronously detaches its root after the next test's setup has already snapshot the DOM, so an unrelated assertion sees a residual `.modal-root` or `.help-modal` node. Closing path may queue a microtask via `requestAnimationFrame` that races the next test's mount.
+- **Family B:** chat-persist tests share a single localStorage key with prior overlay tests; if a prior test fails partway through, it leaves the storage in an intermediate state and the next persist-assert reads the wrong row.
+- **Family C:** the spec runner does not await an explicit "teardown complete" signal; tests that rely on `closeModal()` returning synchronously assume cleanup is done before the next `it()` mounts, but the close uses a transitionend listener that fires later.
+
+### Why this entry exists now (recoverability)
+- Cluster surfaced during S47 RED-scaffold smoke this morning; the 15 new V-FLOW-IMPORT-* RED tests do NOT touch the DOM (each probes a module import or string-match on a future artifact), so they cannot be the cause.
+- Without this entry, a future investigator might mis-attribute the flake to the S47 work-in-progress.
+- Banner at HEAD 549599f reads 1244/1265 GREEN, 6 RED-by-design (S47 scaffolds — V-FLOW-IMPORT-*) + 6 intermittent (this cluster). The 1244/1265 line in the session log assumes the 6 intermittents are GREEN on the canonical run; on flaky runs the count drops to 1238/1265.
+
+### Fix plan (deferred — do NOT inline into C1/C2/C3)
+1. Reproduce reliably by running the affected tests in isolation with a stress-loop (50 iterations) to confirm the family.
+2. If Family A: add an explicit `await modal.fullyClosed()` promise resolved on transitionend; gate next-test setup on it.
+3. If Family B: namespace per-test localStorage keys with a test-id prefix (e.g. `dell-discovery:chat:test:<vector-id>`); clear all on `afterEach`.
+4. If Family C: extend the spec runner's `it()` to await an explicit teardown signal before invoking the next test.
+5. Ship the fix WITH a regression vector that drives the previously-flaky ordering 100× and asserts GREEN on every pass:
+   ```js
+   it("V-FLOW-MODAL-TEARDOWN-DETERMINISTIC-1 · cluster of 6 modal-residue tests pass deterministically across 50 iterations", async () => {
+     for (let i = 0; i < 50; i++) {
+       // re-run the affected sequence: HELP-MODAL-ESC → CLEAR-CHAT-PERSISTS → OVERLAY-STACK-4 → FLOW-CHAT-PERSIST-1 → FLOW-CHAT-PERSIST-2 → PILLS-4
+       // assert no residual nodes after each teardown
+     }
+   });
+   ```
+6. Once stable for 200+ consecutive runs without flake, mark CLOSED.
+
+### Scheduling
+**Bucket**: post-S47 implementation arc cleanup. Investigate during rc.8.c (after rc.8.b tag closes) so it does not entangle with the file-ingestion feature work. Do NOT inline the fix into C1/C2/C3 since the cluster is unrelated to S47 and the flake pattern is pre-existing.
+
+---
+
 ## BUG-NNN · One-line headline
 
 **Status**: OPEN · Reported YYYY-MM-DD · vX.Y.Z · Scheduled <bucket>

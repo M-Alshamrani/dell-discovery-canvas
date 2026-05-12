@@ -1,8 +1,99 @@
 # Dell Discovery Canvas — Session Handoff
 
-**🔴 READ FIRST · Principal-architect discipline (LOCKED 2026-05-08, R11 added evening)**: every session, every commit, every handover. Full text in [`docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md`](docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md) (R0..R11) + tier-1 memory anchor `feedback_principal_architect_discipline.md`. Core rules: **R0** acknowledge "what would a principal architect do?" before non-trivial action · **R1** own-grep before delete · **R2** migrate consumers FIRST, delete LAST · **R3** Chrome MCP browser smoke at every commit boundary (test banner alone is NOT sufficient) · **R4** no v3-store backward-compat hacks · **R5** no fig-leaf test fixtures hiding v2 logic · **R6** rewrite tests to assert v3 contracts (never retire-with-negative) · **R7** per-commit revertibility · **R8** surface scope balloons · **R9** every handover references this · **R10** acknowledge in every action out loud · **R11 (HARDEST · LOCKED 2026-05-08 evening)** Recite + Answer + Execute + Pledge-Smoke-Screenshot at EVERY step boundary; every commit message ends with a `Browser smoke evidence:` block. **Test banner alone is a discipline violation.**
+**🔴 READ FIRST · Principal-architect discipline (LOCKED 2026-05-08, R11 added evening)**: every session, every commit, every handover. Full text in [`docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md`](docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md) (R0..R11) + tier-1 memory anchor `feedback_principal_architect_discipline.md`. Core rules: **R0** acknowledge "what would a principal architect do?" before non-trivial action · **R1** own-grep before delete · **R2** migrate consumers FIRST, delete LAST · **R3** Chrome MCP browser smoke at every commit boundary (test banner alone is NOT sufficient) · **R4** no v3-store backward-compat hacks · **R5** no fig-leaf test fixtures hiding v2 logic · **R6** rewrite tests to assert v3 contracts (never retire-with-negative) · **R7** per-commit revertibility · **R8** surface scope balloons · **R9** every handover references this · **R10** acknowledge in every action out loud · **R11 (HARDEST · LOCKED 2026-05-08 evening)** Recite + Answer + Execute + Pledge-Smoke-Screenshot at EVERY step boundary; every commit message ends with a `Browser smoke evidence:` block. **Test banner alone is a discipline violation.** **R12 (PROPOSED · in flight 2026-05-11/12)** — contract-fidelity: every code path that reads, writes, or surfaces engagement data MUST route through `core/dataContract.js` or its derived accessors. Formalization in `PRINCIPAL_ARCHITECT_DISCIPLINE.md` + V-CONSTITUTION-* guards is a separate planned arc.
 
-**Last session end**: 2026-05-09 PM (rc.7 work COMPLETE + v3-prefix purge + R8 invariant arc CLOSED + **3 user-reported bugs A/B/C closed + Z2 label-resolver centralization** · pushed to origin through `886dbd6`; commits `3184043..bafc578` (13 commits = R8 arc + BUG-A/B/C + Z2) **NOT YET PUSHED** awaiting user "push") · `v3.0.0-rc.7-dev` on `v3.0-data-architecture` · **Banner 1186/1186 GREEN ✅** · 28 commits this session · v2 architecture DELETED · R8 arc closed (6/6) · 18 bugs CLOSED today total. Anti-pattern "view-local state lost across re-mount" identified + closed for all 3 known instances (BUG-043/048/051). SPEC §S42 + §S43 added inline. NEW module `core/labelResolvers.js` is single source of truth for env/layer/driver/instance label resolution. Full session detail in [`docs/SESSION_LOG_2026-05-09.md`](docs/SESSION_LOG_2026-05-09.md).
+---
+
+## 🟢 Current state — end of 2026-05-12 session
+
+**Branch**: `v3.0-data-architecture` · **HEAD**: `549599f` (C0 scaffold for SPEC §S47 Import Data workflow) · **APP_VERSION**: `3.0.0-rc.8-dev` (rc.8 in flight; rc.8.b polish arc COMPLETE; S47 implementation arc OPEN) · **Banner**: **1244/1265** (15 RED designed + 6 pre-existing flakes documented as BUG-052 + 1244 prior GREEN)
+
+**Working tree**: clean. Only `.claude/` untracked.
+
+**Not pushed**: 12 commits past origin (`bafc578..549599f`). Awaits explicit user "push" / "tag it" call.
+
+### What was authored today
+
+Today landed ONE scaffold commit per `feedback_spec_and_test_first.md` discipline:
+
+| Commit | Theme |
+|---|---|
+| `549599f` | **C0 scaffold** · SPEC §S47 (Import Data workflow; 235 LOC) + §S25 amendment paragraph + 15 V-FLOW-IMPORT-* RED-first tests (306 LOC). No code. |
+
+The full design (4 rounds of pushback + 7 locked decisions) is in [`docs/SESSION_LOG_2026-05-12.md`](docs/SESSION_LOG_2026-05-12.md).
+
+### Implementation arc that follows (next-call)
+
+```
+C1 · Framework extensions + shared importer + preview modal + system-skills loader
+     ~500 LOC · flips ~10 RED → GREEN · target banner ~1254
+
+C2 · catalogs/skills/file-ingest-instances.json (system skill JSON; no code)
+     flips 1 RED → GREEN · target banner ~1255
+
+C3 · Footer button + Import Data modal + [CONSTITUTIONAL AMENDMENT] aiTag.kind
+     ~400 LOC · flips 4 RED → GREEN · target banner 1265/1265 ✅
+```
+
+All sequencing, file lists, and acceptance criteria are documented in SPEC §S47 + `SESSION_LOG_2026-05-12.md` §"3-commit implementation arc".
+
+### Recoverability
+
+A different Claude session (or human contributor) can pick up from this point with full context by reading, in order:
+
+1. **`HANDOFF.md`** (this file) — current state + next-call
+2. **`docs/SESSION_LOG_2026-05-12.md`** — today's design decisions + 7 locked Qs
+3. **`docs/v3.0/SPEC.md` §S47** — the locked design contract
+4. **`diagnostics/appSpec.js`** V-FLOW-IMPORT-* tests — the 15 RED scaffolds enforcing the design
+5. **`docs/UI_DATA_KNOWLEDGE_BASE.md` r2** + **`docs/UI_DATA_TRACE.md` r6** — the data-architecture authority
+6. **`docs/SESSION_LOG_2026-05-11.md`** — yesterday's rc.8.b polish arc (5 commits 1220→1250)
+
+These six artifacts contain enough context to land C1/C2/C3 cleanly without further conversation history.
+
+### 2026-05-11 rc.8.b polish arc (yesterday — context for continuity)
+
+| Commit | Banner Δ | Theme |
+|---|---|---|
+| `7d846f0` | 1220→1226 | BUG-2 Path A + Path B + BUG-6 closure |
+| `e98ffb5` | 1226→1233 | WB-1..WB-4 wiring bugs + constitution promotion + UI_DATA_TRACE r6 + UI_DATA_KNOWLEDGE_BASE r1 |
+| `b032122` | 1233→1238 | rc.8.b skill-builder rebuild (two-pane picker + contract-fidelity skill runtime) |
+| `1a89d48` | 1238→1240 | relational-rows engagement-data block |
+| `db2c5fd` | 1240→1250 | RELATIONSHIPS_METADATA + picker right-pane bindings + Improve meta-skill priming |
+| `03de841` | 1250/1250 | session-log docs + SPEC §S25/§S46 annotations |
+
+The rc.8.b polish arc closed the rc.8.b drift end-to-end: skill runtime is contract-fidelity, picker UX is relationship-aware, Improve prompt is R1..R7 primed. Banner climbed +30 net tests.
+
+Full ledger in [`docs/SESSION_LOG_2026-05-11.md`](docs/SESSION_LOG_2026-05-11.md).
+
+### Bugs surfaced this session
+
+- **BUG-052** (NEW) · Modal/overlay residue test cluster · 6 tests intermittently flaky throughout rc.8.b polish arc. Documented in `docs/BUG_LOG.md`. NOT caused by today's changes (RED tests don't touch DOM). Separate investigation arc.
+
+### Anchor documents (cross-session continuity)
+
+- `docs/v3.0/SPEC.md` — design specifications (now includes §S47 + §S25 amendment + §S46 polish-arc extensions)
+- `docs/UI_DATA_TRACE.md` (r6, hash `4fb8b31d`) — per-tab UI→data audit; the canvas surface authority
+- `docs/UI_DATA_KNOWLEDGE_BASE.md` (r2, hash `be052564`) — data-point KB with Relationships and Bindings section
+- `core/dataContract.js` — the live constitution (active; `dataContract.reference.js` preserves the original)
+- `docs/SESSION_LOG_2026-05-{09,10,11,12}.md` — daily ledgers
+
+### Active decisions to remember (work-in-progress)
+
+- **rc.8 tag**: deferred until S47 arc closes (1265/1265 GREEN)
+- **R12 formalization**: separate planned arc (CONSTITUTION.md + CLAUDE.md + V-CONSTITUTION-*)
+- **Real-LLM acceptance smoke** for "Give me an account plan" skill: next-call candidate after S47
+
+---
+
+## Archive — earlier session summaries
+
+**2026-05-09 PM**: rc.7 work COMPLETE + v3-prefix purge + R8 invariant arc CLOSED + 3 user-reported bugs A/B/C closed + Z2 label-resolver centralization · pushed to origin through `886dbd6`; commits `3184043..bafc578` (13 commits = R8 arc + BUG-A/B/C + Z2) **NOT YET PUSHED** awaiting user "push") · `v3.0.0-rc.7-dev` on `v3.0-data-architecture` · **Banner 1186/1186 GREEN ✅** · 28 commits this session · v2 architecture DELETED · R8 arc closed (6/6) · 18 bugs CLOSED today total. Anti-pattern "view-local state lost across re-mount" identified + closed for all 3 known instances (BUG-043/048/051). SPEC §S42 + §S43 added inline. NEW module `core/labelResolvers.js` is single source of truth for env/layer/driver/instance label resolution. Full session detail in [`docs/SESSION_LOG_2026-05-09.md`](docs/SESSION_LOG_2026-05-09.md).
+
+**2026-05-10**: rc.8.b Skills Builder v3.2 reboot. 8 commits + 1 hygiene = 9 total. Banner 1196→1220 GREEN. SPEC §S46 authored. 24 new V-FLOW-SKILL-V32-* tests. 15 legacy tests retired. Schema clean-replaced (outputContract/outputTarget/promptTemplate/bindings dropped; outputFormat + mutationPolicy + aiTag added). Full ledger in `docs/SESSION_LOG_2026-05-10.md`.
+
+**2026-05-11**: rc.8.b polish arc. 6 commits. Banner 1220→1250 GREEN. Contract-fidelity skill plane shipped end to end. Full ledger in `docs/SESSION_LOG_2026-05-11.md`.
+
+**2026-05-12** (today): SPEC §S47 Import Data workflow scaffold. 1 commit (`549599f`). 15 RED tests authored. C1/C2/C3 implementation arc opened. Full ledger in `docs/SESSION_LOG_2026-05-12.md`.
 
 ## 🟢 BUG-A/B/C + Z2 label-resolver arc CLOSED (2026-05-09 evening · post-R8)
 
