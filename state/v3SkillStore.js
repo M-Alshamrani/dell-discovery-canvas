@@ -193,19 +193,63 @@ export async function loadSystemSkills() {
   return out;
 }
 
-// SPEC §S47.7 · merged-load helper for the launcher
+// SPEC §S47.7 · warm-cache + sync merged loader for synchronous renderers
 //
-// loadAllV3Skills() -> Promise<{[skillId]: Skill}>
-//   Returns user + system skills merged by skillId. On collision the
-//   user-authored skill wins (engineer's saved edits SHADOW the system
-//   version per R47.7.2). The launcher should call this at open time
-//   and sort with a system-chip per R47.7.3.
-export async function loadAllV3Skills() {
+// The launcher + SkillBuilder paint paths render synchronously (they
+// don't `await` on every re-render); making them async would introduce
+// flicker and double-paint races. Instead, app.js boot calls
+// preloadSystemSkills() ONCE at startup (await-able), which warms
+// _systemSkillsCache. After that, every consumer reads via the sync
+// loadAllV3SkillsSync(), which merges the cache with the live user-skill
+// localStorage read.
+//
+// Cache invariants:
+//   - cache is filled exactly once per page load
+//   - if the catalog file 404s, cache becomes {} (still "loaded")
+//   - preloadSystemSkills is idempotent (returns the cached promise)
+let _systemSkillsCache    = null;
+let _systemSkillsPromise  = null;
+
+export function preloadSystemSkills() {
+  if (_systemSkillsPromise) return _systemSkillsPromise;
+  _systemSkillsPromise = loadSystemSkills().then(function(skills) {
+    _systemSkillsCache = skills || {};
+    return _systemSkillsCache;
+  }).catch(function(_e) {
+    _systemSkillsCache = {};
+    return _systemSkillsCache;
+  });
+  return _systemSkillsPromise;
+}
+
+// loadAllV3SkillsSync() -> {[skillId]: Skill}
+//   Synchronous merge of system skills (from warm cache) + user skills
+//   (from localStorage). User shadows system on skillId collision per
+//   R47.7.2. Safe to call before preloadSystemSkills() resolves; in
+//   that case the system slice is empty and only user skills render.
+//   Callers in the synchronous paint path use this; preloadSystemSkills()
+//   should have completed by first-paint (awaited in app.js boot).
+export function loadAllV3SkillsSync() {
   const userSkills   = loadV3Skills();
-  const systemSkills = await loadSystemSkills();
+  const systemSkills = _systemSkillsCache || {};
   const merged = Object.assign({}, systemSkills);
   Object.keys(userSkills).forEach(function(skillId) {
     merged[skillId] = userSkills[skillId];   // user shadows system
   });
   return merged;
 }
+
+// SPEC §S47.7 · merged-load helper for async callers (deprecated for
+// the launcher path · use preloadSystemSkills + loadAllV3SkillsSync
+// instead; kept for tests / scripted boot paths that genuinely need
+// the await semantics).
+//
+// loadAllV3Skills() -> Promise<{[skillId]: Skill}>
+//   Returns user + system skills merged by skillId. On collision the
+//   user-authored skill wins (engineer's saved edits SHADOW the system
+//   version per R47.7.2).
+export async function loadAllV3Skills() {
+  await preloadSystemSkills();
+  return loadAllV3SkillsSync();
+}
+

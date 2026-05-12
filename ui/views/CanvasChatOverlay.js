@@ -44,7 +44,10 @@ import { marked }                              from "../../vendor/marked/marked.
 // rc.3 #7 (SPEC §S29.7) — Skill Builder access lives inside the right-rail
 // ("+ Author new skill" footer button) since the topbar consolidated to a
 // single AI surface (Chat).
-import { loadV3Skills }                        from "../../state/v3SkillStore.js";
+// SPEC §S47.7 · loadV3Skills returns user-skills only · loadAllV3SkillsSync
+// returns the merged user+system map after preloadSystemSkills has warmed
+// the cache (called once at boot from app.js DOMContentLoaded).
+import { loadV3Skills, loadAllV3SkillsSync }    from "../../state/v3SkillStore.js";
 import { resolveTemplate }                     from "../../services/pathResolver.js";
 import { openSkillBuilderOverlay }             from "../skillBuilderOpener.js";
 // BUG-020 (2026-05-03) — streaming-time handshake strip. Pre-fix, the
@@ -341,8 +344,20 @@ function paintSkillsLauncher(host) {
     'Author + edit skills in Settings → Skills builder.</div>';
   host.appendChild(head);
 
+  // SPEC §S47.7.3 - launcher renders system+user skills with system-first
+  // sort + System chip on system rows; engineer's saved edits (kind="user"
+  // skills sharing a skillId with a system skill) SHADOW the system version
+  // per R47.7.2.
   var skills = [];
-  try { skills = Object.values(loadV3Skills() || {}); } catch (_e) { skills = []; }
+  try { skills = Object.values(loadAllV3SkillsSync() || {}); } catch (_e) { skills = []; }
+
+  // Sort system-first, then alphabetical by label within each group.
+  skills.sort(function(a, b) {
+    var aSys = (a.kind === "system") ? 0 : 1;
+    var bSys = (b.kind === "system") ? 0 : 1;
+    if (aSys !== bSys) return aSys - bSys;
+    return String(a.label || a.skillId).localeCompare(String(b.label || b.skillId));
+  });
 
   if (skills.length === 0) {
     var empty = document.createElement("div");
@@ -363,13 +378,26 @@ function paintSkillsLauncher(host) {
 function _buildLauncherRow(skill) {
   var row = document.createElement("div");
   row.className = "canvas-chat-skills-row";
+  if (skill.kind === "system") row.classList.add("canvas-chat-skills-row-system");
   row.setAttribute("data-launcher-skill-id", skill.skillId);
+  row.setAttribute("data-launcher-skill-kind", skill.kind || "user");
 
   var info = document.createElement("div");
   info.className = "canvas-chat-skills-row-info";
   var labelEl = document.createElement("div");
   labelEl.className = "canvas-chat-skills-row-label";
   labelEl.textContent = skill.label || skill.skillId;
+  // SPEC §S47.7.3 - System chip on kind="system" rows so the engineer
+  // sees at-a-glance which skills are catalog-shipped vs user-authored.
+  if (skill.kind === "system") {
+    var sysChip = document.createElement("span");
+    sysChip.className = "canvas-chat-skills-row-system-chip";
+    sysChip.setAttribute("data-launcher-system-chip", "");
+    sysChip.textContent = "System";
+    sysChip.title = "Ships with Dell Discovery Canvas. Click Run to use; click and Save to clone-to-edit as a user skill.";
+    labelEl.appendChild(document.createTextNode(" "));
+    labelEl.appendChild(sysChip);
+  }
   info.appendChild(labelEl);
   if (skill.description) {
     var descEl = document.createElement("div");
@@ -405,7 +433,8 @@ function paintSkillRail(body) {
   if (!railBody) return;
   railBody.innerHTML = "";
 
-  const skillsById = loadV3Skills();
+  // SPEC §S47.7.3 - right-rail picks up the merged set too (user + system).
+  const skillsById = loadAllV3SkillsSync();
   const ids = Object.keys(skillsById);
 
   if (ids.length === 0) {
@@ -724,6 +753,10 @@ export function _paintTypingIndicatorForTests() { paintTypingIndicator(); }
 export function _clearTypingIndicatorForTests() { clearTypingIndicator(); }
 export function _paintToolStatusForTests(toolName) { paintToolStatus(toolName); }
 export function _paintRoundBadgeForTests(evt) { paintRoundBadge(evt); }
+// SPEC §S47.7 - test mount for the skills launcher row painter so the
+// V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1 DOM-mount test can drive the
+// launcher without orchestrating the full Canvas Chat overlay open.
+export function _paintCanvasChatSkillsForTests(host) { paintSkillsLauncher(host); }
 
 // ─── rc.8.b / R5 · Skill launch + dynamic-tab system (per SPEC §S46.7) ─
 

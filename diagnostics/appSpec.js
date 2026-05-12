@@ -16082,9 +16082,12 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       it("V-SKILL-V3-6 · ui/views/CanvasChatOverlay.js right-rail population: imports loadV3Skills + resolveTemplate; renders skill cards (head + form host); click drops resolved prompt into .canvas-chat-input (per SPEC §S29.5)", async () => {
         const src = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
 
-        // Required imports for the rail population path.
-        assert(/import\s*\{\s*loadV3Skills\s*\}\s*from\s*"\.\.\/\.\.\/state\/v3SkillStore\.js"/.test(src),
-          "loadV3Skills imported from v3SkillStore");
+        // Required imports for the rail population path. The braces may
+        // include other co-imported helpers (e.g. loadAllV3SkillsSync added
+        // for the S47 system-skills launcher integration); the assertion is
+        // that loadV3Skills appears in an import statement against v3SkillStore.
+        assert(/import\s*\{[^}]*\bloadV3Skills\b[^}]*\}\s*from\s*"\.\.\/\.\.\/state\/v3SkillStore\.js"/.test(src),
+          "loadV3Skills imported from v3SkillStore (alongside any S47 co-imports)");
         assert(/import\s*\{\s*resolveTemplate\s*\}\s*from\s*"\.\.\/\.\.\/services\/pathResolver\.js"/.test(src),
           "resolveTemplate imported from pathResolver");
 
@@ -16114,9 +16117,13 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         assert(/resolveTemplate\(/.test(src),
           "calls resolveTemplate on click");
 
-        // Empty state + populated state both branch on loadV3Skills.
-        assert(/loadV3Skills\(\)/.test(src),
-          "loadV3Skills called to enumerate saved skills");
+        // Empty state + populated state both branch on a skills-store
+        // enumeration call. Pre-S47, that was loadV3Skills(); post-S47
+        // (system skills distribution model), the launcher + rail use
+        // loadAllV3SkillsSync() so system + user skills both render.
+        // Either call satisfies the contract: the enumeration happens.
+        assert(/loadV3Skills\(\)|loadAllV3SkillsSync\(\)/.test(src),
+          "loadV3Skills() OR loadAllV3SkillsSync() called to enumerate saved skills");
 
         // entityId parameter dropdowns must source options from the
         // engagement (gaps / drivers / environments / instances).
@@ -20567,6 +20574,49 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
     var hasFileParam = Array.isArray(json.parameters) && json.parameters.some(function(p) { return p && p.type === "file"; });
     assert(hasFileParam,
       "V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1: file-ingest skill MUST have a parameters[] entry of type='file'");
+  });
+
+  // SPEC §S47.7.3 · F1 DOM-mount regression test · the file-ingest system
+  // skill MUST render in the Canvas Chat launcher with a System chip.
+  // Source-grep tests (V-FLOW-IMPORT-SYSTEM-SKILL-LOADER-1 + V-FLOW-IMPORT-
+  // FILE-INGEST-SKILL-PRESENT-1) are not enough · they only prove the
+  // loader function + JSON file exist. This test mounts the actual
+  // launcher and asserts the user-visible surface renders the skill.
+  it("V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1 · S47.7.3 · file-ingest skill renders in the Canvas Chat skills launcher with a System chip + system rows sort ahead of user rows", async () => {
+    var storeMod   = await import("/state/v3SkillStore.js");
+    var overlayMod = await import("/ui/views/CanvasChatOverlay.js");
+    assertEqual(typeof storeMod.preloadSystemSkills, "function",
+      "V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1: v3SkillStore.preloadSystemSkills MUST be exported");
+    assertEqual(typeof storeMod.loadAllV3SkillsSync, "function",
+      "V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1: v3SkillStore.loadAllV3SkillsSync MUST be exported");
+    assertEqual(typeof overlayMod._paintCanvasChatSkillsForTests, "function",
+      "V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1: CanvasChatOverlay._paintCanvasChatSkillsForTests MUST be exported as a test mount");
+    // Warm the system-skills cache (boot path).
+    await storeMod.preloadSystemSkills();
+    // Mount the launcher into a detached host element.
+    var host = document.createElement("div");
+    overlayMod._paintCanvasChatSkillsForTests(host);
+    // The file-ingest skill MUST be present with kind="system".
+    var row = host.querySelector('[data-launcher-skill-id="skl-file-ingest-instances"]');
+    assert(row,
+      "V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1: launcher MUST render a row for skl-file-ingest-instances (the file-ingest system skill); got rows: " +
+      Array.from(host.querySelectorAll("[data-launcher-skill-id]")).map(r => r.getAttribute("data-launcher-skill-id")).join(", "));
+    assertEqual(row.getAttribute("data-launcher-skill-kind"), "system",
+      "V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1: file-ingest row MUST carry data-launcher-skill-kind='system'");
+    // System chip MUST be present.
+    var chip = row.querySelector("[data-launcher-system-chip]");
+    assert(chip,
+      "V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1: system row MUST carry a data-launcher-system-chip badge (R47.7.3)");
+    assert(/system/i.test(chip.textContent),
+      "V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1: System chip text MUST mention 'System'; got: " + chip.textContent);
+    // Sort: system rows MUST appear ahead of any user rows. We don't have
+    // user rows in this test fixture but the system row MUST be the first
+    // row in the rendered list when the merged set has any user rows.
+    // Sanity assertion: the rendered system row's position is 0 in the
+    // list of all rendered launcher rows.
+    var allRows = host.querySelectorAll("[data-launcher-skill-id]");
+    assertEqual(allRows[0].getAttribute("data-launcher-skill-id"), "skl-file-ingest-instances",
+      "V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1: system rows MUST sort ahead of user rows (R47.7.3); first row is " + allRows[0].getAttribute("data-launcher-skill-id"));
   });
 
   it("V-FLOW-IMPORT-FOOTER-BUTTON-1 · S47.8.1 + S47.8.2 · single 📤 Import data footer button exists next to Save/Open + opens modal with Step 1 + Step 2 visible", async () => {
