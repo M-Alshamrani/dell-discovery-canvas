@@ -7102,3 +7102,549 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
    list already conveys the soft-delete invariant, so a fixed-position
    toast on first env add was redundant noise. SPEC §S41.3 retired in
    the same arc; RULES §16 CH35 clause (e) deleted. */
+
+
+/* ════════════════════════════════════════════════════════════════════
+   §S47 · Import data workflow · F4 polish (post-audit · 2026-05-12)
+   ════════════════════════════════════════════════════════════════════
+   Styling for the two ingress paths (Path A skill via Canvas Chat
+   launcher + Path B footer button workflow) and their shared preview
+   modal + iLLM badge variant. Matches the rc.8.b Dell-blue + GPLC
+   aesthetic: white surface cards, dell-blue accents, dell-blue-faint
+   tinted asides, dell-blue-soft selection highlights, generous padding,
+   13-14px body type, 11-12px meta type.
+   ──────────────────────────────────────────────────────────────────── */
+
+/* ── System chip (launcher + SkillBuilder list) ─────────────────────── */
+.canvas-chat-skills-row-system-chip,
+.skill-admin-row-system-chip {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  margin-left: 8px;
+  border-radius: 999px;
+  background: var(--dell-blue-soft, #E8F2FB);
+  color: var(--dell-blue-deep, #0063AE);
+  border: 1px solid var(--dell-blue, #0076CE);
+  vertical-align: middle;
+  line-height: 1.4;
+}
+.canvas-chat-skills-row-system {
+  border-left: 3px solid var(--dell-blue, #0076CE);
+}
+.skill-admin-row-system {
+  background: linear-gradient(to right, var(--dell-blue-faint, #F5F9FD) 0%, transparent 60%);
+}
+
+/* ── iLLM badge variant (MatrixView tile · §S47.9.3) ────────────────── */
+.ai-tag-badge-illm {
+  /* Amber/orange Dell-aligned palette per the SPEC mapping table.
+     Inherits position + font + size from .ai-tag-badge. */
+  background: #C2580B !important;          /* Dell amber-deep */
+  color: #FFFFFF !important;
+  box-shadow: 0 0 0 1px rgba(194, 88, 11, 0.25);
+}
+.ai-tag-badge-illm:hover {
+  background: #A04A09 !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   IMPORT DATA MODAL (Path B · footer button workflow)
+   ════════════════════════════════════════════════════════════════════ */
+.import-data-modal-overlay {
+  /* Inherits position/blur from .dialog-overlay; just align item layout. */
+  align-items: flex-start;
+  padding: 40px 16px;
+  overflow-y: auto;
+}
+.import-data-modal-box {
+  /* Wider than the default dialog-box · the workflow content needs room. */
+  width: 720px;
+  max-width: 95vw;
+  padding: 0;
+  background: var(--surface, #FFFFFF);
+  border-radius: var(--radius-lg, 8px);
+  box-shadow: 0 24px 60px rgba(11, 42, 74, 0.18), 0 4px 16px rgba(11, 42, 74, 0.08);
+  overflow: hidden;
+}
+.import-data-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px 14px;
+  background: linear-gradient(to bottom, var(--dell-blue-faint, #F5F9FD), var(--surface, #FFFFFF));
+  border-bottom: 1px solid var(--dell-blue-soft, #E8F2FB);
+}
+.import-data-modal-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--dell-blue-ink, #0B2A4A);
+  letter-spacing: -0.005em;
+}
+.import-data-modal-close {
+  background: none;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text-3, #6B7A90);
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 4px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.import-data-modal-close:hover {
+  background: var(--surface-2, #F4F8FC);
+  color: var(--text-1, #0B2A4A);
+}
+.import-data-modal-lede {
+  margin: 0;
+  padding: 14px 24px 0;
+  font-size: 13px;
+  color: var(--text-2, #3E4C62);
+  line-height: 1.55;
+}
+
+/* ── Step cards ─────────────────────────────────────────────────────── */
+.import-data-step {
+  margin: 18px 24px;
+  padding: 16px 18px;
+  background: var(--surface, #FFFFFF);
+  border: 1px solid var(--border, #E4E8EE);
+  border-radius: var(--radius-md, 6px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.import-data-step-title {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--dell-blue-ink, #0B2A4A);
+  letter-spacing: -0.003em;
+}
+
+/* ── Apply-to scope picker (pill radios) ────────────────────────────── */
+.import-data-scope-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-2, #3E4C62);
+}
+.import-data-scope-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--border-mid, #C4CDDA);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-1, #0B2A4A);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.import-data-scope-option:hover {
+  border-color: var(--dell-blue, #0076CE);
+}
+.import-data-scope-option input[type="radio"] {
+  accent-color: var(--dell-blue, #0076CE);
+  margin: 0;
+}
+.import-data-scope-option:has(input:checked) {
+  background: var(--dell-blue-soft, #E8F2FB);
+  border-color: var(--dell-blue, #0076CE);
+  color: var(--dell-blue-deep, #0063AE);
+  font-weight: 600;
+}
+
+/* ── Source notes input ─────────────────────────────────────────────── */
+.import-data-notes-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3, #6B7A90);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 4px;
+}
+.import-data-notes {
+  width: 100%;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text-1, #0B2A4A);
+  background: var(--surface-2, #F4F8FC);
+  border: 1px solid var(--border, #E4E8EE);
+  border-radius: var(--radius-sm, 4px);
+  padding: 8px 10px;
+  resize: vertical;
+  min-height: 60px;
+  box-sizing: border-box;
+  line-height: 1.5;
+}
+.import-data-notes:focus {
+  outline: none;
+  border-color: var(--dell-blue, #0076CE);
+  background: var(--surface, #FFFFFF);
+  box-shadow: 0 0 0 2px var(--dell-blue-soft, #E8F2FB);
+}
+
+/* ── Env chips strip ────────────────────────────────────────────────── */
+.import-data-env-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--dell-blue-faint, #F5F9FD);
+  border-radius: var(--radius-sm, 4px);
+  font-size: 11.5px;
+}
+.import-data-env-chips-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3, #6B7A90);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+.import-data-env-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  background: var(--surface, #FFFFFF);
+  border: 1px solid var(--dell-blue-soft, #E8F2FB);
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--dell-blue-deep, #0063AE);
+  font-weight: 500;
+  cursor: help;
+}
+
+/* ── Step CTAs ──────────────────────────────────────────────────────── */
+.import-data-download-btn,
+.import-data-pick-btn {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  background: var(--dell-blue, #0076CE);
+  color: #FFFFFF;
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+.import-data-download-btn:hover,
+.import-data-pick-btn:hover {
+  background: var(--dell-blue-deep, #0063AE);
+  box-shadow: 0 2px 8px rgba(0, 118, 206, 0.25);
+}
+.import-data-pick-btn {
+  background: var(--surface, #FFFFFF);
+  color: var(--dell-blue, #0076CE);
+  border: 1.5px solid var(--dell-blue, #0076CE);
+}
+.import-data-pick-btn:hover {
+  background: var(--dell-blue-soft, #E8F2FB);
+  color: var(--dell-blue-deep, #0063AE);
+  box-shadow: none;
+}
+
+/* ── Inline error banner inside Step 2 ──────────────────────────────── */
+.import-data-error {
+  padding: 10px 12px;
+  background: #FEF2F2;
+  border: 1px solid #FCA5A5;
+  border-left: 3px solid #DC2626;
+  color: #991B1B;
+  font-size: 12.5px;
+  border-radius: var(--radius-sm, 4px);
+  line-height: 1.5;
+}
+
+/* ── Workflow recipe card ───────────────────────────────────────────── */
+.import-data-workflow-card {
+  margin: 0 24px 16px;
+  padding: 14px 18px;
+  background: var(--dell-blue-faint, #F5F9FD);
+  border: 1px solid var(--dell-blue-soft, #E8F2FB);
+  border-radius: var(--radius-md, 6px);
+  font-size: 12.5px;
+  color: var(--text-2, #3E4C62);
+  line-height: 1.6;
+}
+.import-data-workflow-card strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dell-blue-deep, #0063AE);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+.import-data-workflow-card ol {
+  margin: 0;
+  padding-left: 22px;
+}
+.import-data-workflow-card li {
+  margin: 2px 0;
+}
+
+/* ── Strict-match warning ───────────────────────────────────────────── */
+.import-data-strict-warning {
+  margin: 0 24px 18px;
+  padding: 10px 14px;
+  background: #FFF8E1;
+  border: 1px solid #FACC15;
+  border-left: 3px solid #B45309;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 12px;
+  color: #78350F;
+  line-height: 1.5;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   IMPORT PREVIEW MODAL (shared · Path A + Path B)
+   ════════════════════════════════════════════════════════════════════ */
+.import-preview-modal-overlay {
+  align-items: flex-start;
+  padding: 40px 16px;
+  overflow-y: auto;
+}
+.import-preview-modal-box {
+  width: 980px;
+  max-width: 98vw;
+  padding: 0;
+  background: var(--surface, #FFFFFF);
+  border-radius: var(--radius-lg, 8px);
+  box-shadow: 0 24px 60px rgba(11, 42, 74, 0.18), 0 4px 16px rgba(11, 42, 74, 0.08);
+  overflow: hidden;
+}
+.import-preview-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px 14px;
+  background: linear-gradient(to bottom, var(--dell-blue-faint, #F5F9FD), var(--surface, #FFFFFF));
+  border-bottom: 1px solid var(--dell-blue-soft, #E8F2FB);
+}
+.import-preview-modal-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--dell-blue-ink, #0B2A4A);
+}
+.import-preview-modal-close {
+  background: none;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text-3, #6B7A90);
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 4px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.import-preview-modal-close:hover {
+  background: var(--surface-2, #F4F8FC);
+  color: var(--text-1, #0B2A4A);
+}
+
+/* ── Scope bar (preview-modal top bar; authoritative apply-scope) ───── */
+.import-preview-scope-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 24px;
+  background: var(--surface-2, #F4F8FC);
+  border-bottom: 1px solid var(--border, #E4E8EE);
+  font-size: 12.5px;
+  color: var(--text-2, #3E4C62);
+}
+.import-preview-scope-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3, #6B7A90);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.import-preview-scope-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  background: var(--surface, #FFFFFF);
+  border: 1px solid var(--border-mid, #C4CDDA);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--text-1, #0B2A4A);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.import-preview-scope-option:hover {
+  border-color: var(--dell-blue, #0076CE);
+}
+.import-preview-scope-option input[type="radio"] {
+  accent-color: var(--dell-blue, #0076CE);
+  margin: 0;
+}
+.import-preview-scope-option:has(input:checked) {
+  background: var(--dell-blue-soft, #E8F2FB);
+  border-color: var(--dell-blue, #0076CE);
+  color: var(--dell-blue-deep, #0063AE);
+  font-weight: 600;
+}
+
+/* ── Per-row table ──────────────────────────────────────────────────── */
+.import-preview-body {
+  padding: 12px 24px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.import-preview-row {
+  display: grid;
+  grid-template-columns: 24px 110px 90px 80px 1fr 1fr 1fr 1fr 1fr 70px 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border, #E4E8EE);
+  font-size: 12px;
+}
+.import-preview-row:last-child {
+  border-bottom: none;
+}
+.import-preview-row-accept {
+  accent-color: var(--dell-blue, #0076CE);
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+/* ── Confidence chip ────────────────────────────────────────────────── */
+.import-preview-confidence {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.import-preview-confidence-high {
+  background: #DCFCE7;
+  color: #14532D;
+  border: 1px solid #22C55E;
+}
+.import-preview-confidence-medium {
+  background: #FEF3C7;
+  color: #78350F;
+  border: 1px solid #F59E0B;
+}
+.import-preview-confidence-low {
+  background: #FEE2E2;
+  color: #7F1D1D;
+  border: 1px solid #EF4444;
+}
+
+/* ── LLM-state hint chip + disagreement indicator ───────────────────── */
+.import-preview-llm-state-hint {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: var(--surface-2, #F4F8FC);
+  border: 1px solid var(--border, #E4E8EE);
+  border-radius: 999px;
+  font-size: 10.5px;
+  color: var(--text-2, #3E4C62);
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.import-preview-state-disagreement {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: #FFF8E1;
+  border: 1px solid #FACC15;
+  border-radius: 4px;
+  font-size: 10.5px;
+  color: #78350F;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ── Inline editable cells ──────────────────────────────────────────── */
+.import-preview-cell {
+  width: 100%;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--text-1, #0B2A4A);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 4px);
+  padding: 4px 6px;
+  box-sizing: border-box;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.import-preview-cell:hover {
+  border-color: var(--border, #E4E8EE);
+  background: var(--surface-2, #F4F8FC);
+}
+.import-preview-cell:focus {
+  outline: none;
+  border-color: var(--dell-blue, #0076CE);
+  background: var(--surface, #FFFFFF);
+  box-shadow: 0 0 0 2px var(--dell-blue-soft, #E8F2FB);
+}
+
+/* ── Preview footer ─────────────────────────────────────────────────── */
+.import-preview-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  background: var(--surface-2, #F4F8FC);
+  border-top: 1px solid var(--border, #E4E8EE);
+}
+.import-preview-count {
+  font-size: 12px;
+  color: var(--text-2, #3E4C62);
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  letter-spacing: 0.04em;
+}
+.import-preview-apply {
+  padding: 8px 22px;
+  background: var(--dell-blue, #0076CE);
+  color: #FFFFFF;
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+.import-preview-apply:hover:not(:disabled) {
+  background: var(--dell-blue-deep, #0063AE);
+  box-shadow: 0 2px 8px rgba(0, 118, 206, 0.25);
+}
+.import-preview-apply:disabled {
+  background: var(--border-mid, #C4CDDA);
+  color: var(--text-3, #6B7A90);
+  cursor: not-allowed;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   end §S47 polish block
+   ════════════════════════════════════════════════════════════════════ */

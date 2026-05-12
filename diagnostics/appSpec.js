@@ -20698,6 +20698,60 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
     if (host.parentNode) host.parentNode.removeChild(host);
   });
 
+  // SPEC §S47.5 + §S47.8 + §S47.9.3 · F4 CSS-coverage regression test ·
+  // the styles.css MUST define rules for the importer's class names
+  // (modal box, scope picker, confidence chips, iLLM badge variant, System
+  // chip). Pre-F4 the components rendered as unstyled HTML because every
+  // .import-data-* + .import-preview-* + .ai-tag-badge-illm selector was
+  // undefined. This test asserts the polish stays shipped.
+  it("V-FLOW-IMPORT-CSS-POLISH-1 · §S47 · styles.css MUST define rules for the importer's modal + preview + chip + iLLM badge class names (no unstyled-HTML regression)", async () => {
+    var src;
+    try { src = await (await fetch("/styles.css")).text(); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-CSS-POLISH-1: failed to fetch styles.css: " + (e && e.message || e)); }
+    // Strip comments before grepping so a literal /*comment-mention*/
+    // can't false-positive against a missing rule.
+    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "");
+    var required = [
+      // Path B modal
+      ".import-data-modal-box",
+      ".import-data-step",
+      ".import-data-step-title",
+      ".import-data-scope-row",
+      ".import-data-scope-option",
+      ".import-data-notes",
+      ".import-data-env-chip",
+      ".import-data-download-btn",
+      ".import-data-pick-btn",
+      ".import-data-workflow-card",
+      ".import-data-strict-warning",
+      // Shared preview modal
+      ".import-preview-modal-box",
+      ".import-preview-scope-bar",
+      ".import-preview-row",
+      ".import-preview-confidence-high",
+      ".import-preview-confidence-medium",
+      ".import-preview-confidence-low",
+      ".import-preview-llm-state-hint",
+      ".import-preview-state-disagreement",
+      ".import-preview-cell",
+      ".import-preview-apply",
+      // iLLM badge variant (§S47.9.3)
+      ".ai-tag-badge-illm",
+      // System chip (R47.7.3)
+      ".canvas-chat-skills-row-system-chip",
+      ".skill-admin-row-system-chip"
+    ];
+    var missing = required.filter(function(sel) {
+      // Each rule must appear as a CSS selector followed by { ... }
+      // (not a substring inside a longer name). Escape the dots.
+      var escaped = sel.replace(/[.]/g, "\\.");
+      var re = new RegExp(escaped + "\\b[\\s,]*[^{]*\\{");
+      return !re.test(stripped);
+    });
+    assert(missing.length === 0,
+      "V-FLOW-IMPORT-CSS-POLISH-1: styles.css MUST define rules for these importer class names · missing: " + missing.join(", "));
+  });
+
   it("V-FLOW-IMPORT-FOOTER-BUTTON-1 · S47.8.1 + S47.8.2 · single 📤 Import data footer button exists next to Save/Open + opens modal with Step 1 + Step 2 visible", async () => {
     var src;
     try { src = await (await fetch("/index.html")).text(); }
