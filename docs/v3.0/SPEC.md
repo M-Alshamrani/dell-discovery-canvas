@@ -4527,13 +4527,15 @@ Saved skill JSON MUST NOT contain UUID literals in `seedPrompt`, `improvedPrompt
 
 ---
 
-## §S47 · Import Data workflow — file-driven LLM extraction (LOCKED 2026-05-12)
+## §S47 · Import Data workflow — file-driven LLM extraction (LOCKED 2026-05-12; PATH A DEFERRED post-audit 2026-05-12)
 
 ### S47.0 · Status + authority
 
-**Status**: AUTHORED 2026-05-12 as the rc.8.b post-skill-builder arc. SPEC + RULES + RED tests land first per `feedback_spec_and_test_first.md`; the 3-commit implementation arc lands after this section + V-FLOW-IMPORT-* test scaffolds.
+**Status (2026-05-12 post-audit)**:
+- **Path B** (footer button + Dell internal LLM workflow) · **LOCKED + SHIPPED**. 12 V-FLOW-IMPORT-* tests GREEN guarding the contract.
+- **Path A** (Skills Builder system skill + Canvas Chat launcher entry) · **DEFERRED per BUG-053**. Originally authored as "additive deltas / framework extensions" — audit identified that the OutputFormatEnum extension + 3 new schema fields + system-skills distribution model are constitutional touches that require the `[CONSTITUTIONAL TOUCH PROPOSED]` Q&A flow per `feedback_5_forcing_functions.md` Rule A. Path A code was RIPPED in commit `ec963b9` (R1). Re-attempt requires the full protocol in BUG-053.
 
-**Authority**: user direction 2026-05-12 — closes the architectural gap where a presales workshop typically begins with an externally-sourced data file (Excel install-base, PDF estate diagram, CSV inventory, vendor quote) that needs intelligent extraction to seed the engagement. Two ingress paths share a unified backend.
+**Authority**: user direction 2026-05-12 — closes the architectural gap where a presales workshop typically begins with an externally-sourced data file (Excel install-base, PDF estate diagram, CSV inventory, vendor quote) that needs intelligent extraction to seed the engagement. **Two ingress paths originally designed; Path A deferred; Path B operational.**
 
 ### S47.1 · Two ingress paths, one importer
 
@@ -4642,7 +4644,11 @@ R47.5.5 · "Both" semantics: creates **two truly independent records** per `item
 
 R47.5.6 · **Ghost-rendering Option B** (matrix view rule extension): the existing Tab 3 ghost-tile logic that renders `?Review` for current instances without a desired counterpart is EXTENDED — no ghost rendered when a `state="desired"` instance with the same `label` exists in the same `(layerId, environmentId)` cell. Locked by V-FLOW-IMPORT-GHOST-1.
 
-### S47.6 · Skills Builder framework extensions
+### S47.6 · Skills Builder framework extensions (DEFERRED · BUG-053)
+
+**Status**: DEFERRED 2026-05-12 post-audit. These additions are constitutional touches (locked-enum extension + new Zod fields) that require the `[CONSTITUTIONAL TOUCH PROPOSED]` Q&A flow per `feedback_5_forcing_functions.md` Rule A. The Path A re-attempt MUST land these under that flow.
+
+Original design (kept for re-attempt reference):
 
 This arc lands 3 additive framework extensions, each general-purpose (not a local patch for this skill):
 
@@ -4660,7 +4666,11 @@ defaultScope:  z.enum(["current", "desired", "both"]).default("desired"),
 
 Existing skills without these fields default per `.default()` semantics (back-compat preserved).
 
-### S47.7 · System skills distribution model
+### S47.7 · System skills distribution model (DEFERRED · BUG-053)
+
+**Status**: DEFERRED 2026-05-12 post-audit. The `kind` field addition + the catalog-loader hook in `state/v3SkillStore.js` are constitutional touches requiring the `[CONSTITUTIONAL TOUCH PROPOSED]` Q&A flow. The Path A re-attempt MUST land this under that flow.
+
+Original design (kept for re-attempt reference):
 
 R47.7.1 · `schema/skill.js` gains `kind: z.enum(["system", "user"]).default("user")` field.
 

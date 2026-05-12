@@ -9,6 +9,9 @@ desktop.ini
 *.swp
 *.swo
 
+# Claude Code workspace config (per-session, not project-scoped)
+.claude/
+
 # Stray folder from an earlier brace-expansion accident that OneDrive won't let us delete.
 {core,state,services,interactions,ui/views,diagnostics}/
 

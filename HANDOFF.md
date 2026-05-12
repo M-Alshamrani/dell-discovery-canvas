@@ -1,54 +1,77 @@
 # Dell Discovery Canvas — Session Handoff
 
-**🔴 READ FIRST · Principal-architect discipline (LOCKED 2026-05-08, R11 added evening)**: every session, every commit, every handover. Full text in [`docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md`](docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md) (R0..R11) + tier-1 memory anchor `feedback_principal_architect_discipline.md`. Core rules: **R0** acknowledge "what would a principal architect do?" before non-trivial action · **R1** own-grep before delete · **R2** migrate consumers FIRST, delete LAST · **R3** Chrome MCP browser smoke at every commit boundary (test banner alone is NOT sufficient) · **R4** no v3-store backward-compat hacks · **R5** no fig-leaf test fixtures hiding v2 logic · **R6** rewrite tests to assert v3 contracts (never retire-with-negative) · **R7** per-commit revertibility · **R8** surface scope balloons · **R9** every handover references this · **R10** acknowledge in every action out loud · **R11 (HARDEST · LOCKED 2026-05-08 evening)** Recite + Answer + Execute + Pledge-Smoke-Screenshot at EVERY step boundary; every commit message ends with a `Browser smoke evidence:` block. **Test banner alone is a discipline violation.** **R12 (PROPOSED · in flight 2026-05-11/12)** — contract-fidelity: every code path that reads, writes, or surfaces engagement data MUST route through `core/dataContract.js` or its derived accessors. Formalization in `PRINCIPAL_ARCHITECT_DISCIPLINE.md` + V-CONSTITUTION-* guards is a separate planned arc.
+**🔴 READ FIRST · TIER-1 discipline anchors (every session, every commit, every handover)**:
+- **Principal-architect discipline (LOCKED 2026-05-08, R11 added evening)** · Full text in [`docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md`](docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md) (R0..R11) + memory anchor `feedback_principal_architect_discipline.md`. **R11 HARDEST**: Recite + Answer + Execute + Pledge-Smoke-Screenshot at EVERY step; every commit ends with `Browser smoke evidence:` block.
+- **🔴 5 Forcing Functions (LOCKED 2026-05-12 post-S47-audit)** · Memory anchor `feedback_5_forcing_functions.md`. CO-EQUAL with R11. **Rule A** Constitutional Pre-Authorization · `[CONSTITUTIONAL TOUCH PROPOSED]` Q&A REQUIRED before any code touches enum / Zod field / locked surface. **Rule B** Test-Mounts-the-UX · source-grep is NEVER the sole guard for UI behavior; "if a future commit removes this code path, does my test go RED?". **Rule C** No-Degraded-Fallback · disable the entry point with inline blocking error; never silently fall through to a guaranteed-failure path. **Rule D** Tests-Don't-Move-to-Match-Code · failing test = revert impl OR re-confirm SPEC. **Rule E** Hidden-Risks-At-This-Layer required commit body section.
 
 ---
 
-## 🟢 Current state — end of 2026-05-12 session
+## 🟢 Current state — end of 2026-05-12 session (post-audit remediation)
 
-**Branch**: `v3.0-data-architecture` · **HEAD**: `549599f` (C0 scaffold for SPEC §S47 Import Data workflow) · **APP_VERSION**: `3.0.0-rc.8-dev` (rc.8 in flight; rc.8.b polish arc COMPLETE; S47 implementation arc OPEN) · **Banner**: **1244/1265** (15 RED designed + 6 pre-existing flakes documented as BUG-052 + 1244 prior GREEN)
+**Branch**: `v3.0-data-architecture` · **HEAD**: `b5041ea` (R3 · Path B apply-errors surfacing) · **APP_VERSION**: `3.0.0-rc.8-dev` · **Banner**: **1265/1265 GREEN ✅**
 
-**Working tree**: clean. Only `.claude/` untracked.
+**Working tree**: clean.
 
-**Not pushed**: 12 commits past origin (`bafc578..549599f`). Awaits explicit user "push" / "tag it" call.
+**Not pushed**: 38 commits past origin. Awaits explicit user "push" / "tag it" call.
 
-### What was authored today
+### What shipped today (2026-05-12)
 
-Today landed ONE scaffold commit per `feedback_spec_and_test_first.md` discipline:
+The day arc started with a 17-commit `S47 Import Data workflow` push that the user audited and identified as containing constitutional creep (Path A · skill-via-launcher imported a 5th OutputFormatEnum value + 3 new schema fields + system-skills distribution model WITHOUT the `[CONSTITUTIONAL TOUCH PROPOSED]` flow). After the audit:
 
-| Commit | Theme |
-|---|---|
-| `549599f` | **C0 scaffold** · SPEC §S47 (Import Data workflow; 235 LOC) + §S25 amendment paragraph + 15 V-FLOW-IMPORT-* RED-first tests (306 LOC). No code. |
+- **Path A was PARKED** (clean rip; BUG-053 logged; full re-attempt protocol documented)
+- **Path B (footer button workflow) was kept + hardened** with 2 additional features under proper discipline (0-env guard + apply-errors surfacing)
+- **5 forcing-function discipline rules installed** as TIER-1 memory anchor (feedback_5_forcing_functions.md) to prevent future drift
 
-The full design (4 rounds of pushback + 7 locked decisions) is in [`docs/SESSION_LOG_2026-05-12.md`](docs/SESSION_LOG_2026-05-12.md).
+| Commit | Theme | Banner |
+|---|---|---|
+| `549599f` | SPEC §S47 + 15 V-FLOW-IMPORT-* RED-first scaffold | 1244/1265 |
+| `0bdd717` | Docs · session log + handoff + BUG-052 | 1244/1265 |
+| `30db5ca` | [CONSTITUTIONAL AMENDMENT] schema · aiTag.kind discriminator | 1251/1265 |
+| `2d6d858` | feat · schema/skill.js v3.2 additive deltas | 1252/1265 |
+| `9cfcf48` | feat · services/importResponseParser.js | 1253/1265 |
+| `871b10e` | feat · services/importDriftCheck.js | 1254/1265 |
+| `c4d3adf` | feat · services/importApplier.js | 1255/1265 |
+| `15233c3` | feat · ui/components/ImportPreviewModal.js | 1257/1265 |
+| `d225323` | feat · MatrixView Option B + iLLM badge | 1259/1265 |
+| `2c21425` | feat · v3SkillStore system-skills loader [PARKED in R1] | 1260/1265 |
+| `0df7d43` | feat · catalogs/skills/file-ingest-instances.json [PARKED in R1] | 1261/1265 |
+| `add00e6` | feat · services/importInstructionsBuilder.js | 1264/1265 |
+| `31915ed` | feat · footer Import data button + ImportDataModal | 1265/1265 |
+| `3b83d2b` | F1 · launcher integration [PARKED in R1] | 1266/1266 |
+| `01d5dbd` | F2 · skill runner import-subset routing [PARKED in R1] | 1267/1267 |
+| `92054ff` | F3 · SkillBuilder dropdown + clone-to-edit [PARKED in R1] | 1268/1268 |
+| `433abf4` | F4 · CSS polish (~350 LOC, Dell-blue GPLC aesthetic) | 1269/1269 |
+| **`ec963b9`** | **R1 · Park Path A + BUG-053** | **1263/1263** |
+| **`e8f5a9c`** | **R2 · Path B 0-env guard** (Rule C) | **1264/1264** |
+| **`b5041ea`** | **R3 · Path B apply-errors surfacing** (Rule C) | **1265/1265** |
 
-### Implementation arc that follows (next-call)
+### Path B status (PERFECT)
 
-```
-C1 · Framework extensions + shared importer + preview modal + system-skills loader
-     ~500 LOC · flips ~10 RED → GREEN · target banner ~1254
+Footer button "📤 Import data" → 2-step elegant modal:
+- **Step 1** · Apply-to scope picker (current/desired/both pill radios) + source notes textarea + env chips strip + Download instructions.txt CTA. **0-env guard** (R2): Download button disabled + amber blocking error "Add at least one environment in the Context tab first" when `engagement.environments.allIds.length === 0`. `buildImportInstructions` throws `NO_ENVIRONMENTS` as defense-in-depth.
+- **Step 2** · File picker (.json or .txt) → `parseImportResponse` (Zod-strict) → `checkImportDrift` (strict-reject on missing env UUIDs per R47.8.4) → `ImportPreviewModal` opens with 11-column row table (checkbox + confidence chip green/amber/red + LLM-state hint pill + disagreement indicator + 7 editable cells).
+- **Apply path** · `applyImportItems` commits selected rows with `aiTag.kind:"external-llm"` + `source:"dell-internal"`; **commitImport receives FULL applier result envelope** (R3): app.js handler reads `errors[]` and switches to `notifyError` on partial failure ("Partial import: M applied, N failed · row K: <validation message>"); never claims `notifySuccess` on partial failure (Rule C).
+- **MatrixView** · imported tiles render the **iLLM** amber badge (`data-ai-tag-kind="external-llm"`); auto-clears on engineer save (inherited R7 contract).
 
-C2 · catalogs/skills/file-ingest-instances.json (system skill JSON; no code)
-     flips 1 RED → GREEN · target banner ~1255
+### Path A status (PARKED — BUG-053)
 
-C3 · Footer button + Import Data modal + [CONSTITUTIONAL AMENDMENT] aiTag.kind
-     ~400 LOC · flips 4 RED → GREEN · target banner 1265/1265 ✅
-```
-
-All sequencing, file lists, and acceptance criteria are documented in SPEC §S47 + `SESSION_LOG_2026-05-12.md` §"3-commit implementation arc".
+See [`docs/BUG_LOG.md` BUG-053](docs/BUG_LOG.md) for the full list of parked surfaces + the re-attempt protocol. Re-attempt requires:
+1. `[CONSTITUTIONAL AMENDMENT]` SPEC § for OutputFormatEnum extension + 3 new schema fields + system-skills distribution model
+2. Explicit user Q&A confirmation outside of SPEC text
+3. DOM-mount RED tests authored FIRST (Rule B)
+4. Clone-to-edit + system-chip behavior covered by tests (was missing in the original arc)
 
 ### Recoverability
 
 A different Claude session (or human contributor) can pick up from this point with full context by reading, in order:
 
-1. **`HANDOFF.md`** (this file) — current state + next-call
-2. **`docs/SESSION_LOG_2026-05-12.md`** — today's design decisions + 7 locked Qs
-3. **`docs/v3.0/SPEC.md` §S47** — the locked design contract
-4. **`diagnostics/appSpec.js`** V-FLOW-IMPORT-* tests — the 15 RED scaffolds enforcing the design
-5. **`docs/UI_DATA_KNOWLEDGE_BASE.md` r2** + **`docs/UI_DATA_TRACE.md` r6** — the data-architecture authority
-6. **`docs/SESSION_LOG_2026-05-11.md`** — yesterday's rc.8.b polish arc (5 commits 1220→1250)
+1. **`HANDOFF.md`** (this file) — current state
+2. **`feedback_5_forcing_functions.md`** in user's auto-memory — TIER-1 discipline contract
+3. **`docs/BUG_LOG.md` BUG-053** — Path A parked surfaces + re-attempt protocol
+4. **`docs/v3.0/SPEC.md` §S47** — Path B locked design (Path A sections marked DEFERRED)
+5. **`diagnostics/appSpec.js`** V-FLOW-IMPORT-* tests — 12 GREEN guards for Path B + the constitutional amendment
 
-These six artifacts contain enough context to land C1/C2/C3 cleanly without further conversation history.
+These five artifacts contain enough context to maintain Path B and re-attempt Path A under proper discipline.
 
 ### 2026-05-11 rc.8.b polish arc (yesterday — context for continuity)
 
