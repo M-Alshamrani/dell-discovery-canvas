@@ -20619,6 +20619,52 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
       "V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1: system rows MUST sort ahead of user rows (R47.7.3); first row is " + allRows[0].getAttribute("data-launcher-skill-id"));
   });
 
+  // SPEC §S47.6.1 + §S47.6.2 · F2 DOM-mount regression test · skills with
+  // outputFormat="import-subset" route their LLM response to the shared
+  // ImportPreviewModal. The previous arc closed CanvasChatOverlay's
+  // _renderSkillRunOutput with text/dimensional/json-array/scalar branches
+  // only · "import-subset" fell to the "Unknown format" fallback, dumping
+  // raw JSON into the chat instead of opening the preview modal.
+  it("V-FLOW-IMPORT-SKILL-RUN-ROUTES-TO-PREVIEW-1 · S47.6.1 · outputFormat='import-subset' routes through parseImportResponse → ImportPreviewModal (Path A entry)", async () => {
+    var overlayMod = await import("/ui/views/CanvasChatOverlay.js");
+    assertEqual(typeof overlayMod._renderSkillRunOutputForTests, "function",
+      "V-FLOW-IMPORT-SKILL-RUN-ROUTES-TO-PREVIEW-1: CanvasChatOverlay._renderSkillRunOutputForTests MUST be exported as a test driver");
+    // Build a synthetic import-subset LLM response (the canonical S47.3 shape).
+    var responseText = JSON.stringify({
+      schemaVersion: "1.0", kind: "instance.add", generatedAt: "2026-05-12T10:00:00Z",
+      items: [{
+        confidence: "high", rationale: "synthetic test row",
+        data: { state: "desired", layerId: "compute", environmentId: "00000000-0000-4000-8000-000000000099",
+                label: "Synthetic Tile", vendor: "Oracle", vendorGroup: "nonDell", criticality: "High", notes: "" }
+      }]
+    });
+    var skill = { skillId: "skl-test-import", outputFormat: "import-subset", preview: "per-row", defaultScope: "desired" };
+    // Mount a panel host element (the dispatch writes parsed JSON into
+    // [data-skill-panel-output]).
+    var panelHost = document.createElement("div");
+    var output = document.createElement("pre");
+    output.setAttribute("data-skill-panel-output", "");
+    panelHost.appendChild(output);
+    document.body.appendChild(panelHost);
+    // Drive the dispatch.
+    overlayMod._renderSkillRunOutputForTests(skill, panelHost, responseText);
+    // The dispatch is async (dynamic-import chain); wait one tick.
+    await new Promise(function(r) { setTimeout(r, 800); });
+    // The preview modal MUST be mounted.
+    var modal = document.getElementById("import-preview-modal");
+    assert(modal,
+      "V-FLOW-IMPORT-SKILL-RUN-ROUTES-TO-PREVIEW-1: import-preview-modal MUST be mounted after the dispatch routes through import-subset (got: " +
+      (output.textContent ? output.textContent.slice(0, 200) : "(no output)") + ")");
+    // The modal MUST render one row per items[] entry.
+    var rows = modal.querySelectorAll("[data-import-preview-row]");
+    assertEqual(rows.length, 1,
+      "V-FLOW-IMPORT-SKILL-RUN-ROUTES-TO-PREVIEW-1: modal MUST render 1 row for the 1 item in the synthetic response; got: " + rows.length);
+    // Cleanup.
+    var closeBtn = modal.querySelector(".import-preview-modal-close");
+    if (closeBtn) closeBtn.click();
+    if (panelHost.parentNode) panelHost.parentNode.removeChild(panelHost);
+  });
+
   it("V-FLOW-IMPORT-FOOTER-BUTTON-1 · S47.8.1 + S47.8.2 · single 📤 Import data footer button exists next to Save/Open + opens modal with Step 1 + Step 2 visible", async () => {
     var src;
     try { src = await (await fetch("/index.html")).text(); }

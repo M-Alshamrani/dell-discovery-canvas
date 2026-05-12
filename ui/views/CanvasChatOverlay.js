@@ -757,6 +757,12 @@ export function _paintRoundBadgeForTests(evt) { paintRoundBadge(evt); }
 // V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1 DOM-mount test can drive the
 // launcher without orchestrating the full Canvas Chat overlay open.
 export function _paintCanvasChatSkillsForTests(host) { paintSkillsLauncher(host); }
+// SPEC §S47.6 - test driver for the per-outputFormat dispatch so the
+// V-FLOW-IMPORT-SKILL-RUN-ROUTES-TO-PREVIEW-1 test can feed a synthetic
+// LLM response into the routing path and assert the preview modal opens.
+export function _renderSkillRunOutputForTests(skill, panelHost, responseText) {
+  _renderSkillRunOutput(skill, panelHost, responseText);
+}
 
 // ─── rc.8.b / R5 · Skill launch + dynamic-tab system (per SPEC §S46.7) ─
 
@@ -1787,6 +1793,12 @@ function _appendSkillDialogTurn(role, content) {
 // Per-outputFormat dispatch. R6 hands proposals + scalars off to R7 by
 // rendering them into the panel output area; R7 wires applyMutations()
 // + the ask/auto-tag policy gate on top.
+//
+// SPEC §S47.6.1 + §S47.6.2 - outputFormat="import-subset" + preview="per-row"
+// route to the shared ImportPreviewModal: skill output is parsed via
+// importResponseParser, the engineer reviews per-row in the modal, accepted
+// rows commit through importApplier (which stamps aiTag.kind="skill" with
+// the runMeta's skillId).
 function _renderSkillRunOutput(skill, panelHost, responseText) {
   var format = skill && skill.outputFormat;
   if (format === "text") {
@@ -1807,8 +1819,69 @@ function _renderSkillRunOutput(skill, panelHost, responseText) {
     if (output) output.textContent = responseText;
     return;
   }
+  if (format === "import-subset") {
+    _routeImportSubsetOutput(skill, panelHost, responseText);
+    return;
+  }
   // Unknown format — surface as plain AI turn so the user sees the response.
   _appendSkillDialogTurn("ai", responseText);
+}
+
+// SPEC §S47.6.1 - import-subset routing.
+//   1. Parse the LLM response via parseImportResponse (Zod-strict).
+//   2. If parse fails, render the errors inline so the engineer can
+//      ask the model to retry.
+//   3. If parse ok, open the shared ImportPreviewModal with the skill's
+//      defaultScope as the initial scope.
+//   4. On apply, call applyImportItems with aiTag.kind="skill" + the
+//      skill's skillId, then propagate the updated engagement through
+//      setActiveEngagement (subscribeActiveEngagement chain repaints).
+function _routeImportSubsetOutput(skill, panelHost, responseText) {
+  var output = panelHost && panelHost.querySelector("[data-skill-panel-output]");
+  Promise.all([
+    import("../../services/importResponseParser.js"),
+    import("../../services/importApplier.js"),
+    import("../components/ImportPreviewModal.js"),
+    import("../../state/engagementStore.js")
+  ]).then(function(mods) {
+    var parserMod   = mods[0];
+    var applierMod  = mods[1];
+    var modalMod    = mods[2];
+    var storeMod    = mods[3];
+    var parsed = parserMod.parseImportResponse(String(responseText || ""));
+    if (!parsed.ok) {
+      _appendSkillDialogTurn("error",
+        "Skill output did not match the import-subset schema: " +
+        (parsed.errors[0] && parsed.errors[0].message) +
+        (parsed.errors.length > 1 ? " (+ " + (parsed.errors.length - 1) + " more issues)" : ""));
+      if (output) output.textContent = responseText;
+      return;
+    }
+    _appendSkillDialogTurn("ai",
+      "Extracted " + parsed.parsed.items.length + " instance(s) · review + apply in the preview modal.");
+    if (output) output.textContent = JSON.stringify(parsed.parsed, null, 2);
+    var live = storeMod.getActiveEngagement();
+    modalMod.renderImportPreview(document.body, parsed.parsed, {
+      defaultScope: skill.defaultScope || "desired",
+      onApply: function(selectedItems, finalScope) {
+        var res = applierMod.applyImportItems(live, selectedItems, {
+          scope:      finalScope,
+          provenance: {
+            kind:      "skill",                                    // Path A · in-app skill run
+            skillId:   skill.skillId,
+            runId:     "run-" + Date.now(),
+            mutatedAt: new Date().toISOString()
+          }
+        });
+        storeMod.setActiveEngagement(res.engagement);
+        _appendSkillDialogTurn("ai",
+          "Applied " + res.addedInstanceIds.length + " instance(s) to the engagement.");
+      },
+      onCancel: function() { /* modal closed; skill panel stays */ }
+    });
+  }).catch(function(e) {
+    _appendSkillDialogTurn("error", "Failed to route import-subset output: " + (e && e.message || e));
+  });
 }
 
 // ─── rc.8.b / R7 · applyMutations (per SPEC §S46.10/§S46.11 / CH36.h) ──
