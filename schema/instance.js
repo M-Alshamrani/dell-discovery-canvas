@@ -33,10 +33,24 @@ const DellMappingSchema = z.object({
 // Scope: instances ONLY (drivers / environments / gaps / customer /
 // engagementMeta are out of scope for v3.0 GA per user direction
 // 2026-05-10).
+//
+// [CONSTITUTIONAL AMENDMENT 2026-05-12 · SPEC §S47.9 / §S25 amendment]
+// aiTag.kind discriminator added so the same provenance envelope can
+// represent two distinct mutation origins:
+//   - kind="skill"        · in-app Skills-Builder skill run (uses skillId)
+//   - kind="external-llm" · file-driven import via Dell internal LLM
+//                           (uses source, e.g. "dell-internal")
+// Legacy aiTag records without `kind` parse as kind="skill" via the
+// Zod default (R47.9.2 — no DB migration needed). skillId + source
+// are .optional() at the Zod layer; the discriminator invariant
+// (kind="skill" → skillId present; kind="external-llm" → source present)
+// is documentary per SPEC §S47.9.1.
 const AiTagSchema = z.object({
-  skillId:   z.string().min(1),
+  kind:      z.enum(["skill", "external-llm"]).default("skill"),
+  skillId:   z.string().optional(),   // present when kind="skill"
+  source:    z.string().optional(),   // present when kind="external-llm" (e.g., "dell-internal")
   runId:     z.string().min(1),
-  mutatedAt: z.string().min(1)   // ISO instant
+  mutatedAt: z.string().min(1)        // ISO instant
 });
 
 export const InstanceSchema = z.object({
