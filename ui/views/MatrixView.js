@@ -197,15 +197,36 @@ export function renderMatrixView(left, right, _legacySession, opts) {
     var eng = getActiveEngagement();
     if (!eng) return;
 
-    // In desired view: show current items not yet reviewed as ghost tiles
+    // In desired view: show current items not yet reviewed as ghost tiles.
+    //
+    // R47.5.6 / Option B ghost-suppression (SPEC §S47.5.6):
+    //   The original rule suppressed the ghost only when an originId-
+    //   linked desired counterpart existed. The "Import data" workflow
+    //   (Path B, scope="both") creates two truly INDEPENDENT records
+    //   (one current + one desired with NO originId linkage) - the
+    //   engineer would otherwise see a ghost tile for the current side
+    //   even though a matching desired tile is sitting right next to
+    //   it in the same cell.
+    //
+    //   Option B extends the predicate: ALSO suppress the ghost when a
+    //   sameLabelDesiredExists in the same (layerId, environmentId)
+    //   cell. The label-match check is the bridge that links the two
+    //   independent records into a single visual presence per cell.
     if (stateFilter === "desired") {
       var currentInCell = _walkInstances(eng, function(i) {
         return i.state === "current" && i.layerId === layerId && i.environmentId === envUuid;
       });
       currentInCell.forEach(function(curInst) {
-        var hasCounterpart = _walkInstances(eng, function(d) {
+        var sameLabelDesiredExists = _walkInstances(eng, function(d) {
+          return d.state === "desired" &&
+                 d.layerId === curInst.layerId &&
+                 d.environmentId === curInst.environmentId &&
+                 d.label === curInst.label;
+        }).length > 0;
+        var hasOriginIdCounterpart = _walkInstances(eng, function(d) {
           return d.state === "desired" && d.originId === curInst.id;
         }).length > 0;
+        var hasCounterpart = hasOriginIdCounterpart || sameLabelDesiredExists;
         if (!hasCounterpart) {
           cell.appendChild(buildGhostTile(curInst));
         }
@@ -293,13 +314,31 @@ export function renderMatrixView(left, right, _legacySession, opts) {
     tile.setAttribute("data-instance-id", inst.id);
 
     // rc.8.b / R7: "Done by AI" badge on AI-mutated instances.
+    //
+    // R47.9.3 (SPEC §S47.9 constitutional amendment):
+    //   aiTag.kind discriminator splits the badge into two visual variants:
+    //   - kind="skill"        -> "AI" badge (existing Dell-blue style)
+    //   - kind="external-llm" -> "iLLM" badge (amber/orange) for Path B
+    //                            imports via the Dell-internal-LLM workflow.
+    //   The tooltip carries source ("dell-internal") or skillId per kind.
     if (inst.aiTag) {
       var aiBadge = mk("span", "ai-tag-badge");
       aiBadge.setAttribute("data-ai-tag-badge", "");
-      aiBadge.title = "Mutated by AI · skill " + (inst.aiTag.skillId || "?") +
-        " · " + (inst.aiTag.mutatedAt || "?") +
-        " - clears when you save the next edit on this tile.";
-      aiBadge.textContent = "AI";
+      var isExternalLlm = inst.aiTag.kind === "external-llm";
+      if (isExternalLlm) {
+        aiBadge.classList.add("ai-tag-badge-illm");
+        aiBadge.setAttribute("data-ai-tag-kind", "external-llm");
+        aiBadge.title = "Imported from external LLM (" + (inst.aiTag.source || "?") + ") · runId " +
+          (inst.aiTag.runId || "?") + " · " + (inst.aiTag.mutatedAt || "?") +
+          " - clears when you save the next edit on this tile.";
+        aiBadge.textContent = "iLLM";
+      } else {
+        aiBadge.setAttribute("data-ai-tag-kind", "skill");
+        aiBadge.title = "Mutated by AI · skill " + (inst.aiTag.skillId || "?") +
+          " · " + (inst.aiTag.mutatedAt || "?") +
+          " - clears when you save the next edit on this tile.";
+        aiBadge.textContent = "AI";
+      }
       tile.appendChild(aiBadge);
     }
 
