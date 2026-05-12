@@ -20517,6 +20517,36 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
   // DOM-mount assertions when Path A re-attempts under proper discipline
   // (per feedback_5_forcing_functions.md Rule A + Rule B).
 
+  // BUG-054 · Path B Import modal default scope = "Current" not "Desired".
+  // Rationale: presales workshops typically begin by capturing what the
+  // customer has TODAY (current state) before mapping the future · the
+  // import workflow's most common first use is loading the customer's
+  // existing install-base, which lands as current-state. Reverses the
+  // original Q4 lock which defaulted to "Desired".
+  it("V-FLOW-IMPORT-DEFAULT-SCOPE-1 · BUG-054 · ImportDataModal pre-selects 'Current' as the default Apply-to scope on a fresh open", async () => {
+    var modalMod   = await import("/ui/components/ImportDataModal.js");
+    var schemaMod  = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
+    var eng = schemaMod.createEmptyEngagement();
+    var addRes = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    // Mount the modal WITHOUT passing opts.defaultScope (test the BUILT-IN default).
+    modalMod.openImportDataModal({
+      host:                document.body,
+      getActiveEngagement: function() { return eng; },
+      commitImport:        function() {}
+    });
+    try {
+      var checkedRadio = document.querySelector('input[name="import-data-scope"]:checked');
+      assert(checkedRadio,
+        "V-FLOW-IMPORT-DEFAULT-SCOPE-1: a scope radio MUST be pre-checked on modal open");
+      assertEqual(checkedRadio.value, "current",
+        "V-FLOW-IMPORT-DEFAULT-SCOPE-1: BUG-054 · default scope MUST be 'current' (not 'desired'); got: " + checkedRadio.value);
+    } finally {
+      document.querySelectorAll('.dialog-overlay').forEach(function(o) { if (o.parentNode) o.parentNode.removeChild(o); });
+    }
+  });
+
   // SPEC §S47 + feedback_5_forcing_functions.md Rule C · R2 0-env guard ·
   // Path B's Download instructions.txt button MUST NOT generate a usable-
   // looking but unusable file when the engagement has 0 environments.

@@ -59,14 +59,15 @@ function initRowState(items) {
 // renderImportPreview(host, parsedResponse, opts) -> { applySelected, cancel }
 //   host           - DOM element to mount the modal overlay into (typically document.body)
 //   parsedResponse - the validated import-subset JSON object (from parseImportResponse)
-//   opts.defaultScope - "current" | "desired" | "both" (default "desired")
+//   opts.defaultScope - "current" | "desired" | "both" (default "current" post-BUG-054)
 //   opts.onApply(selectedItems, scope) - fired when engineer clicks [Apply N selected]
 //   opts.onCancel()                    - fired when engineer clicks X or Esc or overlay click
 export function renderImportPreview(host, parsedResponse, opts) {
   opts = opts || {};
+  // BUG-054 · default to "current" not "desired" · downstream from ImportDataModal
   var defaultScope = opts.defaultScope && SCOPE_VALUES.indexOf(opts.defaultScope) >= 0
     ? opts.defaultScope
-    : "desired";
+    : "current";
   var onApply  = typeof opts.onApply  === "function" ? opts.onApply  : function() {};
   var onCancel = typeof opts.onCancel === "function" ? opts.onCancel : function() {};
 

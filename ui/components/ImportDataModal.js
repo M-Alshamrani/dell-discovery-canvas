@@ -60,9 +60,12 @@ export function openImportDataModal(opts) {
   const host                = opts.host || document.body;
   const getActiveEngagement = opts.getActiveEngagement || (() => null);
   const commitImport        = opts.commitImport        || (() => {});
+  // BUG-054 · default to "current" not "desired" · presales workshops
+  // typically begin by capturing what the customer has TODAY before
+  // mapping the future state.
   let scope = (opts.defaultScope && SCOPE_VALUES.indexOf(opts.defaultScope) >= 0)
     ? opts.defaultScope
-    : "desired";
+    : "current";
 
   // --- Build overlay
   const overlay = document.createElement("div");

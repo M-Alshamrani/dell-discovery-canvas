@@ -1011,7 +1011,10 @@ function wireImportDataBtn(importDataBtn) {
           });
         }
       },
-      defaultScope: "desired"
+      // BUG-054 · default to "current" not "desired" · most workshops
+      // start by capturing what the customer has TODAY before mapping
+      // the future state.
+      defaultScope: "current"
     });
   });
 }
