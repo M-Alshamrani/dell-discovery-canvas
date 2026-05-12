@@ -2005,6 +2005,271 @@ Permanent reference in MEMORY.md → `feedback_5_forcing_functions.md` Rule A. T
 
 ---
 
+## BUG-054 · Path B Import modal · default scope should be "Current", not "Desired" (OPEN 2026-05-12)
+
+**Status**: **OPEN 2026-05-12** · Scheduled · next Path B polish pass
+**Reporter**: User (post-R3 review)
+**Severity**: Low (UX correctness)
+**Regression**: No — the "Desired" default was the originally-locked Q4 choice (SPEC §S47.5.4); user has revised preference after using the workflow
+
+### Repro
+1. Open the Import data footer button
+2. Observe the Apply-to scope picker pre-selects "Desired"
+
+### Expected
+"Current" should be the pre-selected default. Rationale: presales workshops typically begin with capturing what the customer has TODAY (current state) before mapping the future. The import workflow's most common first use is loading the customer's existing install-base, which lands as current-state.
+
+### Fix plan
+1. Change `defaultScope: "desired"` to `"current"` in `app.js wireImportDataBtn` opts (single line edit) + in `ImportPreviewModal.renderImportPreview` opts.defaultScope fallback
+2. Update SPEC §S47.5.4 + R47.6.3 (preview / defaultScope field default) — note: the `defaultScope` SCHEMA default value extension is Path A scope (BUG-053 parked); only the Path B modal/runtime default flips here
+3. Update `ImportDataModal` env-chip strip + Step 1 scope picker pre-selected radio
+4. RED test: V-FLOW-IMPORT-DEFAULT-SCOPE-1 · mounts ImportDataModal on a populated engagement, asserts the "Current" radio is pre-selected (`input[type=radio][value="current"]:checked`)
+
+---
+
+## BUG-055 · Path B instructions file · rename to "LLM Instructions Prompt" + comprehensive prompt engineering (OPEN 2026-05-12)
+
+**Status**: **OPEN 2026-05-12** · Scheduled · next Path B polish pass
+**Reporter**: User (post-R3 review)
+**Severity**: Medium (output accuracy depends on prompt quality — directly impacts Dell internal LLM extraction results)
+
+### Repro
+1. Click "📋 Download instructions.txt"
+2. Inspect filename: `dell-canvas-import-instructions-<slug>-<timestamp>.txt`
+3. Inspect content: 11-section structure (header / customer ctx / env slots / data schema / glossary / output shape / confidence guide / state-hint guide / 2-3 worked examples / strict-match warning / system prompt body)
+
+### Expected (filename)
+Filename + UI label rename to **"LLM Instructions Prompt"** (e.g., `dell-canvas-llm-instructions-prompt-<slug>-<timestamp>.txt`). Button label also updates: "📋 Download LLM Instructions Prompt".
+
+### Expected (content)
+Content needs a craftsmanship pass — current draft was authored quickly to satisfy V-FLOW-IMPORT-INSTRUCTIONS-1/2/3 source-grep tests; not yet prompt-engineered for accuracy on real Dell-internal-LLM runs. Specific improvements:
+- **Stronger opening framing** with explicit role, goal, and success criteria
+- **More worked examples** (3-5 across compute / storage / network / security / workload layers) showing high/medium/low confidence assignments + state-hint reasoning
+- **Counter-examples** showing common LLM mistakes to AVOID (invent UUIDs, drop confidence ratings, emit prose, etc.)
+- **Verification checklist** the LLM should run on its output before emitting (each items[] entry has all required fields, environmentId is from §2, JSON parses without prose)
+- **Few-shot prompt engineering** patterns proven on customer extraction tasks (chain-of-thought reasoning markers, structured output reinforcement)
+
+### Fix plan
+1. Author a comprehensive `instructions-prompt-template.md` that the builder reads + substitutes context into (so the template is editable as a single source of truth, not inline string concatenation across 12 sections)
+2. RED tests: V-FLOW-IMPORT-PROMPT-NAMING-1 (filename + UI label say "LLM Instructions Prompt"); V-FLOW-IMPORT-PROMPT-QUALITY-1 (content contains all 5 quality markers: opening framing / 3+ worked examples / counter-examples / verification checklist / few-shot reasoning markers)
+3. Real-LLM validation: actually run the prompt through Dell internal LLM with a sample Excel install-base and measure extraction accuracy (target: >= 90% high-confidence rows correct on first pass)
+
+---
+
+## BUG-056 · Path B Source notes textbox · vague purpose · clarify or remove (OPEN 2026-05-12)
+
+**Status**: **OPEN 2026-05-12** · Scheduled · next Path B polish pass
+**Reporter**: User (post-R3 review)
+**Severity**: Low (UX clarity)
+
+### Repro
+1. Open Import data modal · Step 1
+2. See "Source notes (optional)" textarea with placeholder "Anything the LLM should know about the source file (e.g. 'Excel sheet 2 is current, sheet 3 is desired')..."
+
+### Expected
+Either:
+- (a) **Clarify**: rename + reframe with clear purpose + show where the engineer's text appears in the generated prompt (e.g. "These notes are appended to the prompt's customer-context section so the LLM knows special handling for your source data"); add an example or two right under the field
+- (b) **Remove**: if the field's value to a presales engineer can't be articulated in one sentence, drop it · removed-fields are easier to maintain than vague ones
+
+### Fix plan
+Decide (a) vs (b) based on real-LLM testing in BUG-055's validation pass. If source notes meaningfully improve extraction accuracy in 2+ tested scenarios, keep + clarify; otherwise remove. RED test for the kept path: V-FLOW-IMPORT-SOURCE-NOTES-CLARITY-1 asserts the textarea has a non-vague label + the user's notes appear verbatim in the downloaded `.txt` content.
+
+---
+
+## BUG-057 · Path B Import modal · vertical overflow · content below viewport without scroll (OPEN 2026-05-12)
+
+**Status**: **OPEN 2026-05-12** · Scheduled · next Path B polish pass
+**Reporter**: User (post-R3 review)
+**Severity**: Low (UX accessibility)
+
+### Repro
+1. Open Import data modal on a standard 1080p viewport
+2. Observe that the workflow card + strict-match warning sit BELOW the visible bottom edge of the modal box (`max-height: 90vh` from `.dialog-box`)
+3. There is NO scrollbar surfacing the hidden content
+
+### Expected
+The modal body MUST scroll when content exceeds `max-height: 90vh`. Per `.dialog-box` CSS rule (styles.css ~line 2020), `overflow-y: auto` IS set but the styled modal box (`.import-data-modal-box`) sets `overflow: hidden` which suppresses the scrollbar.
+
+### Fix plan
+1. Change `.import-data-modal-box overflow: hidden` to `overflow-y: auto` (or wrap the body in a `max-height: calc(90vh - <head height>) overflow-y: auto` container so the head sticks while body scrolls)
+2. Test on multiple viewport heights (1080p / 720p / 600p / mobile)
+3. RED test: V-FLOW-IMPORT-MODAL-SCROLL-1 · asserts `.import-data-modal-box` computed style has `overflow-y: auto` OR `scroll`
+
+Same issue may apply to `.import-preview-modal-box` (980px wide, 60vh body area) — audit + fix as a paired change.
+
+---
+
+## BUG-058 · Skills Builder · audit data-point bindings + relationships against UI_DATA + RELATIONSHIPS_METADATA + constitution (OPEN 2026-05-12 · CRITICAL audit)
+
+**Status**: **OPEN 2026-05-12** · Scheduled · BEFORE the AI-chat-enhancement arc (BUG-062 depends on this)
+**Reporter**: User (post-R3 review · specific example flagged: "mandatory to link customer name when selecting presales owner — not sure if this relationship is logical or just picked due to Claude Code hallucinations")
+**Severity**: **High** (logic correctness — incorrect mandatory pairings + cross-cutting / multi-hop relationship rules contaminate every Improve prompt + skill run output)
+
+### Repro
+1. Open Settings → Skills Builder → "+ New skill"
+2. Click any data point in the Standard / Advanced picker
+3. Inspect the right-pane RELATIONSHIPS / MANDATORY PAIRINGS / ORDERING sections
+4. Observe binding hints that appear arbitrary or unjustified
+
+### Expected
+Every binding hint, mandatory pairing, ordering rule, and cross-cutting cardinality claim in `RELATIONSHIPS_METADATA` (in `core/dataContract.js`) MUST be:
+- (a) **Traceable** to a documented data flow in `docs/UI_DATA_TRACE.md` r6 or `docs/UI_DATA_KNOWLEDGE_BASE.md` r2
+- (b) **Logically justified** with a one-sentence rationale a presales engineer can read and immediately understand WHY this pairing matters
+- (c) **Verified against the live engagement-store schemas** (not hypothesized from Claude Code's mental model of what should be related)
+- (d) **Cross-validated with the actual UI tab flow** (the engineer's tab progression — context → current → desired → gaps → reporting — implies certain ordering invariants that mandatory pairings should reflect)
+
+### Specific example flagged by user
+> "mandatory to link customer name when selecting presales owner — not sure if this relationship is logical or just picked due to Claude Code hallucinations"
+
+Likely concerns: presales owner is `engagementMeta.presalesOwner` (session-scope, one-per-engagement); customer name is `customer.name` (one-per-engagement). Both are singletons that ship with every engagement automatically. Mandating that the user explicitly LINK them when picking presales owner is busywork — they're not in a many-to-many relationship that requires explicit selection. The mandatory binding likely came from a misapplication of the FK-cluster pattern that's correct for entity collections (driver → outcomes, instance → gaps, etc.).
+
+### Fix plan
+1. **AUDIT** every entry in `RELATIONSHIPS_METADATA` (49 entries) against the 4 criteria above
+2. Produce `docs/RELATIONSHIPS_AUDIT_2026-05.md` with per-entry rows: path · current rationale · audit verdict (KEEP / FIX / REMOVE) · evidence link (UI_DATA_TRACE section, KB entry, dataContract.js authority)
+3. For every FIX / REMOVE entry, draft the corrected metadata + the rationale a presales engineer reads
+4. **PER feedback_5_forcing_functions.md Rule A**: modifying `RELATIONSHIPS_METADATA` is a touch on `core/dataContract.js` which is a locked constitutional surface · the audit + corrections MUST land under `[CONSTITUTIONAL TOUCH PROPOSED]` Q&A flow
+5. RED tests: V-FLOW-RELATIONSHIPS-AUDIT-1..N — one assertion per audited rule that fails if a binding is reintroduced without rationale
+
+### Dependencies
+- BUG-062 (AI chat assist enhancement) is BLOCKED on this audit · the chat assistant + Improve meta-skill prompts both prime themselves with RELATIONSHIPS_METADATA · incorrect bindings poison every downstream LLM call
+
+---
+
+## BUG-059 · Skills Builder · skill list visual styling · plain text + gray tag glue (OPEN 2026-05-12)
+
+**Status**: **OPEN 2026-05-12** · Scheduled · Skills Builder UX polish pass
+**Reporter**: User (post-R3 review)
+**Severity**: Low (UX polish)
+
+### Repro
+1. Open Settings → Skills Builder
+2. Author + save 3+ skills
+3. Observe the skill rows in the "Saved skills (N)" list
+4. Title is plain text; the meta tags (outputFormat, mutationPolicy, parameter count) glue next to each other in gray without visual separation
+
+### Expected
+Elegant stacked-tile / card treatment per the Skills Builder GPLC aesthetic (see `reference_gplc_sample.md` + crown-jewel design notes). Each skill row should:
+- Use card affordance (white surface, soft border, subtle hover lift)
+- Title prominent (14-15px, weight 600, Dell-blue-ink)
+- Description below (12-13px, text-2 color)
+- Meta tags rendered as discrete pill chips with adequate gap (not glued)
+- Optional: small AI-output-format icon on the right to signal the skill's nature at a glance
+- Hover state: surface-raised + border highlight
+
+### Fix plan
+1. Add `.skill-admin-row-card` styling to `styles.css` matching the `.canvas-chat-skills-row` patterns already used in the launcher
+2. Replace `.skill-admin-row-meta tag` plain-span style with the same chip-pill style used in import-preview (border + radius-999 + adequate padding)
+3. RED test: V-FLOW-SKILL-BUILDER-LIST-STYLING-1 — asserts the row has `.skill-admin-row-card` className + the meta spans have `border-radius` > 0 (proxy for pill-chip rendering)
+
+---
+
+## BUG-060 · Skills Builder · Test skill button stacked on top of Save/Cancel · ugly layout (OPEN 2026-05-12)
+
+**Status**: **OPEN 2026-05-12** · Scheduled · Skills Builder UX polish pass
+**Reporter**: User (post-R3 review)
+**Severity**: Low (UX polish)
+
+### Repro
+1. Open Settings → Skills Builder → "+ New skill"
+2. Scroll to the form actions area at the bottom
+3. Observe Test, Save, Cancel buttons stacked vertically (or layout that overlaps)
+
+### Expected
+Three buttons in a horizontal action bar, properly spaced, with hierarchy:
+- **Cancel** · ghost / outlined · left side
+- **Test** · secondary CTA · middle
+- **Save** · primary CTA · right side
+(Spacing pattern matches the Save context / Save session button row in the footer.)
+
+### Fix plan
+1. Audit the form-actions container in `SkillBuilder.js renderEditForm` for misaligned flex / stack layout
+2. Restyle action bar with `display: flex; gap: 12px; justify-content: flex-end;` + button order Cancel / Test / Save
+3. RED test: V-FLOW-SKILL-BUILDER-ACTIONS-LAYOUT-1 — asserts buttons render in a single horizontal row + computed style of the container has `display: flex` + `flex-direction: row`
+
+---
+
+## BUG-061 · Skills Builder · Save-draft vs Publish-to-launcher flow (OPEN 2026-05-12)
+
+**Status**: **OPEN 2026-05-12** · Scheduled · Skills Builder UX revamp pass (next-tier scope)
+**Reporter**: User (post-R3 review)
+**Severity**: Medium (workflow correctness — engineer wants to iterate on a skill across sessions without publishing untested work to the Canvas Chat launcher)
+
+### Repro
+1. Author a new skill, fill in seed prompt + data points
+2. Click Save
+3. Open Canvas Chat → Skills tab
+4. The new skill appears in the launcher IMMEDIATELY — even though the engineer hasn't tested it yet + may want to keep iterating
+
+### Expected
+Two distinct buttons + two distinct lifecycle stages:
+- **Save (Draft)** · persists the in-progress skill to localStorage so the engineer can close the Skill Builder + return later · does NOT publish to the launcher
+- **Publish** · only available after the engineer has TESTED the skill at least once · moves the skill from draft state to published state · NOW visible in Canvas Chat launcher
+
+This implies a new `status: "draft" | "published"` field on the skill schema (Path A-adjacent constitutional touch — needs Rule A flow).
+
+### Fix plan
+1. **Constitutional Q&A first** per Rule A — propose `status` enum field on SkillSchema with `[CONSTITUTIONAL TOUCH PROPOSED]` header
+2. Once approved, add the field with `.default("draft")` for back-compat
+3. SkillBuilder Save button persists status="draft"; new Publish button persists status="published"; Publish requires at least 1 successful test run (audited via a `lastTestRunAt` timestamp field, also new — second constitutional touch)
+4. Launcher's `paintSkillsLauncher` filter: only show skills with status="published"
+5. SkillBuilder list shows BOTH draft + published with a visual differentiator (Draft chip in amber, Published chip in green)
+6. RED tests: V-FLOW-SKILL-DRAFT-1 (save persists draft; not in launcher); V-FLOW-SKILL-PUBLISH-1 (publish requires test + appears in launcher); V-FLOW-SKILL-EDIT-PUBLISHED-1 (editing a published skill moves it back to draft until re-published)
+
+### Dependencies
+- This touches the locked SkillSchema enum (status field) AND the launcher filter logic AND the skill-store contract · 3-surface constitutional touch · user Q&A required before code
+
+---
+
+## BUG-062 · AI chat assist · grounding/verifier currently OVERRIDES LLM output at app boundary instead of letting LLM intelligence guardrail itself (OPEN 2026-05-12 · architectural)
+
+**Status**: **OPEN 2026-05-12** · Scheduled · AFTER BUG-058 audit completes (blocker)
+**Reporter**: User (post-R3 review)
+**Severity**: **High** (architectural / UX) — the current design treats the LLM as adversarial and clamps output at the app boundary; user wants to flip to LLM-intelligence-as-guardrail with well-primed context
+
+### Current behavior (what user wants to change)
+- `services/groundingVerifier.js` runs after `streamChat` completes (per V-FLOW-GROUND-FAIL-1..5 tests)
+- Verifier rejects responses that reference vendor names not in engagement / Dell taxonomy, gap descriptions not in engagement, fabricated deliverables
+- Rejected responses are REPLACED with a friendly error message before reaching the chat UI
+- Effect: LLM output is **filtered / blocked / overridden** at the boundary, not displayed-and-optimized
+
+### Expected behavior
+> "the AI assistance should not be strict as it is now to block the output once it reached the chat box, but should instead receive it and let us optimize the responses from the LLM, and make sure their responses are fully context-aware and guardrailed by intelligence of the LLM not by the force of override in the app"
+
+Translation:
+- LLM responses **flow through to the chat box** instead of being blocked
+- Guardrails move from APP-FORCED (post-hoc verifier) to LLM-INTELLIGENCE-FORCED (better prompts, richer context, more constraints embedded in system prompt + grounding info)
+- Result quality optimized via prompt engineering + context priming, not via output rejection
+- LLM "guards itself" because it has all the right context up-front
+
+### Goals
+- **Accurate** — answers reference real engagement data
+- **Optimal** — right-sized (not too short, not too verbose), task-appropriate
+- **Rightly sized** — token economy: not stuffed with irrelevant context, not starved of needed context
+- **Rich formatted** — markdown / tables / bullet lists where appropriate
+- **Sensible** — passes the "would a presales engineer find this useful?" test
+- Without app-forced override-blocking
+
+### Fix plan (architectural)
+1. **Wait on BUG-058** · the relationships/data-points audit MUST complete first · incorrect bindings poison the system prompt + Improve meta-skill output regardless of any verifier change
+2. Replace post-hoc rejection in `groundingVerifier.js` with **input-time enrichment** in `systemPromptAssembler.js`:
+   - Embed the full engagement context (drivers, environments, instances, gaps) into the system prompt with clear schema + values
+   - Add explicit guardrails to the system prompt: "Only reference vendors, products, gaps, and instances that appear in the context below; if you don't have the data, say so; do not invent UUIDs / vendors / deliverables"
+   - Add few-shot examples of correct vs incorrect responses
+3. Soften the verifier to a **soft warning** mode (logs anomalies to console, optionally surfaces a "🤔 review this response" annotation in the chat UI) but does NOT block / replace the response
+4. Add session-init optimization: rich-format the initial context payload (markdown tables for instance counts by layer × env, gap urgency totals, etc.) so the LLM has structured data to draw from
+5. RED tests: shift V-FLOW-GROUND-FAIL-1..5 from "verifier REJECTS X" to "verifier WARNS but doesn't block X" + add new V-FLOW-GROUND-PROMPT-1..N tests that assert the system prompt CONTAINS the right guardrails
+
+### Constitutional touches expected
+- `services/groundingVerifier.js` mode change · soft-warn vs hard-block · NOT a schema touch but a behavioral contract change · user Q&A required per Rule A (changing a locked behavioral guard)
+- `services/systemPromptAssembler.js` enrichment · likely additive (new context sections) · no locked-surface touch IF the additions don't change existing prompt structure
+- `services/chatService.js` streamChat integration · verifier call replaced with soft-warn invocation · behavioral contract change · user Q&A
+
+### Dependencies
+- **BLOCKED ON BUG-058** (data-point + relationships audit) · cannot prime system prompts with incorrect bindings
+- Optional: complete BUG-061 (save-draft / publish flow) before this so the AI chat enhancement work has the right skill-execution boundaries to test against
+
+---
+
 ## BUG-NNN · One-line headline
 
 **Status**: OPEN · Reported YYYY-MM-DD · vX.Y.Z · Scheduled <bucket>
