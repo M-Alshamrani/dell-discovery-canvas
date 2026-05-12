@@ -128,16 +128,11 @@ export function openImportDataModal(opts) {
   });
   step1.appendChild(scopeRow);
 
-  // Source notes textarea
-  const notesLabel = document.createElement("label");
-  notesLabel.className = "import-data-notes-label";
-  notesLabel.textContent = "Source notes (optional)";
-  step1.appendChild(notesLabel);
-  const notesTa = document.createElement("textarea");
-  notesTa.className = "import-data-notes";
-  notesTa.placeholder = "Anything the LLM should know about the source file (e.g. 'Excel sheet 2 is current, sheet 3 is desired')...";
-  notesTa.rows = 3;
-  step1.appendChild(notesTa);
+  // BUG-056 · source-notes textbox REMOVED · vague purpose / no value
+  // to a presales engineer. The LLM Instructions Prompt (BUG-055 craft
+  // pass) is comprehensive enough to drive extraction without per-run
+  // free-form notes. Re-attempt with clear purpose + UX research if
+  // anything ever needs to reintroduce it.
 
   // Env chips (transparent about what gets exported)
   const eng = getActiveEngagement();
@@ -183,11 +178,11 @@ export function openImportDataModal(opts) {
     step1.appendChild(blockingError);
   }
 
-  // Download button
+  // Download button · BUG-055 label rename
   const dlBtn = document.createElement("button");
   dlBtn.type = "button";
   dlBtn.className = "import-data-download-btn primary-button";
-  dlBtn.textContent = "📋 Download instructions.txt";
+  dlBtn.textContent = "📋 Download LLM Instructions Prompt";
   dlBtn.disabled = !hasEnvs;            // R2 0-env guard (Rule C)
   if (!hasEnvs) {
     dlBtn.title = "Add an environment in the Context tab first";
@@ -197,7 +192,7 @@ export function openImportDataModal(opts) {
     const live = getActiveEngagement();
     if (!live) return;
     try {
-      const out = buildImportInstructions(live, { scope: scope, sourceNotes: notesTa.value });
+      const out = buildImportInstructions(live, { scope: scope });
       triggerDownload(out.filename, out.content);
     } catch (e) {
       // Defense-in-depth: the builder ALSO throws on 0 envs (NO_ENVIRONMENTS).

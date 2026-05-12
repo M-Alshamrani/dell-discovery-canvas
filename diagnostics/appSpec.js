@@ -20291,8 +20291,10 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
     var out = mod.buildImportInstructions(eng, { scope: "desired" });
     assert(out && typeof out.filename === "string" && /\.txt$/.test(out.filename),
       "V-FLOW-IMPORT-INSTRUCTIONS-1: filename MUST end in .txt (R47.4.1); got: " + (out && out.filename));
-    assert(/dell-canvas-import-instructions/.test(out.filename),
-      "V-FLOW-IMPORT-INSTRUCTIONS-1: filename MUST contain the canonical prefix dell-canvas-import-instructions (R47.4.2)");
+    // BUG-055 · canonical prefix renamed to dell-canvas-llm-instructions-prompt
+    // ("instructions" alone undersold what the file is · it's a prompt for an LLM).
+    assert(/dell-canvas-llm-instructions-prompt/.test(out.filename),
+      "V-FLOW-IMPORT-INSTRUCTIONS-1: filename MUST contain the canonical prefix dell-canvas-llm-instructions-prompt (R47.4.2 · BUG-055 rename); got: " + out.filename);
     assert(typeof out.content === "string" && out.content.indexOf("Acme Healthcare") >= 0,
       "V-FLOW-IMPORT-INSTRUCTIONS-1: content MUST embed the customer name");
   });
@@ -20516,6 +20518,102 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
   // ripped after the constitutional-creep audit. They return with stronger
   // DOM-mount assertions when Path A re-attempts under proper discipline
   // (per feedback_5_forcing_functions.md Rule A + Rule B).
+
+  // BUG-055 · LLM Instructions Prompt filename + UI label rename · "instructions"
+  // alone undersells what the file is (it's a prompt for an LLM, not a manual
+  // for a human). Filename + button label both rename.
+  it("V-FLOW-IMPORT-PROMPT-NAMING-1 · BUG-055 · filename uses 'llm-instructions-prompt' prefix + Download button labels 'LLM Instructions Prompt'", async () => {
+    var builderMod = await import("/services/importInstructionsBuilder.js");
+    var schemaMod  = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
+    var modalMod   = await import("/ui/components/ImportDataModal.js");
+    var eng = schemaMod.createEmptyEngagement();
+    eng.customer = Object.assign({}, eng.customer, { name: "Acme Co", vertical: "healthcare" });
+    var r = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (r && r.ok) eng = r.engagement;
+    // Builder filename uses the new prefix.
+    var out = builderMod.buildImportInstructions(eng, { scope: "current" });
+    assert(/llm-instructions-prompt/i.test(out.filename),
+      "V-FLOW-IMPORT-PROMPT-NAMING-1: filename MUST contain 'llm-instructions-prompt' prefix (BUG-055); got: " + out.filename);
+    assert(/\.txt$/.test(out.filename),
+      "V-FLOW-IMPORT-PROMPT-NAMING-1: filename MUST still end in .txt; got: " + out.filename);
+    // Modal Download button labels with the new phrasing.
+    modalMod.openImportDataModal({
+      host: document.body, getActiveEngagement: function() { return eng; }, commitImport: function() {}
+    });
+    try {
+      var dlBtn = document.querySelector(".import-data-download-btn");
+      assert(dlBtn, "V-FLOW-IMPORT-PROMPT-NAMING-1 setup: Download button MUST render");
+      assert(/LLM Instructions Prompt/i.test(dlBtn.textContent),
+        "V-FLOW-IMPORT-PROMPT-NAMING-1: Download button MUST label 'LLM Instructions Prompt' (BUG-055); got: " + dlBtn.textContent);
+    } finally {
+      document.querySelectorAll(".dialog-overlay").forEach(function(o) { if (o.parentNode) o.parentNode.removeChild(o); });
+    }
+  });
+
+  // BUG-055 · LLM Instructions Prompt content quality · the .txt must be a
+  // craftsmanship-grade prompt with explicit role + 5 quality markers ·
+  // (1) opening framing with role/goal/success criteria · (2) 3+ worked
+  // examples · (3) counter-examples (what NOT to do) · (4) verification
+  // checklist · (5) chain-of-thought reasoning markers.
+  it("V-FLOW-IMPORT-PROMPT-QUALITY-1 · BUG-055 · LLM Instructions Prompt content carries 5 quality markers (opening framing + worked examples + counter-examples + verification checklist + reasoning markers)", async () => {
+    var builderMod = await import("/services/importInstructionsBuilder.js");
+    var schemaMod  = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
+    var eng = schemaMod.createEmptyEngagement();
+    eng.customer = Object.assign({}, eng.customer, { name: "Acme Co", vertical: "healthcare" });
+    var r1 = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (r1 && r1.ok) eng = r1.engagement;
+    var r2 = envActions.addEnvironment(eng, { envCatalogId: "drDc", catalogVersion: "2026.04" });
+    if (r2 && r2.ok) eng = r2.engagement;
+    var out = builderMod.buildImportInstructions(eng, { scope: "current" });
+    var content = out.content;
+    // (1) Opening framing · explicit role + goal + success criteria.
+    assert(/your role|you are an?|your task|your goal/i.test(content),
+      "V-FLOW-IMPORT-PROMPT-QUALITY-1: opening framing MUST set role/goal explicitly (BUG-055 marker 1)");
+    assert(/success criteria|definition of done|done when|complete when/i.test(content),
+      "V-FLOW-IMPORT-PROMPT-QUALITY-1: opening framing MUST include success criteria (BUG-055 marker 1)");
+    // (2) Worked examples · at least 3 distinct positive examples.
+    var exampleCount = (content.match(/example [A-Z0-9]|## (worked )?example/gi) || []).length;
+    assert(exampleCount >= 3,
+      "V-FLOW-IMPORT-PROMPT-QUALITY-1: MUST contain >= 3 worked examples (BUG-055 marker 2); got: " + exampleCount);
+    // (3) Counter-examples · at least one "do NOT" / "incorrect" / "wrong" section.
+    assert(/do NOT|don't|incorrect|wrong example|avoid|counter-example|anti-pattern/i.test(content),
+      "V-FLOW-IMPORT-PROMPT-QUALITY-1: MUST contain counter-examples / 'do NOT' guidance (BUG-055 marker 3)");
+    // (4) Verification checklist · before emitting, the LLM self-checks.
+    assert(/verification checklist|before emitting|self-check|verify your output|sanity check/i.test(content),
+      "V-FLOW-IMPORT-PROMPT-QUALITY-1: MUST contain a verification checklist (BUG-055 marker 4)");
+    // (5) Chain-of-thought / reasoning markers.
+    assert(/think step|reason about|first .* then|step 1|step 2|reasoning:/i.test(content),
+      "V-FLOW-IMPORT-PROMPT-QUALITY-1: MUST contain chain-of-thought / reasoning markers (BUG-055 marker 5)");
+  });
+
+  // BUG-056 · source-notes textbox is vague → REMOVED per user direction.
+  // (Removed rather than clarified because the field's value to a presales
+  // engineer couldn't be articulated in one sentence; removed-fields are
+  // easier to maintain than vague ones.)
+  it("V-FLOW-IMPORT-NO-SOURCE-NOTES-1 · BUG-056 · ImportDataModal does NOT render the vague source-notes textarea", async () => {
+    var modalMod   = await import("/ui/components/ImportDataModal.js");
+    var schemaMod  = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
+    var eng = schemaMod.createEmptyEngagement();
+    var addRes = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    modalMod.openImportDataModal({
+      host: document.body, getActiveEngagement: function() { return eng; }, commitImport: function() {}
+    });
+    try {
+      var ta = document.querySelector("textarea.import-data-notes");
+      assert(!ta,
+        "V-FLOW-IMPORT-NO-SOURCE-NOTES-1: ImportDataModal MUST NOT render the source-notes textarea (BUG-056 removed it); textarea was: " + (ta && ta.outerHTML.slice(0, 200)));
+      // The label MUST also not appear.
+      var label = document.querySelector(".import-data-notes-label");
+      assert(!label,
+        "V-FLOW-IMPORT-NO-SOURCE-NOTES-1: ImportDataModal MUST NOT render the source-notes label (BUG-056); label was: " + (label && label.outerHTML.slice(0, 200)));
+    } finally {
+      document.querySelectorAll(".dialog-overlay").forEach(function(o) { if (o.parentNode) o.parentNode.removeChild(o); });
+    }
+  });
 
   // BUG-054 · Path B Import modal default scope = "Current" not "Desired".
   // Rationale: presales workshops typically begin by capturing what the
