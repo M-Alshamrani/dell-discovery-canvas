@@ -6,13 +6,100 @@
 
 ---
 
-## 🟢 Current state — end of 2026-05-12 session (post-audit remediation)
+## 🟢 Current state — end of 2026-05-12 session (BUG-058 audit + 6-bug polish + remediation)
 
-**Branch**: `v3.0-data-architecture` · **HEAD**: `b5041ea` (R3 · Path B apply-errors surfacing) · **APP_VERSION**: `3.0.0-rc.8-dev` · **Banner**: **1265/1265 GREEN ✅**
+**Branch**: `v3.0-data-architecture` · **HEAD**: `2b3acb9` (BUG-058 audit deliverable · CANVAS_DATA_MAP.md r1) · **APP_VERSION**: `3.0.0-rc.8-dev` · **Banner**: **1272/1272 GREEN ✅**
 
 **Working tree**: clean.
 
-**Not pushed**: 38 commits past origin. Awaits explicit user "push" / "tag it" call.
+**Not pushed**: 44 commits past origin. Awaits explicit user "push" / "tag it" call.
+
+## 📌 Open fix plans (sequenced)
+
+### NEXT (in flight at session-context limit · resume here)
+**BUG-058 · constitutional fix lands** · user greenlit "then fix" after reviewing CANVAS_DATA_MAP.md
+- Land 6 FIX + 2 CLARIFY in `core/dataContract.js` RELATIONSHIPS_METADATA
+- Commit title: `[CONSTITUTIONAL TOUCH PROPOSED]` (Rule A flow)
+- Add RED tests in `diagnostics/appSpec.js` asserting each fix:
+  - V-FLOW-CONSTITUTION-SINGLETON-MANDATORY-1 (5 singleton paths have mandatoryWith=[])
+  - V-FLOW-CONSTITUTION-MAPPED-ASSETS-1 (instance.mappedAssetIds crossCutting=false)
+  - V-FLOW-CONSTITUTION-URGENCY-DERIVED-1 (gap.urgency description mentions `[*]` not `[0]`)
+  - V-FLOW-CONSTITUTION-GAPTYPE-LOCKED-1 (gap.gapTypeLabel description mentions "LOCKED" for autoDraft)
+- Banner target: 1272 → ~1276 GREEN (4 new tests · all should flip GREEN after impl)
+
+### Open queue (next sessions, sequenced)
+| # | Bug | Status | Discipline |
+|---|-----|--------|------------|
+| 1 | **BUG-061** Save-draft vs Publish lifecycle (status enum on SkillSchema) | OPEN | Rule A constitutional flow required (new locked enum) |
+| 2 | **BUG-062** AI chat re-architecture · grounding-by-context-priming (uses CANVAS_DATA_MAP.md §8 wire-format) | OPEN, BLOCKED on BUG-058 closure | Rule A (verifier behavioral contract change) |
+| 3 | **BUG-053** Path A skill-via-launcher re-attempt (parked under constitutional creep audit) | OPEN-DEFERRED | Rule A (locked OutputFormatEnum extension + 3 new schema fields + system-skills distribution model) |
+| 4 | **BUG-052** Modal-residue test flake cluster (6 intermittent tests) | OPEN | Investigation arc (post-rc.8 tag) |
+| 5 | **gap.closeReason doc-drift** (mentioned in UI_DATA_TRACE Tab 4 §8d but absent from schema) | NEW (surfaced by BUG-058 audit) | Doc-only fix; reconcile UI_DATA_TRACE to remove the stale reference |
+
+## 📜 Commit ledger this session (2026-05-12 · 44 commits)
+
+### Morning · S47 Import workflow scaffold + implementation
+| Commit | Theme |
+|---|---|
+| `549599f` | SPEC §S47 + 15 V-FLOW-IMPORT-* RED scaffold |
+| `0bdd717` | docs · session-log + handoff + BUG-052 |
+| `30db5ca` | [CONSTITUTIONAL AMENDMENT] aiTag.kind discriminator |
+| `2d6d858`..`31915ed` | C1..C3 Path B implementation (parser, drift, applier, preview, ghost, iLLM, instructions, footer button) |
+| `3b83d2b`..`433abf4` | F1..F4 post-audit remediation (system-chip launcher, skill-runner routing, SkillBuilder dropdown, CSS polish) |
+
+### Afternoon · Path A parked + Path B perfected
+| Commit | Theme |
+|---|---|
+| `ec963b9` | **R1** · Park Path A + BUG-053 logged · constitutional-creep audit response |
+| `e8f5a9c` | **R2** · Path B 0-env guard (Rule C) |
+| `b5041ea` | **R3** · Path B apply-errors surfacing (Rule C) |
+| `9200b37` | **R4** · Docs · HANDOFF + SPEC §S47 deferral markers + SESSION_LOG · `.gitignore` `.claude/` |
+| `cb1a98a` | Log 9 deferred bugs (BUG-054..062) per user post-R3 review |
+
+### Evening · 6-bug Path B + Skills Builder polish bucket
+| Commit | Theme |
+|---|---|
+| `5e54781` | BUG-054 · default scope "current" not "desired" |
+| `c1f0c5e` | BUG-055 + BUG-056 · LLM Instructions Prompt craft pass + filename rename + source-notes textbox removed |
+| `9db5c7a` | BUG-057 · Path B modal overflow CSS fix |
+| `70bf8ae` | BUG-060 · SkillBuilder action bar (Cancel/Test/Save horizontal) |
+| `dba24bf` | BUG-059 · SkillBuilder list visual (card + pill chips) |
+
+### Night · BUG-058 audit
+| Commit | Theme |
+|---|---|
+| `2b3acb9` | **BUG-058** audit deliverable · CANVAS_DATA_MAP.md r1 · 73 paths · 6 FIX + 2 CLARIFY · doc-only |
+
+## 🛡️ Discipline anchors active
+
+Both TIER-1 memory anchors lock:
+- **R11** · `feedback_principal_architect_discipline.md` (R0..R11; smoke-screenshot at every step)
+- **5 Forcing Functions** · `feedback_5_forcing_functions.md` (Rule A constitutional pre-authorization · Rule B test-mounts-the-UX · Rule C no-degraded-fallback · Rule D tests-don't-move-to-match-code · Rule E hidden-risks-in-every-commit-body)
+
+R0 audit-remediation arc (this session) and 6-bug polish bucket both honored RED-then-GREEN trajectory + commit-body Hidden risks sections.
+
+## 🗺️ Canvas Data Map artifact
+
+`docs/CANVAS_DATA_MAP.md` r1 is the canonical reference for:
+- Every data point's purpose + authoring surface + relationships
+- Schema invariants (R3.5, V-INV-15b, I1-I8, G6, AL7, A6, A1)
+- Anti-confusion contract (level vs phase vs rank)
+- Singleton vs collection vs derived-insight semantics
+- Wire-format for BUG-062 AI chat context priming (§8)
+
+The 6 FIX + 2 CLARIFY in §7 are the constitutional touches user greenlit "then fix".
+
+## 📁 Recoverability (5 anchor docs)
+
+1. **`HANDOFF.md`** (this file) — current state + commit ledger + open fix plans
+2. **`feedback_5_forcing_functions.md`** (auto-memory) — discipline contract (Rules A-E)
+3. **`docs/CANVAS_DATA_MAP.md`** r1 — canonical data-points + relationships
+4. **`docs/BUG_LOG.md`** — BUG-052..062 entries
+5. **`docs/SESSION_LOG_2026-05-12-final.md`** (THIS commit) — full arc record of today
+6. **`docs/v3.0/SPEC.md`** §S47 — locked Path B design; Path A DEFERRED markers
+7. **`diagnostics/appSpec.js`** V-FLOW-IMPORT-* + V-FLOW-SKILL-BUILDER-* — 12 GREEN guards for Path B + Skills Builder polish
+
+Anyone (Claude or human) can resume by reading these in order.
 
 ### What shipped today (2026-05-12)
 
