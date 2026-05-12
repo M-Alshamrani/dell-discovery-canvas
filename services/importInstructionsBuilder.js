@@ -64,13 +64,13 @@ function envLabelFor(envCatalogId) {
 // Build a markdown-style env-slot table for the instructions body. Each
 // row carries UUID + resolved label + envCatalogId so the LLM has both
 // the FK target (UUID) AND the human-readable hint.
+//
+// PRECONDITION: the engagement has at least 1 environment. The caller
+// (buildImportInstructions) enforces this; this helper assumes a clean
+// allIds.length >= 1 input.
 function buildEnvSlotTable(engagement) {
-  const allIds = (engagement && engagement.environments && Array.isArray(engagement.environments.allIds))
-    ? engagement.environments.allIds : [];
-  const byId   = (engagement && engagement.environments && engagement.environments.byId)   || {};
-  if (allIds.length === 0) {
-    return "(no environments defined in the engagement · add at least one environment in the Context tab before generating instructions)";
-  }
+  const allIds = engagement.environments.allIds;
+  const byId   = engagement.environments.byId;
   const lines = [];
   lines.push("| UUID | Label | Catalog ID |");
   lines.push("|---|---|---|");
@@ -88,7 +88,28 @@ function buildEnvSlotTable(engagement) {
 //                      embedded into the state-hint guidance so the engineer's
 //                      modal-scope choice surfaces in the instructions too.
 //   opts.now         - Date for tests (defaults to new Date())
+//
+// PRECONDITION (R2 guard per feedback_5_forcing_functions.md Rule C):
+//   engagement.environments.allIds.length MUST be >= 1. With 0 environments
+//   the generated .txt has no UUIDs to embed in §2, so the LLM has no FK
+//   targets to map rows to, and strict-match drift-reject would reject
+//   every imported row · the engineer would waste a Dell-internal-LLM
+//   round-trip. The Download button in ImportDataModal MUST disable itself
+//   when 0 envs are present; this throw is the defense-in-depth guarantee
+//   that the builder can't be called programmatically with bad input.
 export function buildImportInstructions(engagement, opts) {
+  const allIds = (engagement && engagement.environments && Array.isArray(engagement.environments.allIds))
+    ? engagement.environments.allIds : [];
+  if (allIds.length === 0) {
+    const err = new Error(
+      "buildImportInstructions called on an engagement with 0 environments. " +
+      "Add at least one environment in the Context tab before generating instructions. " +
+      "(The Dell internal LLM has nothing to map extracted rows to without environment UUIDs in the engagement.)"
+    );
+    err.code = "NO_ENVIRONMENTS";
+    throw err;
+  }
+
   const scope = (opts && opts.scope) || "desired";
   const now   = (opts && opts.now)   || new Date();
 

@@ -138,17 +138,19 @@ export function openImportDataModal(opts) {
 
   // Env chips (transparent about what gets exported)
   const eng = getActiveEngagement();
+  const allIds = (eng && eng.environments && Array.isArray(eng.environments.allIds)) ? eng.environments.allIds : [];
+  const byId   = (eng && eng.environments && eng.environments.byId)                  || {};
+  const hasEnvs = allIds.length > 0;
+
   const envChipsWrap = document.createElement("div");
   envChipsWrap.className = "import-data-env-chips";
   const envChipsLabel = document.createElement("span");
   envChipsLabel.className = "import-data-env-chips-label";
   envChipsLabel.textContent = "Environments embedded in the instructions: ";
   envChipsWrap.appendChild(envChipsLabel);
-  const allIds = (eng && eng.environments && Array.isArray(eng.environments.allIds)) ? eng.environments.allIds : [];
-  const byId   = (eng && eng.environments && eng.environments.byId)                  || {};
-  if (allIds.length === 0) {
+  if (!hasEnvs) {
     const empty = document.createElement("em");
-    empty.textContent = "(none — add an environment in the Context tab first)";
+    empty.textContent = "(none yet)";
     envChipsWrap.appendChild(empty);
   } else {
     allIds.forEach(function(uuid) {
@@ -162,16 +164,51 @@ export function openImportDataModal(opts) {
   }
   step1.appendChild(envChipsWrap);
 
+  // SPEC §S47 + feedback_5_forcing_functions.md Rule C · 0-env guard.
+  //   Without at least 1 environment in the engagement, the generated
+  //   instructions file has no UUIDs to embed in §2 · the Dell internal
+  //   LLM has no FK targets to map rows to · strict-match drift-reject
+  //   would reject every imported row on the way back · the engineer
+  //   would waste a round-trip. The Download button is DISABLED here
+  //   (Rule C: disable the entry point, never silently fall through to
+  //   a guaranteed-failure path); a blocking inline error explains why.
+  if (!hasEnvs) {
+    const blockingError = document.createElement("div");
+    blockingError.className = "import-data-no-envs-error";
+    blockingError.setAttribute("data-import-data-no-envs-error", "");
+    blockingError.textContent = "Add at least one environment in the Context tab before generating instructions. Without environment UUIDs, the Dell internal LLM has no target to map extracted rows to.";
+    step1.appendChild(blockingError);
+  }
+
   // Download button
   const dlBtn = document.createElement("button");
   dlBtn.type = "button";
   dlBtn.className = "import-data-download-btn primary-button";
   dlBtn.textContent = "📋 Download instructions.txt";
+  dlBtn.disabled = !hasEnvs;            // R2 0-env guard (Rule C)
+  if (!hasEnvs) {
+    dlBtn.title = "Add an environment in the Context tab first";
+  }
   dlBtn.addEventListener("click", function() {
+    if (!hasEnvs) return;               // belt-and-braces: even if .disabled is bypassed
     const live = getActiveEngagement();
     if (!live) return;
-    const out = buildImportInstructions(live, { scope: scope, sourceNotes: notesTa.value });
-    triggerDownload(out.filename, out.content);
+    try {
+      const out = buildImportInstructions(live, { scope: scope, sourceNotes: notesTa.value });
+      triggerDownload(out.filename, out.content);
+    } catch (e) {
+      // Defense-in-depth: the builder ALSO throws on 0 envs (NO_ENVIRONMENTS).
+      // If it ever throws (live engagement changed between modal-mount and
+      // click), show an inline error instead of letting the exception
+      // bubble up to a blank-screen state.
+      var errBox = step1.querySelector(".import-data-runtime-error");
+      if (!errBox) {
+        errBox = document.createElement("div");
+        errBox.className = "import-data-error import-data-runtime-error";
+        step1.appendChild(errBox);
+      }
+      errBox.textContent = "Could not generate instructions: " + (e && e.message || String(e));
+    }
   });
   step1.appendChild(dlBtn);
 

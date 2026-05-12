@@ -20278,12 +20278,16 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
   it("V-FLOW-IMPORT-INSTRUCTIONS-1 · S47.4.1 · Path B Step 1 produces a .txt file (NOT .md or .json) named per the dell-canvas-import-instructions-<slug>-<timestamp> convention, with customer name + visible env list embedded", async () => {
     var mod;
     try { mod = await import("/services/importInstructionsBuilder.js"); }
-    catch (e) { throw new Error("V-FLOW-IMPORT-INSTRUCTIONS-1: importInstructionsBuilder module MUST exist at services/importInstructionsBuilder.js (RED-first scaffold; lands C3)"); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-INSTRUCTIONS-1: importInstructionsBuilder module MUST exist at services/importInstructionsBuilder.js"); }
     assertEqual(typeof mod.buildImportInstructions, "function",
       "V-FLOW-IMPORT-INSTRUCTIONS-1: services/importInstructionsBuilder.js MUST export buildImportInstructions(engagement, opts) -> { filename, content }");
     var schema  = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
     var eng = schema.createEmptyEngagement();
     eng.customer = Object.assign({}, eng.customer, { name: "Acme Healthcare", vertical: "healthcare" });
+    // R2 precondition - builder requires >= 1 env (Rule C 0-env guard). Add one.
+    var addRes = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
     var out = mod.buildImportInstructions(eng, { scope: "desired" });
     assert(out && typeof out.filename === "string" && /\.txt$/.test(out.filename),
       "V-FLOW-IMPORT-INSTRUCTIONS-1: filename MUST end in .txt (R47.4.1); got: " + (out && out.filename));
@@ -20322,9 +20326,13 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
   it("V-FLOW-IMPORT-INSTRUCTIONS-3 · S47.8.3 · Instructions file contains the strict-match warning verbatim", async () => {
     var mod;
     try { mod = await import("/services/importInstructionsBuilder.js"); }
-    catch (e) { throw new Error("V-FLOW-IMPORT-INSTRUCTIONS-3: importInstructionsBuilder module MUST exist (RED-first scaffold)"); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-INSTRUCTIONS-3: importInstructionsBuilder module MUST exist"); }
     var schema  = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
     var eng = schema.createEmptyEngagement();
+    // R2 precondition - builder requires >= 1 env (Rule C 0-env guard).
+    var addRes = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
     var out = mod.buildImportInstructions(eng, { scope: "desired" });
     // The R47.8.3 strict-match warning text MUST appear verbatim.
     assert(/Strict matching/i.test(out.content) || /strict-match/i.test(out.content),
@@ -20508,6 +20516,67 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
   // ripped after the constitutional-creep audit. They return with stronger
   // DOM-mount assertions when Path A re-attempts under proper discipline
   // (per feedback_5_forcing_functions.md Rule A + Rule B).
+
+  // SPEC §S47 + feedback_5_forcing_functions.md Rule C · R2 0-env guard ·
+  // Path B's Download instructions.txt button MUST NOT generate a usable-
+  // looking but unusable file when the engagement has 0 environments.
+  // Per Rule C: the entry point (Download button) MUST be DISABLED with
+  // an inline blocking error · never silently degrade to a guaranteed-
+  // failure path (engineer wastes a Dell-internal-LLM round-trip).
+  //
+  // Two assertions: (1) buildImportInstructions throws on 0 envs, (2) the
+  // modal renders the Download button as disabled + an inline error when
+  // mounted against a 0-env engagement.
+  it("V-FLOW-IMPORT-NO-ENVS-GUARD-1 · §S47 + Rule C · Path B disables Download instructions.txt when engagement has 0 environments + buildImportInstructions throws", async () => {
+    // Part 1 · the builder MUST throw on 0 envs (no degraded fallback).
+    var builderMod = await import("/services/importInstructionsBuilder.js");
+    var schemaMod  = await import("/schema/engagement.js");
+    var eng = schemaMod.createEmptyEngagement();
+    assertEqual(eng.environments.allIds.length, 0,
+      "V-FLOW-IMPORT-NO-ENVS-GUARD-1 setup: fresh engagement MUST start with 0 environments");
+    var threw = false;
+    var caughtMessage = "";
+    try {
+      builderMod.buildImportInstructions(eng, { scope: "desired" });
+    } catch (e) {
+      threw = true;
+      caughtMessage = e && e.message || String(e);
+    }
+    assert(threw,
+      "V-FLOW-IMPORT-NO-ENVS-GUARD-1: buildImportInstructions MUST THROW when engagement.environments.allIds is empty (no degraded fallback per Rule C; engineer would otherwise waste a Dell-internal-LLM round-trip on a file that drift-rejects every row)");
+    assert(/environment|0 envs|no envs|no environments/i.test(caughtMessage),
+      "V-FLOW-IMPORT-NO-ENVS-GUARD-1: throw message MUST mention the missing-environments cause; got: " + caughtMessage);
+
+    // Part 2 · the modal MUST disable the Download button + render the
+    // inline blocking error when mounted against a 0-env engagement.
+    var modalMod = await import("/ui/components/ImportDataModal.js");
+    var host = document.createElement("div");
+    document.body.appendChild(host);
+    try {
+      modalMod.openImportDataModal({
+        host:                host,
+        getActiveEngagement: function() { return eng; },
+        commitImport:        function() {},
+        defaultScope:        "desired"
+      });
+      var dlBtn = host.querySelector(".import-data-download-btn");
+      assert(dlBtn,
+        "V-FLOW-IMPORT-NO-ENVS-GUARD-1: modal MUST render a .import-data-download-btn element");
+      assert(dlBtn.disabled === true,
+        "V-FLOW-IMPORT-NO-ENVS-GUARD-1: Download button MUST be .disabled when 0 envs (Rule C: disable the entry point, don't fall through). Got disabled=" + dlBtn.disabled);
+      // The modal MUST also surface an inline blocking error message (not
+      // just a passive "(none)" hint string).
+      var blockingError = host.querySelector("[data-import-data-no-envs-error]");
+      assert(blockingError,
+        "V-FLOW-IMPORT-NO-ENVS-GUARD-1: modal MUST render [data-import-data-no-envs-error] inline blocking error when 0 envs · the passive '(none - add an environment...)' hint is NOT sufficient per Rule C");
+      assert(/environment|Context tab/i.test(blockingError.textContent),
+        "V-FLOW-IMPORT-NO-ENVS-GUARD-1: blocking error MUST tell the engineer to add an environment (in the Context tab); got: " + blockingError.textContent.slice(0, 200));
+    } finally {
+      // Cleanup: dismount any open modal.
+      document.querySelectorAll('.dialog-overlay').forEach(function(o) { if (o.parentNode) o.parentNode.removeChild(o); });
+      if (host.parentNode) host.parentNode.removeChild(host);
+    }
+  });
 
   // SPEC §S47.5 + §S47.8 + §S47.9.3 · F4 CSS-coverage regression test ·
   // the styles.css MUST define rules for the importer's class names

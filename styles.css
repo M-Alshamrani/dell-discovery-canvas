@@ -7370,6 +7370,31 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
   border-radius: var(--radius-sm, 4px);
   line-height: 1.5;
 }
+/* SPEC §S47 + feedback_5_forcing_functions.md Rule C · 0-env blocking
+   error inside Step 1. Inline; explains why the Download button is
+   disabled; styled as an amber/orange callout so it reads as "blocked
+   pending engineer action" not "fatal error". */
+.import-data-no-envs-error {
+  padding: 10px 12px;
+  background: #FFF8E1;
+  border: 1px solid #FACC15;
+  border-left: 3px solid #B45309;
+  color: #78350F;
+  font-size: 12.5px;
+  border-radius: var(--radius-sm, 4px);
+  line-height: 1.5;
+}
+/* Disabled state for the download CTA when 0 envs. */
+.import-data-download-btn:disabled {
+  background: var(--border-mid, #C4CDDA);
+  color: var(--text-3, #6B7A90);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.import-data-download-btn:disabled:hover {
+  background: var(--border-mid, #C4CDDA);
+  box-shadow: none;
+}
 
 /* ── Workflow recipe card ───────────────────────────────────────────── */
 .import-data-workflow-card {
