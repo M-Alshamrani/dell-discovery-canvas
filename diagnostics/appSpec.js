@@ -20519,6 +20519,66 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
   // DOM-mount assertions when Path A re-attempts under proper discipline
   // (per feedback_5_forcing_functions.md Rule A + Rule B).
 
+  // BUG-059 · SkillBuilder skill-list rows render UNSTYLED · the JS uses
+  // .skill-admin-row / -info / -label / -desc / -meta classes that have
+  // ZERO CSS rules · text and meta tags glue together with no separation.
+  // Fix: add card-style row CSS + pill-chip styling for the .tag spans
+  // INSIDE the meta row. Test mounts the SkillBuilder, saves a user skill,
+  // and reads computed styles to assert the visual polish landed.
+  it("V-FLOW-SKILL-BUILDER-LIST-STYLING-1 · BUG-059 · skill list rows render as styled cards with pill-chip meta tags (not plain unstyled text)", async () => {
+    var storeMod   = await import("/state/v3SkillStore.js");
+    var builderMod = await import("/ui/views/SkillBuilder.js");
+    // Seed a user skill so the list has at least one row to test.
+    storeMod.saveV3Skill({
+      skillId: "skl-test-bug-059", label: "Test BUG-059 skill", description: "Test desc",
+      seedPrompt: "x", improvedPrompt: "x",
+      dataPoints: [], parameters: [],
+      outputFormat: "text", mutationPolicy: null
+    });
+    try {
+      var host = document.createElement("div");
+      document.body.appendChild(host);
+      try {
+        builderMod.renderSkillBuilder(host, function() {});
+        var row = host.querySelector(".skill-admin-row");
+        assert(row, "V-FLOW-SKILL-BUILDER-LIST-STYLING-1: at least one .skill-admin-row MUST render after saving a user skill");
+        var rowStyle = window.getComputedStyle(row);
+        // Card-style: padding > 0 + visible border + radius.
+        var paddingTop = parseFloat(rowStyle.paddingTop) || 0;
+        assert(paddingTop >= 8,
+          "V-FLOW-SKILL-BUILDER-LIST-STYLING-1: .skill-admin-row MUST have padding >= 8px (card affordance) · BUG-059 fix; got: " + rowStyle.padding);
+        var borderRadius = parseFloat(rowStyle.borderRadius) || 0;
+        assert(borderRadius >= 4,
+          "V-FLOW-SKILL-BUILDER-LIST-STYLING-1: .skill-admin-row MUST have border-radius >= 4px (card affordance) · BUG-059; got: " + rowStyle.borderRadius);
+        // Label prominence: font-weight >= 600.
+        var label = row.querySelector(".skill-admin-row-label");
+        assert(label, "V-FLOW-SKILL-BUILDER-LIST-STYLING-1: .skill-admin-row-label MUST render");
+        var labelWeight = parseInt(window.getComputedStyle(label).fontWeight, 10) || 400;
+        assert(labelWeight >= 600,
+          "V-FLOW-SKILL-BUILDER-LIST-STYLING-1: .skill-admin-row-label font-weight MUST be >= 600 (prominence) · BUG-059; got: " + labelWeight);
+        // Meta tags are pill chips: each .tag inside .skill-admin-row-meta has
+        // border-radius > 0 (proxy for pill rendering) + the meta container
+        // has a gap between siblings (no glue).
+        var meta = row.querySelector(".skill-admin-row-meta");
+        assert(meta, "V-FLOW-SKILL-BUILDER-LIST-STYLING-1: .skill-admin-row-meta MUST render");
+        var metaStyle = window.getComputedStyle(meta);
+        assert(parseFloat(metaStyle.gap) > 0 || parseFloat(metaStyle.columnGap) > 0,
+          "V-FLOW-SKILL-BUILDER-LIST-STYLING-1: .skill-admin-row-meta MUST set gap > 0 so tags don't glue together · BUG-059; got gap: " + metaStyle.gap + ", columnGap: " + metaStyle.columnGap);
+        var firstTag = meta.querySelector(".tag");
+        if (firstTag) {
+          var tagRadius = parseFloat(window.getComputedStyle(firstTag).borderRadius) || 0;
+          assert(tagRadius >= 4,
+            "V-FLOW-SKILL-BUILDER-LIST-STYLING-1: .tag inside skill-admin-row-meta MUST have border-radius >= 4px (pill chip rendering) · BUG-059; got: " + tagRadius);
+        }
+      } finally {
+        if (host.parentNode) host.parentNode.removeChild(host);
+      }
+    } finally {
+      // Cleanup the seeded skill so the test is idempotent across runs.
+      try { storeMod.deleteV3Skill("skl-test-bug-059"); } catch (_e) {}
+    }
+  });
+
   // BUG-060 · SkillBuilder · the "Test skill now" button is currently
   // stacked in its own .skill-form-test-row ABOVE the Cancel/Save action
   // bar; user reports "ugly + not elegant". Fix: move Test into the same

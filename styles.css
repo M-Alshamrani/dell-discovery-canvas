@@ -2943,7 +2943,85 @@ button { font-family: var(--font); cursor: pointer; border: none; border-radius:
   background: var(--surface-2); border-radius: var(--radius-sm);
   border: 1px dashed var(--border);
 }
-.skill-admin-list { display: flex; flex-direction: column; gap: 6px; }
+.skill-admin-list { display: flex; flex-direction: column; gap: 8px; }
+.skill-admin-list-head {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-3, #6B7A90);
+  text-transform: uppercase;
+  margin: 4px 0 2px;
+}
+
+/* BUG-059 · skill-list row card styling · was unstyled, glued meta tags.
+   Pattern matches the rc.8.b GPLC aesthetic: white surface + soft border
+   + dell-blue-faint hover + prominent title + pill-chip meta tags. */
+.skill-admin-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--surface, #FFFFFF);
+  border: 1px solid var(--border, #E4E8EE);
+  border-left: 3px solid var(--border-mid, #C4CDDA);
+  border-radius: var(--radius-md, 6px);
+  transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+}
+.skill-admin-row:hover {
+  border-color: var(--dell-blue-soft, #E8F2FB);
+  border-left-color: var(--dell-blue, #0076CE);
+  background: var(--dell-blue-faint, #F5F9FD);
+  box-shadow: 0 2px 8px rgba(11, 42, 74, 0.06);
+}
+.skill-admin-row-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.skill-admin-row-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dell-blue-ink, #0B2A4A);
+  letter-spacing: -0.005em;
+  line-height: 1.35;
+}
+.skill-admin-row-desc {
+  font-size: 12.5px;
+  color: var(--text-2, #3E4C62);
+  line-height: 1.5;
+}
+.skill-admin-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+/* Pill-chip meta tags · BUG-059 · was plain spans glued together. The
+   selector .skill-admin-row-meta .tag scopes the pill style to the
+   skill-list context only so the broader .tag rule (used by drivers / etc.)
+   keeps its existing pill behavior; this scoping is defensive. */
+.skill-admin-row-meta .tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  background: var(--surface-2, #F4F8FC);
+  border: 1px solid var(--border, #E4E8EE);
+  border-radius: 999px;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-2, #3E4C62);
+  white-space: nowrap;
+}
+.skill-admin-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
 
 .skill-row {
   display: flex; align-items: flex-start; gap: 12px;
