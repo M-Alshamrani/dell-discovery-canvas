@@ -51,6 +51,12 @@ export function saveV3Skill(draft, _opts = {}) {
     parameters:           Array.isArray(draft.parameters) ? draft.parameters : [],
     outputFormat:         draft.outputFormat || "text",
     mutationPolicy:       draft.mutationPolicy || null,
+    // S47 additive deltas (R47.6 + R47.7.1) · pass through draft values
+    // so authoring-time choices (e.g. SkillBuilder marks a skill as
+    // preview:"per-row" or kind:"system") survive the save round-trip.
+    preview:              draft.preview        || "none",
+    defaultScope:         draft.defaultScope   || "desired",
+    kind:                 draft.kind           || "user",
     validatedAgainst:     "3.2",
     outdatedSinceVersion: null
   };

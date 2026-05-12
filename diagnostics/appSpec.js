@@ -20499,13 +20499,34 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
   });
 
   it("V-FLOW-IMPORT-IMPORT-SUBSET-1 · S47.6.1 · 'import-subset' is a valid skill-schema outputFormat value; skills with this value route to the preview modal", async () => {
+    // Probe corrected 2026-05-12 (C1b): original RED-scaffold probe used
+    // `schemaVersion: "3.2"` (schema field is `validatedAgainst`) and
+    // omitted required `id`/`engagementId` fields. .strict() would have
+    // rejected the unknown `schemaVersion`. Probe rewritten to match the
+    // actual v3.2 SkillSchema shape; test intent preserved (assert the
+    // four S47.6 + S47.7.1 additive deltas: outputFormat="import-subset",
+    // preview="per-row", defaultScope="desired", kind="user").
     var skillSchema = await import("/schema/skill.js");
     var probe = {
-      skillId: "test-import-subset", schemaVersion: "3.2",
-      label: "Test", description: "Test", seedPrompt: "x", improvedPrompt: "x",
-      dataPoints: [], parameters: [], outputFormat: "import-subset", mutationPolicy: "ask",
-      preview: "per-row", defaultScope: "desired", kind: "user",
-      createdAt: "2026-05-12T10:00:00Z", updatedAt: "2026-05-12T10:00:00Z"
+      id:                   "00000000-0000-4000-8000-000000000003",
+      engagementId:         "00000000-0000-4000-8000-000000000000",
+      createdAt:            "2026-05-12T10:00:00.000Z",
+      updatedAt:            "2026-05-12T10:00:00.000Z",
+      skillId:              "test-import-subset",
+      label:                "Test",
+      description:          "Test",
+      version:              "1.0.0",
+      seedPrompt:           "x",
+      improvedPrompt:       "x",
+      dataPoints:           [],
+      parameters:           [],
+      outputFormat:         "import-subset",   // R47.6.1 NEW enum value
+      mutationPolicy:       "ask",
+      preview:              "per-row",         // R47.6.2 NEW field
+      defaultScope:         "desired",         // R47.6.3 NEW field
+      kind:                 "user",            // R47.7.1 NEW field
+      validatedAgainst:     "3.2",
+      outdatedSinceVersion: null
     };
     var res = skillSchema.SkillSchema.safeParse(probe);
     assert(res.success === true,
