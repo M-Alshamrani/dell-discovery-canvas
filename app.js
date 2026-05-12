@@ -131,16 +131,9 @@ document.addEventListener("DOMContentLoaded", function() {
   if (!getActiveEngagement()) {
     setActiveEngagement(createEmptyEngagement());
   }
-  // SPEC §S47.7 - warm the system-skills cache once so synchronous
-  // launcher / SkillBuilder renderers can read the merged set via
-  // loadAllV3SkillsSync(). Non-blocking: render proceeds immediately;
-  // when the cache resolves the next paint picks up system skills.
-  // The Canvas Chat overlay re-paints on open, so any open-after-boot
-  // sees the system slice; first-paint racers are rare (the cache fills
-  // within ~50ms of a 200 from /catalogs/skills/file-ingest-instances.json).
-  import("./state/v3SkillStore.js").then(function(mod) {
-    mod.preloadSystemSkills();
-  });
+  // [Path A parked 2026-05-12 · BUG-053] · the preloadSystemSkills boot
+  // hook was ripped along with the rest of the system-skill loader · Path B
+  // doesn't need it.
   renderHeaderMeta();
   renderStepper();
   renderStage();

@@ -42,13 +42,13 @@ const DataPointSchema = z.object({
 });
 
 // SPEC §S46.6 / CH36.d — output format enum (locked).
-// [S47.6.1 amendment 2026-05-12] · "import-subset" added · skills that
-// produce the canonical S47.3 JSON shape (file-driven instance ingestion)
-// declare this value and route their output to the shared import preview
-// modal (S47.5) instead of mutating-via-commitInstanceUpdate. Distinct
-// from "json-array" (which mutates existing records); "import-subset"
-// ADDS new records.
-const OutputFormatEnum = z.enum(["text", "dimensional", "json-array", "scalar", "import-subset"]);
+// [Path A "import-subset" parked 2026-05-12 · BUG-053] · the §S47.6.1
+// amendment that proposed adding "import-subset" to this enum was ripped
+// after audit · extending a locked enum is a constitutional touch that
+// requires the `[CONSTITUTIONAL TOUCH PROPOSED]` Q&A flow per
+// feedback_5_forcing_functions.md Rule A. When Path A is re-attempted,
+// the enum extension lands under that flow.
+const OutputFormatEnum = z.enum(["text", "dimensional", "json-array", "scalar"]);
 
 // SPEC §S46.10 / CH36.e — mutation policy enum (locked).
 //   nullable: required-non-null only when outputFormat ∈ {json-array, scalar};
@@ -87,12 +87,11 @@ export const SkillSchema = z.object({
   // Output + mutation contract (§S46.3 fields 7..8 / §S46.6 / §S46.10)
   outputFormat:         OutputFormatEnum,                  // field 7 (locked enum)
   mutationPolicy:       MutationPolicyEnum.default(null),  // field 8 (conditional)
-  // [S47 additive deltas 2026-05-12] · three new fields. All have .default()
-  // so existing v3.2 skills loaded from localStorage parse cleanly without
-  // any migration step (R47.6.4 + R47.7.1 back-compat).
-  preview:              z.enum(["none", "per-row"]).default("none"),
-  defaultScope:         z.enum(["current", "desired", "both"]).default("desired"),
-  kind:                 z.enum(["system", "user"]).default("user"),
+  // [Path A schema deltas parked 2026-05-12 · BUG-053] · the §S47.6 fields
+  // preview / defaultScope / kind were ripped after audit · the additions
+  // were necessary ONLY for Path A (skill-via-launcher) which is parked.
+  // Path B (footer button workflow) does NOT need these fields. They land
+  // again when Path A is re-attempted under proper discipline.
   // Schema versioning
   validatedAgainst:     z.string().regex(SCHEMA_VERSION_RE).default("3.2"),
   outdatedSinceVersion: z.string().regex(SCHEMA_VERSION_RE).nullable().default(null)
@@ -114,10 +113,6 @@ export function createEmptySkill(overrides = {}) {
     parameters:           overrides.parameters           ?? [],
     outputFormat:         overrides.outputFormat         ?? "text",
     mutationPolicy:       overrides.mutationPolicy       ?? null,
-    // S47 additive deltas (defaults match Zod schema defaults).
-    preview:              overrides.preview              ?? "none",
-    defaultScope:         overrides.defaultScope         ?? "desired",
-    kind:                 overrides.kind                 ?? "user",
     validatedAgainst:     overrides.validatedAgainst     ?? "3.2",
     outdatedSinceVersion: overrides.outdatedSinceVersion ?? null
   };

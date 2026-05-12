@@ -19,36 +19,23 @@
 //   1. Read JSON
 //   2. Return raw map (no migration; clean v3.2 shape only)
 //
-// [S47.7 amendment 2026-05-12] · system skills distribution model
-//   - Skills shipped under catalogs/skills/*.json load as kind="system"
-//     at boot via loadSystemSkills().
-//   - User skills with the same skillId SHADOW the system version
-//     (engineer's saved edits win) but the system version stays in the
-//     registry · the launcher renders both, sorted system-first with a
-//     "System" chip per R47.7.3.
-//   - loadAllV3Skills(): async helper that returns the merged set
-//     (user + system) keyed by skillId, with user winning on collision.
+// [Path A parked 2026-05-12 · BUG-053] · The system-skills distribution
+// model (loadSystemSkills + loadAllV3SkillsSync + preloadSystemSkills +
+// catalogs/skills/* loader) was ripped from this module because the
+// audit found it was implemented with constitutional creep (extending
+// the locked OutputFormatEnum + adding 3 new schema fields without the
+// `[CONSTITUTIONAL TOUCH PROPOSED]` flag). Path B (footer button workflow)
+// does NOT need the system-skill loader; it bypasses the skill engine
+// entirely. When Path A is re-attempted under proper discipline (per
+// feedback_5_forcing_functions.md Rule A), the loader code lives in
+// git history at commit 2c21425 / 3b83d2b and can be restored cleanly.
 //
-// Authority: docs/v3.0/SPEC.md §S46.3 + §S47.7 · docs/RULES.md §16 CH36.
+// Authority: docs/v3.0/SPEC.md §S46.3 · docs/RULES.md §16 CH36.
 
 import { SkillSchema } from "../schema/skill.js";
 import { generateDeterministicId } from "../migrations/helpers/deterministicId.js";
 
 const STORAGE_KEY = "v3_saved_skills_v1";
-
-// SPEC §S47.7.2 - the canonical catalog directory and the list of known
-// system skill filenames. New system skills are added here as they're
-// authored (the file-ingest-instances.json skill lands in C2).
-const SYSTEM_SKILL_DIR = "/catalogs/skills/";
-const SYSTEM_SKILL_FILES = [
-  "file-ingest-instances.json"   // R47.7.4 (lands in C2)
-];
-
-// Fixed defaults stamped on system skills loaded from catalogs/skills/*.
-// engagementId is the zero-UUID because system skills are not engagement-
-// scoped (R47.7.1 - they ship in the catalog directory, not in a session).
-const SYSTEM_ENG_ID = "00000000-0000-4000-8000-000000000000";
-const SYSTEM_TS     = "2026-01-01T00:00:00.000Z";
 
 // saveV3Skill(draft, opts) -> { ok, skill } | { ok:false, errors }
 //   draft.skillId is the user-visible id; if it already exists, this
@@ -75,12 +62,6 @@ export function saveV3Skill(draft, _opts = {}) {
     parameters:           Array.isArray(draft.parameters) ? draft.parameters : [],
     outputFormat:         draft.outputFormat || "text",
     mutationPolicy:       draft.mutationPolicy || null,
-    // S47 additive deltas (R47.6 + R47.7.1) · pass through draft values
-    // so authoring-time choices (e.g. SkillBuilder marks a skill as
-    // preview:"per-row" or kind:"system") survive the save round-trip.
-    preview:              draft.preview        || "none",
-    defaultScope:         draft.defaultScope   || "desired",
-    kind:                 draft.kind           || "user",
     validatedAgainst:     "3.2",
     outdatedSinceVersion: null
   };
@@ -143,113 +124,3 @@ function readAll() {
     return {};
   }
 }
-
-// SPEC §S47.7.2 · system-skills loader hook
-//
-// loadSystemSkills() -> Promise<{[skillId]: Skill}>
-//   Fetches every file in SYSTEM_SKILL_FILES from the catalogs/skills/
-//   directory, validates via SkillSchema (with kind forced to "system"),
-//   and returns a map keyed by skillId.
-//
-//   Files that 404 or fail to parse are SILENTLY SKIPPED · the loader
-//   is safe to call at any point in the C1->C3 arc (before C2 ships
-//   file-ingest-instances.json, the function returns an empty map).
-//   This is the only place in the project where a fetch failure is
-//   non-fatal: missing system skills degrade the catalog, they do not
-//   break the app boot.
-//
-// Cross-cutting defaults: id is generated deterministically from
-//   the system skill's skillId; engagementId is the zero-UUID; the
-//   kind discriminator is force-stamped to "system" regardless of
-//   what the source JSON declares (the shipping location IS the system
-//   contract per R47.7.1).
-export async function loadSystemSkills() {
-  const out = {};
-  for (let i = 0; i < SYSTEM_SKILL_FILES.length; i++) {
-    const filename = SYSTEM_SKILL_FILES[i];
-    try {
-      const res = await fetch(SYSTEM_SKILL_DIR + filename);
-      if (!res || !res.ok) continue;
-      const raw = await res.json();
-      if (!raw || typeof raw !== "object") continue;
-      const candidate = Object.assign({}, raw, {
-        id:           raw.id           || generateDeterministicId("skill", "system", raw.skillId || filename),
-        engagementId: raw.engagementId || SYSTEM_ENG_ID,
-        createdAt:    raw.createdAt    || SYSTEM_TS,
-        updatedAt:    raw.updatedAt    || SYSTEM_TS,
-        kind:         "system"                          // R47.7.1 force-stamp
-      });
-      const parsed = SkillSchema.safeParse(candidate);
-      if (parsed.success) {
-        out[parsed.data.skillId] = parsed.data;
-      }
-    } catch (e) {
-      // Non-fatal · log to console for debugging but continue.
-      if (typeof console !== "undefined" && console.warn) {
-        console.warn("[v3SkillStore] system skill load skipped:", filename, e && e.message);
-      }
-    }
-  }
-  return out;
-}
-
-// SPEC §S47.7 · warm-cache + sync merged loader for synchronous renderers
-//
-// The launcher + SkillBuilder paint paths render synchronously (they
-// don't `await` on every re-render); making them async would introduce
-// flicker and double-paint races. Instead, app.js boot calls
-// preloadSystemSkills() ONCE at startup (await-able), which warms
-// _systemSkillsCache. After that, every consumer reads via the sync
-// loadAllV3SkillsSync(), which merges the cache with the live user-skill
-// localStorage read.
-//
-// Cache invariants:
-//   - cache is filled exactly once per page load
-//   - if the catalog file 404s, cache becomes {} (still "loaded")
-//   - preloadSystemSkills is idempotent (returns the cached promise)
-let _systemSkillsCache    = null;
-let _systemSkillsPromise  = null;
-
-export function preloadSystemSkills() {
-  if (_systemSkillsPromise) return _systemSkillsPromise;
-  _systemSkillsPromise = loadSystemSkills().then(function(skills) {
-    _systemSkillsCache = skills || {};
-    return _systemSkillsCache;
-  }).catch(function(_e) {
-    _systemSkillsCache = {};
-    return _systemSkillsCache;
-  });
-  return _systemSkillsPromise;
-}
-
-// loadAllV3SkillsSync() -> {[skillId]: Skill}
-//   Synchronous merge of system skills (from warm cache) + user skills
-//   (from localStorage). User shadows system on skillId collision per
-//   R47.7.2. Safe to call before preloadSystemSkills() resolves; in
-//   that case the system slice is empty and only user skills render.
-//   Callers in the synchronous paint path use this; preloadSystemSkills()
-//   should have completed by first-paint (awaited in app.js boot).
-export function loadAllV3SkillsSync() {
-  const userSkills   = loadV3Skills();
-  const systemSkills = _systemSkillsCache || {};
-  const merged = Object.assign({}, systemSkills);
-  Object.keys(userSkills).forEach(function(skillId) {
-    merged[skillId] = userSkills[skillId];   // user shadows system
-  });
-  return merged;
-}
-
-// SPEC §S47.7 · merged-load helper for async callers (deprecated for
-// the launcher path · use preloadSystemSkills + loadAllV3SkillsSync
-// instead; kept for tests / scripted boot paths that genuinely need
-// the await semantics).
-//
-// loadAllV3Skills() -> Promise<{[skillId]: Skill}>
-//   Returns user + system skills merged by skillId. On collision the
-//   user-authored skill wins (engineer's saved edits SHADOW the system
-//   version per R47.7.2).
-export async function loadAllV3Skills() {
-  await preloadSystemSkills();
-  return loadAllV3SkillsSync();
-}
-

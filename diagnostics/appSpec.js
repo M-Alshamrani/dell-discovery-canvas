@@ -16082,12 +16082,12 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       it("V-SKILL-V3-6 · ui/views/CanvasChatOverlay.js right-rail population: imports loadV3Skills + resolveTemplate; renders skill cards (head + form host); click drops resolved prompt into .canvas-chat-input (per SPEC §S29.5)", async () => {
         const src = await (await fetch("/ui/views/CanvasChatOverlay.js")).text();
 
-        // Required imports for the rail population path. The braces may
-        // include other co-imported helpers (e.g. loadAllV3SkillsSync added
-        // for the S47 system-skills launcher integration); the assertion is
-        // that loadV3Skills appears in an import statement against v3SkillStore.
-        assert(/import\s*\{[^}]*\bloadV3Skills\b[^}]*\}\s*from\s*"\.\.\/\.\.\/state\/v3SkillStore\.js"/.test(src),
-          "loadV3Skills imported from v3SkillStore (alongside any S47 co-imports)");
+        // Required imports for the rail population path. [Path A parked
+        // 2026-05-12 · BUG-053] · regex restored to strict-single-import
+        // since loadAllV3SkillsSync was ripped along with the rest of the
+        // Path A wiring. When Path A re-attempts, the regex loosens again.
+        assert(/import\s*\{\s*loadV3Skills\s*\}\s*from\s*"\.\.\/\.\.\/state\/v3SkillStore\.js"/.test(src),
+          "loadV3Skills imported from v3SkillStore");
         assert(/import\s*\{\s*resolveTemplate\s*\}\s*from\s*"\.\.\/\.\.\/services\/pathResolver\.js"/.test(src),
           "resolveTemplate imported from pathResolver");
 
@@ -16117,13 +16117,9 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         assert(/resolveTemplate\(/.test(src),
           "calls resolveTemplate on click");
 
-        // Empty state + populated state both branch on a skills-store
-        // enumeration call. Pre-S47, that was loadV3Skills(); post-S47
-        // (system skills distribution model), the launcher + rail use
-        // loadAllV3SkillsSync() so system + user skills both render.
-        // Either call satisfies the contract: the enumeration happens.
-        assert(/loadV3Skills\(\)|loadAllV3SkillsSync\(\)/.test(src),
-          "loadV3Skills() OR loadAllV3SkillsSync() called to enumerate saved skills");
+        // Empty state + populated state both branch on loadV3Skills.
+        assert(/loadV3Skills\(\)/.test(src),
+          "loadV3Skills called to enumerate saved skills");
 
         // entityId parameter dropdowns must source options from the
         // engagement (gaps / drivers / environments / instances).
@@ -19153,25 +19149,22 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
     } finally { host.remove(); }
   });
 
-  it("V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1 · R1 / SPEC §S46.3 + §S46.6 / CH36.4 + §S47.6.1 · output-format radio renders the 5 locked enum options (text / dimensional / json-array / scalar / import-subset)", async () => {
+  it("V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1 · R1 / SPEC §S46.3 + §S46.6 / CH36.4 · RED until R3 · output-format radio renders exactly 4 options (text / dimensional / json-array / scalar)", async () => {
     const { renderSkillBuilder } = await import("/ui/views/SkillBuilder.js");
     var host = document.createElement("div");
     document.body.appendChild(host);
     try {
       renderSkillBuilder(host, function() {});
       var radios = host.querySelectorAll("[data-skill-output-format]");
-      assert(radios.length > 0, "V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1: edit form MUST contain output-format radios with [data-skill-output-format] attribute (per SPEC §S46.6)");
+      assert(radios.length > 0, "V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1 (RED-until-R3): edit form MUST contain output-format radios with [data-skill-output-format] attribute (per SPEC §S46.6)");
       var values = Array.from(radios).map(function(r) { return r.value || r.getAttribute("data-output-format-value"); });
-      // SPEC §S47.6.1 amendment 2026-05-12 - "import-subset" added to the
-      // OutputFormat enum · the 5-option locked set is now {text, dimensional,
-      // json-array, scalar, import-subset}.
-      var expected = ["text", "dimensional", "json-array", "scalar", "import-subset"];
+      var expected = ["text", "dimensional", "json-array", "scalar"];
       expected.forEach(function(v) {
         assert(values.indexOf(v) >= 0,
-          "V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1: output-format option '" + v + "' MUST be present (per CH36.4 enum lock + §S47.6.1 amendment; got: " + values.join(",") + ")");
+          "V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1 (RED-until-R3): output-format option '" + v + "' MUST be present (per CH36.4 enum lock; got: " + values.join(",") + ")");
       });
-      assertEqual(values.length, 5,
-        "V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1: output-format MUST have EXACTLY 5 options post-§S47 (got " + values.length + ": " + values.join(",") + ")");
+      assertEqual(values.length, 4,
+        "V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1 (RED-until-R3): output-format MUST have EXACTLY 4 options (got " + values.length + ": " + values.join(",") + ")");
     } finally { host.remove(); }
   });
 
@@ -20508,195 +20501,13 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
       "V-FLOW-IMPORT-AITAG-BACKCOMPAT-1: legacy aiTag MUST default to kind='skill' on parse (R47.9.2). Got: " + (res.data && res.data.aiTag && res.data.aiTag.kind));
   });
 
-  it("V-FLOW-IMPORT-IMPORT-SUBSET-1 · S47.6.1 · 'import-subset' is a valid skill-schema outputFormat value; skills with this value route to the preview modal", async () => {
-    // Probe corrected 2026-05-12 (C1b): original RED-scaffold probe used
-    // `schemaVersion: "3.2"` (schema field is `validatedAgainst`) and
-    // omitted required `id`/`engagementId` fields. .strict() would have
-    // rejected the unknown `schemaVersion`. Probe rewritten to match the
-    // actual v3.2 SkillSchema shape; test intent preserved (assert the
-    // four S47.6 + S47.7.1 additive deltas: outputFormat="import-subset",
-    // preview="per-row", defaultScope="desired", kind="user").
-    var skillSchema = await import("/schema/skill.js");
-    var probe = {
-      id:                   "00000000-0000-4000-8000-000000000003",
-      engagementId:         "00000000-0000-4000-8000-000000000000",
-      createdAt:            "2026-05-12T10:00:00.000Z",
-      updatedAt:            "2026-05-12T10:00:00.000Z",
-      skillId:              "test-import-subset",
-      label:                "Test",
-      description:          "Test",
-      version:              "1.0.0",
-      seedPrompt:           "x",
-      improvedPrompt:       "x",
-      dataPoints:           [],
-      parameters:           [],
-      outputFormat:         "import-subset",   // R47.6.1 NEW enum value
-      mutationPolicy:       "ask",
-      preview:              "per-row",         // R47.6.2 NEW field
-      defaultScope:         "desired",         // R47.6.3 NEW field
-      kind:                 "user",            // R47.7.1 NEW field
-      validatedAgainst:     "3.2",
-      outdatedSinceVersion: null
-    };
-    var res = skillSchema.SkillSchema.safeParse(probe);
-    assert(res.success === true,
-      "V-FLOW-IMPORT-IMPORT-SUBSET-1: SkillSchema MUST accept outputFormat='import-subset' + preview='per-row' + defaultScope='desired' + kind='user' (R47.6 + R47.7.1). Errors: " + (res.error && JSON.stringify(res.error.issues)));
-  });
-
-  it("V-FLOW-IMPORT-SYSTEM-SKILL-LOADER-1 · S47.7.2 · v3SkillStore loads catalogs/skills/*.json as kind='system' skills at boot; user skills with the same skillId shadow the system version", async () => {
-    var mod = await import("/state/v3SkillStore.js");
-    assertEqual(typeof mod.loadV3Skills, "function",
-      "V-FLOW-IMPORT-SYSTEM-SKILL-LOADER-1: v3SkillStore.loadV3Skills MUST be exported as a function");
-    // After C1+C2 land, the system skill catalog will be loaded at module
-    // init. Source-grep the store for the system-skill loader hook.
-    var src;
-    try { src = await (await fetch("/state/v3SkillStore.js")).text(); }
-    catch (e) { throw new Error("V-FLOW-IMPORT-SYSTEM-SKILL-LOADER-1: fetch failed: " + (e && e.message || e)); }
-    var stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
-    assert(/catalogs\/skills|kind.{0,10}system|loadSystemSkills/i.test(stripped),
-      "V-FLOW-IMPORT-SYSTEM-SKILL-LOADER-1: v3SkillStore.js MUST load system skills from catalogs/skills/* (R47.7.2). Source-grep for 'catalogs/skills' or 'kind: \"system\"' or 'loadSystemSkills'.");
-  });
-
-  it("V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1 · R47.7.4 · catalogs/skills/file-ingest-instances.json exists + ships as a kind='system' skill + is always present in the launcher in a fresh session", async () => {
-    var res;
-    try { res = await fetch("/catalogs/skills/file-ingest-instances.json"); }
-    catch (e) { throw new Error("V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1: file fetch failed: " + (e && e.message || e)); }
-    assert(res && res.ok,
-      "V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1: catalogs/skills/file-ingest-instances.json MUST exist (status: " + (res && res.status) + ")");
-    var json;
-    try { json = await res.json(); }
-    catch (e) { throw new Error("V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1: JSON parse failed: " + (e && e.message || e)); }
-    assertEqual(json.kind, "system",
-      "V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1: file-ingest skill MUST be kind='system'");
-    assertEqual(json.outputFormat, "import-subset",
-      "V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1: file-ingest skill MUST use outputFormat='import-subset'");
-    assertEqual(json.preview, "per-row",
-      "V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1: file-ingest skill MUST use preview='per-row'");
-    assertEqual(json.defaultScope, "desired",
-      "V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1: file-ingest skill MUST default to scope='desired' (user direction: most common workshop case)");
-    var hasFileParam = Array.isArray(json.parameters) && json.parameters.some(function(p) { return p && p.type === "file"; });
-    assert(hasFileParam,
-      "V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1: file-ingest skill MUST have a parameters[] entry of type='file'");
-  });
-
-  // SPEC §S47.7.3 · F1 DOM-mount regression test · the file-ingest system
-  // skill MUST render in the Canvas Chat launcher with a System chip.
-  // Source-grep tests (V-FLOW-IMPORT-SYSTEM-SKILL-LOADER-1 + V-FLOW-IMPORT-
-  // FILE-INGEST-SKILL-PRESENT-1) are not enough · they only prove the
-  // loader function + JSON file exist. This test mounts the actual
-  // launcher and asserts the user-visible surface renders the skill.
-  it("V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1 · S47.7.3 · file-ingest skill renders in the Canvas Chat skills launcher with a System chip + system rows sort ahead of user rows", async () => {
-    var storeMod   = await import("/state/v3SkillStore.js");
-    var overlayMod = await import("/ui/views/CanvasChatOverlay.js");
-    assertEqual(typeof storeMod.preloadSystemSkills, "function",
-      "V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1: v3SkillStore.preloadSystemSkills MUST be exported");
-    assertEqual(typeof storeMod.loadAllV3SkillsSync, "function",
-      "V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1: v3SkillStore.loadAllV3SkillsSync MUST be exported");
-    assertEqual(typeof overlayMod._paintCanvasChatSkillsForTests, "function",
-      "V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1: CanvasChatOverlay._paintCanvasChatSkillsForTests MUST be exported as a test mount");
-    // Warm the system-skills cache (boot path).
-    await storeMod.preloadSystemSkills();
-    // Mount the launcher into a detached host element.
-    var host = document.createElement("div");
-    overlayMod._paintCanvasChatSkillsForTests(host);
-    // The file-ingest skill MUST be present with kind="system".
-    var row = host.querySelector('[data-launcher-skill-id="skl-file-ingest-instances"]');
-    assert(row,
-      "V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1: launcher MUST render a row for skl-file-ingest-instances (the file-ingest system skill); got rows: " +
-      Array.from(host.querySelectorAll("[data-launcher-skill-id]")).map(r => r.getAttribute("data-launcher-skill-id")).join(", "));
-    assertEqual(row.getAttribute("data-launcher-skill-kind"), "system",
-      "V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1: file-ingest row MUST carry data-launcher-skill-kind='system'");
-    // System chip MUST be present.
-    var chip = row.querySelector("[data-launcher-system-chip]");
-    assert(chip,
-      "V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1: system row MUST carry a data-launcher-system-chip badge (R47.7.3)");
-    assert(/system/i.test(chip.textContent),
-      "V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1: System chip text MUST mention 'System'; got: " + chip.textContent);
-    // Sort: system rows MUST appear ahead of any user rows. We don't have
-    // user rows in this test fixture but the system row MUST be the first
-    // row in the rendered list when the merged set has any user rows.
-    // Sanity assertion: the rendered system row's position is 0 in the
-    // list of all rendered launcher rows.
-    var allRows = host.querySelectorAll("[data-launcher-skill-id]");
-    assertEqual(allRows[0].getAttribute("data-launcher-skill-id"), "skl-file-ingest-instances",
-      "V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1: system rows MUST sort ahead of user rows (R47.7.3); first row is " + allRows[0].getAttribute("data-launcher-skill-id"));
-  });
-
-  // SPEC §S47.6.1 + §S47.6.2 · F2 DOM-mount regression test · skills with
-  // outputFormat="import-subset" route their LLM response to the shared
-  // ImportPreviewModal. The previous arc closed CanvasChatOverlay's
-  // _renderSkillRunOutput with text/dimensional/json-array/scalar branches
-  // only · "import-subset" fell to the "Unknown format" fallback, dumping
-  // raw JSON into the chat instead of opening the preview modal.
-  it("V-FLOW-IMPORT-SKILL-RUN-ROUTES-TO-PREVIEW-1 · S47.6.1 · outputFormat='import-subset' routes through parseImportResponse → ImportPreviewModal (Path A entry)", async () => {
-    var overlayMod = await import("/ui/views/CanvasChatOverlay.js");
-    assertEqual(typeof overlayMod._renderSkillRunOutputForTests, "function",
-      "V-FLOW-IMPORT-SKILL-RUN-ROUTES-TO-PREVIEW-1: CanvasChatOverlay._renderSkillRunOutputForTests MUST be exported as a test driver");
-    // Build a synthetic import-subset LLM response (the canonical S47.3 shape).
-    var responseText = JSON.stringify({
-      schemaVersion: "1.0", kind: "instance.add", generatedAt: "2026-05-12T10:00:00Z",
-      items: [{
-        confidence: "high", rationale: "synthetic test row",
-        data: { state: "desired", layerId: "compute", environmentId: "00000000-0000-4000-8000-000000000099",
-                label: "Synthetic Tile", vendor: "Oracle", vendorGroup: "nonDell", criticality: "High", notes: "" }
-      }]
-    });
-    var skill = { skillId: "skl-test-import", outputFormat: "import-subset", preview: "per-row", defaultScope: "desired" };
-    // Mount a panel host element (the dispatch writes parsed JSON into
-    // [data-skill-panel-output]).
-    var panelHost = document.createElement("div");
-    var output = document.createElement("pre");
-    output.setAttribute("data-skill-panel-output", "");
-    panelHost.appendChild(output);
-    document.body.appendChild(panelHost);
-    // Drive the dispatch.
-    overlayMod._renderSkillRunOutputForTests(skill, panelHost, responseText);
-    // The dispatch is async (dynamic-import chain); wait one tick.
-    await new Promise(function(r) { setTimeout(r, 800); });
-    // The preview modal MUST be mounted.
-    var modal = document.getElementById("import-preview-modal");
-    assert(modal,
-      "V-FLOW-IMPORT-SKILL-RUN-ROUTES-TO-PREVIEW-1: import-preview-modal MUST be mounted after the dispatch routes through import-subset (got: " +
-      (output.textContent ? output.textContent.slice(0, 200) : "(no output)") + ")");
-    // The modal MUST render one row per items[] entry.
-    var rows = modal.querySelectorAll("[data-import-preview-row]");
-    assertEqual(rows.length, 1,
-      "V-FLOW-IMPORT-SKILL-RUN-ROUTES-TO-PREVIEW-1: modal MUST render 1 row for the 1 item in the synthetic response; got: " + rows.length);
-    // Cleanup.
-    var closeBtn = modal.querySelector(".import-preview-modal-close");
-    if (closeBtn) closeBtn.click();
-    if (panelHost.parentNode) panelHost.parentNode.removeChild(panelHost);
-  });
-
-  // SPEC §S47.6.1 + §S47.7.3 · F3 DOM-mount regression test · SkillBuilder
-  // surfaces the system skill in its list (with System chip) AND offers
-  // "Import subset" in its outputFormat picker so the engineer can author
-  // their own import-subset skill. Previously the source-grep tests proved
-  // the SCHEMA accepted the new value, not that the UI offered it.
-  it("V-FLOW-IMPORT-SKILL-BUILDER-IMPORT-SUBSET-1 · S47.6.1 + S47.7.3 · SkillBuilder lists the system file-ingest skill with a System chip + offers 'Import subset' in outputFormat picker", async () => {
-    var storeMod   = await import("/state/v3SkillStore.js");
-    var builderMod = await import("/ui/views/SkillBuilder.js");
-    assertEqual(typeof builderMod.renderSkillBuilder, "function",
-      "V-FLOW-IMPORT-SKILL-BUILDER-IMPORT-SUBSET-1: SkillBuilder.renderSkillBuilder MUST be exported");
-    // Warm the system-skills cache + mount.
-    await storeMod.preloadSystemSkills();
-    var host = document.createElement("div");
-    document.body.appendChild(host);
-    builderMod.renderSkillBuilder(host, function() {});
-    // The list MUST contain the file-ingest skill row with the System chip.
-    var systemChip = host.querySelector('[data-skill-system-chip]');
-    assert(systemChip,
-      "V-FLOW-IMPORT-SKILL-BUILDER-IMPORT-SUBSET-1: SkillBuilder list MUST render a [data-skill-system-chip] for the file-ingest system skill (R47.7.3); rows found: " +
-      Array.from(host.querySelectorAll(".skill-admin-row-label")).map(r => r.textContent).join(", "));
-    // The outputFormat picker (renders in the auto-mounted new-skill form)
-    // MUST include "import-subset" as a selectable option.
-    var importSubsetRadio = host.querySelector('[data-output-format-value="import-subset"]');
-    assert(importSubsetRadio,
-      "V-FLOW-IMPORT-SKILL-BUILDER-IMPORT-SUBSET-1: SkillBuilder outputFormat picker MUST offer 'import-subset' (R47.6.1); options found: " +
-      Array.from(host.querySelectorAll('[data-output-format-value]')).map(r => r.getAttribute("data-output-format-value")).join(", "));
-    // Cleanup.
-    if (host.parentNode) host.parentNode.removeChild(host);
-  });
+  // [Path A tests parked 2026-05-12 · BUG-053] · the 6 V-FLOW-IMPORT-* tests
+  // for Path A (IMPORT-SUBSET-1, SYSTEM-SKILL-LOADER-1, FILE-INGEST-SKILL-
+  // PRESENT-1, LAUNCHER-SYSTEM-CHIP-1, SKILL-RUN-ROUTES-TO-PREVIEW-1,
+  // SKILL-BUILDER-IMPORT-SUBSET-1) were removed when the Path A wiring was
+  // ripped after the constitutional-creep audit. They return with stronger
+  // DOM-mount assertions when Path A re-attempts under proper discipline
+  // (per feedback_5_forcing_functions.md Rule A + Rule B).
 
   // SPEC §S47.5 + §S47.8 + §S47.9.3 · F4 CSS-coverage regression test ·
   // the styles.css MUST define rules for the importer's class names
@@ -20735,11 +20546,13 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
       ".import-preview-state-disagreement",
       ".import-preview-cell",
       ".import-preview-apply",
-      // iLLM badge variant (§S47.9.3)
-      ".ai-tag-badge-illm",
-      // System chip (R47.7.3)
-      ".canvas-chat-skills-row-system-chip",
-      ".skill-admin-row-system-chip"
+      // iLLM badge variant (§S47.9.3) - Path B-relevant: aiTag.kind=external-llm
+      // still surfaces this variant for Path B imports
+      ".ai-tag-badge-illm"
+      // [Path A parked 2026-05-12 · BUG-053] · .canvas-chat-skills-row-
+      // system-chip + .skill-admin-row-system-chip were Path A-only · CSS
+      // rules stay in styles.css (harmless) but tests no longer assert
+      // their presence since the chip-rendering code paths are ripped.
     ];
     var missing = required.filter(function(sel) {
       // Each rule must appear as a CSS selector followed by { ... }

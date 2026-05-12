@@ -1946,6 +1946,65 @@ Cluster shares one of three families (all involve teardown sequencing in the mod
 
 ---
 
+## BUG-053 · Path A (skill-via-launcher importer) parked after constitutional-creep audit (OPEN-DEFERRED 2026-05-12)
+
+**Status**: **OPEN-DEFERRED 2026-05-12** · Path A code ripped from main branch via R1 commit. Re-attempt blocked until proper constitutional flow is followed per `feedback_5_forcing_functions.md` Rule A.
+**Reporter**: User (post-implementation audit)
+**Severity**: Discipline (no production breakage; bounded scope)
+**Regression**: No — Path A never went live in a tagged release; the rip restores rc.8.b GA-readiness state
+
+### What was parked
+
+The "file-ingest skill in the Canvas Chat launcher" entry point (Path A of the §S47 import workflow) including:
+
+1. **`schema/skill.js`** — extension of locked `OutputFormatEnum` with `"import-subset"` value · this is a constitutional touch that was NOT flagged with `[CONSTITUTIONAL TOUCH PROPOSED]` before code landed. (per `feedback_5_forcing_functions.md` Rule A)
+2. **`schema/skill.js`** — 3 new fields added without explicit Q&A: `preview` (enum), `defaultScope` (enum), `kind` (enum). Each touches the locked v3.2 SkillSchema shape.
+3. **`state/v3SkillStore.js`** — system-skills distribution model: `loadSystemSkills`, `preloadSystemSkills`, `loadAllV3SkillsSync`, `loadAllV3Skills`, `SYSTEM_SKILL_FILES` constant, `SYSTEM_ENG_ID`/`SYSTEM_TS` defaults.
+4. **`app.js`** — `preloadSystemSkills()` boot hook in DOMContentLoaded.
+5. **`ui/views/CanvasChatOverlay.js`** — `loadAllV3SkillsSync` swap in launcher + rail · System chip rendering in `_buildLauncherRow` · system-first sort · `data-launcher-skill-kind` attribute · `_renderSkillRunOutput` "import-subset" branch · `_routeImportSubsetOutput` function · `_paintCanvasChatSkillsForTests` + `_renderSkillRunOutputForTests` test exports.
+6. **`ui/views/SkillBuilder.js`** — `loadAllV3SkillsSync` swap · "import-subset" option in `OUTPUT_FORMATS` · `OUTPUT_FORMAT_EXAMPLES` entry for import-subset · system-first sort · System chip rendering in `renderRow` · `data-skill-row-kind` attribute · clone-to-edit prompt in save handler · kind/preview/defaultScope passthrough to draft.
+7. **`catalogs/skills/file-ingest-instances.json`** — system skill catalog file.
+8. **`diagnostics/appSpec.js`** — 6 V-FLOW-IMPORT-* tests (IMPORT-SUBSET-1, SYSTEM-SKILL-LOADER-1, FILE-INGEST-SKILL-PRESENT-1, LAUNCHER-SYSTEM-CHIP-1, SKILL-RUN-ROUTES-TO-PREVIEW-1, SKILL-BUILDER-IMPORT-SUBSET-1).
+
+### What was KEPT (still works, Path B unaffected)
+
+- `aiTag.kind` constitutional amendment in `schema/instance.js` (Path B needs it for iLLM provenance)
+- All shared pipeline modules: `services/importResponseParser.js`, `services/importDriftCheck.js`, `services/importApplier.js`, `services/importInstructionsBuilder.js`
+- `ui/components/ImportPreviewModal.js` (Path B uses it)
+- `ui/components/ImportDataModal.js` (Path B's entry point)
+- `MatrixView.js` Option B ghost suppression + iLLM badge variant (Path B-relevant)
+- Footer button + `wireImportDataBtn` in `app.js`
+- CSS polish for `.import-data-*`, `.import-preview-*`, `.ai-tag-badge-illm`
+- 9 V-FLOW-IMPORT-* tests guarding Path B + the constitutional amendment
+
+### Suspected root cause (discipline lapse)
+
+Path A was implemented across 11 commits (C1a..C3b) WITHOUT the explicit `[CONSTITUTIONAL TOUCH PROPOSED]` Q&A flow even though it extended a locked enum + added 3 new schema fields + introduced the system-skills distribution model (a new constitutional category). The SPEC document §S47.6 + §S47.7 contained the proposal as "additive deltas" / "framework extensions", which papered over the constitutional weight of the changes. The user CONFIRMED the SPEC with "confirm all" but was not given a spotlight on the locked-enum extension.
+
+Subsequent F1..F4 audit-remediation commits did NOT re-open the constitutional question · they fixed UI wiring + CSS but kept the unflagged schema touches.
+
+### Fix plan (for the re-attempt, NOT this entry)
+
+1. SPEC § amendment authored EXPLICITLY as `[CONSTITUTIONAL AMENDMENT]` covering the OutputFormatEnum extension AND the three new schema fields AND the system-skills distribution model.
+2. Surface the amendment to user with the four required Q items (what / why-not-local-patch / back-compat / use cases unlocked).
+3. Wait for explicit user confirmation outside of any SPEC document text · the SPEC text is not a substitute for Q&A.
+4. Author RED tests using Rule B (test-mounts-the-UX) FIRST · mount launcher / SkillBuilder / runner / preview-routing in actual DOM hosts and assert against rendered output.
+5. Implement under Rule E (Hidden-Risks section in every commit body).
+6. Include a DOM-mount test for clone-to-edit behavior (this was missing in the original arc · saving a kind="system" skill SHOULD trigger confirm() + mint fresh skillId + save as kind="user").
+
+### Regression test
+
+The rip itself is guarded by the existing `V-FLOW-SKILL-V32-AUTHOR-OUTPUT-1` (restored to "EXACTLY 4 options") + the absence of `[data-launcher-system-chip]` / `[data-skill-system-chip]` / `[data-output-format-value="import-subset"]` in the DOM. If a future commit re-introduces ANY of these without the §S47 amendment + Q&A, the user can spot it via:
+- `git diff` shows `OutputFormatEnum` modification
+- `git diff` shows new exports in `state/v3SkillStore.js` (preloadSystemSkills, loadAllV3SkillsSync)
+- `git diff` shows `loadAllV3SkillsSync` in CanvasChatOverlay or SkillBuilder
+
+### Memory anchor
+
+Permanent reference in MEMORY.md → `feedback_5_forcing_functions.md` Rule A. The Path A re-attempt MUST cite this BUG number in the SPEC amendment + every commit body that touches the listed surfaces.
+
+---
+
 ## BUG-NNN · One-line headline
 
 **Status**: OPEN · Reported YYYY-MM-DD · vX.Y.Z · Scheduled <bucket>

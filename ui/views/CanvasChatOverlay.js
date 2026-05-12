@@ -44,10 +44,7 @@ import { marked }                              from "../../vendor/marked/marked.
 // rc.3 #7 (SPEC §S29.7) — Skill Builder access lives inside the right-rail
 // ("+ Author new skill" footer button) since the topbar consolidated to a
 // single AI surface (Chat).
-// SPEC §S47.7 · loadV3Skills returns user-skills only · loadAllV3SkillsSync
-// returns the merged user+system map after preloadSystemSkills has warmed
-// the cache (called once at boot from app.js DOMContentLoaded).
-import { loadV3Skills, loadAllV3SkillsSync }    from "../../state/v3SkillStore.js";
+import { loadV3Skills }                        from "../../state/v3SkillStore.js";
 import { resolveTemplate }                     from "../../services/pathResolver.js";
 import { openSkillBuilderOverlay }             from "../skillBuilderOpener.js";
 // BUG-020 (2026-05-03) — streaming-time handshake strip. Pre-fix, the
@@ -344,20 +341,8 @@ function paintSkillsLauncher(host) {
     'Author + edit skills in Settings → Skills builder.</div>';
   host.appendChild(head);
 
-  // SPEC §S47.7.3 - launcher renders system+user skills with system-first
-  // sort + System chip on system rows; engineer's saved edits (kind="user"
-  // skills sharing a skillId with a system skill) SHADOW the system version
-  // per R47.7.2.
   var skills = [];
-  try { skills = Object.values(loadAllV3SkillsSync() || {}); } catch (_e) { skills = []; }
-
-  // Sort system-first, then alphabetical by label within each group.
-  skills.sort(function(a, b) {
-    var aSys = (a.kind === "system") ? 0 : 1;
-    var bSys = (b.kind === "system") ? 0 : 1;
-    if (aSys !== bSys) return aSys - bSys;
-    return String(a.label || a.skillId).localeCompare(String(b.label || b.skillId));
-  });
+  try { skills = Object.values(loadV3Skills() || {}); } catch (_e) { skills = []; }
 
   if (skills.length === 0) {
     var empty = document.createElement("div");
@@ -378,26 +363,13 @@ function paintSkillsLauncher(host) {
 function _buildLauncherRow(skill) {
   var row = document.createElement("div");
   row.className = "canvas-chat-skills-row";
-  if (skill.kind === "system") row.classList.add("canvas-chat-skills-row-system");
   row.setAttribute("data-launcher-skill-id", skill.skillId);
-  row.setAttribute("data-launcher-skill-kind", skill.kind || "user");
 
   var info = document.createElement("div");
   info.className = "canvas-chat-skills-row-info";
   var labelEl = document.createElement("div");
   labelEl.className = "canvas-chat-skills-row-label";
   labelEl.textContent = skill.label || skill.skillId;
-  // SPEC §S47.7.3 - System chip on kind="system" rows so the engineer
-  // sees at-a-glance which skills are catalog-shipped vs user-authored.
-  if (skill.kind === "system") {
-    var sysChip = document.createElement("span");
-    sysChip.className = "canvas-chat-skills-row-system-chip";
-    sysChip.setAttribute("data-launcher-system-chip", "");
-    sysChip.textContent = "System";
-    sysChip.title = "Ships with Dell Discovery Canvas. Click Run to use; click and Save to clone-to-edit as a user skill.";
-    labelEl.appendChild(document.createTextNode(" "));
-    labelEl.appendChild(sysChip);
-  }
   info.appendChild(labelEl);
   if (skill.description) {
     var descEl = document.createElement("div");
@@ -433,8 +405,7 @@ function paintSkillRail(body) {
   if (!railBody) return;
   railBody.innerHTML = "";
 
-  // SPEC §S47.7.3 - right-rail picks up the merged set too (user + system).
-  const skillsById = loadAllV3SkillsSync();
+  const skillsById = loadV3Skills();
   const ids = Object.keys(skillsById);
 
   if (ids.length === 0) {
@@ -753,16 +724,10 @@ export function _paintTypingIndicatorForTests() { paintTypingIndicator(); }
 export function _clearTypingIndicatorForTests() { clearTypingIndicator(); }
 export function _paintToolStatusForTests(toolName) { paintToolStatus(toolName); }
 export function _paintRoundBadgeForTests(evt) { paintRoundBadge(evt); }
-// SPEC §S47.7 - test mount for the skills launcher row painter so the
-// V-FLOW-IMPORT-LAUNCHER-SYSTEM-CHIP-1 DOM-mount test can drive the
-// launcher without orchestrating the full Canvas Chat overlay open.
-export function _paintCanvasChatSkillsForTests(host) { paintSkillsLauncher(host); }
-// SPEC §S47.6 - test driver for the per-outputFormat dispatch so the
-// V-FLOW-IMPORT-SKILL-RUN-ROUTES-TO-PREVIEW-1 test can feed a synthetic
-// LLM response into the routing path and assert the preview modal opens.
-export function _renderSkillRunOutputForTests(skill, panelHost, responseText) {
-  _renderSkillRunOutput(skill, panelHost, responseText);
-}
+// [Path A parked 2026-05-12 · BUG-053] · _paintCanvasChatSkillsForTests
+// + _renderSkillRunOutputForTests removed alongside the Path A wiring.
+// When Path A is re-attempted, both test mounts return with their RED
+// tests authored under Rule B (test-mounts-the-UX).
 
 // ─── rc.8.b / R5 · Skill launch + dynamic-tab system (per SPEC §S46.7) ─
 
@@ -1794,11 +1759,10 @@ function _appendSkillDialogTurn(role, content) {
 // rendering them into the panel output area; R7 wires applyMutations()
 // + the ask/auto-tag policy gate on top.
 //
-// SPEC §S47.6.1 + §S47.6.2 - outputFormat="import-subset" + preview="per-row"
-// route to the shared ImportPreviewModal: skill output is parsed via
-// importResponseParser, the engineer reviews per-row in the modal, accepted
-// rows commit through importApplier (which stamps aiTag.kind="skill" with
-// the runMeta's skillId).
+// [Path A "import-subset" parked 2026-05-12 · BUG-053] · the import-subset
+// branch + _routeImportSubsetOutput helper were ripped along with the rest
+// of the Path A wiring. The skill engine reverts to the 4 OutputFormatEnum
+// branches that shipped pre-S47.
 function _renderSkillRunOutput(skill, panelHost, responseText) {
   var format = skill && skill.outputFormat;
   if (format === "text") {
@@ -1819,69 +1783,8 @@ function _renderSkillRunOutput(skill, panelHost, responseText) {
     if (output) output.textContent = responseText;
     return;
   }
-  if (format === "import-subset") {
-    _routeImportSubsetOutput(skill, panelHost, responseText);
-    return;
-  }
   // Unknown format — surface as plain AI turn so the user sees the response.
   _appendSkillDialogTurn("ai", responseText);
-}
-
-// SPEC §S47.6.1 - import-subset routing.
-//   1. Parse the LLM response via parseImportResponse (Zod-strict).
-//   2. If parse fails, render the errors inline so the engineer can
-//      ask the model to retry.
-//   3. If parse ok, open the shared ImportPreviewModal with the skill's
-//      defaultScope as the initial scope.
-//   4. On apply, call applyImportItems with aiTag.kind="skill" + the
-//      skill's skillId, then propagate the updated engagement through
-//      setActiveEngagement (subscribeActiveEngagement chain repaints).
-function _routeImportSubsetOutput(skill, panelHost, responseText) {
-  var output = panelHost && panelHost.querySelector("[data-skill-panel-output]");
-  Promise.all([
-    import("../../services/importResponseParser.js"),
-    import("../../services/importApplier.js"),
-    import("../components/ImportPreviewModal.js"),
-    import("../../state/engagementStore.js")
-  ]).then(function(mods) {
-    var parserMod   = mods[0];
-    var applierMod  = mods[1];
-    var modalMod    = mods[2];
-    var storeMod    = mods[3];
-    var parsed = parserMod.parseImportResponse(String(responseText || ""));
-    if (!parsed.ok) {
-      _appendSkillDialogTurn("error",
-        "Skill output did not match the import-subset schema: " +
-        (parsed.errors[0] && parsed.errors[0].message) +
-        (parsed.errors.length > 1 ? " (+ " + (parsed.errors.length - 1) + " more issues)" : ""));
-      if (output) output.textContent = responseText;
-      return;
-    }
-    _appendSkillDialogTurn("ai",
-      "Extracted " + parsed.parsed.items.length + " instance(s) · review + apply in the preview modal.");
-    if (output) output.textContent = JSON.stringify(parsed.parsed, null, 2);
-    var live = storeMod.getActiveEngagement();
-    modalMod.renderImportPreview(document.body, parsed.parsed, {
-      defaultScope: skill.defaultScope || "desired",
-      onApply: function(selectedItems, finalScope) {
-        var res = applierMod.applyImportItems(live, selectedItems, {
-          scope:      finalScope,
-          provenance: {
-            kind:      "skill",                                    // Path A · in-app skill run
-            skillId:   skill.skillId,
-            runId:     "run-" + Date.now(),
-            mutatedAt: new Date().toISOString()
-          }
-        });
-        storeMod.setActiveEngagement(res.engagement);
-        _appendSkillDialogTurn("ai",
-          "Applied " + res.addedInstanceIds.length + " instance(s) to the engagement.");
-      },
-      onCancel: function() { /* modal closed; skill panel stays */ }
-    });
-  }).catch(function(e) {
-    _appendSkillDialogTurn("error", "Failed to route import-subset output: " + (e && e.message || e));
-  });
 }
 
 // ─── rc.8.b / R7 · applyMutations (per SPEC §S46.10/§S46.11 / CH36.h) ──
