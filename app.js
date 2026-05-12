@@ -73,6 +73,8 @@ import "./state/filterState.js";
 // in DOMContentLoaded so the v3 store is non-null after first paint.
 // Authority: SPEC §S40.4 F40.4.2 (no v2 bridge in v3-pure architecture).
 import { confirmAction, notifyError, notifyInfo, notifySuccess } from "./ui/components/Notify.js";
+// SPEC §S47.8 · Import data modal (Path B · Dell internal LLM workflow).
+import { openImportDataModal } from "./ui/components/ImportDataModal.js";
 import { buildSaveEnvelope, parseFileEnvelope, applyEnvelope, suggestFilename, FILE_MIME } from "./services/sessionFile.js";
 import { renderContextView }         from "./ui/views/ContextView.js";
 import { renderMatrixView }          from "./ui/views/MatrixView.js";
@@ -719,9 +721,18 @@ function wireFooter() {
   var exportBtn    = document.getElementById("exportBtn");
   var openFileBtn  = document.getElementById("openFileBtn");
   var openFileIn   = document.getElementById("openFileInput");
+  var importDataBtn= document.getElementById("importDataBtn");
   var demoBtn      = document.getElementById("demoBtn");
   var newSessionBtn= document.getElementById("newSessionBtn");
   var clearAllBtn  = document.getElementById("clearAllBtn");
+
+  // SPEC §S47.8 · Import data button - Path B Dell internal LLM workflow.
+  // Clicking opens the 2-step modal (generate instructions + import JSON
+  // response). The modal handles all downstream pipeline calls
+  // (parseImportResponse + checkImportDrift + ImportPreviewModal +
+  // applyImportItems); we just hand it getActiveEngagement +
+  // setActiveEngagement.
+  wireImportDataBtn(importDataBtn);
 
   // v2.4.10 · "Save to file" (was "Export JSON"). Bundles session + skills
   // + provider config (keys opt-in) into a single .canvas file the user
@@ -948,4 +959,31 @@ function wireFooter() {
       });
     });
   }
+}
+
+// SPEC §S47.8 · Import data button wiring · opens the 2-step modal that
+// drives the Path B Dell-internal-LLM workflow (generate context-aware
+// instructions .txt + import JSON response). The modal owns the full
+// downstream pipeline (parseImportResponse + checkImportDrift + render
+// ImportPreviewModal + applyImportItems); this wrapper just bridges the
+// engagement getter/setter.
+function wireImportDataBtn(importDataBtn) {
+  if (!importDataBtn) return;
+  importDataBtn.addEventListener("click", function() {
+    openImportDataModal({
+      host:                document.body,
+      getActiveEngagement: getActiveEngagement,
+      commitImport:        function(updatedEngagement) {
+        // Commit the post-applier engagement through the v3 store; the
+        // subscribeActiveEngagement chain re-renders the matrix view with
+        // the new instances + their iLLM badges.
+        setActiveEngagement(updatedEngagement);
+        notifySuccess({
+          title: "Imported",
+          body:  "Instances added · click any tile to edit or save to lock in the engineer-confirmed values (the iLLM badge auto-clears on save)."
+        });
+      },
+      defaultScope: "desired"
+    });
+  });
 }

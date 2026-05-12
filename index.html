@@ -141,6 +141,17 @@
         Open file
       </button>
       <input id="openFileInput" type="file" accept=".canvas,application/vnd.delltech.canvas+json,application/json" style="display:none" />
+      <!-- SPEC §S47.8.1 · Import data button (Path B · Dell internal LLM workflow). -->
+      <button id="importDataBtn" data-import-data-btn class="btn-outline" title="Import data from a source file via the Dell internal LLM workflow. Step 1 downloads context-aware instructions; Step 2 imports the LLM's JSON response.">
+        <svg class="footer-btn-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+             stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M2 11v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2"/>
+          <path d="M8 2v8"/>
+          <path d="M4.5 6.5L8 10l3.5-3.5"/>
+        </svg>
+        Import data
+      </button>
+      <input id="importJsonInput" type="file" accept=".json,.txt,application/json,text/plain" style="display:none" />
       <button id="demoBtn" class="btn-ghost">
         <!-- v2.4.15 . MT3 . Lucide play-circle (triangle inside circle).
              Replaces v2.4.14 rotate-cw which read as a "deformed circular
