@@ -9,13 +9,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
-  <link rel="icon" type="image/svg+xml" href="/Logo/canvas-icon.svg" />
+  <link rel="icon" type="image/svg+xml" href="./Logo/canvas-icon.svg" />
   <!-- v2.4.10 · PWA manifest · registers Canvas as a handler for the
        .canvas file type so saved files show our icon in the OS and can
        be opened via double-click after the user installs the app.
        Optional for the webapp experience; required for OS file
-       association. -->
-  <link rel="manifest" href="/manifest.json" />
+       association. GitHub Pages fix: relative path so the manifest
+       resolves to /<repo>/manifest.json under Pages' subpath. -->
+  <link rel="manifest" href="./manifest.json" />
   <meta name="theme-color" content="#0078D4" />
 
   <!-- v3.0 · import map for Zod (vendored at vendor/zod/zod.mjs). MUST
