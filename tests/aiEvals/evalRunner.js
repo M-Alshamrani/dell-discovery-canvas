@@ -243,8 +243,11 @@ async function callJudge(provider, aiCfg, providerKey, goldenCase, actualAnswer)
       { role: "user",   content: msgs.user   }
     ]
   });
-  // chatCompletion returns { content, ... } per aiService contract.
-  return (out && out.content) || "";
+  // aiService.chatCompletion returns { text, raw, modelUsed, attempts }.
+  // BUG fix 2026-05-13: was reading .content (undefined) which made every
+  // judge call return "" and produce parse-error verdicts. The chat call
+  // itself uses streamChat (different code path); only the judge bug-out.
+  return (out && (out.text || out.content)) || "";
 }
 
 function parseJudgeOutput(raw, caseId) {
