@@ -18,6 +18,7 @@
 // Authority: docs/v3.0/SPEC.md §S47.8 + §S47.10 (V-FLOW-IMPORT-FOOTER-BUTTON-1).
 
 import { buildImportInstructions } from "../../services/importInstructionsBuilder.js";
+import { buildKickoffPrompt }      from "../../services/importKickoffPrompt.js";
 import { parseImportResponse }     from "../../services/importResponseParser.js";
 import { checkImportDrift }        from "../../services/importDriftCheck.js";
 import { applyImportItems }        from "../../services/importApplier.js";
@@ -29,6 +30,51 @@ const SCOPE_VALUES = ["current", "desired", "both"];
 function envLabelFor(envCatalogId) {
   const entry = ENV_CATALOG.find((c) => c.id === envCatalogId);
   return entry ? entry.label : envCatalogId;
+}
+
+// Check whether the engagement has >= 1 environment · used by the kickoff
+// pane to decide between rendering the textarea + copy button vs the
+// empty-state hint. Mirrors the same precondition as buildImportInstructions
+// + buildKickoffPrompt to keep UX consistent across the modal.
+function hasEnvsForKickoff(eng) {
+  return !!(eng && eng.environments && Array.isArray(eng.environments.allIds) && eng.environments.allIds.length > 0);
+}
+
+// Copy the kickoff snippet to the OS clipboard. Tries navigator.clipboard
+// first (modern path), falls back to document.execCommand("copy") on the
+// readonly textarea (works in sandboxed iframes + older surfaces where
+// the async clipboard API is blocked). Surfaces a brief "Copied!" or
+// "Copy failed — select the text manually" status next to the button so
+// the engineer never has to guess whether the action worked.
+function copyKickoffToClipboard(textarea, statusEl) {
+  const value = textarea.value || "";
+  const setStatus = (msg, isErr) => {
+    statusEl.textContent = msg;
+    statusEl.classList.toggle("import-data-kickoff-copy-status-error", !!isErr);
+    setTimeout(() => {
+      statusEl.textContent = "";
+      statusEl.classList.remove("import-data-kickoff-copy-status-error");
+    }, 3500);
+  };
+  if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    navigator.clipboard.writeText(value)
+      .then(() => setStatus("✓ Copied — paste it as the first message in your LLM session.", false))
+      .catch(() => execCommandFallback(textarea, setStatus));
+  } else {
+    execCommandFallback(textarea, setStatus);
+  }
+}
+
+function execCommandFallback(textarea, setStatus) {
+  try {
+    textarea.focus();
+    textarea.select();
+    const ok = document.execCommand("copy");
+    if (ok) setStatus("✓ Copied — paste it as the first message in your LLM session.", false);
+    else    setStatus("Copy failed — select the text manually and use Ctrl/Cmd+C.", true);
+  } catch (e) {
+    setStatus("Copy failed — select the text manually and use Ctrl/Cmd+C.", true);
+  }
 }
 
 // Trigger a browser download of (filename, content) as a text file.
@@ -98,6 +144,81 @@ export function openImportDataModal(opts) {
   lede.className = "import-data-modal-lede";
   lede.textContent = "Import technology data into your engagement using Dell's internal LLM. Generate context-aware instructions, run them through your LLM, and import the JSON response.";
   box.appendChild(lede);
+
+  // ----- Kickoff pane (SPEC §S47.8.5) -----
+  // The kickoff pane sits between the lede and Step 1 so the engineer sees
+  // the copy-this-first snippet BEFORE the download button. The snippet
+  // primes the LLM to follow Phase A·B·C and wait for confirmation before
+  // emitting JSON. Without this, LLMs tend to skip Phase B and emit JSON
+  // immediately — producing low-accuracy mappings the engineer has to
+  // discard. Built only on engagements with >= 1 env (same precondition as
+  // the instructions builder; the pane renders an explanatory empty-state
+  // otherwise so the engineer knows why it's not active).
+  const kickoffPane = document.createElement("section");
+  kickoffPane.className = "import-data-kickoff-pane";
+  kickoffPane.setAttribute("data-import-kickoff-pane", "");
+
+  const kickoffHead = document.createElement("h3");
+  kickoffHead.className = "import-data-kickoff-title";
+  kickoffHead.textContent = "Step 0 · Paste this kickoff prompt into your LLM first";
+  kickoffPane.appendChild(kickoffHead);
+
+  const kickoffHint = document.createElement("p");
+  kickoffHint.className = "import-data-kickoff-hint";
+  kickoffHint.innerHTML = "Copy the snippet below and paste it as the <strong>first message</strong> in your Dell internal LLM session. Then upload your source file (CSV / XLSX / PDF) <strong>into the LLM chat — not into this canvas</strong>. Step 1 below generates the full instructions document that follows.";
+  kickoffPane.appendChild(kickoffHint);
+
+  if (hasEnvsForKickoff(getActiveEngagement())) {
+    const liveForKickoff = getActiveEngagement();
+    let kickoffContent = "";
+    try {
+      kickoffContent = (buildKickoffPrompt(liveForKickoff) || {}).content || "";
+    } catch (e) {
+      kickoffContent = "(Kickoff prompt unavailable: " + (e && e.message || String(e)) + ")";
+    }
+
+    const kickoffBox = document.createElement("textarea");
+    kickoffBox.className = "import-data-kickoff-box";
+    kickoffBox.readOnly = true;
+    kickoffBox.rows = 10;
+    kickoffBox.value = kickoffContent;
+    kickoffBox.spellcheck = false;
+    kickoffPane.appendChild(kickoffBox);
+
+    const kickoffActions = document.createElement("div");
+    kickoffActions.className = "import-data-kickoff-actions";
+
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "import-data-kickoff-copy-btn primary-button";
+    copyBtn.textContent = "📋 Copy first prompt";
+    const copyStatus = document.createElement("span");
+    copyStatus.className = "import-data-kickoff-copy-status";
+    copyStatus.setAttribute("aria-live", "polite");
+
+    copyBtn.addEventListener("click", function() {
+      copyKickoffToClipboard(kickoffBox, copyStatus);
+    });
+
+    kickoffActions.appendChild(copyBtn);
+    kickoffActions.appendChild(copyStatus);
+    kickoffPane.appendChild(kickoffActions);
+  } else {
+    const kickoffEmpty = document.createElement("p");
+    kickoffEmpty.className = "import-data-kickoff-empty";
+    kickoffEmpty.textContent = "Add at least one environment in the Context tab before the kickoff prompt is generated. The prompt embeds the live environment count, so it can't be assembled without one.";
+    kickoffPane.appendChild(kickoffEmpty);
+  }
+
+  // Callout: "upload to LLM, not canvas" — distinct styling so the engineer
+  // doesn't accidentally try to drop their CSV/XLSX into the file picker
+  // in Step 2 below (Step 2 only accepts the LLM's JSON response).
+  const callout = document.createElement("p");
+  callout.className = "import-data-kickoff-callout";
+  callout.innerHTML = "⚠ <strong>Upload your source file (CSV / XLSX / PDF / TXT) into your LLM chat.</strong> The Canvas <em>Step 2</em> picker only accepts the LLM's final JSON response, not the original source data.";
+  kickoffPane.appendChild(callout);
+
+  box.appendChild(kickoffPane);
 
   // ----- Step 1: Generate instructions -----
   const step1 = document.createElement("section");

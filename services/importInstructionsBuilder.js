@@ -149,6 +149,21 @@ export function buildImportInstructions(engagement, opts) {
     "3. Every items[] entry has all 8 required `data` fields: state, layerId, environmentId, label, vendor, vendorGroup, criticality, notes.",
     "4. The complete JSON validates against the schema in §6 (parses without error · all enum values exact-match).",
     "5. You ran the verification checklist in §10 BEFORE emitting your response.",
+    "6. You followed the Phase A · B · C walkthrough below — you did NOT skip Phase B confirmation with the engineer.",
+    ""
+  );
+
+  // ─── PHASE A SCAFFOLD (R47.4.7) ─────────────────────────────────────
+  // The Phase A heading tells the LLM to use the next four sections (§2-§5)
+  // as silent inputs · no engineer-visible output yet.
+  sections.push(
+    "### Phase A · Extract",
+    "",
+    "**Read sections 2-5 below to learn the schema, the environment UUIDs, the glossary, and the chain-of-thought reasoning pattern. Apply them to the source file the engineer uploaded into this chat. Build your candidate items[] list internally.**",
+    "",
+    "**Do NOT show the engineer anything yet. Do NOT emit JSON. Do NOT enumerate the rows in chat.**",
+    "",
+    "When you have processed every row in the source file and built the candidate list, move to Phase B.",
     ""
   );
 
@@ -213,6 +228,60 @@ export function buildImportInstructions(engagement, opts) {
     "**Step 5**: Assign confidence. How certain are you about steps 1-4? Use §7 confidence guidance.",
     "**Step 6**: Write the JSON entry. Fill all 8 data fields. Cite the source row in `rationale`.",
     "**Step 7**: Self-check against §10 verification checklist before adding to items[].",
+    ""
+  );
+
+  // ─── PHASE B BODY (R47.4.6 + R47.4.7 + R47.8.6) ─────────────────────
+  // The Phase B section is the heart of the engineer-confirmation loop ·
+  // STOP and confirm marker, mapping-table fallback chain, naming-
+  // confirmation prompt, approval-signal vocabulary. The test contracts
+  // V-FLOW-IMPORT-PHASES-2, V-FLOW-IMPORT-PHASES-3, V-FLOW-IMPORT-NAMING-
+  // CONFIRM-1 source-grep this section.
+  sections.push(
+    "### Phase B · Confirm with engineer",
+    "",
+    "**STOP and confirm** before emitting any final JSON. Present your candidate items[] list to the engineer as a **mapping table** so the engineer can review, correct, and approve.",
+    "",
+    "**Mapping table format · graceful degradation chain** (pick the highest one your runtime supports):",
+    "",
+    "1. **Markdown table** (preferred) — render a table with columns: source label · proposed canvas label · layerId · environmentId (short UUID prefix is fine in the display, but use the full UUID in the final JSON) · vendor · vendorGroup · criticality · state hint · confidence.",
+    "2. **CSV attachment** — if you cannot render markdown tables well, generate a downloadable CSV file with the same columns. Tell the engineer they can open it in Excel, make corrections inline, and paste the corrected rows back to you.",
+    "3. **Fixed-width plaintext table** — last-resort universal fallback. Align columns with spaces. Use a single header row + one dashed separator row.",
+    "",
+    "After rendering the table, ask the engineer two explicit questions:",
+    "",
+    "**Question 1 · Naming confirmation**: \"Should I keep the source labels **verbatim** (exactly as written in the source file), or should I **normalize** them (e.g., `EXCH-PROD-01` → `Exchange Production 01`, expand abbreviations, fix casing)?\" Wait for the engineer's choice before proceeding.",
+    "",
+    "**Question 2 · Mapping approval**: \"Does this mapping look correct? Reply with `looks good`, `approved`, `ship it`, `go ahead`, or `yes` if everything is right. Otherwise, point out the rows that need correction and I'll iterate.\"",
+    "",
+    "**Approval signals** (any of these mean go to Phase C):",
+    "- `looks good`",
+    "- `approved`",
+    "- `ship it`",
+    "- `go ahead`",
+    "- `yes`",
+    "",
+    "**Anything else means \"needs correction\"** — iterate on the table. Common corrections the engineer may request:",
+    "- Rewrite specific labels (apply or revoke normalization on a per-row basis)",
+    "- Reassign rows to a different environment UUID",
+    "- Promote/demote confidence ratings",
+    "- Flip a row's state hint between current / desired / null",
+    "- Drop rows that are not actually in scope",
+    "",
+    "After each correction, re-render the table and re-ask Question 2. Loop until you receive an approval signal. **Do NOT skip ahead to Phase C until the engineer explicitly approves.**",
+    ""
+  );
+
+  // ─── PHASE C SCAFFOLD (R47.4.7) ─────────────────────────────────────
+  // The Phase C heading marks the final-emit boundary · sections §6-§10
+  // are the emit-time references (JSON shape, confidence, state-hint,
+  // examples, verification checklist).
+  sections.push(
+    "### Phase C · Emit final JSON",
+    "",
+    "**Only after the engineer has approved in Phase B**, emit the final JSON object using §6 (JSON shape) + §7 (confidence) + §8 (state-hint) + §9 (worked examples) as references. Run §10 verification checklist on your output BEFORE emitting.",
+    "",
+    "Output ONLY the JSON object · no prose, no markdown fences, no commentary. Then tell the engineer: \"Save this as a `.json` file and import it back into Canvas via the **Import data** modal Step 2.\"",
     ""
   );
 

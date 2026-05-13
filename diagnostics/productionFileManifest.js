@@ -82,6 +82,17 @@ export const PRODUCTION_FILES = [
   "/services/groundingRouter.js",
   "/services/groundingVerifier.js",
   "/services/healthMetrics.js",
+  // rc.8 Path B Import-data modules · added to manifest 2026-05-13 (the
+  // original Path B arc commits add00e6 / 9cfcf48 / c4d3adf / 871b10e
+  // shipped these without manifest entries · V-ANTI-V2-IMPORT-1/2/3
+  // never scanned them, so the v2-import grep was a closed-list scope
+  // bug for ~1 day · zero impact since none of them imports v2 modules,
+  // but the principle holds: every production .js file MUST be in this list).
+  "/services/importApplier.js",
+  "/services/importDriftCheck.js",
+  "/services/importInstructionsBuilder.js",
+  "/services/importKickoffPrompt.js",
+  "/services/importResponseParser.js",
   "/services/manifestGenerator.js",
   "/services/memoizeOne.js",
   "/services/pathResolver.js",
