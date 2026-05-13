@@ -1,29 +1,45 @@
 // services/groundingVerifier.js
 //
-// SPEC §S37.3.2 + R37.5..R37.8 + RULES §16 CH33 (c) · Runtime grounding
-// verifier for chat. Scans an assistant response for entity-shaped
-// claims (gap descriptions, vendor names quoted in 'vendor "X"' shape,
-// project-phase references "Phase N" / "Q[1-4]", parenthesized
+// SPEC §S37.3.2 + R37.5..R37.8 + R37.13 + RULES §16 CH33 (c) · Runtime
+// grounding verifier for chat. Scans an assistant response for entity-
+// shaped claims (gap descriptions, vendor names quoted in 'vendor "X"'
+// shape, project-phase references "Phase N" / "Q[1-4]", parenthesized
 // month-day deliverable dates) and cross-references each against the
 // live engagement (with catalog reference data whitelisted per R37.8).
 //
 // Pure + deterministic. No LLM calls. No state. Same input MUST yield
 // same output across calls.
 //
+// Sub-arc B 2026-05-13 · BLOCK -> SOFT-WARN demote (R37.6 rewrite):
+//   The verifier itself is UNCHANGED in behavior (still returns
+//   {ok, violations}). What changed is:
+//     - Each violation now carries a `severity` field (R37.13):
+//         "high"   for gap-description fabrications (engagement
+//                  directly carries gaps, clear hallucination)
+//         "medium" for out-of-engagement vendor names (could be a
+//                  Dell-catalog reference, ambiguous)
+//         "low"    for project-phase + date-deliverable references
+//                  (v3 schema does not yet carry these fields, so
+//                  the reference is informational rather than a
+//                  verified hallucination)
+//     - chatService.js no longer REPLACES the response on ok:false;
+//       it attaches violations[] to the onComplete envelope as
+//       result.groundingViolations and CanvasChatOverlay renders a
+//       severity-tiered footer block below the assistant bubble.
+//
 // Authority:
-//   - docs/v3.0/SPEC.md §S37.3.2 + §S37.5 (R37.5..R37.8)
+//   - docs/v3.0/SPEC.md §S37.3.2 + §S37.5 (R37.5..R37.8 + R37.13)
 //   - docs/RULES.md §16 CH33 (c)
-//   - docs/v3.0/TESTS.md §T38 V-FLOW-GROUND-FAIL-1..5
+//   - docs/v3.0/TESTS.md §T38 V-FLOW-GROUND-FAIL-1..5 (rewritten Sub-arc B)
+//                       + V-FLOW-GROUND-ANNOTATE-1..2 (new Sub-arc B)
 //
 // Call site: services/chatService.js streamChat(...) calls this AFTER
 // the post-stream scrubs (handshake strip + UUID scrub) but BEFORE
-// returning to the overlay. On ok:false the visible response is
-// REPLACED with a render-error message; provenance still surfaces;
-// the violations array is recorded on the result envelope.
+// returning to the overlay. On ok:false the violations array is
+// recorded on the onComplete envelope as result.groundingViolations;
+// the response itself is PRESERVED unchanged (R37.6 SOFT-WARN rewrite).
 //
 // Forbidden (per §S37.7):
-//   - allowing a hallucinated response through. verifyGrounding is a
-//     hard gate; bypass = bug.
 //   - asserting LLM output semantics. The verifier asserts a STRUCTURAL
 //     property (entity references trace to engagement); not "the model
 //     gave the right answer".
@@ -59,7 +75,24 @@ const DRIVER_LABEL_WHITELIST_LOWER = [
 // Months for parenthesized-date detection.
 const MONTHS = "(?:January|February|March|April|May|June|July|August|September|October|November|December)";
 
-// Public API. Returns { ok: bool, violations: [{kind, claim, reason}] }.
+// Sub-arc B 2026-05-13 · severity-tier mapping per SPEC R37.13.
+// Each violation kind has an explicit severity for the chat-overlay
+// annotation footer (high=red 🚨, medium=amber 🤔, low=muted ℹ️).
+// Future kinds (e.g. fabricated UUID) get an entry here too; unknown
+// kinds default to "medium" (safety default).
+const SEVERITY_BY_KIND = {
+  "gap-description":  "high",   // engagement directly carries gaps; fabrication is clear hallucination
+  "vendor":           "medium", // could be Dell catalog reference; ambiguous
+  "project-phase":    "low",    // v3 schema does not yet carry phase data; informational
+  "date-deliverable": "low"     // v3 schema does not yet carry deliverable dates; informational
+};
+
+function severityFor(kind) {
+  return SEVERITY_BY_KIND[kind] || "medium";
+}
+
+// Public API. Returns { ok: bool, violations: [{kind, claim, reason, severity}] }.
+// Sub-arc B 2026-05-13: each violation now carries a `severity` field per R37.13.
 export function verifyGrounding(response, engagement) {
   const text = (response == null) ? "" : String(response);
   if (text.length === 0) return { ok: true, violations: [] };
@@ -75,9 +108,10 @@ export function verifyGrounding(response, engagement) {
     const claim = m[1].trim();
     if (!gapClaimTraces(claim, map)) {
       violations.push({
-        kind:   "gap-description",
-        claim:  claim,
-        reason: "no matching gap description in engagement"
+        kind:     "gap-description",
+        claim:    claim,
+        reason:   "no matching gap description in engagement",
+        severity: severityFor("gap-description")
       });
     }
   }
@@ -88,9 +122,10 @@ export function verifyGrounding(response, engagement) {
     const claim = m[1].trim();
     if (!gapClaimTraces(claim, map)) {
       violations.push({
-        kind:   "gap-description",
-        claim:  claim,
-        reason: "no matching gap description in engagement (companion phrase)"
+        kind:     "gap-description",
+        claim:    claim,
+        reason:   "no matching gap description in engagement (companion phrase)",
+        severity: severityFor("gap-description")
       });
     }
   }
@@ -103,9 +138,10 @@ export function verifyGrounding(response, engagement) {
     const claim = m[1].trim();
     if (!vendorClaimTraces(claim, map)) {
       violations.push({
-        kind:   "vendor",
-        claim:  claim,
-        reason: "vendor not in engagement instances and not in DELL_PRODUCT_TAXONOMY"
+        kind:     "vendor",
+        claim:    claim,
+        reason:   "vendor not in engagement instances and not in DELL_PRODUCT_TAXONOMY",
+        severity: severityFor("vendor")
       });
     }
   }
@@ -119,9 +155,10 @@ export function verifyGrounding(response, engagement) {
   while ((m = PHASE_RE.exec(text)) !== null) {
     if (!map.projectPhasesLower.has("phase " + m[1])) {
       violations.push({
-        kind:   "project-phase",
-        claim:  m[0],
-        reason: "phase number not declared in engagement"
+        kind:     "project-phase",
+        claim:    m[0],
+        reason:   "phase number not declared in engagement",
+        severity: severityFor("project-phase")
       });
     }
   }
@@ -129,9 +166,10 @@ export function verifyGrounding(response, engagement) {
   while ((m = QUARTER_RE.exec(text)) !== null) {
     if (!map.projectPhasesLower.has("q" + m[1])) {
       violations.push({
-        kind:   "project-phase",
-        claim:  m[0],
-        reason: "quarter reference not declared in engagement"
+        kind:     "project-phase",
+        claim:    m[0],
+        reason:   "quarter reference not declared in engagement",
+        severity: severityFor("project-phase")
       });
     }
   }
@@ -144,9 +182,10 @@ export function verifyGrounding(response, engagement) {
   while ((m = PAREN_DATE_RE.exec(text)) !== null) {
     if (!map.dateDeliverablesLower.has(m[0].toLowerCase())) {
       violations.push({
-        kind:   "date-deliverable",
-        claim:  m[0],
-        reason: "deliverable date not declared in engagement"
+        kind:     "date-deliverable",
+        claim:    m[0],
+        reason:   "deliverable date not declared in engagement",
+        severity: severityFor("date-deliverable")
       });
     }
   }
@@ -157,9 +196,10 @@ export function verifyGrounding(response, engagement) {
   while ((m = PAREN_QUARTER_RE.exec(text)) !== null) {
     if (!map.dateDeliverablesLower.has(m[0].toLowerCase())) {
       violations.push({
-        kind:   "date-deliverable",
-        claim:  m[0],
-        reason: "parenthesized quarter-deliverable not declared in engagement"
+        kind:     "date-deliverable",
+        claim:    m[0],
+        reason:   "parenthesized quarter-deliverable not declared in engagement",
+        severity: severityFor("date-deliverable")
       });
     }
   }

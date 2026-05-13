@@ -2382,6 +2382,15 @@ function buildMessageBubble(msg) {
   }
   bubble.appendChild(content);
 
+  // Sub-arc B 2026-05-13 · SPEC §S37.3.2 + R37.6 SOFT-WARN + R37.13
+  // severity tiers · render the grounding-annotation footer block when
+  // the assistant turn carries groundingViolations. The annotations
+  // surface AS-A-FOOTER below the assistant bubble (not replacing the
+  // response). Severity drives color: high=red, medium=amber, low=muted.
+  if (msg.role === "assistant" && Array.isArray(msg.groundingViolations) && msg.groundingViolations.length > 0) {
+    bubble.appendChild(buildGroundingAnnotationsFooter(msg.groundingViolations));
+  }
+
   if (msg.provenance) {
     const prov = document.createElement("div");
     prov.className = "canvas-chat-msg-prov";
@@ -2391,6 +2400,70 @@ function buildMessageBubble(msg) {
   }
 
   return bubble;
+}
+
+// Sub-arc B 2026-05-13 · grounding-annotations footer · SPEC §S37.3.2
+// R37.6 SOFT-WARN integration + R37.13 severity tiers.
+//
+// Renders a footer block below the assistant bubble listing each
+// violation as a row tagged with severity (.severity-high|medium|low)
+// and an icon hinting at the trust posture: 🚨 high, 🤔 medium, ℹ️ low.
+// The container carries data-grounding-annotations so source-grep
+// tests can target it and future DOM-mount integration tests can
+// locate it via [data-grounding-annotations].
+//
+// Per the SOFT-WARN demote (BUG-062 expansion 2026-05-13 user
+// direction): annotations are visible-but-informational; they NEVER
+// replace or hide the LLM response. The engineer reads the response,
+// reads the annotations, and decides whether to accept, regenerate,
+// or correct.
+function buildGroundingAnnotationsFooter(violations) {
+  const SEVERITY_META = {
+    high:   { icon: "🚨", label: "Likely fabricated" },
+    medium: { icon: "🤔", label: "Verify" },
+    low:    { icon: "ℹ️",  label: "Out-of-engagement reference" }
+  };
+  const footer = document.createElement("div");
+  footer.className = "canvas-chat-grounding-annotations";
+  footer.setAttribute("data-grounding-annotations", "");
+
+  const head = document.createElement("div");
+  head.className = "canvas-chat-grounding-annotations-head";
+  head.textContent = "🤔 Review claims: " + violations.length + " claim" + (violations.length === 1 ? "" : "s") + " worth verifying";
+  footer.appendChild(head);
+
+  const list = document.createElement("ul");
+  list.className = "canvas-chat-grounding-annotations-list";
+
+  violations.forEach(function(v) {
+    const severity = (v && v.severity && SEVERITY_META[v.severity]) ? v.severity : "medium";
+    const meta = SEVERITY_META[severity];
+    const row = document.createElement("li");
+    row.className = "canvas-chat-grounding-annotations-row severity-" + severity;
+    row.setAttribute("data-severity", severity);
+
+    const badge = document.createElement("span");
+    badge.className = "canvas-chat-grounding-annotations-badge";
+    badge.textContent = meta.icon + " " + meta.label;
+    row.appendChild(badge);
+
+    const claim = document.createElement("span");
+    claim.className = "canvas-chat-grounding-annotations-claim";
+    claim.textContent = "\"" + String((v && v.claim) || "?").slice(0, 200) + "\"";
+    row.appendChild(claim);
+
+    if (v && v.reason) {
+      const reason = document.createElement("span");
+      reason.className = "canvas-chat-grounding-annotations-reason";
+      reason.textContent = " — " + String(v.reason).slice(0, 200);
+      row.appendChild(reason);
+    }
+
+    list.appendChild(row);
+  });
+
+  footer.appendChild(list);
+  return footer;
 }
 
 // Assistant bubbles only. marked v13 escapes raw HTML by default; we add a
@@ -2516,6 +2589,12 @@ async function handleSend(body) {
       onComplete: function(result) {
         assistantMsg.content    = result.response;
         assistantMsg.provenance = result.provenance;
+        // Sub-arc B 2026-05-13 · capture groundingViolations for the
+        // footer-block annotation rendering in buildMessageBubble.
+        // Per R37.6 SOFT-WARN: violations don't replace the response;
+        // they surface as visible-but-informational annotations.
+        assistantMsg.groundingViolations = Array.isArray(result && result.groundingViolations)
+          ? result.groundingViolations : [];
         // SPEC §S20.16 — first-turn handshake outcome surfaces in the header
         // ack chip + (on mismatch) a banner above the transcript.
         if (result && result.contractAck) {

@@ -6744,6 +6744,74 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
 }
 .canvas-chat-msg-user .canvas-chat-msg-prov { text-align: right; }
 
+/* Sub-arc B 2026-05-13 · grounding-annotations footer (SPEC §S37.3.2 + R37.6 SOFT-WARN + R37.13 severity tiers).
+   Renders below the assistant bubble when verifyGrounding flagged
+   entity-shaped claims worth verifying. SOFT-WARN: visible-but-
+   informational; never replaces the response. */
+.canvas-chat-grounding-annotations {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 3px solid #4A586C;
+  border-radius: 4px;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.canvas-chat-grounding-annotations-head {
+  font-weight: 600;
+  color: #C4CDDA;
+  margin-bottom: 6px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.canvas-chat-grounding-annotations-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.canvas-chat-grounding-annotations-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.canvas-chat-grounding-annotations-row.severity-high {
+  border-left: 2px solid #FF6B6B;
+  background: rgba(255, 107, 107, 0.08);
+}
+.canvas-chat-grounding-annotations-row.severity-medium {
+  border-left: 2px solid #FFB020;
+  background: rgba(255, 176, 32, 0.08);
+}
+.canvas-chat-grounding-annotations-row.severity-low {
+  border-left: 2px solid #6E7681;
+  background: rgba(110, 118, 129, 0.06);
+}
+.canvas-chat-grounding-annotations-badge {
+  font-weight: 600;
+  font-size: 11px;
+  color: #C4CDDA;
+  flex: 0 0 auto;
+}
+.canvas-chat-grounding-annotations-row.severity-high .canvas-chat-grounding-annotations-badge { color: #FF8585; }
+.canvas-chat-grounding-annotations-row.severity-medium .canvas-chat-grounding-annotations-badge { color: #FFC04D; }
+.canvas-chat-grounding-annotations-row.severity-low .canvas-chat-grounding-annotations-badge { color: #8B949E; }
+.canvas-chat-grounding-annotations-claim {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: #D7DDE6;
+}
+.canvas-chat-grounding-annotations-reason {
+  color: #8B949E;
+  font-size: 10.5px;
+  font-style: italic;
+}
+
 .canvas-chat-meter {
   flex: 0 0 auto;
   font: 400 11px/1 var(--font-mono, ui-monospace, monospace);

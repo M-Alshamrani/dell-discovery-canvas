@@ -32,8 +32,12 @@ import { getContractChecksum } from "../core/dataContract.js";
 // streamChat invokes the deterministic retrieval router BEFORE
 // assembling the system prompt; selector results are inlined into
 // Layer 4 by buildSystemPrompt. After the LLM responds, streamChat
-// runs verifyGrounding on the visible response; hallucinated entity
-// references → render-error replaces visible response (per CH33 (c)).
+// runs verifyGrounding on the visible response; flagged entity
+// references → attached as result.groundingViolations on the
+// onComplete envelope (Sub-arc B 2026-05-13 SOFT-WARN demote of
+// R37.6: the response itself is PRESERVED unchanged; CanvasChatOverlay
+// renders the violations as a severity-tiered footer block below the
+// assistant bubble).
 import { route as groundingRoute } from "./groundingRouter.js";
 import { verifyGrounding }         from "./groundingVerifier.js";
 // SPEC §S20.16 + §S25.5 + BUG-020 fix (2026-05-03) — handshake regex
@@ -281,18 +285,30 @@ export async function streamChat(opts) {
   // SPEC §S37.3.2 + R37.6 + RULES §16 CH33 (c) — runtime grounding
   // verification. After all post-stream scrubbing (handshake strip +
   // UUID scrub) but BEFORE return, cross-reference the visible response
-  // against the engagement. Hallucinated entity claims → render-error
-  // replaces visible response; provenance still surfaces; the
-  // groundingViolations array is recorded on the result envelope.
+  // against the engagement.
+  //
+  // Sub-arc B 2026-05-13 · R37.6 SOFT-WARN demote: the response is
+  // PRESERVED unchanged on ok:false. The groundingViolations array
+  // (with per-violation severity field per R37.13) flows through to
+  // the onComplete envelope as result.groundingViolations; the chat
+  // overlay renders them as a severity-tiered footer block below the
+  // assistant bubble. The previous BLOCK behavior (response replaced
+  // with a render-error template) is RETIRED per user direction
+  // (BUG-062 expansion: "the AI assistance should not be strict as it
+  // is now to block the output once it reached the chat box, but
+  // should instead receive it and let us optimize the responses from
+  // the LLM, and make sure their responses are fully context-aware
+  // and guardrailed by intelligence of the LLM not by the force of
+  // override in the app").
   let groundingViolations = [];
   try {
     const verifyResult = verifyGrounding(visibleResponse, engagement);
     if (verifyResult && verifyResult.ok === false) {
       groundingViolations = verifyResult.violations || [];
-      visibleResponse =
-        "The model produced an answer with claims that don't trace to the engagement. " +
-        "Try rephrasing the question, switching providers, or adding the relevant data to the canvas.";
-      console.warn("[chatService] groundingViolations replaced visible response:",
+      // Sub-arc B: NO reassignment of visibleResponse. Response flows
+      // through unchanged. The violations are attached to the onComplete
+      // envelope below and rendered by the overlay as annotations.
+      console.warn("[chatService] groundingViolations annotated (response preserved per R37.6 SOFT-WARN):",
         JSON.stringify(groundingViolations).slice(0, 400));
     }
   } catch (e) {
