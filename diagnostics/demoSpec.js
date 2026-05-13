@@ -22,7 +22,7 @@ import { validateInstance, validateGap } from "../core/models.js";
 import { createDemoSession, DEMO_PERSONAS } from "../state/demoSession.js";
 // rc.7 / 7e-8 Step H+J+K · session + replaceSession routed through the
 // inlined shim. state/sessionStore.js DELETED in this commit.
-import { session as liveSession, replaceSession } from "./_v2TestFixtures.js";
+import { session as liveSession, replaceSession } from "./v2TestFixtures.js";
 import { seedSkills, SEED_SKILL_IDS } from "../core/seedSkills.js";
 import { loadSkills, saveSkills, RESPONSE_FORMATS } from "../core/skillStore.js";
 import { FIELD_MANIFEST } from "../core/fieldManifest.js";

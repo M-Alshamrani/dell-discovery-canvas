@@ -1,4 +1,4 @@
-// diagnostics/_v2TestFixtures.js
+// diagnostics/v2TestFixtures.js
 //
 // rc.7 / 7e-8 Step H+J+K (the v2 deletion mega-commit) · this file is
 // the final resting place of the four v2-shape data-factory helpers
@@ -8,6 +8,15 @@
 // now DELETED; their data-factory bodies live here, in the diagnostics
 // surface, where v2-shape test data belongs (per the LOCKED Phase
 // I-B-31..34 v2-shape-literal pattern in HANDOFF.md).
+//
+// Filename note (2026-05-13 · ops/pages-rename):
+//   Previously `_v2TestFixtures.js`. The leading underscore was a
+//   "private/internal module" convention but it tripped GitHub Pages'
+//   built-in underscore filter (returns 404 even with .nojekyll for
+//   the "Deploy from a branch" mode). Renamed to a non-underscore form
+//   so the production deploy at m-alshamrani.github.io/dell-discovery-canvas/
+//   actually serves the file. V-OPS-PAGES-1 regression test (Suite 51)
+//   prevents reintroduction of underscore-prefixed .js in scanned dirs.
 //
 // What lives here:
 //   createEmptySession() · v2-shape session factory.

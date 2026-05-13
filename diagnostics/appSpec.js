@@ -81,10 +81,10 @@ import {
   // restore; v2 sessionStore singleton refresh is redundant in v3-
   // pure architecture). Test-body resetSession usage was migrated
   // in Phase I-B-22.
-} from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../state/sessionStore.js)
+} from "./v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../state/sessionStore.js)
 // rc.7 / 7e-8 redo Step I-B-1 · migrateLegacySession sourced directly
 // from state/runtimeMigrate.js (its canonical home post-Step B). Was
-// previously re-exported through state/sessionStore.js -> _v2TestFixtures
+// previously re-exported through state/sessionStore.js -> v2TestFixtures
 // shim; that path retires now since migrateLegacySession is a pure
 // canonicalize-v2 function with no v2 sessionStore state dependency.
 import { migrateLegacySession } from "../state/runtimeMigrate.js";
@@ -118,7 +118,7 @@ import {
   // in v3-pure -- v3 mapWorkloadAssets has no enforcement; the 5
   // invariants are preserved in HANDOFF "Open R8 backlog" #2 for
   // the rc.8 v3-invariant-enforcement arc). Last consumers cleared.
-} from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../interactions/matrixCommands.js)
+} from "./v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../interactions/matrixCommands.js)
 
 import {
   createGap
@@ -139,7 +139,7 @@ import {
   // the future rc.8 invariant arc; projectId is permanently dropped
   // (v3 schema deliberately omits it; project grouping is computed
   // via selectProjects at projection time).
-} from "./_v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../interactions/gapsCommands.js)
+} from "./v2TestFixtures.js";  // rc.7 / 7e-8b · routed through test-fixture shim (was: ../interactions/gapsCommands.js)
 
 import {
   getHealthSummary, computeBucketMetrics, scoreToRiskLabel
@@ -14614,7 +14614,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 
     // -----------------------------------------------------------------
     // rc.7 / 7e-8 redo Step A · V-ANTI-V2-IMPORT-1/2/3 EXPANDED to scan
-    // ALL production .js files via diagnostics/_productionFileManifest.js.
+    // ALL production .js files via diagnostics/productionFileManifest.js.
     //
     // Why: the previous closed-list scope (8 files for IMPORT-1, 5 for
     // IMPORT-2, 5 for IMPORT-3) was the root cause of the 7e-8d-3..5
@@ -14628,8 +14628,8 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     // discipline locked 2026-05-08.
     // -----------------------------------------------------------------
 
-    it("V-ANTI-V2-IMPORT-1 · NO production module imports state/sessionStore (forbidden per SPEC §S40.4 F40.4.1) — scans ALL production files via _productionFileManifest", async () => {
-      const { PRODUCTION_FILES } = await import("./_productionFileManifest.js");
+    it("V-ANTI-V2-IMPORT-1 · NO production module imports state/sessionStore (forbidden per SPEC §S40.4 F40.4.1) — scans ALL production files via productionFileManifest", async () => {
+      const { PRODUCTION_FILES } = await import("./productionFileManifest.js");
       const FORBIDDEN = /import\s*[^;]*\bfrom\s*["'][^"']*\bsessionStore(?:\.js)?["']/;
       const violators = [];
       for (const url of PRODUCTION_FILES) {
@@ -14643,8 +14643,8 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         (violators.length ? violators.join(", ") : "none"));
     });
 
-    it("V-ANTI-V2-IMPORT-2 · NO production module imports interactions/{matrixCommands, gapsCommands, desiredStateSync} (forbidden per SPEC §S40.4 F40.4.2) — scans ALL production files via _productionFileManifest", async () => {
-      const { PRODUCTION_FILES } = await import("./_productionFileManifest.js");
+    it("V-ANTI-V2-IMPORT-2 · NO production module imports interactions/{matrixCommands, gapsCommands, desiredStateSync} (forbidden per SPEC §S40.4 F40.4.2) — scans ALL production files via productionFileManifest", async () => {
+      const { PRODUCTION_FILES } = await import("./productionFileManifest.js");
       const FORBIDDEN = /import\s*[^;]*\bfrom\s*["'][^"']*\b(matrixCommands|gapsCommands|desiredStateSync)(?:\.js)?["']/;
       const violators = [];
       for (const url of PRODUCTION_FILES) {
@@ -14667,8 +14667,8 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         (violators.length ? violators.join(", ") : "none"));
     });
 
-    it("V-ANTI-V2-IMPORT-3 · NO production module imports state/sessionBridge (forbidden per SPEC §S40.4 F40.4.3) — scans ALL production files via _productionFileManifest", async () => {
-      const { PRODUCTION_FILES } = await import("./_productionFileManifest.js");
+    it("V-ANTI-V2-IMPORT-3 · NO production module imports state/sessionBridge (forbidden per SPEC §S40.4 F40.4.3) — scans ALL production files via productionFileManifest", async () => {
+      const { PRODUCTION_FILES } = await import("./productionFileManifest.js");
       const FORBIDDEN = /import\s*[^;]*\bfrom\s*["'][^"']*\bsessionBridge(?:\.js)?["']|import\s*["'][^"']*\bsessionBridge(?:\.js)?["']/;
       const violators = [];
       for (const url of PRODUCTION_FILES) {
@@ -14682,6 +14682,49 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assert(violators.length === 0,
         "V-ANTI-V2-IMPORT-3: production files MUST NOT import from state/sessionBridge (including side-effect imports). Violators: " +
         (violators.length ? violators.join(", ") : "none"));
+    });
+
+    // -----------------------------------------------------------------
+    // §T-OPS · V-OPS-PAGES · GitHub Pages deploy-compatibility invariant
+    // (added 2026-05-13 · ops/pages-rename).
+    //
+    // GitHub Pages' "Deploy from a branch" mode applies a built-in
+    // underscore-prefix filter independent of Jekyll: files whose
+    // basename starts with `_` return 404 even with .nojekyll at the
+    // repo root. ES-module graphs fail silently when any node 404s
+    // (single 503/404 breaks all top-level awaits), so this is a hard
+    // deploy gate. V-OPS-PAGES-1 forbids reintroducing underscore-
+    // prefixed .js anywhere the runtime fetches (manifest entries +
+    // the two diagnostic modules statically imported from app.js).
+    //
+    // Authority: 2026-05-12 incident — _v2TestFixtures.js 503'd on
+    // first Pages deploy, app rendered banner-only.
+    // -----------------------------------------------------------------
+
+    it("V-OPS-PAGES-1 · NO production file path has an underscore-prefixed basename (forbidden per GitHub Pages underscore filter) — scans ALL entries in productionFileManifest", async () => {
+      const { PRODUCTION_FILES } = await import("./productionFileManifest.js");
+      const violators = PRODUCTION_FILES.filter(p => {
+        const base = p.split("/").pop() || "";
+        return base.startsWith("_");
+      });
+      assert(violators.length === 0,
+        "V-OPS-PAGES-1: production file paths MUST NOT have underscore-prefixed basenames (GitHub Pages returns 404). Violators: " +
+        (violators.length ? violators.join(", ") : "none"));
+    });
+
+    it("V-OPS-PAGES-2 · diagnostics/v2TestFixtures.js + diagnostics/productionFileManifest.js are fetchable (non-underscore names · GitHub Pages compatible)", async () => {
+      const required = [
+        "/diagnostics/v2TestFixtures.js",
+        "/diagnostics/productionFileManifest.js"
+      ];
+      const missing = [];
+      for (const url of required) {
+        const r = await fetch(url, { method: "HEAD" });
+        if (r.status !== 200) missing.push(`${url} (HTTP ${r.status})`);
+      }
+      assert(missing.length === 0,
+        "V-OPS-PAGES-2: required diagnostic modules MUST resolve on the live server (no underscore-prefix regression). Missing: " +
+        (missing.length ? missing.join(", ") : "none"));
     });
 
     // -----------------------------------------------------------------
@@ -18011,7 +18054,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-AI-ASSIST-DORMANT-1 (post-Step E): file MUST be deleted (status 404 expected; got " + r.status + ")");
       // Belt-and-brace: scan ALL production files for any lingering
       // import of the now-deleted module.
-      const { PRODUCTION_FILES } = await import("./_productionFileManifest.js");
+      const { PRODUCTION_FILES } = await import("./productionFileManifest.js");
       const offenders = [];
       for (const path of PRODUCTION_FILES) {
         try {

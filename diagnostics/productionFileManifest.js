@@ -1,10 +1,16 @@
-// diagnostics/_productionFileManifest.js
+// diagnostics/productionFileManifest.js
 //
 // rc.7 / 7e-8 redo Step A · authoritative list of every production .js
 // file under services/ ui/ interactions/ core/ state/ selectors/.
 // Used by V-ANTI-V2-IMPORT-1/2/3 to scan ALL production code for
 // forbidden imports (the closed-list scope of the prior tests was the
 // root cause of the 7e-8d-3..5 boot-breaking deletion).
+//
+// Filename note (2026-05-13 · ops/pages-rename): renamed from
+// `_productionFileManifest.js` so GitHub Pages serves it (the leading
+// underscore tripped Pages' built-in underscore filter, returning 404
+// even with .nojekyll under "Deploy from a branch" mode). See
+// v2TestFixtures.js header for the full rationale.
 //
 // Invariant: every file under those directories is in this list. New
 // production file? Add it here. Test failing because a new file is
@@ -18,7 +24,7 @@
 //   - vendor/* (third-party; out of scope)
 //   - catalogs/* (data files; no JS logic)
 //   - diagnostics/* (test surface; v2-import grep is scoped to
-//     PRODUCTION code, and diagnostics/_v2TestFixtures.js is itself
+//     PRODUCTION code, and diagnostics/v2TestFixtures.js is itself
 //     a planned-deletion target)
 //
 // Authority: docs/V2_DELETION_ARCHITECTURE.md (Step A).
@@ -53,7 +59,7 @@ export const PRODUCTION_FILES = [
   // /interactions/gapsCommands.js DELETED in rc.7 / 7e-8 Step J
   // /interactions/matrixCommands.js DELETED in rc.7 / 7e-8 Step J
   // (the v2 helper modules; data-shape factories addInstance + createGap
-  // inlined into diagnostics/_v2TestFixtures.js per Step H+J+K plan).
+  // inlined into diagnostics/v2TestFixtures.js per Step H+J+K plan).
   "/interactions/skillCommands.js",
 
   // ─── selectors/ ────────────────────────────────────────────────────
@@ -121,7 +127,7 @@ export const PRODUCTION_FILES = [
   // (was: v2 live session singleton + persistence + 220 LOC of
   // sessionState helpers. Production importers all migrated through
   // Steps B-G; tests now use the inlined factories in
-  // diagnostics/_v2TestFixtures.js).
+  // diagnostics/v2TestFixtures.js).
   "/state/projection.js",
   "/state/v3SkillStore.js",
   "/state/legacySessionAdapter.js",
