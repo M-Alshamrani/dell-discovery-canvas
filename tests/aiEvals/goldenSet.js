@@ -35,7 +35,31 @@ export const GOLDEN_SET_VERSION = "1.0.0";
 // Shared engagement summary the judge can rely on for grounded-ness
 // scoring (the chat sees the full engagement via Layer 4 of the
 // system prompt; this hint is just the judge's reference card).
-const NORTHSTAR_HINT = "Northstar Health Network · regional healthcare provider · ~10K employees · vertical=Healthcare · region=North America · 4 environments (Main Data Center, DR Site, Branch Clinic, Google Cloud (GCP)) · drivers include Cyber Resilience + AI & Data Platforms + Modernization + Compliance & Sovereignty · several existing gaps + current-state instances across compute / storage / network / security / workload layers. DO NOT INVENT vendors, gaps, drivers, or specific numbers that aren't in this engagement.";
+const NORTHSTAR_HINT = "Northstar Health Network · regional healthcare provider · ~10-12K employees · vertical=Healthcare · region=North America · 4 environments (Main Data Center, DR Site, Branch Clinic, Google Cloud (GCP)).\n\n" +
+  "Drivers (4): Cyber Resilience (High) + AI & Data Platforms (High) + Modernize Aging Infrastructure (High) + Cost Optimization (Medium).\n\n" +
+  "Current-state vendors EXPLICITLY PRESENT in the engagement (the chat citing these is GROUNDED, not fabricated):\n" +
+  "  - Compute: HPE ProLiant DL380 (EHR + Analytics, EHR DR) · Cisco UCS B-Series (PACS) · Lenovo ThinkSystem (Patient Portal)\n" +
+  "  - Storage: NetApp AFF A400 (EHR + PACS tier-1) · NetApp AFF A220 (DR replication) · Pure Storage FlashArray (Analytics)\n" +
+  "  - Cloud: Google Compute Engine + Google Cloud Storage (Patient Portal)\n" +
+  "  - Data Protection: Veeam Backup & Replication (with tape)\n" +
+  "  - Virtualization: VMware vSphere (Main DC + DR)\n" +
+  "  - Network: Cisco Catalyst (Main DC)\n" +
+  "  - Workloads: Epic-integrated EHR · Sectra-integrated PACS · custom Clinical Analytics (Spark + ML) · custom Patient Portal · Radiology AI (planned)\n\n" +
+  "Desired-state instances EXPLICITLY PRESENT (Dell modernization plan; the chat citing these is GROUNDED):\n" +
+  "  - PowerEdge R770 (EHR + Analytics, EHR DR) · PowerEdge XE9680 (Radiology AI inference) · VxRail VD-4000 (Branch Clinic edge)\n" +
+  "  - PowerStore 1200T (EHR + PACS tier-1) · PowerScale F210 (Analytics + AI training data)\n" +
+  "  - PowerProtect DD9410 (primary backup) · Dell Cyber Recovery Vault (DR) · APEX Backup Services (GCP DR egress)\n" +
+  "  - CloudIQ (unified observability)\n\n" +
+  "Gaps EXPLICITLY PRESENT (9 total · 4 Now / 4 Next / 1 Later):\n" +
+  "  Now (4, all High urgency): Replace EHR compute with PowerEdge R770 · Replace tier-1 storage with PowerStore 1200T · Replace Veeam with PowerProtect + Cyber Recovery Vault · HIPAA tabletop + cyber-recovery validation drill\n" +
+  "  Next (4, all Medium): Replace Pure Storage with PowerScale F210 · Enhance Clinical Analytics with PowerScale + GCP burst extracts · Introduce Radiology AI inference on PowerEdge XE9680 · Introduce APEX Backup Services for GCP DR egress\n" +
+  "  Later (1, Low): Consolidate Branch Clinic to VxRail VD-4000\n\n" +
+  "Driver outcomes already captured (the chat citing these is GROUNDED):\n" +
+  "  Cyber Resilience: ransomware recovery for clinical systems, air-gapped immutable backups, RTO ≤ 4 hours for EHR + PACS, HIPAA breach-readiness evidence for board reporting by Q4\n" +
+  "  Modernize Aging: retire HPE + NetApp + Pure (all at EOL within 18 months), standardize on Dell across Main DC + DR, reduce hardware footprint by 30%, save ~$1.2M/year in maintenance\n" +
+  "  AI & Data: deploy clinical-imaging AI (radiology CV models on PACS feed), reduce radiologist read time by 30%, quantify re-admission risk reduction via ML within 12 months, size unstructured data tier for 4 years of imaging growth\n" +
+  "  Cost Optimization: consolidate Branch Clinic to a single hyperconverged node, cap Google Cloud spend via right-sizing + APEX Backup, reduce data center power by 25%, single CloudIQ console for unified ops\n\n" +
+  "WHAT IS NOT IN THE ENGAGEMENT (these would be fabrications if cited): annual revenue · IT budget · CIO/exec contact info · employee names · time-series workshop log · meeting transcripts · competing-proposal records · third-party benchmarks · specific date deliverables beyond 'Q4 board report' and '18-month EOL window'.";
 
 const EMPTY_HINT = "Empty engagement · createEmptyEngagement() · customer.name is empty or 'New customer' default · drivers = [] · environments = [] · instances = [] · gaps = []. The chat should recognize there's nothing to ground answers in.";
 
