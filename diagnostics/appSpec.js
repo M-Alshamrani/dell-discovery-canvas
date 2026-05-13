@@ -19015,7 +19015,7 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assert(true, "V-FLOW-GROUND-6 retired; see PREFLIGHT 5b real-LLM smoke");
     });
 
-    it("V-FLOW-GROUND-FAIL-1 · verifier rejects a response referencing a fabricated gap description", async () => {
+    it("V-FLOW-GROUND-FAIL-1 · REWRITTEN Sub-arc B · verifier flags fabricated gap descriptions with severity:'high' (block→soft-warn demote: verifier still returns ok:false, chatService no longer replaces response)", async () => {
       const mod = await import("../core/demoEngagement.js");
       const eng = (mod.getDemoEngagement && mod.getDemoEngagement()) ||
                   (mod.loadDemo && mod.loadDemo());
@@ -19029,9 +19029,20 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       const kinds = (result.violations || []).map(v => v.kind);
       assert(kinds.indexOf("gap-description") >= 0 || kinds.indexOf("entity") >= 0,
         "V-FLOW-GROUND-FAIL-1 · violations should include kind: 'gap-description' or 'entity'; got: " + JSON.stringify(kinds));
+      // Sub-arc B NEW: severity-tier contract per SPEC R37.13.
+      // Every violation MUST carry a severity field; gap-description fabrications get 'high'.
+      result.violations.forEach(function(v) {
+        assert(typeof v.severity === "string" && /^(high|medium|low)$/.test(v.severity),
+          "V-FLOW-GROUND-FAIL-1 · each violation MUST carry a severity field with value 'high'|'medium'|'low' (R37.13); got: " + JSON.stringify(v));
+      });
+      const gapDescViolations = result.violations.filter(function(v) { return v.kind === "gap-description"; });
+      if (gapDescViolations.length > 0) {
+        assertEqual(gapDescViolations[0].severity, "high",
+          "V-FLOW-GROUND-FAIL-1 · gap-description violations MUST be severity 'high' per R37.13 (engagement directly carries gaps, so fabricated gap titles are clear hallucinations)");
+      }
     });
 
-    it("V-FLOW-GROUND-FAIL-2 · verifier rejects a response referencing a vendor name not in engagement nor in DELL_PRODUCT_TAXONOMY", async () => {
+    it("V-FLOW-GROUND-FAIL-2 · REWRITTEN Sub-arc B · verifier flags out-of-engagement vendor names with severity:'medium' (block→soft-warn demote)", async () => {
       const mod = await import("../core/demoEngagement.js");
       const eng = (mod.getDemoEngagement && mod.getDemoEngagement()) ||
                   (mod.loadDemo && mod.loadDemo());
@@ -19039,13 +19050,18 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       const result = verifyGrounding(fabricated, eng);
       assertEqual(result.ok, false,
         "V-FLOW-GROUND-FAIL-2 · verifier MUST flag vendor names not in engagement nor in DELL_PRODUCT_TAXONOMY");
+      // Sub-arc B NEW: severity:'medium' for vendor violations per R37.13.
+      const vendorViolations = (result.violations || []).filter(function(v) { return v.kind === "vendor"; });
+      if (vendorViolations.length > 0) {
+        assertEqual(vendorViolations[0].severity, "medium",
+          "V-FLOW-GROUND-FAIL-2 · vendor violations MUST be severity 'medium' per R37.13 (vendor name could be a Dell-catalog reference; less clear-cut than gap-description); got: " + JSON.stringify(vendorViolations[0]));
+      }
     });
 
-    it("V-FLOW-GROUND-FAIL-3 · verifier catches Local-B 'Q2 close / June 30' fabricated-deliverable class", async () => {
+    it("V-FLOW-GROUND-FAIL-3 · REWRITTEN Sub-arc B · verifier flags Local-B 'Q2 close / June 30' phase+date class with severity:'low' (informational; v3 schema does not yet carry phase/date)", async () => {
       const mod = await import("../core/demoEngagement.js");
       const eng = (mod.getDemoEngagement && mod.getDemoEngagement()) ||
                   (mod.loadDemo && mod.loadDemo());
-      // Verbatim-ish from the workshop screenshot (BUG-030 evidence).
       const hallucinated = [
         "Bottom line: Acme needs a single-vendor platform.",
         "Procurement Initiation: Issue RFP for PowerScale F710 & XE9680 (Q2 close).",
@@ -19058,13 +19074,26 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assert(kinds.indexOf("date-deliverable") >= 0 ||
              kinds.indexOf("project-phase")    >= 0,
         "V-FLOW-GROUND-FAIL-3 · violations should include 'date-deliverable' or 'project-phase'; got: " + JSON.stringify(kinds));
+      // Sub-arc B NEW: severity:'low' for phase + date-deliverable per R37.13
+      // (v3 schema does not yet carry these fields, so the reference is
+      // informational rather than verified hallucination).
+      const phaseDateViolations = (result.violations || []).filter(function(v) {
+        return v.kind === "project-phase" || v.kind === "date-deliverable";
+      });
+      if (phaseDateViolations.length > 0) {
+        assertEqual(phaseDateViolations[0].severity, "low",
+          "V-FLOW-GROUND-FAIL-3 · project-phase/date-deliverable violations MUST be severity 'low' per R37.13 (informational; v3 schema does not yet carry these fields); got: " + JSON.stringify(phaseDateViolations[0]));
+      }
     });
 
-    it("V-FLOW-GROUND-FAIL-4 · source-grep: services/chatService.js streamChat MUST contain a verifyGrounding(...) call (per feedback_no_mocks.md, replaces prior scripted-mock integration test)", async () => {
+    it("V-FLOW-GROUND-FAIL-4 · EXTENDED Sub-arc B · source-grep: services/chatService.js MUST call verifyGrounding(...) AND MUST NOT contain the retired render-error template (block→soft-warn demote)", async () => {
       // Per the no-mocks principle (LOCKED 2026-05-05), the integration
       // of streamChat → verifyGrounding is verified by source-grep
       // rather than by injecting a scripted hallucinated response via
       // a mock provider. Honest, deterministic, no fakery.
+      // Sub-arc B EXTENSION (2026-05-13): also assert the RETIRED render-
+      // error template phrase is absent — block→soft-warn demote means
+      // the response is preserved, not replaced.
       let src = "";
       try {
         const res = await fetch("/services/chatService.js");
@@ -19072,14 +19101,20 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       } catch (_e) { /* fetch failure asserts below */ }
       assert(src.length > 0,
         "V-FLOW-GROUND-FAIL-4 · services/chatService.js source MUST be readable for source-grep");
-      // Match a verifyGrounding call (with arguments). Allow await/return prefixes.
+      // (a) verifyGrounding still called.
       const VERIFY_RE = /\bverifyGrounding\s*\(/;
       assert(VERIFY_RE.test(src),
         "V-FLOW-GROUND-FAIL-4 · services/chatService.js streamChat MUST call verifyGrounding(...) on the visible response path (per SPEC §S37 plane 2 + RULES §16 CH33)");
-      // Also assert the import is present, so the call isn't a typo.
       const IMPORT_RE = /import\s*\{[^}]*verifyGrounding[^}]*\}\s*from\s*["']\.\/groundingVerifier(?:\.js)?["']/;
       assert(IMPORT_RE.test(src),
         "V-FLOW-GROUND-FAIL-4 · services/chatService.js MUST import verifyGrounding from ./groundingVerifier.js");
+      // (b) NEW Sub-arc B: the retired render-error template MUST be absent.
+      // The exact retired phrase (any source still containing this string
+      // means the BLOCK behavior is still in place; soft-warn rewrite has
+      // not landed).
+      const RETIRED_TEMPLATE_RE = /The model produced an answer with claims that don't trace to the engagement/;
+      assert(!RETIRED_TEMPLATE_RE.test(src),
+        "V-FLOW-GROUND-FAIL-4 · services/chatService.js MUST NOT contain the retired render-error template phrase (block→soft-warn demote per R37.6 rewrite Sub-arc B 2026-05-13)");
     });
 
     it("V-FLOW-GROUND-FAIL-5 · catalog whitelist: Dell products / catalog labels NOT in engagement do NOT trigger violations", async () => {
@@ -19094,6 +19129,66 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assertEqual(result.ok, true,
         "V-FLOW-GROUND-FAIL-5 · verifier MUST whitelist DELL_PRODUCT_TAXONOMY references regardless of engagement membership; violations: " +
         JSON.stringify((result.violations || []).slice(0, 3)));
+    });
+
+    it("V-FLOW-GROUND-ANNOTATE-1 · NEW Sub-arc B · chatService.js onComplete envelope MUST carry groundingViolations AND MUST NOT reassign visibleResponse to the retired render-error template", async () => {
+      // Sub-arc B SOFT-WARN integration: streamChat preserves the LLM's
+      // response unchanged + attaches violations[] to the onComplete
+      // envelope. Source-grep complement to V-FLOW-GROUND-FAIL-4.
+      let src = "";
+      try {
+        const res = await fetch("/services/chatService.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-GROUND-ANNOTATE-1 · services/chatService.js source MUST be readable for source-grep");
+      // (a) groundingViolations passed through to the envelope. The
+      // existing variable is `groundingViolations`; SOFT-WARN integration
+      // attaches it to the result-envelope passed to onComplete. We
+      // assert the identifier appears on a property assignment / object
+      // shorthand inside the envelope-construction code path.
+      const ENVELOPE_RE = /groundingViolations\s*[:,}]/;
+      assert(ENVELOPE_RE.test(src),
+        "V-FLOW-GROUND-ANNOTATE-1 · services/chatService.js MUST attach groundingViolations to the onComplete envelope (e.g. `{ ..., groundingViolations }` or `result.groundingViolations = ...`)");
+      // (b) The retired render-error template assignment MUST be absent.
+      // Existing FAIL-4 already greps the template phrase; ANNOTATE-1
+      // also asserts the specific `visibleResponse =` reassignment to
+      // the retired template phrase is absent.
+      const RETIRED_REASSIGN_RE = /visibleResponse\s*=\s*[\s\S]*?The model produced an answer/;
+      assert(!RETIRED_REASSIGN_RE.test(src),
+        "V-FLOW-GROUND-ANNOTATE-1 · services/chatService.js MUST NOT reassign visibleResponse to the retired render-error template (SOFT-WARN integration preserves the LLM response unchanged); R37.6 rewrite Sub-arc B 2026-05-13");
+    });
+
+    it("V-FLOW-GROUND-ANNOTATE-2 · NEW Sub-arc B · ui/views/CanvasChatOverlay.js renders a footer annotation block when groundingViolations is non-empty (source-grep contract; DOM-mount integration deferred to PREFLIGHT 5b)", async () => {
+      // Source-grep contract: CanvasChatOverlay MUST reference
+      // groundingViolations in its render path AND MUST add a
+      // distinguishing CSS class for severity tiers (one of
+      // .severity-high / .severity-medium / .severity-low or a
+      // [data-severity] attribute). DOM-mount integration test is
+      // deferred to PREFLIGHT 5b real-LLM smoke (per feedback_no_mocks.md
+      // — the chat overlay's full rendering depends on streamChat
+      // resolving against a real LLM).
+      let src = "";
+      try {
+        const res = await fetch("/ui/views/CanvasChatOverlay.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-GROUND-ANNOTATE-2 · ui/views/CanvasChatOverlay.js source MUST be readable for source-grep");
+      // (a) groundingViolations referenced in render path.
+      const VIOLATIONS_RE = /\bgroundingViolations\b/;
+      assert(VIOLATIONS_RE.test(src),
+        "V-FLOW-GROUND-ANNOTATE-2 · CanvasChatOverlay MUST consume result.groundingViolations from the streamChat onComplete envelope and render the annotation footer (R37.6 SOFT-WARN integration)");
+      // (b) Severity tiers surfaced via CSS classes or data attributes.
+      // Accept any of: .severity-high|medium|low OR [data-severity=...].
+      const SEVERITY_CLASS_RE = /severity-(?:high|medium|low)|data-severity/;
+      assert(SEVERITY_CLASS_RE.test(src),
+        "V-FLOW-GROUND-ANNOTATE-2 · CanvasChatOverlay MUST render severity-tiered annotations (CSS class .severity-high|medium|low OR [data-severity] attribute) per R37.13");
+      // (c) Footer-block container with a class or data-attribute hook
+      // for the annotations region (so future DOM tests can locate it).
+      const ANNOTATIONS_REGION_RE = /grounding-annotations|grounding-annotation|chat-annotations|data-grounding-annotations/i;
+      assert(ANNOTATIONS_REGION_RE.test(src),
+        "V-FLOW-GROUND-ANNOTATE-2 · CanvasChatOverlay MUST add a distinguishing class or data-attribute for the annotations container (e.g. .canvas-chat-grounding-annotations or [data-grounding-annotations])");
     });
 
     it("V-FLOW-GROUND-7 · token-budget guard: synthetic 250-instance engagement either triggers selector-drop fallback OR stays under cap; metadata always preserved", () => {

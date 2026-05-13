@@ -1788,6 +1788,28 @@ Verbatim text describing the assistant's identity + anti-hallucination contract.
 > 6. **When uncertain, say so.** "I don't have enough data to answer that — try Tab N or add Y to your canvas first."
 > 7. **Output is plain prose.** No JSON unless the user asks for structured output. No markdown headers unless the user asks for a doc-shape answer.
 
+#### S20.4.1.1 · Behavior examples (Layer 1, additive 2026-05-13, Sub-arc B)
+
+Per Sub-arc B locked design (BUG-062 expansion · 2026-05-13 user direction): the Role section appends 6 worked examples that shape persona behavior IMPLICITLY. Examples are NOT labeled with persona names ("discovery-coach" / "app-expert" do not appear in the prompt text). The LLM infers persona from the user's question and the example-pattern it matches against.
+
+**Discovery-coach examples** (3) cover:
+1. **Gap probing question** — engineer asks "what gaps should I be probing for at this healthcare customer?" → assistant references existing drivers, suggests healthcare-specific gap classes (ransomware recovery for clinical systems, PHI sovereignty), suggests follow-up customer questions, points to a Canvas tab/action.
+2. **Customer-voice → canvas action mapping** — engineer says "the customer just mentioned they're worried about ransomware in their EHR" → assistant translates the concern to a specific canvas action (open Cyber Resilience driver / create a gap in Tab 4 / set criticality High).
+3. **Refusal of out-of-scope question** — engineer asks "what is the customer's annual revenue?" → assistant says explicitly "the canvas doesn't include revenue", offers a path forward (customer notes on Tab 1).
+
+**App-expert examples** (3) cover:
+4. **Tab navigation walkthrough** — engineer asks "how do I add a workload instance in Tab 2?" → assistant names Tab 2 (Current state), describes the click sequence (select Workload layer → environment → "+ Add instance" tile → form → save).
+5. **"Why is this disabled" diagnosis** — engineer asks "why is the Save context button disabled on Tab 1?" → assistant diagnoses the validation gate (customer.name empty), suggests typing a name.
+6. **Badge / icon explanation** — engineer asks "what does the iLLM badge mean on a tile?" → assistant explains iLLM = internal LLM (Path B import provenance), distinguishes from AI badge (skill-mutated tiles), notes the badge clears on next manual save.
+
+Each example is ≤ 200 words; total ~1.2 KB added to Layer 1. Cached on Anthropic per existing R20.19 (5-minute TTL).
+
+**Cross-references**:
+- SPEC §S37.3.2 + §S37.5 R37.6 — verifier demoted from BLOCK to SOFT-WARN alongside this change (the chat overlay no longer needs to show render-error replacements; the LLM's in-context awareness via these examples is the primary guardrail).
+- SPEC §S37.5 R37.13 — severity tiers (high / medium / low) introduced for annotation rendering.
+- TESTS §T38 — V-FLOW-GROUND-FAIL-1..3 rewritten (block-assert → soft-warn-assert + severity), V-FLOW-GROUND-FAIL-4 widened source-grep, V-FLOW-GROUND-ANNOTATE-1/2 added.
+- Memory anchor: `feedback_5_forcing_functions.md` Rule A (constitutional touch surfaced via Q&A pre-flight 2026-05-13).
+
 #### S20.4.2 · Layer 2 — Data model definition (cached, ~1500 tokens)
 
 Compact natural-language description of the v3 entity model. Derived from `RULES.md` + manifest + entity schemas. Source-of-truth: a `services/dataModelDescription.js` module that emits the text below. The module re-derives on schema change so this layer is always in sync.
@@ -3596,16 +3618,18 @@ Selector results are then inlined into Layer 4. Tools remain registered (`CHAT_T
 
 #### S37.3.2 · Plane 2 — runtime grounding verifier (`services/groundingVerifier.js`)
 
-After the LLM produces a response, scan the response for **entity-shaped claims** and cross-reference against the live engagement. Any claim that doesn't trace gets the response replaced by a render-error in the chat overlay — the hallucinated text is *never* rendered to the user.
+**REWRITTEN Sub-arc B 2026-05-13 · BLOCK → SOFT-WARN demotion**. After the LLM produces a response, scan the response for **entity-shaped claims** and cross-reference against the live engagement. Any claim that doesn't trace surfaces as an ANNOTATION envelope attached to the `onComplete` result; the response itself is **PRESERVED unchanged and rendered to the user**. The chat overlay renders annotations as a severity-tiered footer block below the assistant bubble. **The previous BLOCK behavior (response REPLACED with a render-error template) is RETIRED** per user direction 2026-05-13 ("the AI assistance should not be strict as it is now to block the output once it reached the chat box, but should instead receive it and let us optimize the responses from the LLM, and make sure their responses are fully context-aware and guardrailed by intelligence of the LLM not by the force of override in the app").
+
+**Rationale for soft-warn**: input-time intelligence (richer system prompt + the Sub-arc B persona examples in §S20.4.1.1 + tool-use-driven Layer 4 grounding) is the primary defense against hallucination. The verifier becomes a transparent safety-net: visible, informative, but not blocking. The engineer sees the LLM's answer + any suspect claims annotated, and decides whether to accept, regenerate, or correct.
 
 What plane 2 catches that plane 1 misses (the Local-B "Q2 close / June 30" class):
 
 - Plane 1 inlines the engagement gaps + drivers into the prompt. The LLM sees them. But nothing in the prompt prevents the LLM from also adding fabricated *dates*, *procurement steps*, *project plan structure*, *vendor names not in the engagement* on top of the grounded facts.
 - Plane 2 scans for: gap descriptions referenced in prose, vendor names, driver labels, environment aliases, instance labels, project names, ISO-shaped dates referenced as engagement deliverables, and "Phase N" / "Q[1-4]" project-phase references.
-- Cross-reference against the engagement (with help from `core/demoEngagement.js` + the catalogs). Names not in the engagement → render-error. Dates not in the engagement → render-error.
-- Render-error format: *"The model produced an answer with claims that don't trace to the engagement. Try rephrasing the question, switching providers, or adding the relevant data to the canvas."*
+- Cross-reference against the engagement (with help from `core/demoEngagement.js` + the catalogs). Names not in the engagement → annotation (not replacement). Dates not in the engagement → annotation.
+- Each violation carries a **severity** field (per R37.13): `"high"` for fabricated gap descriptions (entity-shaped claims directly contradicted by engagement data) · `"medium"` for out-of-engagement vendor names (could be Dell catalog reference, ambiguous) · `"low"` for project-phase + date-deliverable references (v3 schema does not yet carry these fields, so the reference is informational rather than a clear hallucination).
 
-Plane 2 is the runtime analogue of plane 1's compile-time fix. Even if the LLM dodges the deterministic prompt, the response can't *render* a hallucination.
+Plane 2 is the runtime analogue of plane 1's compile-time fix. The LLM gets to speak; we annotate when something looks off.
 
 #### S37.3.3 · Validation layer — real-LLM smoke at PREFLIGHT 5b (no mocks)
 
@@ -3647,13 +3671,14 @@ The 50K cap is the new gate, not 20 instances. v3.0-realistic workshop engagemen
 | **R37.3** | Layer 4 of the system prompt always contains: (a) customer + drivers + environment aliases (always inlined, ~500 tokens); (b) router-invoked selector results, JSON-serialized with id-to-label expansion. Raw engagement dump (`JSON.stringify(engagement)`) is FORBIDDEN regardless of size | §S37.3.1 + §S37.4 |
 | **R37.4** | The router's intent classifier MUST cover at minimum: gap-summary, gap-by-urgency, gap-by-phase, driver-list, vendor-mix-current, vendor-mix-desired, dell-density, vendor-mix-by-env, matrix-current, matrix-desired, executive-summary, instance-by-vendor, concept-definition, workflow-howto, project-list, health-summary. Unrecognized intent → CONTEXT_PACK fallback (gaps + vendor mix + executive summary inputs) | §S37.3.1 |
 | **R37.5** | `services/groundingVerifier.js` exports `verifyGrounding(response, engagement) → {ok: bool, violations: [{kind, claim, reason}]}`. Verifier is pure + deterministic | §S37.3.2 |
-| **R37.6** | `streamChat(...)` MUST call `verifyGrounding(visibleResponse, engagement)` after the post-handshake-strip + post-UUID-scrub passes. On `ok: false`, the visible response is REPLACED with the render-error message; provenance still surfaces (so the user can switch providers); the `violations` array is logged via `console.warn` for the diagnostic suite + recorded on the assistant message envelope as `groundingViolations` | §S37.3.2 |
+| **R37.6** | **REWRITTEN Sub-arc B 2026-05-13** · `streamChat(...)` MUST call `verifyGrounding(visibleResponse, engagement)` after the post-handshake-strip + post-UUID-scrub passes. On `ok: false`, the visible response is **PRESERVED unchanged**; the `violations` array is attached to the `onComplete` envelope as `result.groundingViolations` (carrying per-violation `severity` field per R37.13); the CanvasChatOverlay renders annotations as a severity-tiered footer block below the assistant bubble. The previous BLOCK behavior (REPLACE with render-error template) is RETIRED 2026-05-13 per user direction (BUG-062 expansion). Verifier remains pure + deterministic; chatService still logs violations via `console.warn` for diagnostic visibility | §S37.3.2 |
 | **R37.7** | The verifier's claim extractor MUST detect: (a) gap descriptions (loose substring against `engagement.gaps.byId[*].description`); (b) vendor names (against `DELL_PRODUCT_TAXONOMY` + `engagement.instances.byId[*].vendor`); (c) driver labels (against `BUSINESS_DRIVERS` + `engagement.drivers.byId[*]`); (d) environment aliases (against `ENV_CATALOG` + `engagement.environments.byId[*].alias`); (e) instance labels; (f) project names (`engagement.projects` if present); (g) ISO-shaped dates referenced as engagement deliverables; (h) "Phase [0-9]+" / "Q[1-4]" project-phase references. Each failed reference → one entry in `violations` | §S37.3.2 |
 | **R37.8** | The verifier MUST whitelist labels that come from the catalogs (BUSINESS_DRIVERS, LAYERS, GAP_TYPES, DISPOSITION_ACTIONS, SERVICE_TYPES, CUSTOMER_VERTICALS, DELL_PRODUCT_TAXONOMY) — those are reference data, not hallucination, even when not in the engagement | §S37.3.2 |
 | **R37.9** | (RETIRED 2026-05-05 per `feedback_no_mocks.md`) — was: grounded-mock provider sibling. NO mock provider modules of any kind. End-to-end grounding correctness is verified by real-LLM smoke at PREFLIGHT 5b (R37.12), not by fakery. Unit tests for router + assembler + verifier are pure-function tests with no LLM substrate. | §S37.3.3 + `feedback_no_mocks.md` |
 | **R37.10** | The legacy thresholds `ENGAGEMENT_INLINE_THRESHOLD_INSTANCES`, `_GAPS`, `_DRIVERS` in `services/systemPromptAssembler.js` are REMOVED in the rc.6 / 6b implementation commit. Source-grep V-ANTI-THRESHOLD-1 enforces no re-introduction | §S37.4 |
 | **R37.11** | Token-budget guard: the router output is size-checked against a 50K input-token cap (`serializedBytes / 4` estimate). Over-cap → drop cheapest-information selectors first; metadata always preserved. Over 150K → router refuses with surfaced message | §S37.4 |
 | **R37.12** | Real-LLM live-key smoke is a tag-time PREFLIGHT item starting rc.6 (added to `docs/PREFLIGHT.md` as item 5b): Anthropic + Gemini + Local A 3-turn each against the demo engagement, Network-panel inspection of wire body to confirm Layer 4 carries router output, response paraphrases real engagement data, no plane-2 violations. The mock-fetch smoke (existing PREFLIGHT 5) is preserved as the structural-correctness layer | §S37.3 |
+| **R37.13** | **NEW Sub-arc B 2026-05-13** · Each `violations[]` entry MUST carry a `severity` field with value `"high"` · `"medium"` · or `"low"`. Tier assignment: `"high"` for fabricated gap-description claims (engagement directly carries gaps, so a fabricated gap title is a clear hallucination); `"medium"` for out-of-engagement vendor names (vendor could be a real Dell-catalog reference, less clear-cut); `"low"` for project-phase + date-deliverable references (v3 schema does not yet carry these fields, so the reference is informational rather than a verified hallucination). Severity drives the CanvasChatOverlay annotation rendering: HIGH gets a red badge "🚨 Likely fabricated"; MEDIUM gets amber "🤔 Verify"; LOW gets muted "ℹ️ Out-of-engagement reference" | §S37.3.2 |
 
 ### S37.6 · Module shape
 
