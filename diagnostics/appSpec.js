@@ -14701,6 +14701,90 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     // first Pages deploy, app rendered banner-only.
     // -----------------------------------------------------------------
 
+    // -----------------------------------------------------------------
+    // §T48 (queued) · V-AI-EVAL-* · AI eval harness scaffold contracts
+    // (added 2026-05-13 · Sub-arc A.1 of BUG-062 expansion).
+    //
+    // These tests assert ONLY that the eval harness modules exist and
+    // export the expected symbols. They do NOT exercise the harness
+    // end-to-end (that's a real-LLM run, not a unit test). Purpose:
+    // protect the harness from accidental deletion + keep the rubric +
+    // judge-prompt + golden-set versioned-and-discoverable.
+    // -----------------------------------------------------------------
+
+    it("V-AI-EVAL-1 · tests/aiEvals/rubric.js exports RUBRIC_DIMENSIONS (5 dimensions) + RUBRIC_VERSION + RUBRIC_PASS_THRESHOLD", async () => {
+      var mod;
+      try { mod = await import("/tests/aiEvals/rubric.js"); }
+      catch (e) { throw new Error("V-AI-EVAL-1: tests/aiEvals/rubric.js MUST exist"); }
+      assert(Array.isArray(mod.RUBRIC_DIMENSIONS) && mod.RUBRIC_DIMENSIONS.length === 5,
+        "V-AI-EVAL-1: RUBRIC_DIMENSIONS MUST be a 5-element array; got: " + (Array.isArray(mod.RUBRIC_DIMENSIONS) ? mod.RUBRIC_DIMENSIONS.length : typeof mod.RUBRIC_DIMENSIONS));
+      var expectedIds = ["grounded", "complete", "useful", "honest", "concise"];
+      var actualIds = mod.RUBRIC_DIMENSIONS.map(function(d) { return d.id; }).sort();
+      assertEqual(JSON.stringify(actualIds), JSON.stringify(expectedIds.sort()),
+        "V-AI-EVAL-1: rubric dimension ids MUST be exactly " + expectedIds.join(","));
+      assert(typeof mod.RUBRIC_VERSION === "string" && mod.RUBRIC_VERSION.length > 0,
+        "V-AI-EVAL-1: RUBRIC_VERSION MUST be a non-empty string (for cross-version comparison)");
+      assertEqual(mod.RUBRIC_PASS_THRESHOLD, 7,
+        "V-AI-EVAL-1: RUBRIC_PASS_THRESHOLD MUST be 7 (out of 10)");
+    });
+
+    it("V-AI-EVAL-2 · tests/aiEvals/judgePrompt.js exports buildJudgeMessages(case, answer, providerKind) returning {system, user, expectsJsonOutput:true}", async () => {
+      var mod;
+      try { mod = await import("/tests/aiEvals/judgePrompt.js"); }
+      catch (e) { throw new Error("V-AI-EVAL-2: tests/aiEvals/judgePrompt.js MUST exist"); }
+      assertEqual(typeof mod.buildJudgeMessages, "function",
+        "V-AI-EVAL-2: judgePrompt MUST export buildJudgeMessages function");
+      var sampleCase = { id: "TEST-1", category: "discovery", prompt: "test?", expected: ["x"], disallowed: ["y"] };
+      var out = mod.buildJudgeMessages(sampleCase, "sample answer", "anthropic");
+      assert(out && typeof out.system === "string" && out.system.length > 0,
+        "V-AI-EVAL-2: buildJudgeMessages MUST return {system: <non-empty string>}");
+      assert(typeof out.user === "string" && out.user.length > 0,
+        "V-AI-EVAL-2: buildJudgeMessages MUST return {user: <non-empty string>}");
+      assertEqual(out.expectsJsonOutput, true,
+        "V-AI-EVAL-2: buildJudgeMessages MUST set expectsJsonOutput: true (judge returns structured JSON)");
+      // The user message MUST embed the case prompt + the actual answer (so the judge has both).
+      assert(out.user.indexOf("test?") >= 0,
+        "V-AI-EVAL-2: judge user-message MUST embed the case prompt");
+      assert(out.user.indexOf("sample answer") >= 0,
+        "V-AI-EVAL-2: judge user-message MUST embed the actual chat answer");
+    });
+
+    it("V-AI-EVAL-3 · tests/aiEvals/goldenSet.js exports GOLDEN_SET covering all 5 categories with required fields per case", async () => {
+      var mod;
+      try { mod = await import("/tests/aiEvals/goldenSet.js"); }
+      catch (e) { throw new Error("V-AI-EVAL-3: tests/aiEvals/goldenSet.js MUST exist"); }
+      assert(Array.isArray(mod.GOLDEN_SET) && mod.GOLDEN_SET.length >= 5,
+        "V-AI-EVAL-3: GOLDEN_SET MUST be an array of >= 5 cases (A.1 ships 5 samples; A.2 expands to ~25); got: " + (Array.isArray(mod.GOLDEN_SET) ? mod.GOLDEN_SET.length : typeof mod.GOLDEN_SET));
+      var expectedCategories = ["discovery", "app-how-to", "data-grounding", "refusal", "multi-turn"];
+      var presentCategories = {};
+      mod.GOLDEN_SET.forEach(function(c) { if (c.category) presentCategories[c.category] = true; });
+      expectedCategories.forEach(function(cat) {
+        assert(presentCategories[cat],
+          "V-AI-EVAL-3: GOLDEN_SET MUST include at least one case in category '" + cat + "'");
+      });
+      // Required fields per case
+      mod.GOLDEN_SET.forEach(function(c) {
+        assert(typeof c.id === "string" && c.id.length > 0,
+          "V-AI-EVAL-3: each golden case MUST have an id; missing on: " + JSON.stringify(c).slice(0, 200));
+        assert(typeof c.prompt === "string" && c.prompt.length > 0,
+          "V-AI-EVAL-3: case " + c.id + " MUST have a prompt");
+        assert(typeof c.engagementState === "string" && c.engagementState.length > 0,
+          "V-AI-EVAL-3: case " + c.id + " MUST have engagementState (loader key like 'empty' or 'demo:northstar-health')");
+        assert(Array.isArray(c.expected) && c.expected.length > 0,
+          "V-AI-EVAL-3: case " + c.id + " MUST have expected[] rubric anchors");
+      });
+    });
+
+    it("V-AI-EVAL-4 · tests/aiEvals/evalRunner.js exports runCanvasAiEvals + installEvalsRunner functions", async () => {
+      var mod;
+      try { mod = await import("/tests/aiEvals/evalRunner.js"); }
+      catch (e) { throw new Error("V-AI-EVAL-4: tests/aiEvals/evalRunner.js MUST exist (load error: " + (e && e.message) + ")"); }
+      assertEqual(typeof mod.runCanvasAiEvals, "function",
+        "V-AI-EVAL-4: evalRunner MUST export runCanvasAiEvals(opts) function");
+      assertEqual(typeof mod.installEvalsRunner, "function",
+        "V-AI-EVAL-4: evalRunner MUST export installEvalsRunner() function for app.js boot wiring");
+    });
+
     it("V-OPS-PAGES-1 · NO production file path has an underscore-prefixed basename (forbidden per GitHub Pages underscore filter) — scans ALL entries in productionFileManifest", async () => {
       const { PRODUCTION_FILES } = await import("./productionFileManifest.js");
       const violators = PRODUCTION_FILES.filter(p => {

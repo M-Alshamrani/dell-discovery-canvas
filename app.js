@@ -264,6 +264,19 @@ document.addEventListener("DOMContentLoaded", function() {
   } else {
     console.log("[diagnostics] tests skipped on boot. Run with ?runTests=1 in URL, or call window.runDellDiscoveryTests() from devtools, or set localStorage.setItem('runTestsOnBoot','1') to opt in persistently.");
   }
+
+  // Sub-arc A.1 (SPEC §S48 queued · 2026-05-13) · AI evals harness opt-in.
+  // Mirrors the test-runner gating: ?runEvals=1 URL flag · window.runCanvasAi
+  // Evals() console trigger. Eval runs cost real LLM tokens (per case = 2
+  // calls: chat + judge), so opt-in only · never auto-run on production
+  // page loads. See tests/aiEvals/README.md for full usage + cost.
+  try {
+    import("./tests/aiEvals/evalRunner.js").then(function(m) {
+      if (m && typeof m.installEvalsRunner === "function") m.installEvalsRunner();
+    }).catch(function(e) {
+      console.warn("[ai-evals] harness install failed (non-fatal):", e && e.message);
+    });
+  } catch (_e) { /* defensive · evals harness is optional */ }
 });
 
 function wireSettingsBtn() {
