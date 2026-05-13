@@ -8,6 +8,38 @@
 
 ---
 
+## Philosophy · process is binary, changes are not (clarification added 2026-05-13 by user direction)
+
+The discipline rules below (R0–R11) are about **PROCESS**, not about preventing changes. The intent is to make every change **traceable, justified, and approved**, never to hold progress.
+
+**Binary on process** — non-negotiable:
+- `[CONSTITUTIONAL TOUCH PROPOSED]` preamble surfaced BEFORE any modification to a constitutional surface (system prompt assembler, grounding verifier, chat service, schema files, dataContract, locked enums, etc.).
+- Explicit user approval captured in the conversation, with the surface + scope + rationale visible.
+- Documentation of what changed + why it changed + what alternatives were considered.
+- The four R11 blocks (Recite, Answer, Execute, Pledge-Smoke-Screenshot) at every step boundary.
+
+**Not binary on changes** — encouraged when justified:
+- Constitutional changes are WELCOMED when they're likely to produce significant improvement.
+- A positive example: commit `4e34d6e` (Sub-arc B-polish · 2026-05-13) modified `services/systemPromptAssembler.js` (a constitutional surface) and produced a measurable lift in chat quality (6.72 → 9.16/10 avg, 60% → 96% pass rate on the eval baseline, `tests/aiEvals/baseline-2026-05-13T20-01-50-669Z.json`). The change itself was *good*; the lapse was failing to surface the preamble *before* the commit. The corrective action (recorded in `docs/SESSION_LOG_2026-05-13-discipline-lapse.md`) was to keep the change, document the lapse, and re-lock the discipline going forward — NOT to revert.
+
+**Purpose of the discipline**: prevent silent or untraceable changes that corrupt the codebase. The risk is *invisible drift*, not *changes per se*. A documented, approved, smoke-tested change to a constitutional surface is healthy. An undocumented "while we're here" tweak to the same surface is the trap the discipline is designed to catch.
+
+**When in doubt, propose with the preamble.** Approval is fast when the change is justified. The cost of one extra Q&A round trip is negligible compared to the cost of an untraced constitutional change shipping silently.
+
+**What the discipline does NOT mean**:
+- ❌ "Don't change constitutional surfaces."
+- ❌ "Constitutional surfaces are frozen until v4."
+- ❌ "Polish, refinement, or improvement is forbidden on locked surfaces."
+
+**What it actually means**:
+- ✅ "Every modification to a constitutional surface has a paper trail: preamble + approval + documentation + smoke evidence + tests."
+- ✅ "The author cannot bundle constitutional changes into an unrelated commit silently."
+- ✅ "An audit at any point can answer: was this change pre-authorized? what was the rationale? what was the smoke evidence? what tests guard it?"
+
+This philosophy applies to R0–R11 below. Each R-rule encodes a specific process discipline, not a prohibition on improvement.
+
+---
+
 ## R0 · First-pass thought (MANDATORY at every action boundary)
 
 Before any non-trivial change, write down explicitly: **"What would a principal architect do here?"**

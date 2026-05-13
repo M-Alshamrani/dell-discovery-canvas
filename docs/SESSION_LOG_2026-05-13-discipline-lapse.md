@@ -97,19 +97,35 @@ lapse is owned and recorded.
 
 ## Lessons + locked-going-forward
 
+(Per user clarification 2026-05-13, also recorded in
+`docs/PRINCIPAL_ARCHITECT_DISCIPLINE.md` "Philosophy" section: the
+discipline is **about process, not about preventing changes**. The
+B-polish commit `4e34d6e` is a POSITIVE example of a constitutional
+change — it produced a measurable 6.72 → 9.16/10 lift on the eval
+baseline. The lapse was failing to surface the preamble BEFORE the
+commit; the change itself was justified, traceable, and now
+documented. Going forward, the lessons are about ensuring every
+constitutional change has a paper trail, not about preventing them.)
+
 1. **Bug-fix authorization ≠ arc authorization.** When the user
    approves "fix this specific bug", that's scope for the bug fix
    only. Any adjacent work (polish, refactor, "while we're here"
-   improvements) requires its own per-arc authorization.
+   improvements) requires its own per-arc authorization. The
+   approval is typically fast when the adjacent work is justified —
+   the requirement is to SURFACE it explicitly with the
+   `[CONSTITUTIONAL TOUCH PROPOSED]` preamble, not to defer.
 
-2. **Constitutional surfaces stay locked.** Once a surface has been
-   flagged in any `[CONSTITUTIONAL TOUCH PROPOSED]` preamble, EVERY
-   subsequent modification to that surface requires its own preamble.
-   The lock does not lift after impl ships, after the original arc
-   closes, or after any amount of intervening work.
+2. **Constitutional surfaces stay locked at the PROCESS layer.** Once
+   a surface has been flagged in any `[CONSTITUTIONAL TOUCH PROPOSED]`
+   preamble, EVERY subsequent modification to that surface requires
+   its own preamble. This does NOT mean the surface is frozen; it
+   means every change has a paper trail. Changes are welcomed when
+   justified.
 
 3. **The full constitutional surface list** (as of 2026-05-13, all
-   require `[CONSTITUTIONAL TOUCH PROPOSED]` before any code/commit):
+   require `[CONSTITUTIONAL TOUCH PROPOSED]` preamble + user
+   approval + documentation before code/commit — but the changes
+   themselves are not gated by anything except justification):
    - `services/systemPromptAssembler.js`
    - `services/groundingVerifier.js`
    - `services/chatService.js`
@@ -121,17 +137,23 @@ lapse is owned and recorded.
    - Any enum or locked-list source-of-truth in `core/config.js`
    - Any other surface previously flagged in a constitutional preamble
 
-4. **No exceptions** for "polish", "adjacent code", "tiny additive
-   change", "while we're here", or "this just refines what's already
-   there". The discipline is binary.
+4. **The preamble process is binary; the change itself is not.**
+   Whether to surface a `[CONSTITUTIONAL TOUCH PROPOSED]` preamble is
+   never a judgment call — if the file is on the list above, the
+   preamble is required. Whether to make the change is a judgment
+   call informed by the preamble's Q&A: scope, rationale, expected
+   impact, alternatives, smoke plan. Both author and user contribute
+   to that judgment. The discipline ensures the judgment is visible
+   in the conversation, not hidden in a commit.
 
 5. **The discipline applies to bug-fix commits too** if they touch a
    constitutional surface. The current pattern of bug-fix commits
    (like `ca10503` for the envelope.response field) touched
    `tests/aiEvals/evalRunner.js` which is NOT constitutional, so
    that pattern is fine. But if a future bug fix needs to touch
-   (say) `chatService.js`, the preamble is required even though
-   the change is "just a bug fix".
+   (say) `chatService.js`, the preamble is required — even though
+   the change is "just a bug fix" — so the audit trail captures
+   what was fixed and why.
 
 ## Audit-trail anchor
 
