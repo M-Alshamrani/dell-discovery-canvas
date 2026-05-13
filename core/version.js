@@ -26,8 +26,134 @@
 //
 // ---
 //
+// **3.0.0-rc.8** (TAGGED 2026-05-13) — closes the rc.8 arc. Banner
+// 1292/1292 GREEN ✅ (was 1196 at rc.7 tag; +96 net tests over rc.8).
+// Eval baseline: 9.16/10 avg · 96% pass rate (24/25 on the 25-case
+// golden set, post-Sub-arc-B-polish).
+//
+// Rolled into rc.8 tag (origin/v3.0-data-architecture):
+//
+//   rc.8.b Skills Builder v3.2 reboot (rc.7 → rc.8.b polish window):
+//     - schema/skill.js v3.2 clean replace (drop outputContract /
+//       outputTarget / promptTemplate / bindings; retire migrate
+//       helpers); commits ce48279 c1e7f62 c57ce1f
+//     - Canvas Chat tab system: permanent Chat + Skills launcher +
+//       dynamic [Skill:<name>] tab; commit d7f4dbe
+//     - Skill run-time wiring: real-LLM via chatCompletion + per-
+//       outputFormat dispatch + dialog turn rendering; commit 19888f4
+//     - AI-mutation apply + aiTag provenance + "Done by AI" badge +
+//       auto-clear on engineer save; commit c93042f
+//     - 24 new V-FLOW-SKILL-V32-* tests · 15 legacy V-* retirements
+//
+//   Picker rebuild + Relationships metadata:
+//     - PICKER_METADATA catalog + _buildSkillRunCtx rebuild + Data
+//       Points / Output Format / Parameters two-pane shells; commit
+//       b032122
+//     - RELATIONSHIPS_METADATA + picker right-pane bindings + Improve
+//       meta-skill priming + 8 integrity audit tests; commit db2c5fd
+//
+//   Path B Import-data workflow (SPEC §S47 arc):
+//     - SPEC §S47 + 15 V-FLOW-IMPORT-* RED scaffold; commit 549599f
+//     - [CONSTITUTIONAL AMENDMENT] aiTag.kind discriminator; 30db5ca
+//     - C1..C3 implementation: parser, drift, applier, preview,
+//       Ghost Option B, iLLM badge variant, instructions builder,
+//       footer button; commits 2d6d858..31915ed
+//     - F1..F4 post-audit remediation; commits 3b83d2b..433abf4
+//     - R1..R3 deeper remediation: Path A parked (BUG-053), 0-env
+//       guard, apply-errors surfacing
+//     - BUG-054..057 Path B polish: default scope "current",
+//       LLM Instructions Prompt craft pass + filename rename,
+//       source-notes textbox removed, modal overflow-y:auto
+//
+//   BUG-058..060 SkillBuilder + audit closure:
+//     - BUG-058 audit deliverable CANVAS_DATA_MAP.md r1 (73 paths
+//       audited); commit 2b3acb9
+//     - [CONSTITUTIONAL TOUCH] BUG-058 audit fix · 6 FIX + 2 CLARIFY
+//       in RELATIONSHIPS_METADATA; commit a53a1aa
+//     - BUG-059 SkillBuilder card-style rows; commit dba24bf
+//     - BUG-060 SkillBuilder action bar single row; commit 70bf8ae
+//
+//   GitHub Pages deploy compatibility (2026-05-13 morning):
+//     - .nojekyll + relative paths for icon + manifest; commit 0914528
+//     - rename underscore-prefixed diagnostic files + V-OPS-PAGES-1/2
+//       regression guard; commit aeedaed
+//
+//   Path B kickoff pane + Phase A·B·C walkthrough (2026-05-13):
+//     - [CONSTITUTIONAL TOUCH] SPEC §S47.4.6/7 + §S47.8.5/6 + 7 RED
+//       tests; commit c4a93d4
+//     - Impl: services/importKickoffPrompt.js (NEW) + builder Phase
+//       A·B·C structure + ImportDataModal kickoff pane + CSS;
+//       commit 05d1dec
+//
+//   Sub-arc A · Canvas AI Assist eval harness foundation (SPEC §S48
+//   queued · 2026-05-13):
+//     - A.1: rubric.js (5 dimensions × 0-2) + judgePrompt.js +
+//       5 sample golden cases + browser-runnable evalRunner +
+//       4 V-AI-EVAL-* smoke tests; commit ddf10f1
+//     - A.2: golden set expanded 5 → 25 cases; commit 4d0257f
+//     - 2 eval-runner bug fixes (silent field-name issues):
+//       commits 5d9737b + ca10503 + V-AI-EVAL-5 regression guard
+//
+//   Sub-arc B · Canvas AI Assist persona examples + soft-warn
+//   verifier + annotation footer (BUG-062 expansion · 2026-05-13):
+//     - [CONSTITUTIONAL TOUCH] SPEC §S20.4.1.1 + §S37.3.2 + R37.6
+//       + R37.13 + 6 RED tests; commit 40f55d1
+//     - Impl: 6 implicit-persona few-shot examples + verifier
+//       severity tiers (high/medium/low) + chatService SOFT-WARN
+//       integration + CanvasChatOverlay annotation footer + CSS;
+//       commit 7fcc8b6
+//     - B-polish: NORTHSTAR_HINT enumerated + Example 7 (save/
+//       persistence) + Example 8 (tool-call-then-cite) + rule 2
+//       strengthened; commit 4e34d6e. Baseline lift: 6.72 → 9.16/10
+//       avg, 60% → 96% pass rate on 25-case golden set.
+//
+//   Sub-arc B.5 · Doc-audit gap-list artifact (2026-05-13):
+//     - docs/SUB_ARC_B5_DOC_AUDIT_GAP_LIST.md; commit 3accf22.
+//       Recommendation: HYBRID (wire 1-2 examples + author 4
+//       short user-facing reference docs in Sub-arc C).
+//
+//   Discipline + Philosophy refinement (2026-05-13):
+//     - Discipline lapse audit log; commit bc00263
+//     - Philosophy clarification: discipline is about PROCESS
+//       not about preventing changes; commit d3f118e
+//
+// New tests rolled into rc.8 (+96 net since rc.7):
+//   V-FLOW-SKILL-V32-* (24 new · Skills Builder v3.2 reboot)
+//   V-FLOW-IMPORT-* (15 + 7 = 22 · Path B Import-data workflow
+//     including the kickoff-pane + Phase A·B·C sub-arc)
+//   V-OPS-PAGES-1/2 (GitHub Pages deploy regression guards)
+//   V-AI-EVAL-1/2/3/4/5 (eval harness scaffold + regression guard)
+//   V-FLOW-GROUND-FAIL-1/2/3 rewritten + FAIL-4 extended +
+//     V-FLOW-GROUND-ANNOTATE-1/2 NEW (SOFT-WARN verifier contract)
+//   Plus WB-1..WB-4 + 8 integrity audit tests +
+//   the 4 RELATIONSHIPS_METADATA constitutional fix tests
+//
+// SPEC annexes / sections added or amended:
+//   §S46 (Skills Builder v3.2 reboot · NEW + 10 sub-rules CH36 a..j)
+//   §S47 (Import-data workflow · NEW · 11 subsections) plus the
+//     Sub-arc B amendments §S47.4.6/7 + §S47.8.5/6 + drift fixes
+//   §S20.4.1.1 (Behavior examples in Layer 1 · NEW · 8 examples)
+//   §S37.3.2 + R37.6 rewrite + R37.13 NEW (BLOCK→SOFT-WARN demote +
+//     severity tiers)
+//   §S48 (AI evaluation rubric · QUEUED)
+//   §S25 constitutional amendment (aiTag.kind discriminator)
+//   §S40 v3-pure architecture decision (v2 deletion contract)
+//
+// RULES added: §16 CH35 (Path B import-data invariants) · CH36
+//   (10 sub-rules a..j for Skills Builder v3.2)
+//
+// Path to non-suffix "3.0.0" GA:
+//   - Sub-arc C (knowledge-base wiring) per B.5 audit recommendation
+//   - Sub-arc D (action proposals · D-Rule LOCKED · engineer-
+//     conditional approval mandatory)
+//   - BUG-061 Save-draft vs Publish lifecycle
+//   - BUG-062 AI chat re-architecture closure
+//   - At least one real-customer workshop run
+//
+// ---
+//
 // **3.0.0-rc.8-dev** (2026-05-11) — between v3.0.0-rc.7 (TAGGED
-// 2026-05-09 at 1196/1196 GREEN) and the eventual v3.0.0-rc.8 tag.
+// 2026-05-09 at 1196/1196 GREEN) and the v3.0.0-rc.8 tag (2026-05-13).
 // Note: the rejected rc.8 / S1 architecture (capsule library +
 // cascaded vertical-tab rail + pill editor) was reverted before any
 // tag landed. The internal arc naming "rc.8.b" disambiguates the
@@ -163,4 +289,4 @@
 //   - At least one real-customer workshop run against a v3.0 engagement
 //   - Real-Anthropic streaming smoke against a live key
 
-export const APP_VERSION = "3.0.0-rc.8-dev";
+export const APP_VERSION = "3.0.0-rc.8";

@@ -6,35 +6,59 @@
 
 ---
 
-## 🟢 Current state — end of 2026-05-12 session (BUG-058 audit + 6-bug polish + remediation)
+## 🟢 Current state — end of 2026-05-13 session · **rc.8 CLOSED · ready to tag** ✅
 
-**Branch**: `v3.0-data-architecture` · **HEAD**: `2b3acb9` (BUG-058 audit deliverable · CANVAS_DATA_MAP.md r1) · **APP_VERSION**: `3.0.0-rc.8-dev` · **Banner**: **1272/1272 GREEN ✅**
+**Branch**: `v3.0-data-architecture` (+ `main`) · **HEAD**: `<release-close commit>` (rc.8 release · APP_VERSION bump + RELEASE_NOTES + HANDOFF + session log + SPEC change-log catch-up) · **APP_VERSION**: `3.0.0-rc.8` (-dev suffix dropped per R30.2) · **Banner**: **1292/1292 GREEN ✅** · **Eval baseline**: 9.16/10 avg · 96% pass rate
 
-**Working tree**: clean.
+**Working tree**: clean after release-close commit.
 
-**Not pushed**: 44 commits past origin. Awaits explicit user "push" / "tag it" call.
+**Push status**: pushed through `3accf22` (Sub-arc B.5 audit). Release-close commit + tag pending.
 
-## 📌 Open fix plans (sequenced)
+**Tag pending**: `v3.0.0-rc.8` ready to push. Awaits explicit user `tag rc.8` / `tag it` call per `feedback_no_push_without_approval.md`.
 
-### NEXT (in flight at session-context limit · resume here)
-**BUG-058 · constitutional fix lands** · user greenlit "then fix" after reviewing CANVAS_DATA_MAP.md
-- Land 6 FIX + 2 CLARIFY in `core/dataContract.js` RELATIONSHIPS_METADATA
-- Commit title: `[CONSTITUTIONAL TOUCH PROPOSED]` (Rule A flow)
-- Add RED tests in `diagnostics/appSpec.js` asserting each fix:
-  - V-FLOW-CONSTITUTION-SINGLETON-MANDATORY-1 (5 singleton paths have mandatoryWith=[])
-  - V-FLOW-CONSTITUTION-MAPPED-ASSETS-1 (instance.mappedAssetIds crossCutting=false)
-  - V-FLOW-CONSTITUTION-URGENCY-DERIVED-1 (gap.urgency description mentions `[*]` not `[0]`)
-  - V-FLOW-CONSTITUTION-GAPTYPE-LOCKED-1 (gap.gapTypeLabel description mentions "LOCKED" for autoDraft)
-- Banner target: 1272 → ~1276 GREEN (4 new tests · all should flip GREEN after impl)
+## 🌅 Tomorrow's first commit (rc.9-dev kickoff)
 
-### Open queue (next sessions, sequenced)
-| # | Bug | Status | Discipline |
-|---|-----|--------|------------|
-| 1 | **BUG-061** Save-draft vs Publish lifecycle (status enum on SkillSchema) | OPEN | Rule A constitutional flow required (new locked enum) |
-| 2 | **BUG-062** AI chat re-architecture · grounding-by-context-priming (uses CANVAS_DATA_MAP.md §8 wire-format) | OPEN, BLOCKED on BUG-058 closure | Rule A (verifier behavioral contract change) |
-| 3 | **BUG-053** Path A skill-via-launcher re-attempt (parked under constitutional creep audit) | OPEN-DEFERRED | Rule A (locked OutputFormatEnum extension + 3 new schema fields + system-skills distribution model) |
-| 4 | **BUG-052** Modal-residue test flake cluster (6 intermittent tests) | OPEN | Investigation arc (post-rc.8 tag) |
-| 5 | **gap.closeReason doc-drift** (mentioned in UI_DATA_TRACE Tab 4 §8d but absent from schema) | NEW (surfaced by BUG-058 audit) | Doc-only fix; reconcile UI_DATA_TRACE to remove the stale reference |
+Per SPEC §S30 R30.1 + PREFLIGHT item 1a — **first commit past the rc.8 tag MUST bump APP_VERSION to add `-dev` suffix**:
+
+```js
+// core/version.js
+export const APP_VERSION = "3.0.0-rc.9-dev";
+```
+
+Plus add the `3.0.0-rc.9-dev` block to `core/version.js` comment ledger at the top with: date · "between v3.0.0-rc.8 (TAGGED 2026-05-13) and the eventual v3.0.0-rc.9 tag" · "In flight: [whatever Sub-arc C scope is chosen]".
+
+V-VERSION-2 source-grep guards against forgetting this.
+
+## 📌 Open fix plans (sequenced for rc.9)
+
+### NEXT (resume here · awaits user direction on Sub-arc C scope)
+
+**Sub-arc C** (knowledge-base wiring per B.5 audit · `docs/SUB_ARC_B5_DOC_AUDIT_GAP_LIST.md`)
+
+Three flavors of scope (user to choose):
+
+- **(1) Full HYBRID** — Wire bucket (2 new Layer 1 examples · 30 min · `[CONSTITUTIONAL TOUCH PROPOSED]` preamble required) + Author bucket (4 short user-facing reference docs · 2-3 hours · doc-only). Highest quality lift; expected eval baseline lift 9.16 → ~9.3-9.4/10.
+- **(2) Author-only** — Just the 4 docs. ~2 hours. Avoids constitutional surface touch. GRD-2 weakness stays at 5/10.
+- **(3) Wire-only** — Just Examples 9 + 10. ~30 min. Closes GRD-2 + drilldown gap. Defers user-facing reference docs.
+- **(4) Subset** — Pick specific items.
+- **(5) Park C, move to D** — Accept 9.16/10 as the locked baseline.
+
+The B.5 audit recommends Full HYBRID.
+
+### Open queue (sequenced after Sub-arc C)
+
+| # | Item | Status | Discipline |
+|---|---|---|---|
+| 1 | **Sub-arc D** AI chat action proposals · Apply-button cards with engineer-conditional approval | LATER · queued | D-Rule LOCKED · engineer-conditional approval mandatory · separate constitutional flow · needs SPEC review + action-correctness eval rubric + confirmation UX |
+| 2 | **BUG-061** Save-draft vs Publish lifecycle (status enum on SkillSchema) | OPEN | Rule A constitutional flow (new locked enum) |
+| 3 | **BUG-063** Engagement init residual non-clear fields (`customer.vertical` defaults to "Financial Services" on fresh-load) | OPEN · NEW 2026-05-13 | Schema defaults audit · createEmptyEngagement should produce truly-empty state |
+| 4 | **BUG-053** Path A (skill-via-launcher importer) re-attempt | DEFERRED indefinitely | Rule A (3 framework extensions + system-skills distribution model · constitutional creep audit closed) |
+| 5 | **BUG-052** Modal-residue test flake cluster (6 intermittent tests) | OPEN | Investigation arc · may converge with BUG-063 |
+| 6 | **gap.closeReason doc-drift** (UI_DATA_TRACE Tab 4 §8d references non-existent field) | OPEN · NEW | Doc-only · 5-min fix |
+
+### Eval re-runs (cadence)
+
+Every Sub-arc C / D commit re-runs `window.runCanvasAiEvals()` and compares against the locked baseline `tests/aiEvals/baseline-2026-05-13T20-01-50-669Z.json` (9.16/10 · 96% pass). Improvements quantified; regressions caught.
 
 ## 📜 Commit ledger this session (2026-05-12 · 44 commits)
 
