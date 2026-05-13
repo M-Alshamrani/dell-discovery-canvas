@@ -2005,9 +2005,9 @@ Permanent reference in MEMORY.md → `feedback_5_forcing_functions.md` Rule A. T
 
 ---
 
-## BUG-054 · Path B Import modal · default scope should be "Current", not "Desired" (OPEN 2026-05-12)
+## BUG-054 · Path B Import modal · default scope should be "Current", not "Desired" (CLOSED 2026-05-12 · `5e54781`)
 
-**Status**: **OPEN 2026-05-12** · Scheduled · next Path B polish pass
+**Status**: **CLOSED 2026-05-12** · shipped in commit `5e54781` (single-line flip in `ui/components/ImportDataModal.js` + RED-then-GREEN `V-FLOW-IMPORT-DEFAULT-SCOPE-1` test · 1265 → 1266 GREEN). SPEC §S47.5.4 drift fixed in the 2026-05-13 Phase A·B·C amendment commit (status line was stale in BUG_LOG until then).
 **Reporter**: User (post-R3 review)
 **Severity**: Low (UX correctness)
 **Regression**: No — the "Desired" default was the originally-locked Q4 choice (SPEC §S47.5.4); user has revised preference after using the workflow
@@ -2027,9 +2027,9 @@ Permanent reference in MEMORY.md → `feedback_5_forcing_functions.md` Rule A. T
 
 ---
 
-## BUG-055 · Path B instructions file · rename to "LLM Instructions Prompt" + comprehensive prompt engineering (OPEN 2026-05-12)
+## BUG-055 · Path B instructions file · rename to "LLM Instructions Prompt" + comprehensive prompt engineering (CLOSED 2026-05-12 · `c1f0c5e`)
 
-**Status**: **OPEN 2026-05-12** · Scheduled · next Path B polish pass
+**Status**: **CLOSED 2026-05-12** · shipped in commit `c1f0c5e` (filename renamed to `dell-canvas-llm-instructions-prompt-<slug>-<timestamp>.txt`, UI button label updated to "📋 Download LLM Instructions Prompt", 11-section craft pass with §1 role+goal+success criteria, §5 chain-of-thought reasoning, §9 5+ worked examples + counter-examples across compute/storage/network/security/workload layers, §10 verification checklist · 1266 → 1269 GREEN). SPEC §S47.4.2 filename drift fixed in the 2026-05-13 Phase A·B·C amendment commit.
 **Reporter**: User (post-R3 review)
 **Severity**: Medium (output accuracy depends on prompt quality — directly impacts Dell internal LLM extraction results)
 
@@ -2056,9 +2056,9 @@ Content needs a craftsmanship pass — current draft was authored quickly to sat
 
 ---
 
-## BUG-056 · Path B Source notes textbox · vague purpose · clarify or remove (OPEN 2026-05-12)
+## BUG-056 · Path B Source notes textbox · vague purpose · clarify or remove (CLOSED 2026-05-12 · `c1f0c5e`)
 
-**Status**: **OPEN 2026-05-12** · Scheduled · next Path B polish pass
+**Status**: **CLOSED 2026-05-12** · shipped in commit `c1f0c5e` (Option B taken: textarea REMOVED from `ui/components/ImportDataModal.js` Step 1; BUG-055 craft pass made the LLM Instructions Prompt comprehensive enough that per-run free-form notes added no measurable accuracy lift). SPEC §S47.8.2 modal-layout drift fixed in the 2026-05-13 Phase A·B·C amendment commit.
 **Reporter**: User (post-R3 review)
 **Severity**: Low (UX clarity)
 
@@ -2076,9 +2076,9 @@ Decide (a) vs (b) based on real-LLM testing in BUG-055's validation pass. If sou
 
 ---
 
-## BUG-057 · Path B Import modal · vertical overflow · content below viewport without scroll (OPEN 2026-05-12)
+## BUG-057 · Path B Import modal · vertical overflow · content below viewport without scroll (CLOSED 2026-05-12 · `9db5c7a`)
 
-**Status**: **OPEN 2026-05-12** · Scheduled · next Path B polish pass
+**Status**: **CLOSED 2026-05-12** · shipped in commit `9db5c7a` (`.import-data-modal-box` + `.import-preview-modal-box` switched to `overflow-y: auto`; workflow card + strict-match warning now scrollable on small viewports · 1269 → 1270 GREEN).
 **Reporter**: User (post-R3 review)
 **Severity**: Low (UX accessibility)
 

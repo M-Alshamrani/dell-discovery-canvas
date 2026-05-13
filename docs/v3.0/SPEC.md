@@ -4596,7 +4596,7 @@ R47.3.4 · `items[].confidence` is required; enum-validated; surfaced in the pre
 
 R47.4.1 · Format is `.txt` (universal; no `.md`-aware viewer assumed). Internal structure uses markdown conventions (`### Heading`, code fences) for readability but the file extension is `.txt`.
 
-R47.4.2 · Filename convention: `dell-canvas-import-instructions-<customer-slug>-<YYYYMMDD>-<HHmmss>.txt` so multiple generations don't collide.
+R47.4.2 · Filename convention: `dell-canvas-llm-instructions-prompt-<customer-slug>-<YYYYMMDD>-<HHmmss>.txt` so multiple generations don't collide. (BUG-055 craft pass renamed from `dell-canvas-import-instructions-*` to clarify the file IS a prompt for an LLM, not a user manual.)
 
 R47.4.3 · Content sections (in order):
 
@@ -4621,6 +4621,22 @@ R47.4.4 · State-hint guidance (sourced from S47.3.3):
 
 R47.4.5 · Instructions are CONTEXT-AWARE: regenerated against the live engagement at click time. If the engineer adds/removes envs between two instructions-generation clicks, the second download supersedes the first (no version reconciliation logic).
 
+R47.4.6 · **Phase B mapping table format · graceful degradation** (2026-05-13 amendment). The Phase B confirmation table (per R47.4.7) is rendered by the Dell internal LLM in priority order:
+
+1. **Markdown table** (preferred — LLMs that render markdown).
+2. **CSV attachment** (LLMs that can generate downloadable files; engineer reviews + edits in Excel and pastes back a corrected list).
+3. **Fixed-width plaintext table** (universal last-resort; columns aligned with spaces).
+
+The instructions file MUST tell the LLM to pick whichever the runtime supports; if uncertain, fall through the list in order.
+
+R47.4.7 · **Phase A · B · C walkthrough contract** (2026-05-13 amendment). The instructions file structures the LLM's interaction with the engineer into three explicit phases:
+
+- **Phase A · Extract (silent).** The LLM ingests the engineer's source file (install-base CSV/XLSX/PDF/etc.) and extracts candidate rows using the schema + glossary + confidence guidance (sections 3–5, 7, 8 of R47.4.3). No JSON is emitted at this point.
+- **Phase B · Confirm with engineer (interactive).** The LLM presents the extracted rows as a **mapping table** (per R47.4.6 fallback) with columns: source label · proposed canvas label · layerId · environmentId · vendor · vendorGroup · criticality · state hint · confidence. The LLM then **explicitly pauses** and asks the engineer to (a) approve as-is, (b) correct individual rows, or (c) request label normalization. **The LLM MUST NOT emit final JSON until the engineer types an approval signal** (e.g., "looks good", "approved", "ship it"). The naming-confirmation sub-prompt MUST be explicit: *"Should I keep the source labels verbatim, or normalize them (e.g., 'EXCH-PROD-01' → 'Exchange Production 01')?"*
+- **Phase C · Emit (final).** Only after engineer approval, the LLM emits the canonical S47.3 JSON shape per section 6 of R47.4.3, runs the §10 verification checklist on its own output, and tells the engineer to "Save this as a `.json` file and import it back into Canvas."
+
+The phase boundaries MUST appear as explicit headings in the instructions file (`### Phase A · Extract`, `### Phase B · Confirm with engineer`, `### Phase C · Emit final JSON`) so the LLM cannot collapse them.
+
 ### S47.5 · Preview modal (shared between Path A + Path B)
 
 R47.5.1 · Single modal component (`ui/components/ImportPreviewModal.js`, NEW). Rendered after both paths produce the canonical JSON shape. Layout per the mock in user-confirmed design:
@@ -4638,7 +4654,7 @@ R47.5.2 · The apply-scope picker is AUTHORITATIVE. The engineer's final click d
 
 R47.5.3 · When `items[].data.state` ≠ modal scope (for non-`null` LLM state), inline indicator `⚠ LLM hinted "current"` (or "desired") surfaces on the row. The engineer can deselect the row to skip it OR proceed (modal scope overrides).
 
-R47.5.4 · Default scope per skill: read from `skill.defaultScope` field (per R47.6.4). Path B default is `"desired"` (per user direction — most common workshop case).
+R47.5.4 · Default scope per skill: read from `skill.defaultScope` field (per R47.6.4). Path B default is `"current"` (BUG-054 flip 2026-05-12 · presales workshops typically begin by capturing what the customer has TODAY before mapping the future state).
 
 R47.5.5 · "Both" semantics: creates **two truly independent records** per `items[]` entry (one with `state="current"`, one with `state="desired"`). No `originId` linkage between them. Engineer can edit either side independently. See R47.5.6 for the ghost-rendering rule that prevents UI collision.
 
@@ -4688,20 +4704,35 @@ R47.8.2 · Modal layout (single, 2-step, both visible):
 
 - Header · "Import data" + close X
 - Lede · "Import technology data into your engagement using Dell's internal LLM."
+- **Kickoff pane** (NEW · R47.8.5) · copy-able first-prompt snippet + crystal-clear "upload your source file to the LLM, not here" callout. Collapsible (expanded by default on first open per session).
 - **Step 1 · Generate instructions for Dell internal LLM**
-  - Apply-to picker (current / desired / both; default desired)
-  - Source notes input (optional, embedded into the generated file's context)
+  - Apply-to picker (current / desired / both; default `"current"` per R47.5.4)
+  - (Source notes input REMOVED per BUG-056 · the LLM Instructions Prompt is comprehensive enough without per-run free-form notes)
   - Inline env chips · live list of visible engagement envs, transparent about what gets exported
-  - `[📋 Download instructions.txt]` button
+  - `[📋 Download LLM Instructions Prompt]` button (BUG-055 label rename)
 - **Step 2 · Import Dell LLM's JSON response**
   - File picker `[📤 Select JSON file…]`
   - On select: parse + validate → opens preview modal (S47.5)
-- **Workflow card** · 4-step recipe ("1. Generate instructions · 2. Take to Dell LLM · 3. Save JSON · 4. Return here")
+- **Workflow card** · 4-step recipe ("1. Copy kickoff prompt + download instructions · 2. Take to Dell LLM with your source file · 3. Confirm extracted mapping · 4. Save JSON + return here")
 - **Strict-match warning** · sharp 1-sentence note (per R47.8.3)
 
 R47.8.3 · Strict-match warning text: "Strict matching: the JSON response must reference exactly the environments listed above. If you add/remove environments before importing, the response will be rejected — re-generate instructions."
 
 R47.8.4 · Drift detection on JSON import (Path B only): every `items[].data.environmentId` MUST be present in the LIVE engagement's environments collection. If ANY referenced UUID is missing, the entire import is REJECTED with a 1-line error: "Response references N environment(s) no longer in this engagement. Re-generate instructions and re-run." (No partial-apply, no fuzzy remap — strict per user direction R47.8.3.)
+
+R47.8.5 · **Kickoff pane** (2026-05-13 amendment). The modal renders a collapsible pane between the lede and Step 1 containing:
+
+- A **short context-aware "first prompt" snippet** (≤ 200 words) the engineer copies as the **very first message** to their Dell internal LLM session. The snippet (a) names the customer + env count, (b) tells the LLM that an instructions file and a source file will follow, (c) commands the LLM to follow the Phase A · B · C walkthrough (per R47.4.7), and (d) tells the LLM NOT to emit final JSON until the engineer confirms the mapping table.
+- A **`[📋 Copy first prompt]` button** that copies the snippet to the OS clipboard.
+- A **callout** in distinct styling: *"Upload your source file (CSV / XLSX / PDF) **into your LLM chat**, not into this canvas. Canvas only consumes the LLM's JSON response in Step 2 below."*
+
+The kickoff pane is built by a new pure module `services/importKickoffPrompt.js` exporting `buildKickoffPrompt(engagement) -> { content }` so the snippet is testable in isolation.
+
+R47.8.6 · **Phase B mapping-confirmation contract** (2026-05-13 amendment). The instructions file's Phase B section (per R47.4.7) MUST include:
+
+- An **explicit "STOP — confirm before emitting JSON"** marker immediately before the mapping-table-rendering instruction. The marker uses the literal phrase `STOP and confirm` so a future regression that collapses Phase B into Phase A is detectable via source-grep.
+- A **naming-confirmation prompt** asking the engineer: *"Should I keep the source labels verbatim, or normalize them (e.g., 'EXCH-PROD-01' → 'Exchange Production 01')?"* The prompt MUST appear in the Phase B section, not in Phase A or C.
+- An **approval-signal vocabulary** the LLM listens for: `"looks good" | "approved" | "ship it" | "go ahead" | "yes"`. Any other engineer response is interpreted as "needs correction" and the LLM iterates on the table.
 
 ### S47.9 · Provenance — `aiTag.kind` discriminator (CONSTITUTIONAL AMENDMENT to §S25)
 
@@ -4755,12 +4786,19 @@ R47.9.4 · Auto-clear behavior on next engineer save (existing rc.8.b R7 contrac
 | V-FLOW-IMPORT-SYSTEM-SKILL-LOADER-1 | `state/v3SkillStore` loads `catalogs/skills/*.json` as `kind: "system"` skills at boot; user skills shadow by `skillId` (per R47.7) |
 | V-FLOW-IMPORT-FILE-INGEST-SKILL-PRESENT-1 | `catalogs/skills/file-ingest-instances.json` ships in the system catalog + is always present in the launcher in a fresh session |
 | V-FLOW-IMPORT-FOOTER-BUTTON-1 | A single `📤 Import data` button exists in the footer + its click opens the modal with both Step 1 + Step 2 visible (per R47.8.1, R47.8.2) |
+| V-FLOW-IMPORT-KICKOFF-1 | `services/importKickoffPrompt.js` exports `buildKickoffPrompt(engagement)` returning `{ content }` where `content` is a non-empty string (per R47.8.5) |
+| V-FLOW-IMPORT-KICKOFF-2 | Kickoff prompt is context-aware: embeds the customer name + env count from the live engagement (per R47.8.5) |
+| V-FLOW-IMPORT-KICKOFF-3 | Kickoff prompt explicitly tells the LLM to follow Phase A · B · C and NOT to emit JSON before engineer approval; AND tells the engineer to upload the source file to the LLM chat, not the canvas (per R47.8.5) |
+| V-FLOW-IMPORT-PHASES-1 | Instructions file contains the three Phase headings verbatim: `### Phase A · Extract`, `### Phase B · Confirm with engineer`, `### Phase C · Emit final JSON` (per R47.4.7) |
+| V-FLOW-IMPORT-PHASES-2 | Instructions file's Phase B section contains the literal phrase `STOP and confirm` AND lists the approval-signal vocabulary (`looks good`, `approved`, `ship it`) (per R47.8.6) |
+| V-FLOW-IMPORT-PHASES-3 | Instructions file describes the mapping-table fallback chain: markdown → CSV → fixed-width plaintext (per R47.4.6) |
+| V-FLOW-IMPORT-NAMING-CONFIRM-1 | Instructions file's Phase B section contains the explicit naming-confirmation prompt about keeping source labels verbatim vs. normalizing them (per R47.8.6) |
 
 ### S47.11 · Trace
 
 - **Principles**: P3 (presentation derived) — preview modal is a derivation of the canonical JSON; never two parallel renderers. P5 (atomic operations) — each row commits via a single `commitInstanceAdd` with provenance envelope. P7 (caller-agnostic) — the importer doesn't know whether the JSON came from Claude (Path A) or paste-back (Path B); same code path.
 - **Sections**: §S25 (constitutional amendment for `aiTag.kind`) · §S46 (Skills Builder framework extensions: import-subset / preview / defaultScope / system skills) · §S20 (Canvas Chat — system-skills chip in launcher) · §S31 (engagement persistence — aiTag with kind persists with engagement).
-- **Memory anchors**: `feedback_spec_and_test_first.md` (this section + 15 RED tests authored before code) · `feedback_no_mocks.md` (skill + Dell LLM are real-LLM only; no synthetic fixtures) · `feedback_no_patches_flag_first.md` (each of the 3 framework extensions is general-purpose, justified, not a local patch).
+- **Memory anchors**: `feedback_spec_and_test_first.md` (this section + 15+7 RED tests authored before code) · `feedback_no_mocks.md` (skill + Dell LLM are real-LLM only; no synthetic fixtures) · `feedback_no_patches_flag_first.md` (each of the 3 framework extensions is general-purpose, justified, not a local patch) · `feedback_5_forcing_functions.md` Rule A (the 2026-05-13 kickoff-pane + Phase A·B·C amendments touched the locked §S47.8 surface; Q&A flow ran with user pre-authorization before SPEC delta).
 
 ---
 

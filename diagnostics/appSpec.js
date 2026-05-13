@@ -20386,6 +20386,140 @@ describe("50 · rc.8.b R1 · Skills Builder v3.2 rebooted (per SPEC §S46 + RULE
       "V-FLOW-IMPORT-INSTRUCTIONS-3: strict-match warning MUST tell the engineer to re-generate instructions on drift");
   });
 
+  // --------------------------------------------------------------------
+  // §T47 · V-FLOW-IMPORT-KICKOFF-* + V-FLOW-IMPORT-PHASES-* +
+  // V-FLOW-IMPORT-NAMING-CONFIRM-* (added 2026-05-13 · post-rc.8 kickoff
+  // + Phase A·B·C walkthrough amendment per SPEC §S47.4.6, §S47.4.7,
+  // §S47.8.5, §S47.8.6 · Constitutional touch of locked §S47.8 surface;
+  // pre-authorized via Q&A flow per feedback_5_forcing_functions.md Rule A).
+  // RED until services/importKickoffPrompt.js + importInstructionsBuilder
+  // Phase A·B·C rewrite + ImportDataModal kickoff pane ship.
+  // --------------------------------------------------------------------
+
+  it("V-FLOW-IMPORT-KICKOFF-1 · S47.8.5 · services/importKickoffPrompt.js exports buildKickoffPrompt(engagement) -> { content } with non-empty string content", async () => {
+    var mod;
+    try { mod = await import("/services/importKickoffPrompt.js"); }
+    catch (e) { throw new Error("V-FLOW-IMPORT-KICKOFF-1: importKickoffPrompt module MUST exist at services/importKickoffPrompt.js (RED-first scaffold per SPEC §S47.8.5)"); }
+    assertEqual(typeof mod.buildKickoffPrompt, "function",
+      "V-FLOW-IMPORT-KICKOFF-1: services/importKickoffPrompt.js MUST export buildKickoffPrompt(engagement) -> { content }");
+    var schema  = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
+    var eng = schema.createEmptyEngagement();
+    eng.customer = Object.assign({}, eng.customer, { name: "KickoffCo", vertical: "healthcare" });
+    var addRes = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    var out = mod.buildKickoffPrompt(eng);
+    assert(out && typeof out.content === "string" && out.content.length > 0,
+      "V-FLOW-IMPORT-KICKOFF-1: buildKickoffPrompt MUST return { content: <non-empty string> }; got: " + JSON.stringify(out).slice(0, 200));
+  });
+
+  it("V-FLOW-IMPORT-KICKOFF-2 · S47.8.5 · Kickoff prompt is context-aware · embeds customer name + env count from live engagement", async () => {
+    var mod = await import("/services/importKickoffPrompt.js");
+    var schema  = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
+    var eng = schema.createEmptyEngagement();
+    eng.customer = Object.assign({}, eng.customer, { name: "Acme Federal", vertical: "publicSector" });
+    var r1 = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (r1 && r1.ok) eng = r1.engagement;
+    var r2 = envActions.addEnvironment(eng, { envCatalogId: "drDc", catalogVersion: "2026.04" });
+    if (r2 && r2.ok) eng = r2.engagement;
+    var out = mod.buildKickoffPrompt(eng);
+    assert(out.content.indexOf("Acme Federal") >= 0,
+      "V-FLOW-IMPORT-KICKOFF-2: kickoff prompt MUST embed the customer name 'Acme Federal'; got: " + out.content.slice(0, 400));
+    // 2 envs added; the prompt should reference the count "2" (either as digit or word).
+    assert(/\b2\b|\btwo\b/i.test(out.content),
+      "V-FLOW-IMPORT-KICKOFF-2: kickoff prompt MUST reference the live env count (2); got: " + out.content.slice(0, 400));
+  });
+
+  it("V-FLOW-IMPORT-KICKOFF-3 · S47.8.5 · Kickoff prompt commands LLM to follow Phase A·B·C + NOT emit JSON before approval + tells engineer to upload source file to LLM (not canvas)", async () => {
+    var mod = await import("/services/importKickoffPrompt.js");
+    var schema  = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
+    var eng = schema.createEmptyEngagement();
+    eng.customer = Object.assign({}, eng.customer, { name: "PhaseCo" });
+    var addRes = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    var c = mod.buildKickoffPrompt(eng).content;
+    assert(/Phase A/i.test(c) && /Phase B/i.test(c) && /Phase C/i.test(c),
+      "V-FLOW-IMPORT-KICKOFF-3: kickoff prompt MUST mention all three phases (A, B, C); got: " + c.slice(0, 600));
+    assert(/do not emit|don't emit|MUST NOT emit|wait for/i.test(c),
+      "V-FLOW-IMPORT-KICKOFF-3: kickoff prompt MUST command the LLM to wait for engineer approval before emitting JSON; got: " + c.slice(0, 600));
+    // The engineer-facing callout: "upload to LLM, not canvas".
+    assert(/upload .*(LLM|chat)/i.test(c) || /into .*(LLM|chat)/i.test(c),
+      "V-FLOW-IMPORT-KICKOFF-3: kickoff prompt MUST tell the engineer to upload the source file INTO the LLM chat (not the canvas); got: " + c.slice(0, 600));
+  });
+
+  it("V-FLOW-IMPORT-PHASES-1 · S47.4.7 · Instructions file contains all three Phase headings verbatim (### Phase A / B / C)", async () => {
+    var mod = await import("/services/importInstructionsBuilder.js");
+    var schema  = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
+    var eng = schema.createEmptyEngagement();
+    eng.customer = Object.assign({}, eng.customer, { name: "PhaseTestCo" });
+    var addRes = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    var out = mod.buildImportInstructions(eng, { scope: "current" });
+    assert(/### Phase A · Extract/.test(out.content),
+      "V-FLOW-IMPORT-PHASES-1: instructions MUST contain '### Phase A · Extract' heading (R47.4.7)");
+    assert(/### Phase B · Confirm with engineer/.test(out.content),
+      "V-FLOW-IMPORT-PHASES-1: instructions MUST contain '### Phase B · Confirm with engineer' heading (R47.4.7)");
+    assert(/### Phase C · Emit final JSON/.test(out.content),
+      "V-FLOW-IMPORT-PHASES-1: instructions MUST contain '### Phase C · Emit final JSON' heading (R47.4.7)");
+  });
+
+  it("V-FLOW-IMPORT-PHASES-2 · S47.8.6 · Phase B section contains 'STOP and confirm' marker + approval-signal vocabulary", async () => {
+    var mod = await import("/services/importInstructionsBuilder.js");
+    var schema  = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
+    var eng = schema.createEmptyEngagement();
+    eng.customer = Object.assign({}, eng.customer, { name: "StopCo" });
+    var addRes = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    var c = mod.buildImportInstructions(eng, { scope: "current" }).content;
+    // Locate Phase B section (from "### Phase B" to next "### " or EOF).
+    var phaseBMatch = c.match(/### Phase B[\s\S]*?(?=### Phase C|$)/);
+    assert(phaseBMatch, "V-FLOW-IMPORT-PHASES-2: instructions MUST contain a Phase B section (R47.4.7)");
+    var phaseB = phaseBMatch[0];
+    assert(/STOP and confirm/.test(phaseB),
+      "V-FLOW-IMPORT-PHASES-2: Phase B MUST contain the literal 'STOP and confirm' marker (R47.8.6); Phase B excerpt: " + phaseB.slice(0, 600));
+    // Approval-signal vocabulary - all three keywords MUST appear.
+    assert(/looks good/i.test(phaseB),
+      "V-FLOW-IMPORT-PHASES-2: Phase B MUST list 'looks good' as an approval signal (R47.8.6)");
+    assert(/approved/i.test(phaseB),
+      "V-FLOW-IMPORT-PHASES-2: Phase B MUST list 'approved' as an approval signal (R47.8.6)");
+    assert(/ship it/i.test(phaseB),
+      "V-FLOW-IMPORT-PHASES-2: Phase B MUST list 'ship it' as an approval signal (R47.8.6)");
+  });
+
+  it("V-FLOW-IMPORT-PHASES-3 · S47.4.6 · Instructions describe the mapping-table fallback chain (markdown -> CSV -> fixed-width plaintext)", async () => {
+    var mod = await import("/services/importInstructionsBuilder.js");
+    var schema  = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
+    var eng = schema.createEmptyEngagement();
+    eng.customer = Object.assign({}, eng.customer, { name: "FallbackCo" });
+    var addRes = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    var c = mod.buildImportInstructions(eng, { scope: "current" }).content;
+    assert(/markdown/i.test(c) && /CSV/i.test(c) && /(plaintext|plain text|fixed.width)/i.test(c),
+      "V-FLOW-IMPORT-PHASES-3: instructions MUST describe all three fallback formats (markdown / CSV / fixed-width plaintext) per R47.4.6; got: " + c.slice(0, 1200));
+  });
+
+  it("V-FLOW-IMPORT-NAMING-CONFIRM-1 · S47.8.6 · Phase B contains the explicit naming-confirmation prompt about source labels verbatim vs. normalization", async () => {
+    var mod = await import("/services/importInstructionsBuilder.js");
+    var schema  = await import("/schema/engagement.js");
+    var envActions = await import("/state/collections/environmentActions.js");
+    var eng = schema.createEmptyEngagement();
+    eng.customer = Object.assign({}, eng.customer, { name: "NamingCo" });
+    var addRes = envActions.addEnvironment(eng, { envCatalogId: "coreDc", catalogVersion: "2026.04" });
+    if (addRes && addRes.ok) eng = addRes.engagement;
+    var c = mod.buildImportInstructions(eng, { scope: "current" }).content;
+    var phaseBMatch = c.match(/### Phase B[\s\S]*?(?=### Phase C|$)/);
+    assert(phaseBMatch, "V-FLOW-IMPORT-NAMING-CONFIRM-1: instructions MUST contain a Phase B section");
+    var phaseB = phaseBMatch[0];
+    // The naming-confirmation prompt asks about keeping labels verbatim vs normalizing.
+    assert(/verbatim/i.test(phaseB) && /normaliz/i.test(phaseB),
+      "V-FLOW-IMPORT-NAMING-CONFIRM-1: Phase B MUST ask the engineer whether to keep source labels VERBATIM or NORMALIZE them (R47.8.6); Phase B excerpt: " + phaseB.slice(0, 800));
+  });
+
   it("V-FLOW-IMPORT-RESPONSE-SCHEMA-1 · S47.3 · canonical import-subset JSON validates via Zod; malformed input is rejected with a clear error", async () => {
     var mod;
     try { mod = await import("/services/importResponseParser.js"); }
