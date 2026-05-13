@@ -1792,9 +1792,9 @@ Same shape as BUG-044 (user-visible UUID leak) and BUG-049: every v2-shape proje
 
 ---
 
-## BUG-050 · Workload "↑ Propagate criticality" button appears disabled after first propagate cycle + add-asset (NEEDS-REPRO 2026-05-09)
+## BUG-050 · Workload "↑ Propagate criticality" button appears disabled after first propagate cycle + add-asset (CLOSED 2026-05-13 · user direction · no longer observable)
 
-**Status**: OPEN · NEEDS USER REPRO DETAIL · Reported 2026-05-09 by user · Could not reproduce in live Chrome MCP test of the same described sequence; suspect specific UI-interaction nuance (timing, env, layer, or specific provider mode) not captured. Scheduled rc.7 / 7e-post if reproducible OR v3.1 reporting + matrix polish.
+**Status**: **CLOSED 2026-05-13** · user direction · no longer observable in subsequent sessions, presumed resolved as a side-effect of intervening v3-pure migrations (rc.7 / 7e-8 matrix view + dispositionLogic rewrites). Re-open via new BUG-NNN if it surfaces again with a reliable repro.
 **Reporter**: User
 **Severity**: Medium (workshop flow disrupted if reproducible — user can't propagate again after a workflow cycle)
 
@@ -2099,9 +2099,9 @@ Same issue may apply to `.import-preview-modal-box` (980px wide, 60vh body area)
 
 ---
 
-## BUG-058 · Skills Builder · audit data-point bindings + relationships against UI_DATA + RELATIONSHIPS_METADATA + constitution (OPEN 2026-05-12 · CRITICAL audit)
+## BUG-058 · Skills Builder · audit data-point bindings + relationships against UI_DATA + RELATIONSHIPS_METADATA + constitution (CLOSED 2026-05-12 · `2b3acb9` + `a53a1aa`)
 
-**Status**: **OPEN 2026-05-12** · Scheduled · BEFORE the AI-chat-enhancement arc (BUG-062 depends on this)
+**Status**: **CLOSED 2026-05-12** · shipped across two commits: `2b3acb9` (audit deliverable `docs/CANVAS_DATA_MAP.md` r1 · 73 paths audited · 6 FIX + 2 CLARIFY surfaced · doc-only · 1272/1272 GREEN) + `a53a1aa` ([CONSTITUTIONAL TOUCH PROPOSED] · `core/dataContract.js` 6 FIX + 2 CLARIFY applied to RELATIONSHIPS_METADATA · 1272 → 1276 GREEN · RED-then-GREEN trajectory · Rule A flow). Customer ↔ presales-owner mandatory pairing reviewed + dispositioned in the audit. **BUG-062 (AI chat re-architecture) is now unblocked.**
 **Reporter**: User (post-R3 review · specific example flagged: "mandatory to link customer name when selecting presales owner — not sure if this relationship is logical or just picked due to Claude Code hallucinations")
 **Severity**: **High** (logic correctness — incorrect mandatory pairings + cross-cutting / multi-hop relationship rules contaminate every Improve prompt + skill run output)
 
@@ -2135,9 +2135,9 @@ Likely concerns: presales owner is `engagementMeta.presalesOwner` (session-scope
 
 ---
 
-## BUG-059 · Skills Builder · skill list visual styling · plain text + gray tag glue (OPEN 2026-05-12)
+## BUG-059 · Skills Builder · skill list visual styling · plain text + gray tag glue (CLOSED 2026-05-13 · `dba24bf`)
 
-**Status**: **OPEN 2026-05-12** · Scheduled · Skills Builder UX polish pass
+**Status**: **CLOSED 2026-05-13** · shipped in commit `dba24bf` (card-style rows + pill-chip meta tags · 1271 → 1272 GREEN · RED-then-GREEN). Closed per user confirmation 2026-05-13.
 **Reporter**: User (post-R3 review)
 **Severity**: Low (UX polish)
 
@@ -2163,9 +2163,9 @@ Elegant stacked-tile / card treatment per the Skills Builder GPLC aesthetic (see
 
 ---
 
-## BUG-060 · Skills Builder · Test skill button stacked on top of Save/Cancel · ugly layout (OPEN 2026-05-12)
+## BUG-060 · Skills Builder · Test skill button stacked on top of Save/Cancel · ugly layout (CLOSED 2026-05-12 · `70bf8ae`)
 
-**Status**: **OPEN 2026-05-12** · Scheduled · Skills Builder UX polish pass
+**Status**: **CLOSED 2026-05-12** · shipped in commit `70bf8ae` (SkillBuilder action bar restyled to Cancel | Test | Save in a single horizontal row · 1270 → 1271 GREEN · RED-then-GREEN trajectory).
 **Reporter**: User (post-R3 review)
 **Severity**: Low (UX polish)
 
@@ -2293,3 +2293,37 @@ Translation:
 1. ...
    With regression test: V-FLOW-XXX-N
 ```
+
+---
+
+## BUG-063 · Engagement initialization · residual non-clear fields on fresh-load / cache-clear (e.g. customer.vertical defaults to "Financial Services") (OPEN 2026-05-13)
+
+**Status**: **OPEN 2026-05-13** · Scheduled · next housekeeping pass
+**Reporter**: User (post-2026-05-13 review · superseded the BUG-052 modal-residue test cluster as the more visible symptom · "there are some residual non clear fields when initialize or clear cache memory, for example the client vertical default to financial")
+**Severity**: Low-Medium (UX correctness · misleads engineers about engagement state · could embed wrong vertical into AI prompts + reports if uncaught)
+
+### Repro
+1. Either open a brand-new session OR click "Clear all data" in the footer to wipe localStorage and reload
+2. Open Tab 1 (Context)
+3. Observe the "Vertical / segment" dropdown shows **"Financial Services"** pre-selected as if it were a user choice — not the empty/placeholder state expected on a truly fresh engagement
+4. Likely other fields exhibit the same pattern (region default? customer notes?)
+
+### Expected
+- Fresh / cleared engagement renders Tab 1 with **all user-input fields visibly empty** (or showing a "Select…" / placeholder state) so the engineer knows nothing has been entered yet
+- The empty state is distinguishable from a partially-filled state at-a-glance
+- Any field that the engineer never touched but which has a pre-populated value is suspect
+
+### Suspected root cause
+The v3 engagement schema's `.default()` values for `customer.vertical` are kicking in too aggressively on `createEmptyEngagement()`. The schema may have been migrated from the v2 catalog's first-entry-as-default semantics without re-evaluating whether "Financial Services" (the first entry in `CUSTOMER_VERTICALS`) should be the empty-state default OR a `null` / empty-string default.
+
+### Fix plan
+1. Audit `schema/customer.js` (or wherever `customer.vertical` is defaulted) · identify every field with a `.default()` that maps to an actual data value rather than an empty / null / placeholder
+2. Flip each non-placeholder default to either `null` (where the schema allows) or empty-string with a UI-level "Select…" rendering
+3. Update `ContextView.js` dropdowns to render the empty state distinctly (no value selected, placeholder text visible)
+4. RED tests:
+   - V-FLOW-INIT-CLEAR-1 · after `createEmptyEngagement()`, `customer.vertical` is `null` or `""` (not a real catalog value)
+   - V-FLOW-INIT-CLEAR-2 · after "Clear all data" + reload, the Tab 1 vertical dropdown displays the placeholder/empty state (no real catalog item pre-selected)
+5. Real-browser smoke: clear cache, reload, screenshot Tab 1, confirm visible empty state across all fields
+
+### Relationship to BUG-052
+BUG-052 (modal-residue test cluster · 6 intermittent test failures tied to overlay/modal teardown ordering) is a SEPARATE concern about test infrastructure that may NOT be production-visible. BUG-063 is the user-visible production symptom of similar "things don't fully clear on transition" patterns. Investigate BUG-063 first; if the underlying root cause turns out to be the same, the two can converge into one fix.
