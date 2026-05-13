@@ -14785,6 +14785,43 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-AI-EVAL-4: evalRunner MUST export installEvalsRunner() function for app.js boot wiring");
     });
 
+    it("V-AI-EVAL-5 · NEW 2026-05-13 · evalRunner.js reads envelope.response (canonical post-scrub field) AND envelope.text (judge return) AND MUST NOT read envelope.content as primary (regression guard for 2x field-read bug class: handshake strip bypass + judge empty-string bug)", async () => {
+      // Two bug-class regression guards in one test:
+      //
+      // Bug 1 (caught 2026-05-13): callChatAndCollect read envelope.content
+      // instead of envelope.response. chatService envelope is
+      // { response, provenance, contractAck, groundingViolations }
+      // (chatService.js line 319). Reading the wrong field silently
+      // bypassed handshake strip + UUID scrub + groundingVerifier
+      // annotations.
+      //
+      // Bug 2 (caught 2026-05-13): callJudge read out.content instead
+      // of out.text. aiService.chatCompletion returns
+      // { text, raw, modelUsed, attempts } (per realLLMProvider.js:61
+      // comment). Reading .content returned undefined -> "" -> every
+      // judge call produced [parse-error] verdicts.
+      //
+      // Both bugs were silent (no thrown errors). Source-grep
+      // contracts catch reintroduction without a real-LLM run.
+      let src = "";
+      try {
+        const res = await fetch("/tests/aiEvals/evalRunner.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-AI-EVAL-5: tests/aiEvals/evalRunner.js source MUST be readable for source-grep");
+      // Guard 1: callChatAndCollect MUST read envelope.response
+      // (canonical post-scrub field) as the primary visible-text source.
+      const ENVELOPE_RESPONSE_RE = /envelope\.response\b/;
+      assert(ENVELOPE_RESPONSE_RE.test(src),
+        "V-AI-EVAL-5 · Guard 1: callChatAndCollect MUST read envelope.response (the chatService canonical post-scrub field). Reading envelope.content alone bypasses handshake strip + UUID scrub + groundingVerifier annotations.");
+      // Guard 2: callJudge MUST read out.text (aiService.chatCompletion's
+      // canonical return field).
+      const OUT_TEXT_RE = /out\.text\b/;
+      assert(OUT_TEXT_RE.test(src),
+        "V-AI-EVAL-5 · Guard 2: callJudge MUST read out.text (the aiService.chatCompletion canonical return field). Reading out.content alone returns undefined and every judge call produces [parse-error] verdicts.");
+    });
+
     it("V-OPS-PAGES-1 · NO production file path has an underscore-prefixed basename (forbidden per GitHub Pages underscore filter) — scans ALL entries in productionFileManifest", async () => {
       const { PRODUCTION_FILES } = await import("./productionFileManifest.js");
       const violators = PRODUCTION_FILES.filter(p => {

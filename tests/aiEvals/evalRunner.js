@@ -216,11 +216,24 @@ async function callChatAndCollect(provider, aiCfg, providerKey, engagement, tran
       provider:       provider,
       onToken: function(t) { accumulated += t || ""; },
       onComplete: function(envelope) {
-        // streamChat invokes onComplete with the final envelope:
-        // { content, provenance, violations?, ... }. The visible text
-        // is `content` (post-scrub) for grounded responses, or the
-        // render-error replacement if verifyGrounding rejected.
-        const visible = (envelope && envelope.content) || accumulated;
+        // chatService.streamChat invokes onComplete with the canonical
+        // envelope (chatService.js line 319):
+        //   { response, provenance, contractAck, groundingViolations }
+        //
+        // BUG fix 2026-05-13 (caught by user post-baseline-capture):
+        //   Previous code read `envelope.content` (undefined). Fallback
+        //   to `accumulated` (raw stream tokens) silently bypassed:
+        //     - handshake strip (per SPEC §S20.16 + chatHandshake.js)
+        //     - UUID scrub (anti-leakage rule 3a)
+        //     - groundingVerifier annotation (Sub-arc B SOFT-WARN)
+        //   Result: baseline captured raw [contract-ack ...] prefixes
+        //   inconsistently (depending on LLM non-determinism) which
+        //   inflated "concise" failure rate + erased Sub-arc B
+        //   annotation visibility in the eval.
+        //
+        // Fix: read envelope.response (canonical field, post-scrub).
+        // .content kept as defensive fallback for forward-compat.
+        const visible = (envelope && (envelope.response || envelope.content)) || accumulated;
         resolve(visible);
       }
     }).catch(reject);
