@@ -600,6 +600,57 @@ The rc.10 first action-correctness baseline (`tests/aiEvals/baseline-action.json
 
 ---
 
+## A17 · Step 3.8 micro-arc · Example 13 canonical add-instance-desired pattern (2026-05-14 evening · LOCKED post-3f8ff07 25-case re-baseline)
+
+The Step 3.7 re-baseline (`3f8ff07` · canonical · 7.4/10 · 76% pass) hit the add-instance-current target (2.0 → 6.0 · the explicit Step 3.7 lift target) but introduced a NEW regression on add-instance-desired (6.6 → 4.0). Per-case forensic detail: ACT-INST-DES-1 went 7 → 0 with chat hallucinating "Done. I've proposed PowerProtect Data Manager..." while `proposedActions: []`. ACT-INST-DES-3 went 8 → 2 with chat presenting "All three Dell platforms are now proposed for your review" table while `proposedActions: []`. Both regressions are the d73ce60 ACT-INST-DES-1 failure class resurfacing.
+
+**Hypothesis confirmed across 4 baselines** (d73ce60 → 368d565 → 5466ea3 → 3f8ff07): every emit-kind that the chat fires reliably has its own canonical worked example. Confirmed mapping:
+- **add-driver**: Example 11 teaches → ACT-DRIVER-1/2/3 fire correctly at the 3f8ff07 capture (9/9/10)
+- **add-instance-current**: Example 12 teaches → ACT-INST-CUR-2/3 lifted from 0 → 10 at the 3f8ff07 capture
+- **add-instance-desired**: NO example → ACT-INST-DES-1/3 hallucinate (3f8ff07 7→0 + 8→2)
+- **close-gap**: NO example but works at 10/10 (structurally simpler · 3 required fields: gapId · status · closeReason · the chat constructs the payload without pattern reinforcement)
+
+Step 3.8 closes the gap.
+
+**Step 3.8 scope (LOCKED · user-approved "Go with A" + "Go with all recommendations" 2026-05-14 evening · 5 design questions Q1..Q5)**:
+
+- **Q1 ✅** — Example 13 notation: proven-safe short-form `*[calls proposeAction for X: bullets]*` matching Examples 11+12 from Step 3.7. V-AI-EVAL-19 forward-protection forbids the verbose form · automatic.
+- **Q2 ✅** — Fixture: PowerScale H700 replacing HPE 3PAR at DR Site (replace-with-originId pattern). Intentionally distinct from ACT-INST-DES-1's PowerProtect-DM-replacing-Veeam fixture (anti-memorization · same design as Step 3.7's Example 12 fixture choice). Replace-with-originId is the more complex of the two add-instance-desired sub-patterns (vs greenfield introduce); teaching the harder pattern lifts both sub-patterns.
+- **Q3 ✅** — RED-first scaffold: V-AI-EVAL-20 (positive · Example 13 marker + add-instance-desired pattern within 1500 chars + "13 worked examples" header bump · 3 guards). V-AI-EVAL-19 (negative · forbids verbose form) and V-AI-EVAL-14 Guard 3 (count >= 11 floor) both stay in effect and continue to pass.
+- **Q4 ✅** — SPEC §S20.4.1.3 + RULES §16 CH38(a) amendment rows + framing-doc A17 (this section).
+- **Q5 ✅** — Re-baseline IMMEDIATELY against the 25-case canonical (3f8ff07) · single cycle.
+
+**Step 3.8 commit sequence**:
+
+| Commit | Type | Surfaces |
+|---|---|---|
+| Step 3.8 preamble (this commit) | `[CONSTITUTIONAL TOUCH]` doc + RED | SPEC §S20.4.1.3 Step 3.8 amendment + RULES §16 CH38(a) extension + framing-doc A17 + V-AI-EVAL-20 RED scaffold |
+| Step 3.8 impl | `[CONSTITUTIONAL TOUCH]` impl | systemPromptAssembler.js Example 13 (safe short-form · replace-with-originId · PowerScale H700 fixture) + "13 worked examples" header bump · RED → GREEN |
+| Step 3.8 re-baseline | `data` (USER-RUN) | tests/aiEvals/baseline-action.json overwrite + new timestamped historical + forensic lift analysis vs `3f8ff07` |
+
+**Expected lift target (Step 3.8 re-eval at close · 25-case canonical)**:
+- add-instance-desired category: 4.0 → ≥7.0 (recover from Step 3.7 regression)
+- passRate: 76% → ≥84% (ACT-INST-DES-1 + ACT-INST-DES-3 flip back to firing)
+- avg score: 7.4 → ≥7.8
+
+**What Step 3.8 explicitly does NOT touch**:
+- Tool name (`proposeAction` stays)
+- Envelope (`proposedActions[]` stays)
+- ActionProposalSchema (Zod stays · originId still single string · consolidate N→1 deferred to v1.5)
+- The 4-kind enum stays
+- CH38 sub-rules (b)..(g) stay
+- Rule 4 wording (Step 3.5 form remains the floor)
+- chatTools.js proposeAction description (Step 3.5 form remains)
+- Examples 1-12 (Example 11 + Example 12 from Step 3.7 unchanged · only Example 13 added)
+
+**What Step 3.8 does NOT address** (deferred to Step 5 UX or v1.5):
+- ACT-INST-CUR-1 Commvault carryover failure (may be fixture-specific or sampling)
+- ACT-INST-CUR-4 custom-vendor tutorial-mode response (chat treats custom-vendor signal as manual-entry guidance · not action emission)
+- ACT-INST-DES-4 consolidate N→1 schema-edge (v1.5 schema amendment scope)
+- ACT-DRIVER-5 priority-shift (no v1 kind matches · chat duplicates · Step 5 preview-modal UX scope)
+
+---
+
 ## A16 · Step 3.7 micro-arc · Example 12 retry with proven-safe notation (2026-05-14 evening · LOCKED post-5466ea3 25-case baseline)
 
 The D4 25-case re-baseline (`5466ea3` · `tests/aiEvals/baseline-action.json` canonical · 6.68/10 · 68% pass) revealed that **add-instance-current is systemically broken at the chat layer**: 1/5 pass · 4 emit-cases scored 0/10 by no-emission · including the gold-standard ACT-INST-CUR-3 (VMware vSphere 7 · full payload · vendor + product + version + scope all explicit). The 5-case foundation's 7.4/10/80% pass MASKED this because only 1 of 5 cases was add-instance-current.
@@ -720,4 +771,5 @@ The Q1-Q7 base locks above + the A1-A13 amendments give the full Mode 1 spec:
 19. **Step 3.5 micro-arc (A14)**: post-d73ce60 baseline tightening · Rule 4 verb-strength bump (MUST invoke + contract violation) + Example 11 (canonical add-driver tool-use) + proposeAction tool description hardening (MUST be invoked + closeReason REQUIRED) + ACT-INST-CUR-1 fixture fix (Commvault HyperScale X + Branch Clinic) · Q1-Q9 user-approved "Go with all recommendations" · BLOCKS Step 4 user-facing impl
 20. **Step 3.6 micro-arc (A15) · ATTEMPTED then REVERTED**: post-368d565 baseline polish attempt · Rule 4 no-ask-permission sentence-append + Example 12 (canonical add-instance-current tool-use · Veritas NetBackup at DR Site) + proposeAction "Recommended fields per kind" block · Q1-Q6 user-approved "Go with all recommendations" → impl `8a6c9f8` → re-baseline `cdd367a` REGRESSION (7.4→6.0 · 80%→60% · Example notation imitated as prose) → user direction "go as recommended" → Option A revert. Step 4 user-facing impl UNBLOCKED at restored Step 3.5 baseline (368d565 · 7.4/10 · 80% pass). Learning: behavior examples MUST NOT use inline `*[invokes X(...)]*` notation that LLMs syntactically imitate.
 21. **D4 golden-set expansion + 25-case re-baseline** (`1168ab9` + `5466ea3`): 5-case foundation graduated to 25 cases (4-6 samples per v1 category · per rc.8 sub-arc A.1→A.2 precedent). Canonical baseline transitioned to 25-case set: 6.68/10 · 68% pass · per-cat 6.8/2.0/6.6/7.5/10.0. Shared-5-case avg held at 7.2 (non-regression). BIG FINDING: add-instance-current SYSTEMICALLY broken (1/5 pass · 4 emit-cases scored 0/10 by no-emission). Root cause: Layer 1 has Example 11 for add-driver but no equivalent for add-instance-current. Positive findings: restraint discipline excellent (6/6 cases 10/10) · multi-emit works · partial-evidence inference works · contradiction surfacing works.
-22. **Step 3.7 micro-arc (A16) · Example 12 RETRY with proven-safe notation**: post-5466ea3 finding (add-instance-current category-wide failure) · Example 12 retry using Example 8's `*[calls X for Y: bullets]*` short-form notation (NOT Step-3.6's verbose inline-args form) · Veritas NetBackup at DR Site fixture (same as Step 3.6 · only notation changed) · 11 → 12 worked examples header bump · V-AI-EVAL-18 (positive guard) + V-AI-EVAL-19 (negative guard against `*[invokes proposeAction(` re-introduction · forward-protection) · Q1-Q5 user-approved "Go with all recommendations". Expected lift on 25-case canonical: add-instance-current 2.0→≥6.0 · passRate 68%→≥80% · avg 6.68→≥7.5.
+22. **Step 3.7 micro-arc (A16) · Example 12 RETRY with proven-safe notation**: post-5466ea3 finding (add-instance-current category-wide failure) · Example 12 retry using Example 8's `*[calls X for Y: bullets]*` short-form notation (NOT Step-3.6's verbose inline-args form) · Veritas NetBackup at DR Site fixture (same as Step 3.6 · only notation changed) · 11 → 12 worked examples header bump · V-AI-EVAL-18 (positive guard) + V-AI-EVAL-19 (negative guard against `*[invokes proposeAction(` re-introduction · forward-protection) · Q1-Q5 user-approved "Go with all recommendations". Re-baseline 3f8ff07: avg 6.68→7.4 · pass 68%→76% · add-instance-current 2.0→6.0 (target HIT) · add-instance-desired 6.6→4.0 (REGRESSION revealed). Step 3.7 impl scope EXPANDED to also rewrite Example 11 to safe form (V-AI-EVAL-19 caught Example 11 also used verbose form · scope-expansion documented in 9aea764 hidden-risks).
+23. **Step 3.8 micro-arc (A17) · Example 13 canonical add-instance-desired**: post-3f8ff07 hypothesis confirmation (every emit-kind that fires reliably has its own canonical worked example · 4-baseline pattern) · Example 13 adds canonical replace-with-originId pattern · PowerScale H700 replacing HPE 3PAR at DR Site fixture (intentionally distinct from ACT-INST-DES-1) · safe short-form notation matching Examples 11+12 · 12 → 13 worked examples header bump · V-AI-EVAL-20 (positive guard · 3 sub-guards) · Q1-Q5 user-approved "Go with A". Expected lift on 25-case canonical: add-instance-desired 4.0→≥7.0 · passRate 76%→≥84% · avg 7.4→≥7.8.
