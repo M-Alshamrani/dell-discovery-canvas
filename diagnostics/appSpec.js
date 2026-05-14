@@ -15437,6 +15437,129 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     // -----------------------------------------------------------------
 
     // -----------------------------------------------------------------
+    // V-FLOW-AI-NOTES-1/2/3 + V-ADAPTER-NOTES-1 · Sub-arc D Step 4
+    // preamble · Mode 1 Workshop Notes overlay surface + Path B
+    // importer adapter (post-pivot per framing-doc A19 · SPEC §S20.4.1.5
+    // + §S47 amendment) · LOCKED 2026-05-15
+    //
+    // CONTEXT: Sub-arc D pivot (commit 662522d) shifts the primary UX
+    // path from "chat autonomously emits proposeAction" to "Mode 1
+    // Workshop Notes overlay → Path B importer". Step 4 lands the
+    // overlay surface + the adapter that transforms overlay output
+    // into Path B's expected input shape. No new preview modal
+    // (reuses ImportPreviewModal from §S47). No new Apply UX (reuses
+    // Path B engineer-review pipeline). The architecture plays to
+    // each layer's strength: LLM structures + suggests · engineer
+    // reviews + decides · code mutates deterministically.
+    //
+    // V-FLOW-AI-NOTES-1: ui/views/WorkshopNotesOverlay.js NEW · the
+    //                    Mode 1 overlay UI component exists · exports
+    //                    renderWorkshopNotesOverlay function
+    // V-FLOW-AI-NOTES-2: ui/views/WorkshopNotesOverlay.js source
+    //                    contains the dual-pane structure markers
+    //                    (per A2 framing-doc spec): lower-pane raw
+    //                    bullets + upper-pane processed notes + the
+    //                    [Import to canvas] button hook
+    // V-FLOW-AI-NOTES-3: app.js or topbar imports the AI Notes button
+    //                    handler (CH26 amendment · topbar carries
+    //                    `#topbarAiNotesBtn` alongside `#topbarAiBtn`)
+    // V-ADAPTER-NOTES-1: services/workshopNotesImportAdapter.js NEW ·
+    //                    transforms Workshop Notes overlay output
+    //                    (mapping suggestions with confidence + payload)
+    //                    into Path B importer input shape · uses
+    //                    ActionProposalSchema for validation
+    //
+    // All 4 are SOURCE-GREP contracts. Runtime end-to-end behavior is
+    // measured by Step 6 re-baseline (post-impl · USER-RUN · the
+    // pivoted architecture's first measurement).
+    //
+    // RED-first scaffolds (this commit); impl commit creates the
+    // surfaces and these tests flip to GREEN.
+    //
+    // Cross-references: SPEC §S20.4.1.5 NEW + §S47 amendment + RULES
+    // §16 CH38 pivot extension + framing-doc A19 + §S47 ImportPreviewModal
+    // (reused · NOT new) + ActionProposalSchema (Mode 1 export shape) +
+    // calibration evidence at tests/aiEvals/calibration-*.json files
+    // -----------------------------------------------------------------
+
+    it("V-FLOW-AI-NOTES-1 · Sub-arc D Step 4 · ui/views/WorkshopNotesOverlay.js NEW · the Mode 1 overlay UI component exists + exports renderWorkshopNotesOverlay function — RED-first scaffold per SPEC §S20.4.1.5 + framing-doc A1 (topbar AI Notes button) + A2 (dual-pane overlay spec)", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/ui/views/WorkshopNotesOverlay.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-AI-NOTES-1: ui/views/WorkshopNotesOverlay.js MUST exist (Sub-arc D Step 4 NEW · the Mode 1 Workshop Notes overlay UI component · per SPEC §S20.4.1.5 primary UX path). Without this file, the overlay surface cannot render.");
+
+      // Guard 1: exports a named render function for the overlay.
+      // Naming may vary (renderWorkshopNotesOverlay · openWorkshopNotes ·
+      // initAiNotesOverlay) but a render-style export MUST exist.
+      const RENDER_EXPORT_RE = /export\s+(?:function|const|async\s+function)\s+(?:render|open|init|show)WorkshopNotes\w*|export\s+(?:function|const)\s+\w*[Ww]orkshopNotes\w*/;
+      assert(RENDER_EXPORT_RE.test(src),
+        "V-FLOW-AI-NOTES-1 · Guard 1: WorkshopNotesOverlay.js MUST export a named render/open/init function for the overlay (e.g. renderWorkshopNotesOverlay · openWorkshopNotes). Without an export, the topbar AI Notes button + footer button cannot invoke the overlay.");
+    });
+
+    it("V-FLOW-AI-NOTES-2 · Sub-arc D Step 4 · ui/views/WorkshopNotesOverlay.js source contains the dual-pane structure markers (lower-pane raw bullets + upper-pane processed notes + [Import to canvas] button hook) per framing-doc A2 + post-pivot A19 — RED-first scaffold per SPEC §S20.4.1.5 + §S47 amendment", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/ui/views/WorkshopNotesOverlay.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-AI-NOTES-2: ui/views/WorkshopNotesOverlay.js MUST exist for source-grep");
+
+      // Guard 1: source mentions both panes (lower for raw bullets · upper for processed notes)
+      const DUAL_PANE_RE = /(lower[\s-]*pane|raw[\s-]*bullets|raw[\s-]*notes)[\s\S]{0,2000}(upper[\s-]*pane|processed[\s-]*notes|structured[\s-]*notes)|(upper[\s-]*pane|processed[\s-]*notes|structured[\s-]*notes)[\s\S]{0,2000}(lower[\s-]*pane|raw[\s-]*bullets|raw[\s-]*notes)/i;
+      assert(DUAL_PANE_RE.test(src),
+        "V-FLOW-AI-NOTES-2 · Guard 1: WorkshopNotesOverlay.js MUST contain markers for BOTH the lower pane (raw bullets) AND the upper pane (processed/structured notes) within proximity (per framing-doc A2 dual-pane spec). Source-grep for the two-pane structural intent.");
+
+      // Guard 2: source contains the [Import to canvas] button hook
+      // (the post-pivot A19 trigger that feeds Path B importer)
+      const IMPORT_BUTTON_RE = /Import\s+to\s+canvas|importToCanvas|onImportToCanvas/i;
+      assert(IMPORT_BUTTON_RE.test(src),
+        "V-FLOW-AI-NOTES-2 · Guard 2: WorkshopNotesOverlay.js MUST reference the [Import to canvas] button (per SPEC §S20.4.1.5 post-pivot · the engineer-issued command that feeds Path B importer adapter). Without this hook, the overlay output never reaches the importer.");
+    });
+
+    it("V-FLOW-AI-NOTES-3 · Sub-arc D Step 4 · app.js or topbar carries the `#topbarAiNotesBtn` element (CH26 amendment: topbar carries TWO AI affordances `#topbarAiBtn` + `#topbarAiNotesBtn`) per framing-doc A1 + SPEC §S20.4.1.5 — RED-first scaffold", async () => {
+      let appSrc = "";
+      try {
+        const res = await fetch("/app.js");
+        if (res.ok) appSrc = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(appSrc.length > 0,
+        "V-FLOW-AI-NOTES-3: app.js source MUST be readable for source-grep");
+
+      // Guard 1: app.js (or any boot-time module) references the new
+      // topbar button id `topbarAiNotesBtn` (CH26 amendment locks this
+      // id alongside the existing `topbarAiBtn`).
+      const TOPBAR_AI_NOTES_BTN_RE = /topbarAiNotesBtn|topbar-ai-notes-btn/;
+      assert(TOPBAR_AI_NOTES_BTN_RE.test(appSrc),
+        "V-FLOW-AI-NOTES-3 · Guard 1: app.js MUST reference `topbarAiNotesBtn` (the second topbar AI affordance · CH26 amendment per framing-doc A1). The button opens the Mode 1 Workshop Notes overlay. Without this reference, the topbar surface is missing the entry point.");
+    });
+
+    it("V-ADAPTER-NOTES-1 · Sub-arc D Step 4 · services/workshopNotesImportAdapter.js NEW · transforms Workshop Notes overlay output into Path B importer input shape · uses ActionProposalSchema for validation — RED-first scaffold per SPEC §S20.4.1.5 + §S47 amendment + framing-doc A19 pivot", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/workshopNotesImportAdapter.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-ADAPTER-NOTES-1: services/workshopNotesImportAdapter.js MUST exist (Sub-arc D Step 4 NEW · the adapter between Mode 1 overlay output and Path B importer input · per SPEC §S20.4.1.5 + §S47 amendment).");
+
+      // Guard 1: adapter imports from schema/actionProposal.js
+      // (the canonical shape · single-source-of-truth · no parallel definitions)
+      const SCHEMA_IMPORT_RE = /from\s+["'](?:\.\.\/)+schema\/actionProposal\.js["']|from\s+["'].*schema\/actionProposal\.js["']/;
+      assert(SCHEMA_IMPORT_RE.test(src),
+        "V-ADAPTER-NOTES-1 · Guard 1: workshopNotesImportAdapter.js MUST import from `schema/actionProposal.js` (the canonical ActionProposalSchema that defines the overlay output shape · same schema chatService.streamChat validates against). Without this import, the adapter would either parallel-define the shape (drift risk) or skip validation (silent import failures).");
+
+      // Guard 2: adapter exports a transform/build/adapt function that
+      // takes overlay output + produces Path B import payload
+      const ADAPT_EXPORT_RE = /export\s+(?:function|const|async\s+function)\s+(?:transform|adapt|build|toPathB|toImportPayload)\w*/i;
+      assert(ADAPT_EXPORT_RE.test(src),
+        "V-ADAPTER-NOTES-1 · Guard 2: workshopNotesImportAdapter.js MUST export a transform/adapt function (e.g. transformOverlayToImportPayload · adaptWorkshopNotes · toPathBImportPayload). The function is the integration point between the overlay surface and the Path B importer.");
+    });
+
+    // -----------------------------------------------------------------
     // V-CHAT-D-5 · Sub-arc D Step 3.9 micro-arc · chat-says-vs-chat-does
     // guard at chatService layer · LOCKED 2026-05-14 late evening
     //
