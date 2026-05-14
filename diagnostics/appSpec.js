@@ -14822,6 +14822,127 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-AI-EVAL-5 · Guard 2: callJudge MUST read out.text (the aiService.chatCompletion canonical return field). Reading out.content alone returns undefined and every judge call produces [parse-error] verdicts.");
     });
 
+    // -----------------------------------------------------------------
+    // V-AI-EVAL-6/7/8 · Sub-arc C (rc.9) · Rule 10 (Quantitative honesty)
+    // + Examples 9 (selectLinkedComposition drilldown) + Example 10
+    // (enumerate-by-name with inline Rule 10 citation) source-grep
+    // contracts against services/systemPromptAssembler.js. RED-first
+    // scaffold lands in Commit A (preamble); flips GREEN at Commit B
+    // (impl).
+    //
+    // Per SPEC §S20.4.1.2 + RULES §16 CH37 (LOCKED 2026-05-14 user
+    // direction). The chat MUST NOT compute percentages / weighted
+    // aggregates / capacity-shares across instance rows while the v3
+    // schema lacks a `quantity` field at the instance layer.
+    // Enumeration by NAME is the schema-truthful answer mode; row-
+    // counts are permissible only with explicit "how many" + source-
+    // tool citation + row-count qualification.
+    //
+    // Cross-references: tests/aiEvals/baseline-2026-05-13T20-01-50-669Z.json
+    // GRD-2 failing case judge verdict ("enumerated counts and layer
+    // distribution are not grounded") is the proximate evidence. Post-
+    // rc.9 eval re-capture (Sub-arc C Commit D) compared against this
+    // baseline; expectation: GRD-2 5/10 → ≥8/10, data-grounding category
+    // 8.40 → ≥9.0, overall 9.16 → ≥9.3.
+    // -----------------------------------------------------------------
+
+    it("V-AI-EVAL-6 · Sub-arc C · services/systemPromptAssembler.js Layer 1 Role section carries Rule 10 (Quantitative honesty rule · schema-truthful enumeration · no percentages on install-base / vendor / instance queries while schema lacks quantity field) — RED-first scaffold per SPEC §S20.4.1.2 + RULES §16 CH37", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/systemPromptAssembler.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-AI-EVAL-6: services/systemPromptAssembler.js source MUST be readable for source-grep");
+
+      // Guard 1: Rule 10 numbered marker present (Layer 1 Role section
+      // rules are numbered 1..9 + 3a today; Rule 10 is the new
+      // quantitative-honesty rule).
+      const RULE_10_RE = /"10\.[ ]/;
+      assert(RULE_10_RE.test(src),
+        "V-AI-EVAL-6 · Guard 1: Layer 1 Role section MUST carry a numbered Rule 10 entry (look for \"10. \" prefix). Today's rules are 1..9 + sub-rule 3a; Rule 10 is the new quantitative-honesty rule.");
+
+      // Guard 2: Rule body cites the schema-truth basis (quantity-not-
+      // collected) — distinguishes Rule 10 from a generic anti-
+      // hallucination rule.
+      const SCHEMA_TRUTH_RE = /quantit(y|ies)|capacity-weight|mass-equivalence/i;
+      assert(SCHEMA_TRUTH_RE.test(src),
+        "V-AI-EVAL-6 · Guard 2: Rule 10 body MUST reference the schema-truth basis (quantity field absent, capacity-weight missing, or mass-equivalence misleading). Otherwise the rule reads as generic anti-hallucination, not schema-conditional.");
+
+      // Guard 3: Rule body forbids percentages / weighted aggregates
+      // explicitly (the active prohibition, not just descriptive).
+      const FORBID_PCT_RE = /percentage|weighted aggregate|capacity-(based|weighted)|ratio.*across|share.*across/i;
+      assert(FORBID_PCT_RE.test(src),
+        "V-AI-EVAL-6 · Guard 3: Rule 10 body MUST forbid percentage / weighted-aggregate / capacity-share computation across instance rows. The rule must be actively prohibitive, not just descriptive.");
+
+      // Guard 4: Schema-conditional clause present (when quantity is
+      // added later, the rule narrows automatically).
+      const SCHEMA_CONDITIONAL_RE = /(schema[-\s]conditional|when.*quantity.*added|narrows automatically|future feature)/i;
+      assert(SCHEMA_CONDITIONAL_RE.test(src),
+        "V-AI-EVAL-6 · Guard 4: Rule 10 MUST include the schema-conditional clause (e.g., 'when quantity is added to a layer's schema, this rule narrows automatically to layers still missing quantity'). Without it the rule reads as absolute and a future schema extension orphan-traps the rule.");
+    });
+
+    it("V-AI-EVAL-7 · Sub-arc C · services/systemPromptAssembler.js Layer 1 Role section carries Example 9 (linked-composition drilldown · demonstrates selectLinkedComposition pattern · D's force-multiplier for entity-named action proposals) — RED-first scaffold per SPEC §S20.4.1.2 + RULES §16 CH37", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/systemPromptAssembler.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-AI-EVAL-7: services/systemPromptAssembler.js source MUST be readable for source-grep");
+
+      // Guard 1: Example 9 marker present (existing examples follow
+      // the "── Example N (..." marker pattern; Example 9 follows
+      // suit).
+      const EX9_RE = /Example 9[ ]?[(│·–]/;
+      assert(EX9_RE.test(src),
+        "V-AI-EVAL-7 · Guard 1: Layer 1 Role section MUST carry Example 9 (look for 'Example 9 (...' marker). Existing examples 1..8 follow the '── Example N (theme · subtheme) ──' style; Example 9 follows suit.");
+
+      // Guard 2: Example 9 demonstrates selectLinkedComposition by name
+      // (the actual tool from chatTools.js).
+      const SLC_RE = /selectLinkedComposition/;
+      assert(SLC_RE.test(src),
+        "V-AI-EVAL-7 · Guard 2: Example 9 MUST cite selectLinkedComposition by name. This is the drilldown pattern Sub-arc D's action-proposals will reuse to name entities precisely; the example must demonstrate the tool call AND the cited response shape (per Example 8 pattern).");
+
+      // Guard 3: Example 9 worked question covers the per-entity
+      // drilldown pattern (the failing-class GRD pattern: "what is
+      // linked to entity X").
+      const DRILLDOWN_RE = /(linked to|tied to|connected to|composition of|gaps.{0,40}instance|instance.{0,40}gaps)/i;
+      assert(DRILLDOWN_RE.test(src),
+        "V-AI-EVAL-7 · Guard 3: Example 9's worked question MUST cover the per-entity drilldown pattern (e.g., 'what gaps are tied to my Veeam instance', 'what is linked to entity X'). The drilldown pattern is the question class that fails today without Example 9.");
+    });
+
+    it("V-AI-EVAL-8 · Sub-arc C · services/systemPromptAssembler.js Layer 1 Role section carries Example 10 (enumerate-by-name pattern · demonstrates selectMatrixView vendor enumeration · cites Rule 10 inline so enforcement is traceable in chat output) — RED-first scaffold per SPEC §S20.4.1.2 + RULES §16 CH37", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/systemPromptAssembler.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-AI-EVAL-8: services/systemPromptAssembler.js source MUST be readable for source-grep");
+
+      // Guard 1: Example 10 marker present.
+      const EX10_RE = /Example 10[ ]?[(│·–]/;
+      assert(EX10_RE.test(src),
+        "V-AI-EVAL-8 · Guard 1: Layer 1 Role section MUST carry Example 10 (look for 'Example 10 (...' marker). The enumerate-by-name pattern is the schema-truthful answer to GRD-2-class questions ('list my Dell instances grouped by environment').");
+
+      // Guard 2: Example 10 demonstrates enumeration (NOT counting) of
+      // vendor-named instances. Source-grep for the canonical Dell SKU
+      // names that the example uses as concrete enumeration outputs.
+      const VENDOR_ENUM_RE = /(PowerEdge|PowerStore|PowerProtect|PowerScale|Dell|enumerate|vendor name)/i;
+      assert(VENDOR_ENUM_RE.test(src),
+        "V-AI-EVAL-8 · Guard 2: Example 10 MUST demonstrate VENDOR-NAMED enumeration (e.g., 'PowerEdge R770', 'PowerStore 1200T', actual SKU names). Generic 'list of instances' without concrete names fails to teach the schema-truthful pattern.");
+
+      // Guard 3: Example 10 cites Rule 10 inline in the assistant's
+      // response body. This is THE critical guard — it's what makes
+      // Rule 10 enforcement traceable in the chat's own output.
+      // Without inline citation, the rule's behavior is invisible to
+      // the engineer and Rule 10's enforcement is purely test-time.
+      const RULE_10_CITATION_RE = /(per Rule 10|Rule 10[ )]|quantitative honesty)/i;
+      assert(RULE_10_CITATION_RE.test(src),
+        "V-AI-EVAL-8 · Guard 3 · CRITICAL: Example 10 MUST cite Rule 10 inline in the assistant's response body (e.g., 'per Rule 10 (quantitative honesty), I'm enumerating rather than computing a percentage because...'). Inline citation is what makes Rule 10 enforcement traceable in the chat's own output to the engineer; without it, the rule is invisible to the user and only enforceable at test time.");
+    });
+
     it("V-OPS-PAGES-1 · NO production file path has an underscore-prefixed basename (forbidden per GitHub Pages underscore filter) — scans ALL entries in productionFileManifest", async () => {
       const { PRODUCTION_FILES } = await import("./productionFileManifest.js");
       const violators = PRODUCTION_FILES.filter(p => {

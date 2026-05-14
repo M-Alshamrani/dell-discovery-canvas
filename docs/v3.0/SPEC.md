@@ -1810,6 +1810,37 @@ Each example is ≤ 200 words; total ~1.2 KB added to Layer 1. Cached on Anthrop
 - TESTS §T38 — V-FLOW-GROUND-FAIL-1..3 rewritten (block-assert → soft-warn-assert + severity), V-FLOW-GROUND-FAIL-4 widened source-grep, V-FLOW-GROUND-ANNOTATE-1/2 added.
 - Memory anchor: `feedback_5_forcing_functions.md` Rule A (constitutional touch surfaced via Q&A pre-flight 2026-05-13).
 
+#### S20.4.1.2 · Quantitative honesty rule + Examples 9–10 (Layer 1, additive 2026-05-14, Sub-arc C)
+
+Per Sub-arc C locked design (BUG-062 expansion · 2026-05-14 user direction): the Role section gains **Rule 10** — the *quantitative honesty rule* — codifying that the v3 install-base schema collects names + types + relationships at the instance layer but **NOT quantities** (no `quantity`, `count`, `multiplier`, or capacity-weight field on `instance`).
+
+**The rule** (verbatim, Layer 1, rule 10):
+> Install-base / vendor / instance queries are answered by **enumeration by name** of the entities in the engagement (e.g., "PowerEdge R770, PowerStore 1200T, Veeam Backup VBR"); citing the analytical-view tool that produced the list (per Rule 2 + Example 8 pattern).
+>
+> The chat **MUST NOT** compute percentages, ratios, weighted aggregates, or capacity-based comparisons across instance rows — counting instance rows treats a single VM and a 40-rack cluster equally (mass-equivalence misleading); the schema does not distinguish their weight, so any percentage the chat invents is schema-untruthful.
+>
+> Row-counts are permissible **only when** (a) the user explicitly asks "how many", AND (b) the response cites the source tool, AND (c) the response qualifies the count as a row-count, not as a capacity / market-share / vendor-share metric (e.g., *"per selectMatrixView: 6 instances tagged vendor=Dell across Main DC + DR Site — this is a row-count, not a capacity share"*).
+>
+> **Schema-conditional**: when a `quantity` field is added to a layer's instance schema (planned future feature per `docs/ROADMAP.md`), this rule narrows automatically to layers still missing quantity. The rule is conditional on schema state, not absolute.
+
+**Two behavior examples ship alongside the rule** (Layer 1, additive after Example 8):
+
+- **Example 9** (linked-composition drilldown): demonstrates `selectLinkedComposition(kind='currentInstance', id)` — the per-entity drilldown pattern. The worked question is *"What gaps are tied to my current Veeam Backup instance?"*. Foundational pattern that Sub-arc D's action-proposals will reuse to name entities precisely.
+
+- **Example 10** (enumerate-by-name): demonstrates `selectMatrixView` enumeration with an inline citation of Rule 10's reasoning when the user implicitly invites a percentage answer. The worked question is *"List all my Dell-branded instances grouped by environment"* (the actual GRD-2 case that scored 5/10 in the rc.8 baseline). Example body cites Rule 10 by id so enforcement is traceable in the chat's own output.
+
+**Rationale**: 2026-05-13 baseline (`tests/aiEvals/baseline-2026-05-13T20-01-50-669Z.json`) captured at 9.16/10 with GRD-2 scoring 5/10. Judge verdict: *"enumerated counts and layer distribution are not grounded."* The chat tried to compute layer-distribution percentages that the v3 schema cannot back. Sub-arc B's persona examples lifted other dimensions but did not address this schema-truth gap. Rule 10 + Examples 9/10 close the gap by codifying enumeration-by-name as the schema-truthful answer primitive — not a "pattern", a behavior contract grounded in schema state.
+
+**Token cost**: Rule 10 ≈ 200 tokens; Examples 9 + 10 ≈ 250 tokens combined. Total ≈ 450 tokens added to Layer 1 (cached prefix). Layer 1 grows from ~3.5 KB to ~4 KB. Within the §S20.7 cache budget.
+
+**Eval expectation** (post-Commit B impl, captured at commit D): GRD-2 lifts from 5/10 → ≥8/10; data-grounding category lifts from 8.40 → ≥9.0; overall 9.16 → ≥9.3. Same provider (anthropic) + same judge (anthropic) for apples-to-apples comparison.
+
+**Cross-references**:
+- TESTS §T48 — V-AI-EVAL-6 (Rule 10 source-grep) + V-AI-EVAL-7 (Example 9 source-grep) + V-AI-EVAL-8 (Example 10 source-grep + Rule 10 citation present in the example body).
+- RULES §16 CH37 NEW — schema-truthful enumeration contract (lands alongside this section).
+- `docs/ROADMAP.md` NEW — future-feature entry: "Quantity-collection at install-base layer (unblocks vendor-share / capacity metrics in chat)."
+- Memory anchor: `feedback_5_forcing_functions.md` Rule A (constitutional touch surfaced via Q&A pre-flight 2026-05-14 morning).
+
 #### S20.4.2 · Layer 2 — Data model definition (cached, ~1500 tokens)
 
 Compact natural-language description of the v3 entity model. Derived from `RULES.md` + manifest + entity schemas. Source-of-truth: a `services/dataModelDescription.js` module that emits the text below. The module re-derives on schema change so this layer is always in sync.
