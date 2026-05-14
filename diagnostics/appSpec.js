@@ -15073,6 +15073,88 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     });
 
     // -----------------------------------------------------------------
+    // V-AI-EVAL-12 + V-CHAT-D-1/2 · Sub-arc D stub-emission contracts
+    // LOCKED 2026-05-14 evening per SPEC §S20.4.1.3 + RULES §16 CH38
+    //
+    // V-AI-EVAL-12: evalRunner.js dispatches on {harness:"action-correctness"}
+    // V-CHAT-D-1: chatTools.js registers proposeAction tool
+    // V-CHAT-D-2: chatService.js envelope includes proposedActions field
+    //
+    // All three are SOURCE-GREP contracts (the contract surface is the
+    // source code that future maintainers must preserve · not runtime
+    // end-to-end which requires real-LLM and matches the eval-baseline
+    // flow rather than the test banner).
+    //
+    // RED-first scaffolds (this commit); impl commit creates the
+    // surface and these tests flip to GREEN.
+    // -----------------------------------------------------------------
+
+    it("V-AI-EVAL-12 · Sub-arc D · tests/aiEvals/evalRunner.js dispatches on `{ harness: \"action-correctness\" }` option · routes to actionGoldenSet/actionRubric/actionJudgePrompt · RED-first scaffold per SPEC §S48.3 + RULES §16 CH38(g)", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/tests/aiEvals/evalRunner.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-AI-EVAL-12: tests/aiEvals/evalRunner.js source MUST be readable for source-grep");
+
+      // Guard 1: evalRunner references the action-correctness harness option
+      const HARNESS_OPTION_RE = /action-correctness/;
+      assert(HARNESS_OPTION_RE.test(src),
+        "V-AI-EVAL-12 · Guard 1: evalRunner.js MUST reference the 'action-correctness' harness option (the dispatch key); source-grep for the literal string. Without this, `{ harness: \"action-correctness\" }` calls fall back to the default chat-quality harness and Sub-arc D evals never run.");
+
+      // Guard 2: evalRunner imports from actionGoldenSet OR actionRubric OR actionJudgePrompt
+      const ACTION_HARNESS_IMPORT_RE = /import\s+.*\sfrom\s+["'].\/(actionGoldenSet|actionRubric|actionJudgePrompt)\.js["']/;
+      assert(ACTION_HARNESS_IMPORT_RE.test(src),
+        "V-AI-EVAL-12 · Guard 2: evalRunner.js MUST import from at least one of {actionGoldenSet.js, actionRubric.js, actionJudgePrompt.js} (the Sub-arc D harness modules). Without imports, the harness dispatch is a no-op.");
+    });
+
+    it("V-CHAT-D-1 · Sub-arc D · services/chatTools.js registers a `proposeAction` tool (the chat-side tool for emitting structured action proposals · per RULES §16 CH38(a)) · RED-first scaffold", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/chatTools.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-CHAT-D-1: services/chatTools.js source MUST be readable for source-grep");
+
+      // Guard 1: chatTools.js registers a tool named "proposeAction"
+      const PROPOSE_ACTION_NAME_RE = /name:\s*["']proposeAction["']/;
+      assert(PROPOSE_ACTION_NAME_RE.test(src),
+        "V-CHAT-D-1 · Guard 1: chatTools.js MUST register a tool with `name: \"proposeAction\"`. The chat invokes this tool to emit structured action proposals (per SPEC §S20.4.1.3 + Rule 4 amendment).");
+
+      // Guard 2: the proposeAction tool imports from schema/actionProposal.js
+      // (single source of truth for the input_schema · no Zod-vs-JSON-Schema drift)
+      const SCHEMA_IMPORT_RE = /from\s+["']..\/schema\/actionProposal\.js["']|from\s+["'].*schema\/actionProposal\.js["']/;
+      assert(SCHEMA_IMPORT_RE.test(src),
+        "V-CHAT-D-1 · Guard 2: chatTools.js MUST import from `schema/actionProposal.js` (the canonical Zod schema). The proposeAction tool's input_schema is derived from this single source of truth to prevent drift between the schema and the tool definition.");
+    });
+
+    it("V-CHAT-D-2 · Sub-arc D · services/chatService.js envelope includes `proposedActions` field (chat response envelope extended for Sub-arc D stub-emission · per RULES §16 CH38(b)) · RED-first scaffold", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/chatService.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-CHAT-D-2: services/chatService.js source MUST be readable for source-grep");
+
+      // Guard 1: chatService.js references `proposedActions` (the new envelope field)
+      const PROPOSED_ACTIONS_RE = /proposedActions/;
+      assert(PROPOSED_ACTIONS_RE.test(src),
+        "V-CHAT-D-2 · Guard 1: chatService.js MUST reference `proposedActions` (the new envelope field that captures Sub-arc D stub-emitted action proposals). Without this field, the eval harness cannot inspect what the chat proposed and the action-correctness rubric (§S48.2) cannot score.");
+
+      // Guard 2: proposedActions is referenced in the envelope/return shape
+      // (not just an unrelated identifier). Source-grep for the common
+      // envelope-construction pattern: either `proposedActions:` (object
+      // literal field) OR `envelope.proposedActions` (assignment) OR
+      // `return ... proposedActions` (return-value construction).
+      const ENVELOPE_USAGE_RE = /(proposedActions:|envelope\.proposedActions|return\s+[\s\S]{0,200}proposedActions)/;
+      assert(ENVELOPE_USAGE_RE.test(src),
+        "V-CHAT-D-2 · Guard 2: chatService.js MUST use `proposedActions` in the envelope construction (object literal field, envelope assignment, OR return-value construction). A bare mention in a comment is not enough; the field MUST be wired into the response envelope shape.");
+    });
+
+    // -----------------------------------------------------------------
     // V-FLOW-INIT-CLEAR-1/2 · BUG-063 regression guards · LOCKED 2026-05-14
     //
     // BUG-063 (OPEN 2026-05-13): engagement initialization · residual

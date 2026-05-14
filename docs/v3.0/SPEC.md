@@ -1841,6 +1841,70 @@ Per Sub-arc C locked design (BUG-062 expansion · 2026-05-14 user direction): th
 - `docs/ROADMAP.md` NEW — future-feature entry: "Quantity-collection at install-base layer (unblocks vendor-share / capacity metrics in chat)."
 - Memory anchor: `feedback_5_forcing_functions.md` Rule A (constitutional touch surfaced via Q&A pre-flight 2026-05-14 morning).
 
+#### S20.4.1.3 · Rule 4 amendment + structured action-proposal emission via tool-use (Layer 1, additive 2026-05-14 evening, Sub-arc D stub)
+
+Per Sub-arc D stub-emission design (`docs/SUB_ARC_D_FRAMING_DECISIONS.md` Q1-Q8 LOCKED 2026-05-14 evening · user explicit approval "Go with all proposed answers"): the Role section's Rule 4 gets amended to operationalize the "propose then apply" pattern as a structured tool-use call instead of a free-text suggestion. The chat invokes a NEW `proposeAction` tool (registered in `services/chatTools.js`) with structured args validated by `schema/actionProposal.js`; the proposal is captured in the `chatService.streamChat` envelope's NEW `proposedActions[]` field for the engineer-facing UI to render. At stub stage there is no Apply button and no UI rendering; proposals just sit in the envelope until Sub-arc D Step 4 ships the preview modal.
+
+**Rule 4 amended text** (verbatim, replaces the rc.4 original "End every proposal with 'click apply if you want me to open that view for you.'"):
+
+> "You may propose changes (rename, re-classify, re-link, add-instance, close-gap, etc.) but you may NOT mutate the canvas. When the proposal matches a known action-kind (per the action-proposal schema in SPEC §S20.4.1.3 + RULES §16 CH38), invoke the `proposeAction` tool with the structured args; the proposal is recorded for engineer review. For free-text proposals without a structured-action shape (rename ideas, qualitative re-classifications, architectural suggestions), end the chat response with 'click apply if you want me to open that view for you' as a navigation prompt."
+
+**Style note**: the amended Rule 4 deliberately avoids em dashes (per `docs/SUB_ARC_D_FRAMING_DECISIONS.md` A1 / Tweak 3). Layer 1 prompt text is read by the chat every turn; em dashes in the rule body are a stylistic LLM-tell that can correlate with LLM-formal-tone chat output.
+
+**Tool-use mechanism** (the `proposeAction` tool):
+
+- Tool name: `proposeAction`
+- Registered in: `services/chatTools.js` (the tool registry per HANDOFF.md L39)
+- Input schema: derived from `schema/actionProposal.js` `ActionProposalSchema` (single source of truth · the JSON Schema for the tool input is generated from the Zod schema to prevent drift)
+- Handler behavior at stub stage: records the proposal in the chat's response envelope · does NOT mutate any engagement state · does NOT invoke commit-functions · does NOT write `aiTag` on any entity (`aiTag.kind` enum extension is deferred to Step 4 alongside the actual Apply wiring per the §S25 amendment protocol)
+- Multi-proposal support: the chat MAY call `proposeAction` multiple times in one turn (e.g., a workshop transcript suggests both `add-driver` + `add-instance-current`); each tool call appends to `proposedActions[]`
+- Tool description (chat-facing): describes when to use it (workshop scenarios where customer description maps to one of the 4 v1 action kinds) + what NOT to use it for (free-text suggestions · uncertain inputs · multi-step plans without clear single-action decomposition)
+
+**Envelope shape** (chatService.streamChat extension):
+
+Pre-Sub-arc-D envelope:
+```js
+{ response: string, provenance: object, contractAck: string, groundingViolations: array }
+```
+
+Post-Sub-arc-D-stub envelope (NEW `proposedActions` field):
+```js
+{ response: string, provenance: object, contractAck: string, groundingViolations: array,
+  proposedActions: ActionProposal[] }
+```
+
+The `proposedActions[]` field is ALWAYS present (empty array when the chat did not call `proposeAction`). Downstream consumers (eval harness, future preview modal) check `proposedActions.length > 0` to determine whether the chat emitted any structured proposals.
+
+**Stub scope (LOCKED)**:
+
+- Mode 2 only (chat-inline proposal emission). Mode 1 (note-taking overlay batch-process) ships at Sub-arc D Step 4 alongside the new overlay surface.
+- No Apply button. No preview modal. No commit-function invocation. No `aiTag` writes.
+- Action kinds: 4 (add-driver · add-instance-current · add-instance-desired · close-gap). `flip-disposition` deferred to v1.5 per framing-doc Q2. No destructive actions in v1.
+- Source enum (on each ActionProposal): `"discovery-note"` (Mode 1 · not yet wired) | `"ai-proposal"` (Mode 2 · this stub).
+- Provider scope: works across all 3 provider kinds (anthropic / openai-compatible / gemini) via existing CH19/CH20 tool-use translation; no provider-specific behavior in this stub.
+
+**Eval-harness integration** (`tests/aiEvals/evalRunner.js` extension per §S48.3):
+
+- Runner gains `{ harness: "action-correctness" }` option dispatching to `actionGoldenSet.js` + `actionRubric.js` + `actionJudgePrompt.js`
+- For each case, the runner invokes the chat with the case prompt + loads `engagementState`; captures the resulting envelope; passes `envelope.proposedActions` to the judge alongside the case context
+- Baseline JSON convention: canonical at `tests/aiEvals/baseline-action.json` + timestamped historical record
+
+**Anti-pattern** (what the chat must NOT do):
+
+- Free-text JSON emission (markdown code fence with JSON) in lieu of `proposeAction` tool-use. The structured-action shape ONLY comes through tool-use; free-text JSON is parsed neither by chatService nor by the eval harness.
+- Multi-modal proposal (text + JSON in same response) — the chat emits chat text AND optional tool calls; both flow through the existing tool-use pipeline.
+- Apply-button-without-engineer-review (engineer-conditional approval per the D-Rule LOCKED 2026-05-13 in `docs/SESSION_LOG_2026-05-13-final.md`) — no auto-apply at any layer in v1.
+
+**Cross-references**:
+
+- TESTS §T48 — V-AI-EVAL-12 (evalRunner dispatch source-grep) + V-CHAT-D-1 (proposeAction tool registered source-grep) + V-CHAT-D-2 (chatService envelope includes proposedActions source-grep).
+- RULES §16 CH38 NEW — structured-action-proposal contract: tool-use mechanism + envelope shape + stub scope + anti-pattern guards.
+- §S25 (aiTag.kind discriminator · existing) — extended at Step 4 to include `"discovery-note"` and `"ai-proposal"` values when proposals start applying.
+- §S48.2 (action-correctness rubric · LOCKED 2026-05-14 in eval-build phase) — the measurement bar; this stub-emission is what makes the eval harness END-TO-END runnable.
+- `schema/actionProposal.js` NEW (impl commit) — the canonical Zod schema for `ActionProposal`.
+- `docs/SUB_ARC_D_FRAMING_DECISIONS.md` Q1-Q8 + AMENDMENTS section — the framing-ack lock (action-proposal schema first cut · Mode 1 UX detailed spec · etc.).
+- Memory anchor: `feedback_5_forcing_functions.md` Rule A (constitutional touch surfaced via Q&A pre-flight 2026-05-14 evening · 8 design questions · user explicit approval "Go with all proposed answers").
+
 #### S20.4.2 · Layer 2 — Data model definition (cached, ~1500 tokens)
 
 Compact natural-language description of the v3 entity model. Derived from `RULES.md` + manifest + entity schemas. Source-of-truth: a `services/dataModelDescription.js` module that emits the text below. The module re-derives on schema change so this layer is always in sync.
