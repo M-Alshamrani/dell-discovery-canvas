@@ -15437,7 +15437,80 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     // -----------------------------------------------------------------
 
     // -----------------------------------------------------------------
-    // V-AI-EVAL-16/17 + V-CHAT-D-4 RETIRED 2026-05-14 evening (Step 3.6
+    // V-CHAT-D-5 · Sub-arc D Step 3.9 micro-arc · chat-says-vs-chat-does
+    // guard at chatService layer · LOCKED 2026-05-14 late evening
+    //
+    // CONTEXT: Step 3.6 + Step 3.8 regressions (cdd367a + ae33705) +
+    // d73ce60 original baseline all showed the same hallucination pattern:
+    // chat writes "I've proposed X" / "Done. I've proposed Y" / "Proposal
+    // submitted ✓" in its prose output BUT proposedActions: [] (no tool
+    // fired). 4 baselines now confirmed this is a structural LLM-
+    // inconsistency, not a prompt-text fixable issue. Per the user
+    // strategic pivot direction "Go B": shift defensive UX to the
+    // application layer (chatService output-time detection) rather
+    // than continue fighting it at the prompt layer.
+    //
+    // The guard fires WHEN: proposedActions.length === 0 AND the
+    // visibleResponse matches a hallucination pattern (prose phrases
+    // claiming an action was taken). On detection, the envelope gains
+    // proposalEmissionWarning = { detected, matchedPhrase, reason }
+    // for the engineer-facing UI (Step 5 preview modal) to render as
+    // "Chat described an action but did not emit a structured proposal.
+    // Manual entry required?"
+    //
+    // V-CHAT-D-5: source-grep contract · 3 guards
+    //   Guard 1: chatService.js source contains a hallucination-pattern
+    //            regex constant (HALLUCINATION_RE or named variant)
+    //   Guard 2: chatService.js envelope construction includes the
+    //            proposalEmissionWarning field
+    //   Guard 3: chatService.js contains the conjunction guard logic
+    //            (proposedActions.length === 0 + regex .test() call)
+    //
+    // RED-first scaffold (this commit); impl commit flips GREEN.
+    //
+    // Cross-references: SPEC §S20.4.1.4 NEW (this commit) + RULES §16
+    // CH38(b) extension + docs/SUB_ARC_D_FRAMING_DECISIONS.md A18
+    // -----------------------------------------------------------------
+
+    it("V-CHAT-D-5 · Sub-arc D Step 3.9 · services/chatService.js implements a chat-says-vs-chat-does guard: defines a hallucination-pattern regex + checks proposedActions.length === 0 + matches the regex against visibleResponse + adds proposalEmissionWarning field to the envelope (defensive UX detection of 'I've proposed' prose with empty proposedActions) — RED-first scaffold per SPEC §S20.4.1.4 NEW + RULES §16 CH38(b) extension · post-ae33705 strategic pivot from prompt-text iteration to application-layer detection", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/chatService.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-CHAT-D-5: services/chatService.js source MUST be readable for source-grep");
+
+      // Guard 1: a hallucination-pattern regex constant is defined.
+      // The naming may vary (HALLUCINATION_RE, PROPOSAL_HALLUCINATION_RE,
+      // etc.) but the regex MUST cover at least the dominant pattern
+      // "I've proposed" (the d73ce60 ACT-INST-DES-1 + ae33705 ACT-INST-
+      // DES-1 hallucination signal). Source-grep for "I'?ve" near
+      // "propose" within a regex literal.
+      const HALLUCINATION_REGEX_DEFINED_RE = /\/[^\/]*I'?ve[^\/]*propose[^\/]*\/|\/[^\/]*propose[^\/]*I'?ve[^\/]*\//i;
+      assert(HALLUCINATION_REGEX_DEFINED_RE.test(src),
+        "V-CHAT-D-5 · Guard 1: chatService.js MUST define a regex literal matching at least the 'I've propose' hallucination pattern (the dominant signal across d73ce60 + cdd367a + ae33705 regression captures). Without this, the chat-says-vs-chat-does guard has no detection logic.");
+
+      // Guard 2: envelope construction includes the proposalEmissionWarning
+      // field. The envelope shape pattern from earlier Sub-arc D commits
+      // is `const result = { response, provenance, contractAck,
+      // groundingViolations, proposedActions }` (per 4bcbf06) · Step 3.9
+      // adds proposalEmissionWarning to this object literal.
+      const ENVELOPE_FIELD_RE = /proposalEmissionWarning/;
+      assert(ENVELOPE_FIELD_RE.test(src),
+        "V-CHAT-D-5 · Guard 2: chatService.js MUST reference `proposalEmissionWarning` (the new envelope field that surfaces the hallucination warning to the engineer-facing UI). Without this field, the chatService output cannot communicate the detection.");
+
+      // Guard 3: the conjunction guard logic is present.
+      // Pattern: proposedActions.length === 0 in proximity to a regex
+      // .test() call against visibleResponse (or the final response text).
+      // Source-grep for both substrings within a 500-char proximity window.
+      const CONJUNCTION_GUARD_RE = /proposedActions\.length\s*===\s*0[\s\S]{0,500}\.test\(|\.test\([\s\S]{0,500}proposedActions\.length\s*===\s*0/;
+      assert(CONJUNCTION_GUARD_RE.test(src),
+        "V-CHAT-D-5 · Guard 3: chatService.js MUST contain the conjunction guard logic: `proposedActions.length === 0` near a regex `.test()` call (the actual detection trigger). Source-grep for both substrings within 500-char proximity. A bare regex definition without the trigger logic is dead code.");
+    });
+
+    // -----------------------------------------------------------------
+    // V-AI-EVAL-20 RETIRED 2026-05-14 evening (Step 3.8 micro-arc
     // micro-arc reverted per cdd367a regression analysis · user direction
     // "go as recommended" → Option A revert). The 3 tests asserted the
     // Step 3.6 prompt amendments (Rule 4 no-ask-permission sentence-append

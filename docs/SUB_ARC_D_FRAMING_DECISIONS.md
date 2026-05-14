@@ -600,6 +600,52 @@ The rc.10 first action-correctness baseline (`tests/aiEvals/baseline-action.json
 
 ---
 
+## A18 · Step 3.9 micro-arc · chat-says-vs-chat-does guard at chatService layer (2026-05-14 late evening · LOCKED · strategic pivot from prompt-text to application-layer detection)
+
+The Step 3.6 + Step 3.8 regressions, plus the original d73ce60 + 5466ea3 + ae33705 captures, all confirm a structural LLM-inconsistency pattern: chat writes prose claiming an action was taken ("I've proposed X" · "Done. I've proposed Y" · "Proposal submitted ✓") while `proposedActions: []`. Four iterations of prompt-text tuning (Steps 3.5 → 3.6 → 3.7 → 3.8) produced 2 lifts and 2 regressions on the 25-case canonical · volatility (±1.5 in avg score) exceeded the lift signal we were targeting. **The prompt-text iteration cycle is structurally closed for Sub-arc D.**
+
+User strategic pivot direction "Go B": shift the defensive-UX layer from prompt-text iteration to application-layer detection at chatService output time. The guard is deterministic · 100% reproducible · provider-agnostic · costs nothing at runtime.
+
+**Step 3.9 scope (LOCKED · user-approved "Go B" + "Go with all recommendations" 2026-05-14 late evening · 5 design questions Q1..Q5)**:
+
+- **Q1 ✅** — Guard location: `chatService.streamChat` after `visibleResponse` is finalized + after `groundingViolations` check + before envelope return. Canonical envelope construction location.
+- **Q2 ✅** — Hallucination pattern: regex `/(?:I'?ve|I\s+have)\s+(?:propose[ds]?|added|submitted|captured|marked|created)|Proposal\s+(?:submitted|is\s+in\s+your\s+panel|is\s+ready|recorded)|now\s+propose[ds]?\s+for\s+your\s+review/i` · covers the dominant phrasings observed across 4 regression baselines · avoids false positives on bare "Captured." (legitimate when chat fires) · tutorial-mode responses · generic agreement phrases.
+- **Q3 ✅** — Envelope field: `proposalEmissionWarning: { detected, matchedPhrase, reason } | null` · object on detection · null otherwise · ALWAYS present in envelope. Matches existing envelope conventions (provenance · contractAck · groundingViolations all object-shaped).
+- **Q4 ✅** — RED-first scaffold: V-CHAT-D-5 (3 sub-guards · regex constant defined + envelope field present + conjunction guard logic present in chatService.js source).
+- **Q5 ✅** — SPEC §S20.4.1.4 NEW + RULES §16 CH38(b) extension + framing-doc A18 (this section) amendment rows.
+
+**Step 3.9 commit sequence**:
+
+| Commit | Type | Surfaces |
+|---|---|---|
+| Step 3.9 preamble (this commit) | `[CONSTITUTIONAL TOUCH]` doc + RED | SPEC §S20.4.1.4 NEW + RULES §16 CH38(b) extension + framing-doc A18 + V-CHAT-D-5 RED scaffold |
+| Step 3.9 impl | `[CONSTITUTIONAL TOUCH]` impl | chatService.js HALLUCINATION_RE constant + conjunction guard + envelope.proposalEmissionWarning field · RED → GREEN |
+| Step 3.9 (post-impl) | none required | guard works against the restored Step 3.7 baseline · NO re-baseline needed (the guard is deterministic detection · NOT a chat-behavior change) |
+
+**Why no re-baseline required**: The guard is application-layer detection · NOT a prompt-text change. The chat's behavior is unchanged · the only difference is that when the chat hallucinates a proposal-emission, the envelope now carries a deterministic warning flag. The eval harness can READ that flag in per-case results for forensic analysis · but the rubric scoring is unaffected (no proposal emission still scores 0/10 on emit-warranted cases · same as before). The guard's value is in Step 5 preview-modal UX (engineer sees the warning + handles manually).
+
+**Eval-methodology calibration follows Step 3.9** (post-impl USER-RUN sequence · Experiments A + B):
+- **Experiment A**: same prompt twice with Claude judge · 50 round-trips · ~5 min · ~$1 · answers "is the iteration cycle's volatility sampling noise?"
+- **Experiment B**: same prompt with Gemini judge · 50 round-trips · ~5 min · ~$0.50 · answers "is Claude-judging-Claude cross-contaminated?"
+- Result informs whether prompt-text iteration is worth ever attempting again in this project (probably not) OR whether the iteration cycle was finding real signal that's been masked by judge bias.
+
+**Step 4 user-facing impl preamble UNBLOCKED at 3f8ff07 baseline + Step 3.9 guard scaffold**:
+
+Post-Step-3.9 the chat-says-vs-chat-does mismatch is observable at chatService output time (the warning flag). Step 5 preview-modal renders it. The combination defends against the hallucination class without requiring the LLM to be perfectly consistent. Step 4 user-facing impl (preview modal + Apply button + CH26 amendment + §S25 aiTag.kind extension + Mode 1 surface) becomes the natural next move post-Experiments-A-B.
+
+**What Step 3.9 explicitly does NOT touch**:
+- Tool name (`proposeAction` stays)
+- ActionProposalSchema (Zod stays)
+- The 4-kind enum stays
+- CH38 sub-rules (a) Rule 4 wording stays · sub-rules (c)..(g) stay
+- Examples 1-12 in systemPromptAssembler.js stay
+- chatTools.js proposeAction description stays
+- The 25-case golden set stays
+- The action-correctness rubric stays
+- Canonical baseline-action.json stays at 3f8ff07
+
+---
+
 ## A17 · Step 3.8 micro-arc · ATTEMPTED then REVERTED (2026-05-14 evening · 20:19 25-case re-baseline regression caused strategic pivot)
 
 **STATUS · REVERTED 2026-05-14 evening**: Step 3.8 impl (`abe4982`) was re-baselined and showed a behavioral REGRESSION vs `3f8ff07` (avg 7.4 → 5.92 · passRate 76% → 56% · add-instance-current 6.0 → 2.2 catastrophic · add-instance-desired stayed at 2.6 · NO lift on the targeted category). The "more examples are better" hypothesis FAILED at this Layer 1 density. Forensic insight: Layer 1 became saturated · adding Example 13 didn't add coverage · it added cognitive noise that crashed the previously-working Example 12 pattern for add-instance-current.
@@ -786,4 +832,5 @@ The Q1-Q7 base locks above + the A1-A13 amendments give the full Mode 1 spec:
 20. **Step 3.6 micro-arc (A15) · ATTEMPTED then REVERTED**: post-368d565 baseline polish attempt · Rule 4 no-ask-permission sentence-append + Example 12 (canonical add-instance-current tool-use · Veritas NetBackup at DR Site) + proposeAction "Recommended fields per kind" block · Q1-Q6 user-approved "Go with all recommendations" → impl `8a6c9f8` → re-baseline `cdd367a` REGRESSION (7.4→6.0 · 80%→60% · Example notation imitated as prose) → user direction "go as recommended" → Option A revert. Step 4 user-facing impl UNBLOCKED at restored Step 3.5 baseline (368d565 · 7.4/10 · 80% pass). Learning: behavior examples MUST NOT use inline `*[invokes X(...)]*` notation that LLMs syntactically imitate.
 21. **D4 golden-set expansion + 25-case re-baseline** (`1168ab9` + `5466ea3`): 5-case foundation graduated to 25 cases (4-6 samples per v1 category · per rc.8 sub-arc A.1→A.2 precedent). Canonical baseline transitioned to 25-case set: 6.68/10 · 68% pass · per-cat 6.8/2.0/6.6/7.5/10.0. Shared-5-case avg held at 7.2 (non-regression). BIG FINDING: add-instance-current SYSTEMICALLY broken (1/5 pass · 4 emit-cases scored 0/10 by no-emission). Root cause: Layer 1 has Example 11 for add-driver but no equivalent for add-instance-current. Positive findings: restraint discipline excellent (6/6 cases 10/10) · multi-emit works · partial-evidence inference works · contradiction surfacing works.
 22. **Step 3.7 micro-arc (A16) · Example 12 RETRY with proven-safe notation**: post-5466ea3 finding (add-instance-current category-wide failure) · Example 12 retry using Example 8's `*[calls X for Y: bullets]*` short-form notation (NOT Step-3.6's verbose inline-args form) · Veritas NetBackup at DR Site fixture (same as Step 3.6 · only notation changed) · 11 → 12 worked examples header bump · V-AI-EVAL-18 (positive guard) + V-AI-EVAL-19 (negative guard against `*[invokes proposeAction(` re-introduction · forward-protection) · Q1-Q5 user-approved "Go with all recommendations". Re-baseline 3f8ff07: avg 6.68→7.4 · pass 68%→76% · add-instance-current 2.0→6.0 (target HIT) · add-instance-desired 6.6→4.0 (REGRESSION revealed). Step 3.7 impl scope EXPANDED to also rewrite Example 11 to safe form (V-AI-EVAL-19 caught Example 11 also used verbose form · scope-expansion documented in 9aea764 hidden-risks).
+24. **Step 3.9 micro-arc (A18) · chat-says-vs-chat-does guard at chatService layer**: strategic pivot post-Step-3.8 revert · DEFENSIVE UX at application layer · deterministic regex-based detection of hallucination patterns ("I've proposed" · "Proposal submitted" · etc.) when proposedActions.length === 0 · adds envelope field `proposalEmissionWarning = { detected, matchedPhrase, reason } | null` · V-CHAT-D-5 (3 sub-guards) · Q1-Q5 user-approved "Go with all recommendations". NO re-baseline needed (deterministic detection · chat-behavior unchanged). Step 4 user-facing impl preamble UNBLOCKED at 3f8ff07 baseline + Step 3.9 guard scaffold. Eval-methodology calibration (Experiments A+B = sampling-noise + cross-judge tests) is the next USER-RUN step.
 23. **Step 3.8 micro-arc (A17) · ATTEMPTED then REVERTED**: post-3f8ff07 hypothesis confirmation attempt · Example 13 canonical add-instance-desired pattern + "13 worked examples" header bump → impl `abe4982` → 20:19 re-baseline `ae33705` REGRESSION (avg 7.4→5.92 · pass 76%→56% · add-instance-current 6.0→2.2 catastrophic) → user strategic pivot direction → revert + chatService-layer guard + eval-methodology calibration. Prompt-text iteration cycle CLOSED (4 iterations · 2 regressions · diminishing returns). Canonical baseline-action.json stays at 3f8ff07 (7.4/76%). Learning: Layer 1 saturated at ~4100 tokens with 13 examples · "more examples" hypothesis fails past a density threshold · defensive UX at chatService layer is more reliable than prompt-text tuning.
