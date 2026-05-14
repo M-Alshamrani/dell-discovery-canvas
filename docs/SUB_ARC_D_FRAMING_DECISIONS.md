@@ -600,6 +600,46 @@ The rc.10 first action-correctness baseline (`tests/aiEvals/baseline-action.json
 
 ---
 
+## A15 · Step 3.6 micro-arc · post-Step-3.5 residual closure (2026-05-14 evening · LOCKED)
+
+The Step 3.5 re-baseline (`tests/aiEvals/baseline-action.json` · commit `368d565` · 7.4/10 avg · 80% pass) hit aggregate target but revealed 2 residuals. Step 3.6 is a polish micro-arc closing both before Step 4 user-facing impl preamble lands.
+
+**2 residuals from Step 3.5 baseline (368d565)**:
+
+1. **R1 · Ask-permission pattern on ACT-INST-CUR-1 (0/10 · regressive failure mode)** — chat now grounds correctly (calls `selectMatrixView`, sees the empty Branch Clinic Data Protection cell) and describes the action with full payload detail in prose, then explicitly asks: *"Would you like me to propose both actions ... If so, I'll emit them as structured action proposals in the chat so you can review and apply."* `proposedActions: []`. This is a sibling failure mode to the d73ce60 prose-only violation Step 3.5 fixed — instead of HALLUCINATING tool invocation, the chat ASKS PERMISSION to invoke. Q6a's bet (rely on Q1+Q2+Q3 to address the hallucination class) succeeded for ACT-INST-DES-1 but ACT-INST-CUR-1 surfaces this adjacent failure that the current Rule 4 amendment doesn't explicitly forbid.
+
+2. **R2 · Payload optional-field completeness pattern** — Q3 Step 3.5 callout (`closeReason ... REQUIRED on close-gap`) successfully lifted ACT-CLOSE-1 from 9/10 to 10/10. But the equivalent steering for other kinds' recommended-but-optional fields is missing: ACT-DRIVER-1 9/10 missing `priority`; ACT-INST-DES-1 8/10 missing `vendor` + `vendorGroup` + `disposition` + `originId`. Engineer would need light edits before applying.
+
+**Step 3.6 scope (LOCKED · user-approved "recommendation: B" + "Go with all recommendations" 2026-05-14 evening · 6 design questions Q1..Q6)**:
+
+- **Q1 ✅ (sentence-append to Rule 4, no new Rule 11)** — Rule 4 extended with: *"Asking the engineer permission to invoke proposeAction (e.g., 'Would you like me to propose...?') on an unambiguous v1-kind input is the same contract violation as describing the action in prose; the engineer's intent is established by the workshop discovery flow itself, not by re-confirming each emission. Just invoke the tool."* R1 target. Keeps rule count at 10; parallel violation framing to the existing prose-only contract violation.
+- **Q2 ✅** — proposeAction tool description in `services/chatTools.js` extended with a "**Recommended fields per kind**" block paralleling the existing Step 3.5 "Required fields per kind" block. add-driver SHOULD populate `priority` when input signals urgency (e.g. "lost 4 days to ransomware" → High); add-instance-current SHOULD populate `vendor` + `vendorGroup` + `criticality` when named or inferrable; add-instance-desired SHOULD populate `vendor` + `vendorGroup` + `disposition` + `originId` when input describes replacement (disposition='replace' + originId pointing at current-state instance) or greenfield introduction (disposition='introduce'). R2 target.
+- **Q3 ✅ (Example 12 = Veritas NetBackup at DR Site · tier-2 · Medium criticality)** — canonical add-instance-current tool-use pattern · intentionally distinct from ACT-INST-CUR-1's Commvault/Branch-Clinic fixture (the eval case) so the chat learns the structural pattern not the memorized text. R1 reinforcement target.
+- **Q4 = Q4a (defer Example 13)** — add-instance-desired already scored 8/10 post-Step-3.5; Q2 "Recommended fields" block handles the payload-completeness gap without needing another worked example. Revisit if Step 3.6 re-baseline shows add-instance-desired regression.
+- **Q5 ✅ (3 RED-first source-grep guards)** — V-AI-EVAL-16 (Rule 4 "Asking the engineer permission" + "Just invoke the tool" · 2 guards) + V-AI-EVAL-17 (Example 12 marker + add-instance-current tool-use pattern + "12 worked examples" header bump · 3 guards) + V-CHAT-D-4 ("Recommended fields per kind" + priority + vendorGroup + disposition · 2 guards).
+- **Q6 ✅** — SPEC §S20.4.1.3 amendment row + RULES §16 CH38(a) sub-rule extended + framing-doc A15 (this section).
+
+**Step 3.6 commit sequence**:
+
+| Commit | Type | Surfaces |
+|---|---|---|
+| Step 3.6 preamble (this commit) | `[CONSTITUTIONAL TOUCH PROPOSED]` doc + RED | SPEC §S20.4.1.3 amendment + RULES §16 CH38(a) extension + framing-doc A15 + V-AI-EVAL-16/17 + V-CHAT-D-4 RED scaffolds |
+| Step 3.6 impl | `[CONSTITUTIONAL TOUCH]` impl | systemPromptAssembler.js Rule 4 sentence-append + Example 12 + "12 worked examples" header + chatTools.js Recommended-fields block · RED → GREEN |
+| Step 3.6 re-baseline | `data` (USER-RUN) | tests/aiEvals/baseline-action.json overwrite + new timestamped historical + forensic analysis of lift vs `368d565` |
+
+**Expected lift target (Step 3.6 re-eval at close)**: per-category 9/0/8/10/10 → ~9/8/9/10/10 (ACT-INST-CUR-1 0 → ≥7 from R1 fix · ACT-DRIVER-1 9 → 10 from R2 priority field · ACT-INST-DES-1 8 → 9 from R2 vendor/disposition fields) · passRate 80% → ≥90% · avg 7.4 → ≥8.5 · per-dimension payloadAccuracy 1.2 → ≥1.6 as the dominant indicator.
+
+**What Step 3.6 explicitly does NOT touch**:
+- Tool name (`proposeAction` stays)
+- Envelope shape (`proposedActions[]` stays as-is)
+- ActionProposalSchema (Zod schema stays as-is · no field requirement changes)
+- The 4-kind enum stays
+- CH38 sub-rules (b)..(g) stay
+- chatService.streamChat plumbing stays
+- Step 4 user-facing impl scope (preview modal · Apply button · CH26 · §S25 aiTag.kind extension · Mode 1 surface) — Step 4 is UNBLOCKED post-Step-3.5; Step 3.6 is a polish micro-arc that raises ship-confidence before Step 4 lands
+
+---
+
 ## Updated LOCKED decisions summary
 
 The Q1-Q7 base locks above + the A1-A13 amendments give the full Mode 1 spec:
@@ -623,3 +663,4 @@ The Q1-Q7 base locks above + the A1-A13 amendments give the full Mode 1 spec:
 17. **Eval scope (A12)**: action-correctness rubric in rc.10 · UX telemetry deferred to rc.11+/v3.1
 18. **Out-of-scope (A13)**: 7 items locked as explicit non-goals for D.v1
 19. **Step 3.5 micro-arc (A14)**: post-d73ce60 baseline tightening · Rule 4 verb-strength bump (MUST invoke + contract violation) + Example 11 (canonical add-driver tool-use) + proposeAction tool description hardening (MUST be invoked + closeReason REQUIRED) + ACT-INST-CUR-1 fixture fix (Commvault HyperScale X + Branch Clinic) · Q1-Q9 user-approved "Go with all recommendations" · BLOCKS Step 4 user-facing impl
+20. **Step 3.6 micro-arc (A15)**: post-368d565 baseline polish · Rule 4 no-ask-permission sentence-append + Example 12 (canonical add-instance-current tool-use · Veritas NetBackup at DR Site · intentionally distinct from ACT-INST-CUR-1 fixture) + proposeAction "Recommended fields per kind" block (priority on add-driver · vendor+vendorGroup+criticality on add-instance-current · vendor+vendorGroup+disposition+originId on add-instance-desired) · Q1-Q6 user-approved "Go with all recommendations" · Step 4 user-facing impl UNBLOCKED post-Step-3.5 · Step 3.6 is a polish micro-arc raising ship-confidence before Step 4 lands

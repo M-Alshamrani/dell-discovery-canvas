@@ -15302,6 +15302,126 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     });
 
     // -----------------------------------------------------------------
+    // V-AI-EVAL-16/17 + V-CHAT-D-4 · Sub-arc D Step 3.6 micro-arc · Rule 4
+    // no-ask-permission amendment + Example 12 (canonical add-instance-current
+    // pattern) + proposeAction tool description "Recommended fields per kind"
+    // block · LOCKED 2026-05-14 post-368d565 baseline analysis
+    //
+    // CONTEXT: Step 3.5 lift (368d565) hit aggregate target (avg 7.4 + 80%
+    // pass) but surfaced 2 residual concerns:
+    //   R1 . ask-permission pattern on ACT-INST-CUR-1: chat now grounds + describes
+    //        payload correctly but asks "Would you like me to propose...?"
+    //        instead of just emitting on unambiguous v1-kind input.
+    //   R2 . payload optional-field completeness: Q3 Step 3.5 closeReason
+    //        callout works (ACT-CLOSE-1 -> 10/10), but other kinds' recommended
+    //        fields (priority on add-driver; vendor/vendorGroup/disposition/
+    //        originId on add-instance-*) don't get equivalent steering, so
+    //        ACT-DRIVER-1 stays 9/10 + ACT-INST-DES-1 stays 8/10.
+    //
+    // V-AI-EVAL-16: systemPromptAssembler.js Rule 4 forbids ask-permission
+    //              (contains "Asking the engineer permission" + "Just invoke the tool")
+    // V-AI-EVAL-17: systemPromptAssembler.js carries Example 12 (canonical
+    //              add-instance-current pattern) + "12 worked examples" header bump
+    // V-CHAT-D-4: chatTools.js proposeAction description contains
+    //              "Recommended fields per kind" block + priority + vendorGroup
+    //              + disposition callouts
+    //
+    // All three are SOURCE-GREP contracts. Runtime behavior measured by
+    // Step 3.6 commit 3 USER-RUN re-baseline against 368d565.
+    //
+    // RED-first scaffolds (this commit); impl commit flips GREEN.
+    //
+    // Cross-references: SPEC §S20.4.1.3 amendment + RULES §16 CH38(a)
+    // amendment + tests/aiEvals/baseline-action.json (368d565 measurement bar
+    // Step 3.6 targets lift against) + docs/SUB_ARC_D_FRAMING_DECISIONS.md A15
+    // -----------------------------------------------------------------
+
+    it("V-AI-EVAL-16 · Sub-arc D Step 3.6 · services/systemPromptAssembler.js Layer 1 Rule 4 amended to forbid ask-permission pattern (contains 'Asking the engineer permission' + 'Just invoke the tool') addressing the 368d565 baseline ACT-INST-CUR-1 0/10 ask-permission failure mode — RED-first scaffold per SPEC §S20.4.1.3 amendment + RULES §16 CH38(a) amendment", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/systemPromptAssembler.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-AI-EVAL-16: services/systemPromptAssembler.js source MUST be readable for source-grep");
+
+      // Guard 1: Rule 4 explicitly forbids asking permission to invoke
+      // proposeAction. ACT-INST-CUR-1 post-368d565 said "Would you like
+      // me to propose..." and got 0/10 — Step 3.6 closes this gap.
+      const ASK_PERMISSION_RE = /Asking\s+the\s+engineer\s+permission/i;
+      assert(ASK_PERMISSION_RE.test(src),
+        "V-AI-EVAL-16 · Guard 1: Layer 1 Rule 4 MUST contain the literal phrase 'Asking the engineer permission' (the no-ask-permission amendment). Without explicit framing, the chat treats permission-asking as the polite default (368d565 baseline ACT-INST-CUR-1: 'Would you like me to propose...?' with proposedActions: []).");
+
+      // Guard 2: Rule 4 closes with imperative direction.
+      const JUST_INVOKE_RE = /Just\s+invoke\s+the\s+tool/i;
+      assert(JUST_INVOKE_RE.test(src),
+        "V-AI-EVAL-16 · Guard 2: Layer 1 Rule 4 MUST close the no-ask-permission amendment with 'Just invoke the tool' (the imperative direction matching the existing 'MUST invoke' framing from Step 3.5). Without this close, the rule describes the violation but doesn't redirect the model to the correct behavior.");
+    });
+
+    it("V-AI-EVAL-17 · Sub-arc D Step 3.6 · services/systemPromptAssembler.js Layer 1 Role section carries Example 12 (canonical add-instance-current tool-use pattern · Veritas NetBackup at DR Site · counter-pattern to ACT-INST-CUR-1's ask-permission failure) + '12 worked examples' header bump — RED-first scaffold per SPEC §S20.4.1.3 amendment", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/systemPromptAssembler.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-AI-EVAL-17: services/systemPromptAssembler.js source MUST be readable for source-grep");
+
+      // Guard 1: Example 12 marker present.
+      const EXAMPLE_12_RE = /Example 12/;
+      assert(EXAMPLE_12_RE.test(src),
+        "V-AI-EVAL-17 · Guard 1: Layer 1 Role section MUST carry Example 12 (look for 'Example 12' marker). The canonical add-instance-current tool-use pattern is the worked-example counter to ACT-INST-CUR-1's ask-permission failure mode (368d565 baseline · 0/10). Examples 1-11 are present; Example 12 is the Step 3.6 addition.");
+
+      // Guard 2: Example 12 body demonstrates the add-instance-current
+      // tool call (the pattern-by-example that successfully fixed
+      // ACT-DRIVER-1 + ACT-INST-DES-1 via Example 11 at Step 3.5).
+      const EXAMPLE_12_INSTANCE_CUR_RE = /Example 12[\s\S]{0,1500}add-instance-current/;
+      assert(EXAMPLE_12_INSTANCE_CUR_RE.test(src),
+        "V-AI-EVAL-17 · Guard 2: Example 12 body MUST demonstrate the proposeAction tool call with kind='add-instance-current' (look for 'add-instance-current' within 1500 chars of the Example 12 header). Generic prose-only example without tool-invocation pattern fails to teach the structured-emission contract.");
+
+      // Guard 3: header bumped to "12 worked examples". The count
+      // discipline traces: Sub-arc B 6→8 (Examples 7+8 · `4e34d6e`),
+      // Sub-arc C 8→10 (Examples 9+10 · `2f3176f`), Step 3.5 10→11
+      // (Example 11 · `ee42302`), Step 3.6 11→12 (Example 12 · this arc).
+      const HEADER_COUNT_RE = /12 worked examples/;
+      assert(HEADER_COUNT_RE.test(src),
+        "V-AI-EVAL-17 · Guard 3: the example-section header MUST be bumped to '12 worked examples' (was '11 worked examples' pre-Step-3.6). The count keeps the assistant prompt-aware of how many patterns it has been shown.");
+    });
+
+    it("V-CHAT-D-4 · Sub-arc D Step 3.6 · services/chatTools.js proposeAction tool description carries a 'Recommended fields per kind' block addressing payload-optional-field completeness (priority on add-driver · vendorGroup on add-instance-* · disposition on add-instance-desired) — RED-first scaffold per SPEC §S20.4.1.3 amendment + RULES §16 CH38(a) amendment + baseline 368d565 forensic analysis (R2: ACT-DRIVER-1 9/10 missing priority · ACT-INST-DES-1 8/10 missing vendor/vendorGroup/disposition/originId)", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/chatTools.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-CHAT-D-4: services/chatTools.js source MUST be readable for source-grep");
+
+      // Guard 1: proposeAction description contains the "Recommended fields
+      // per kind" block header (the structural marker parallel to the existing
+      // "Required fields per kind" block added at Step 3.5).
+      const RECOMMENDED_FIELDS_RE = /Recommended\s+fields\s+per\s+kind/i;
+      assert(RECOMMENDED_FIELDS_RE.test(src),
+        "V-CHAT-D-4 · Guard 1: proposeAction tool description MUST contain the literal phrase 'Recommended fields per kind' (the optional-but-impactful field steering block · parallel to the Step 3.5 'Required fields per kind' block). Without this header, the model has no structural hook for which optional fields to populate per kind.");
+
+      // Guard 2: the Recommended block mentions priority + vendorGroup +
+      // disposition (the three field-classes spanning the 4 v1 kinds whose
+      // payload-completeness was flagged at 368d565). All three must appear
+      // in the proposeAction description (not just elsewhere in chatTools.js).
+      const PROPOSE_ACTION_DESC_RE = /name:\s*["']proposeAction["'][\s\S]{0,3500}/;
+      const descMatch = src.match(PROPOSE_ACTION_DESC_RE);
+      assert(descMatch,
+        "V-CHAT-D-4 · Guard 2 setup: proposeAction tool definition MUST be findable in chatTools.js source (regex match failed)");
+      const descBlock = descMatch[0];
+      const hasPriority    = /priority/.test(descBlock);
+      const hasVendorGroup = /vendorGroup/.test(descBlock);
+      const hasDisposition = /disposition/.test(descBlock);
+      assert(hasPriority && hasVendorGroup && hasDisposition,
+        "V-CHAT-D-4 · Guard 2: proposeAction tool description MUST mention all 3 recommended-field classes within ~3500 chars of the tool name: priority (add-driver) · vendorGroup (add-instance-*) · disposition (add-instance-desired). Missing: " +
+        [!hasPriority && "priority", !hasVendorGroup && "vendorGroup", !hasDisposition && "disposition"].filter(Boolean).join(", "));
+    });
+
+    // -----------------------------------------------------------------
     // V-FLOW-INIT-CLEAR-1/2 · BUG-063 regression guards · LOCKED 2026-05-14
     //
     // BUG-063 (OPEN 2026-05-13): engagement initialization · residual
