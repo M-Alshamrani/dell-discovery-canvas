@@ -70,9 +70,9 @@ export const ACTION_GOLDEN_SET = [
   {
     id: "ACT-INST-CUR-1",
     category: "add-instance-current",
-    prompt: "Customer just told me they currently run Veeam Backup VBR in their Main Data Center for tier-1 backup. The Veeam appliance is on-prem and does not have an air-gap.",
+    prompt: "Customer just told me they currently run Commvault HyperScale X in their Branch Clinic site for tier-2 backup. The Commvault appliance is on-prem and runs daily snapshots without an air-gap.",
     engagementState: "demo:northstar-health",
-    engagementHint: NORTHSTAR_HINT + " · The demo has Main Data Center environment but no Veeam instance yet. The chat should propose adding Veeam Backup VBR as a current-state instance in the data-protection layer + Main DC environment.",
+    engagementHint: NORTHSTAR_HINT + " · The demo has Branch Clinic environment but no Commvault HyperScale X instance (Commvault is NOT pre-populated in the demo loader; only Veeam Backup VBR is present in Main DC's data-protection layer). The chat should propose adding Commvault HyperScale X as a current-state instance in the data-protection layer + Branch Clinic environment. Step 3.5 fixture-fix 2026-05-14 evening: prior fixture (Veeam at Main DC) contradicted the demo loader which pre-populates Veeam, causing the chat to correctly read the engagement and not propose a duplicate. The Commvault + Branch Clinic combo is non-pre-populated so the chat will propose cleanly.",
     transcriptPrior: [],
     expectedProposals: [
       {
@@ -81,21 +81,21 @@ export const ACTION_GOLDEN_SET = [
         targetState: "current",
         payload: {
           layerId: "dataProtection",
-          environmentId: "<Main-DC-uuid-from-engagement>",
-          label: "Veeam Backup VBR",
-          vendor: "Veeam",
+          environmentId: "<Branch-Clinic-uuid-from-engagement>",
+          label: "Commvault HyperScale X",
+          vendor: "Commvault",
           vendorGroup: "nonDell",
-          criticality: "High"
+          criticality: "Medium"
         },
-        rationale: "Customer explicitly named Veeam Backup VBR as their current tier-1 backup in the Main Data Center; tier-1 + no air-gap indicates High criticality."
+        rationale: "Customer explicitly named Commvault HyperScale X as their current tier-2 backup at the Branch Clinic site; tier-2 + branch site indicates Medium criticality (not High like tier-1 systems at the main DC)."
       }
     ],
     rubricAnchors: {
-      actionKind: "add-instance-current is correct (customer described EXISTING infrastructure, not desired)",
-      targetState: "layerId=dataProtection (backup is data protection layer) · environmentId=Main Data Center (explicit customer mention)",
-      payloadAccuracy: "vendor=Veeam (named) · vendorGroup=nonDell (Veeam is not Dell) · criticality=High (tier-1 + no air-gap)",
-      confidenceCalibration: "HIGH justified · every field traces to a customer statement",
-      restraint: "Chat did NOT also propose a desired-state replacement (correct · customer described what they HAVE, not what they want)"
+      actionKind: "add-instance-current is correct (customer described EXISTING infrastructure at Branch Clinic, not a desired target)",
+      targetState: "layerId=dataProtection (backup is the data-protection layer) · environmentId=Branch Clinic (explicit customer mention; the demo has this env defined)",
+      payloadAccuracy: "vendor=Commvault (named) · vendorGroup=nonDell (Commvault is not Dell) · label=Commvault HyperScale X (full product name) · criticality=Medium (tier-2 branch backup, not tier-1 critical)",
+      confidenceCalibration: "HIGH justified · every field traces directly to a customer statement",
+      restraint: "Chat did NOT also propose a desired-state replacement OR escalate criticality to High (correct · customer described what they HAVE at tier-2 with no urgency signal; over-proposing a replacement would be restraint failure)"
     }
   },
   {
