@@ -67,6 +67,32 @@ import { buildLabelMap, buildManifestLabelMap, scrubUuidsInProse } from "./uuidS
 // 3-4). On cap, streamChat surfaces a clear notice in the response.
 export const MAX_TOOL_ROUNDS = 5;
 
+// SPEC §S20.4.1.4 + RULES §16 CH38(b) — Sub-arc D Step 3.9
+// chat-says-vs-chat-does guard. Detects the hallucination pattern
+// observed across 4 regression baselines (d73ce60 · cdd367a · 5466ea3
+// · ae33705): chat writes prose claiming an action was taken ("I've
+// proposed X" / "Done. I've proposed Y" / "Proposal submitted ✓" /
+// "now proposed for your review") while proposedActions: []. The
+// pattern is structural LLM inconsistency under cognitive load · NOT
+// prompt-text-fixable. Application-layer detection at chatService
+// output time is deterministic + 100% reproducible + provider-
+// agnostic.
+//
+// Coverage (derived empirically from 4 regression baselines):
+//   - "I've proposed" / "I have proposed" / "I've added" / "I've submitted"
+//   - "I've captured" / "I've marked" / "I've created"
+//   - "Proposal submitted" / "Proposal is in your panel"
+//   - "Proposal is ready" / "Proposal recorded"
+//   - "now proposed for your review"
+//
+// False-positive avoidance: deliberately excludes bare "Captured."
+// (legitimate when chat fires the tool · ACT-INST-CUR-2/3 use this
+// preamble + actually fire) · tutorial-mode responses ("Got it · here's
+// how to capture it manually") · generic agreement phrases ("That's
+// two clear signals").
+export const HALLUCINATION_RE =
+  /(?:I'?ve|I\s+have)\s+(?:propose[ds]?|added|submitted|captured|marked|created)|Proposal\s+(?:submitted|is\s+in\s+your\s+panel|is\s+ready|recorded)|now\s+propose[ds]?\s+for\s+your\s+review/i;
+
 // providerCapabilities(providerKey)
 // → { streaming: bool, toolUse: bool, caching: bool }
 //
@@ -352,7 +378,27 @@ export async function streamChat(opts) {
   // when the chat did not call proposeAction. Downstream consumers
   // (eval harness, future preview modal) check proposedActions.length
   // > 0 to determine emission.
-  const result = { response: visibleResponse, provenance, contractAck, groundingViolations, proposedActions };
+  //
+  // Sub-arc D Step 3.9 (rc.10) · chat-says-vs-chat-does guard per
+  // SPEC §S20.4.1.4 + RULES §16 CH38(b) extension. Detects the
+  // hallucination pattern (chat writes "I've proposed X" without
+  // actually firing the tool) at chatService output time. Always
+  // present in envelope · null when not detected · object with
+  // { detected, matchedPhrase, reason } when detected. Step 5
+  // preview-modal renders the warning as "⚠ Chat described an
+  // action but did not emit a structured proposal."
+  let proposalEmissionWarning = null;
+  if (proposedActions.length === 0 && HALLUCINATION_RE.test(visibleResponse)) {
+    const match = visibleResponse.match(HALLUCINATION_RE);
+    proposalEmissionWarning = {
+      detected: true,
+      matchedPhrase: match ? match[0] : "(pattern matched but no exact substring captured)",
+      reason: "Chat described an action in prose without invoking the proposeAction tool. Engineer review recommended."
+    };
+    console.warn("[chatService] proposalEmissionWarning detected (hallucination pattern matched · proposedActions: [] · matchedPhrase=" +
+      JSON.stringify(proposalEmissionWarning.matchedPhrase) + ")");
+  }
+  const result = { response: visibleResponse, provenance, contractAck, groundingViolations, proposedActions, proposalEmissionWarning };
   try { onComplete(result); } catch (e) { console.warn("[chatService] onComplete threw:", e && e.message); }
   return result;
 }
