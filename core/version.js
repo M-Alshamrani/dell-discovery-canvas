@@ -26,6 +26,128 @@
 //
 // ---
 //
+// **3.0.0-rc.9** (TAGGED 2026-05-14) — closes the rc.9 arc. Banner
+// 1297/1297 GREEN ✅ (was 1292 at rc.8 tag; +5 net tests this release:
+// V-AI-EVAL-6/7/8 + V-FLOW-INIT-CLEAR-1/2). Eval baseline: **9.32/10
+// avg · 100% pass rate** on 25-case golden set (25/25 · was 9.16/10 ·
+// 96% at rc.8; +0.16 avg · +4pp pass rate).
+//
+// Theme · honest empty state + schema-truthful enumeration:
+//
+//   Rule 10 (Quantitative honesty) added to Layer 1 Role section of
+//   the AI chat system prompt: the v3 install-base schema collects
+//   names + types + descriptions but NOT quantities, so the chat
+//   enumerates items by name (never percentage / weighted aggregate /
+//   capacity-share across instance rows). Schema-conditional: rule
+//   narrows automatically when a `quantity` field is added to a
+//   layer's instance schema (future feature per docs/ROADMAP.md).
+//   Sub-arc C ships the rule + Examples 9 (selectLinkedComposition
+//   drilldown) + Example 10 (enumerate-by-name with inline Rule 10
+//   citation for traceability) + 3 user-facing reference docs.
+//
+//   BUG-063 closed: schema/customer.js + schema/engagement.js relax
+//   name + vertical from .min(1) to z.string(); factory defaults
+//   flipped from "New customer" / "Financial Services" / "EMEA" to
+//   "" so the empty engagement state is honestly empty rather than
+//   carrying real-looking placeholder defaults the chat would
+//   mistakenly read as real customer data.
+//
+// Rolled into rc.9 tag (origin/main + v3.0-data-architecture):
+//
+//   Session-handover infrastructure (cycle setup):
+//     - docs/HANDOVER_TEMPLATE.md v1.0 NEW (meta-discipline audit
+//       synthesizing 5 foundational discipline layers); commit e058c57
+//     - HANDOFF.md rewritten from template (797 → 224 lines · historical
+//       content into docs/SESSION_LOG_* files); commit 87fafc8
+//     - docs/SESSION_PRIMING_PROMPT.md v1.0 NEW (one-shot fresh-session
+//       pointer); commit d9bca36
+//
+//   v3.0.0-rc.8 git tag retroactively created on commit a322262
+//     (the rc.8 release-close commit was pushed 2026-05-13 evening
+//     but the git tag was missed in lock-step; coherence restored
+//     between ledger claims + tag-graph reality).
+//
+//   APP_VERSION rc.8 → rc.9-dev (R30.1 + PREFLIGHT 1a); commit f70cc38.
+//
+//   Eval baseline JSON captured into the repo (closes the discipline
+//     gap surfaced 2026-05-14 morning: HANDOFF + RELEASE_NOTES_rc.8 +
+//     this ledger all cited a file that wasn't committed); commit
+//     9e85543. Both tests/aiEvals/baseline.json (canonical) +
+//     timestamped historical record committed.
+//
+//   Sub-arc C · Canvas AI Assist Rule 10 + Examples 9 + 10 + docs
+//     (2026-05-14 · user-approved [CONSTITUTIONAL TOUCH PROPOSED]
+//     Q&A flow per Rule A · "Go with all proposed answers"):
+//     - Commit A 37356bd: SPEC §S20.4.1.2 + RULES §16 CH37 + ROADMAP.md
+//       NEW + V-AI-EVAL-6/7/8 RED scaffolds
+//     - Commit B 2f3176f: services/systemPromptAssembler.js Layer 1
+//       Role section gains Rule 10 + Examples 9 + 10; RED → GREEN
+//     - Commit C 595264f: 3 user-facing docs (CANVAS_CHAT_USER_GUIDE +
+//       CURRENT_VS_DESIRED_STATE + GAP_TYPE_VS_DISPOSITION); the 4th
+//       doc (DELL_SOLUTIONS_BY_GAP_TYPE_AND_LAYER) deferred to rc.10
+//       (SME blocker)
+//
+//   rc.9 post-Sub-arc-C eval snapshot DIAGNOSTIC (0e3d0f6): 8.92/10
+//     · 88% pass · 3 fails. WIN on Sub-arc C target (GRD-2 5/10 → 8/10);
+//     REGRESSIONS (DSC-4 10 → 4 · APP-4 10 → 5 · APP-5 10 → 5) traced
+//     to BUG-063 manifestation + adjacent honesty gap. Diagnostic-only;
+//     NOT overwriting baseline.json.
+//
+//   BUG-063 fix (preamble b70a96d + impl 9f8436f): schema/customer.js
+//     + schema/engagement.js relax name + vertical from .min(1) to
+//     z.string(); factory defaults flipped to "". 3 collateral test
+//     updates (V-SCH-11 retired-with-inversion · V-PATH-16 + V-SEL-6a
+//     explicit-fixture flips per Rule D evaluation). V-FLOW-INIT-CLEAR-
+//     1/2 NEW regression guards. Banner 1295 → 1297 GREEN.
+//
+//   rc.9 eval re-baseline GREEN (8aac4c5): user re-ran eval with
+//     BUG-063 fix landed. Results: **9.32/10 avg · 100% pass · 25/25 ·
+//     0 fails**. tests/aiEvals/baseline.json overwritten; timestamped
+//     historical record at baseline-2026-05-14T12-19-31-211Z.json.
+//
+// New tests rolled into rc.9 (+5 net since rc.8):
+//   V-AI-EVAL-6/7/8 (Rule 10 + Examples 9/10 source-grep contracts ·
+//     10 guards total including the critical V-AI-EVAL-8 Guard 3
+//     "Example 10 cites Rule 10 inline so engineers can trace the
+//     constraint")
+//   V-FLOW-INIT-CLEAR-1/2 (BUG-063 factory contract + schema-relax
+//     contract regression guards)
+//
+// Plus 3 collateral test updates (BUG-063 fix downstream):
+//   V-SCH-11 retired-with-inversion · V-PATH-16 + V-SEL-6a explicit-
+//     fixture flips
+//
+// SPEC annexes added / amended:
+//   §S20.4.1.2 NEW (Rule 10 + Examples 9 + 10 · Sub-arc C)
+//
+// RULES added:
+//   §16 CH37 NEW (schema-truthful enumeration contract · Sub-arc C)
+//
+// New docs:
+//   docs/CANVAS_CHAT_USER_GUIDE.md
+//   docs/CURRENT_VS_DESIRED_STATE.md
+//   docs/GAP_TYPE_VS_DISPOSITION.md
+//   docs/ROADMAP.md (first deferred-feature entry: quantity-collection
+//     at install-base layer, v3.1.0 candidate)
+//
+// Deferred to rc.10:
+//   Sub-arc D (AI chat action proposals · D-Rule LOCKED)
+//   docs/DELL_SOLUTIONS_BY_GAP_TYPE_AND_LAYER.md (SME blocker)
+//   Rule 10a candidate (APP-5 residual "inventing example" pattern,
+//     contingent on persistence in future re-captures)
+//   BUG-061 (Save-draft vs Publish lifecycle · Rule A flow)
+//   BUG-052 (modal-residue test flake cluster)
+//   gap.closeReason doc-drift
+//   ContextView.js empty-state dropdown rendering (BUG-063 UI follow-up)
+//   MULTI-1 slip investigation (judge variance vs real signal)
+//
+// Path to non-suffix "3.0.0" GA:
+//   - Sub-arc D action proposals (next major Canvas AI Assist arc)
+//   - At least one real-customer workshop run
+//   - Possibly Rule 10a (contingent on APP-5 re-capture)
+//
+// ---
+//
 // **3.0.0-rc.9-dev** (2026-05-14) — between v3.0.0-rc.8 (TAGGED
 // 2026-05-13 at 1292/1292 GREEN, eval baseline 9.16/10 · 96% pass on
 // 25-case golden set) and the eventual v3.0.0-rc.9 tag.
@@ -330,4 +452,4 @@
 //   - At least one real-customer workshop run against a v3.0 engagement
 //   - Real-Anthropic streaming smoke against a live key
 
-export const APP_VERSION = "3.0.0-rc.9-dev";
+export const APP_VERSION = "3.0.0-rc.9";

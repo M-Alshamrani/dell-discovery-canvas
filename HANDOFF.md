@@ -61,51 +61,46 @@ These files/symbols require `[CONSTITUTIONAL TOUCH PROPOSED]` preamble + Q&A + e
 
 ---
 
-## 🟢 Current State · 2026-05-14 morning · **post-rc.8-close · template adoption**
+## 🟢 Current State · 2026-05-14 evening · **post-rc.9-close · ready to tag**
 
-**Branch**: `v3.0-data-architecture` (+ `main`) · **HEAD**: `<this commit>` (template adoption · HANDOFF.md rewritten from `docs/HANDOVER_TEMPLATE.md` v1.0) · **APP_VERSION**: `"3.0.0-rc.8"` · **Banner**: **1292/1292 GREEN ✅** · **Eval baseline**: `9.16/10` · `96%` pass rate (`tests/aiEvals/baseline-2026-05-13T20-01-50-669Z.json`)
+**Branch**: `main` (+ `v3.0-data-architecture`) · **HEAD**: `<this commit>` (rc.9 release-close · APP_VERSION rc.9-dev → rc.9 · RELEASE_NOTES_rc.9.md · HANDOFF refresh · SPEC change log catch-up · PREFLIGHT 1-8 ticked) · **APP_VERSION**: `"3.0.0-rc.9"` · **Banner**: **1297/1297 GREEN ✅** (Docker nginx canonical env) · **Eval baseline**: **9.32/10 avg · 100% pass rate** on 25-case golden set (`tests/aiEvals/baseline-2026-05-14T12-19-31-211Z.json` · canonical at `tests/aiEvals/baseline.json`)
 
 **Working tree**: clean after this commit
-**Push status**: pending push (this commit + prior `e058c57` template+audit are local-only)
-**Tag status**: `v3.0.0-rc.8` ready to tag · awaits explicit user `tag rc.8` / `tag it` call per `feedback_no_push_without_approval.md`
+**Push status**: pending push · 11 commits local-only since rc.8 tag (`f70cc38..<this commit>`)
+**Tag status**: `v3.0.0-rc.9` ready to tag · awaits explicit user `tag rc.9` / `tag it` call per `feedback_no_push_without_approval.md`
 
 ---
 
 ## 🌅 Next Session First Action (resume here)
 
-**Past a tag — bump APP_VERSION first.** Per SPEC §S30 R30.1 + PREFLIGHT item 1a:
+**Past the rc.9 tag — bump APP_VERSION first.** Per SPEC §S30 R30.1 + PREFLIGHT item 1a:
 
-1. Edit `core/version.js`: set `APP_VERSION = "3.0.0-rc.9-dev"` (add `-dev` suffix)
-2. Add a `**3.0.0-rc.9-dev**` block at the top of the comment ledger noting date + "between v3.0.0-rc.8 (TAGGED 2026-05-13) and the eventual v3.0.0-rc.9 tag" + in-flight scope
-3. V-VERSION-2 source-grep guards against forgetting this — re-run banner after bump, confirm 1292/1292 GREEN
+1. Edit `core/version.js`: set `APP_VERSION = "3.0.0-rc.10-dev"` (add `-dev` suffix)
+2. Add a `**3.0.0-rc.10-dev**` block at the top of the comment ledger noting date + "between v3.0.0-rc.9 (TAGGED 2026-05-14) and the eventual v3.0.0-rc.10 tag" + in-flight scope
+3. V-VERSION-2 source-grep guards against forgetting this — re-run banner after bump, confirm 1297/1297 GREEN
 
-Then surface Sub-arc C scope decision to user (5 options below) and proceed per their direction.
+Then surface the **Sub-arc D scope decision** to user (D-Rule LOCKED · engineer-conditional approval mandatory · separate constitutional flow needs SPEC review + action-correctness eval rubric + confirmation UX). Or pick from the **rc.10 candidate list** below (DELL_SOLUTIONS matrix · Rule 10a if APP-5 persists · BUG-061 · BUG-052 · gap.closeReason · ContextView empty-state · MULTI-1 investigation).
 
 ---
 
-## 📌 Open Fix Plans (sequenced)
+## 📌 Open Fix Plans (sequenced for rc.10)
 
 | # | Item | Status | Discipline gate | Est. effort | Anchor |
 |---|---|---|---|---|---|
-| 1 | **Sub-arc C** · Canvas AI Assist knowledge-base wiring (per B.5 audit) | AWAITS USER SCOPE DECISION (5 options) | Wire bucket needs `[CONSTITUTIONAL TOUCH PROPOSED]` for Examples 9 + 10 in `services/systemPromptAssembler.js`; Author bucket is doc-only | small (Wire-only ~30min) · medium (Full HYBRID ~2-3 hrs) | `docs/SUB_ARC_B5_DOC_AUDIT_GAP_LIST.md` |
-| 2 | **Sub-arc D** · AI chat action proposals · Apply-button cards | LATER · queued | **D-Rule LOCKED** · engineer-conditional approval mandatory · separate constitutional flow · needs SPEC review + action-correctness eval rubric + confirmation UX | large | `docs/SESSION_LOG_2026-05-13-final.md` |
-| 3 | **BUG-061** · Save-draft vs Publish lifecycle (status enum on SkillSchema) | OPEN | Rule A constitutional flow (new locked enum) | medium | `docs/BUG_LOG.md#BUG-061` |
-| 4 | **BUG-063** · Engagement init residual non-clear fields (`customer.vertical` defaults to "Financial Services" on fresh-load) | OPEN · NEW 2026-05-13 | Schema defaults audit · `createEmptyEngagement` should produce truly-empty state · 2 RED tests scaffolded V-FLOW-INIT-CLEAR-1/2 | small | `docs/BUG_LOG.md#BUG-063` |
-| 5 | **BUG-053** · Path A skill-via-launcher importer re-attempt | DEFERRED indefinitely | Rule A · 3 framework extensions + system-skills distribution model | large · low-priority | `docs/BUG_LOG.md#BUG-053` |
-| 6 | **BUG-052** · Modal-residue test flake cluster (6 intermittent) | OPEN | Investigation arc · may converge with BUG-063 | medium | `docs/BUG_LOG.md#BUG-052` |
+| 1 | **Sub-arc D** · AI chat action proposals · Apply-button cards | NEXT-ARC CANDIDATE · queued | **D-Rule LOCKED** · engineer-conditional approval mandatory · separate constitutional flow · needs SPEC review + action-correctness eval rubric (6th dimension) + confirmation UX | large | `docs/SESSION_LOG_2026-05-13-final.md` + `docs/SESSION_LOG_2026-05-14-rc.9-close.md` |
+| 2 | **`docs/DELL_SOLUTIONS_BY_GAP_TYPE_AND_LAYER.md`** · 4th Sub-arc C doc deferred from rc.9 | DEFERRED rc.9 · ready for rc.10 | SME blocker · needs presales/sales-eng input to populate the gap_type × layer × Dell product matrix | medium (60 min SME + 15 min doc integration) | `docs/SUB_ARC_B5_DOC_AUDIT_GAP_LIST.md` Part D |
+| 3 | **Rule 10a candidate** · "Don't use engagement data as illustrative example without disclaimer" | CONTINGENT · monitoring | APP-5 cleared at 8/10 in rc.9 baseline but judge still flagged the underlying pattern. If APP-5 + sibling cases consistently flag in future re-captures → Rule 10a constitutional touch. If self-resolves → drop from queue | small (constitutional touch) | rc.9 baseline judge verdict on APP-5 |
+| 4 | **BUG-061** · Save-draft vs Publish lifecycle (status enum on SkillSchema) | OPEN | Rule A constitutional flow (new locked enum on schema/skill.js) | medium | `docs/BUG_LOG.md#BUG-061` |
+| 5 | **BUG-052** · Modal-residue test flake cluster (6 intermittent) | OPEN · may converge with BUG-063 root-cause learnings | investigation arc | medium | `docs/BUG_LOG.md#BUG-052` |
+| 6 | **BUG-053** · Path A skill-via-launcher importer re-attempt | DEFERRED indefinitely | Rule A · 3 framework extensions + system-skills distribution model | large · low-priority | `docs/BUG_LOG.md#BUG-053` |
 | 7 | **gap.closeReason doc-drift** · UI_DATA_TRACE Tab 4 §8d references non-existent field | OPEN · doc-only | None — 5-min fix | trivial | (audited 2026-05-12) |
+| 8 | **ContextView.js empty-state dropdown rendering** for empty `customer.vertical` post-BUG-063 fix | DEFERRED from rc.9 · ready for UX polish pass | UX-only · place placeholder "Select…" rendering when vertical is `""` | small | `docs/BUG_LOG.md#BUG-063` (UI follow-up item) |
+| 9 | **MULTI-1 slip investigation** (9 → 7 in rc.9 baseline · judge cites "driver-name discrepancy 'Compliance &...'") | NEW · monitoring | Re-capture eval in next prompt-tuning cycle; if pattern persists → investigate chat behavior; if self-resolves → judge non-determinism, drop | small | rc.9 baseline judge verdict on MULTI-1 |
 
-### Sub-arc C scope options (user to choose at session start)
+### What rc.9 closed (no longer in this table)
 
-The B.5 audit (`docs/SUB_ARC_B5_DOC_AUDIT_GAP_LIST.md`) lays out:
-
-- **(1) Full HYBRID** — Wire bucket (Examples 9 + 10) + Author bucket (4 new user-facing reference docs). ~2-3 hrs. Expected eval lift 9.16 → ~9.3-9.4/10.
-- **(2) Author-only** — Just the 4 reference docs. ~2 hrs. Avoids constitutional surface. GRD-2 weakness stays at 5/10.
-- **(3) Wire-only** — Just Examples 9 + 10. ~30 min. Closes GRD-2 + drilldown gap.
-- **(4) Subset** — Pick specific items.
-- **(5) Park C, move to D** — Accept 9.16/10 as locked baseline.
-
-B.5 recommends Full HYBRID.
+- ~~Sub-arc C~~ — knowledge-base wiring per B.5 audit ✅ shipped 2026-05-14 (Rule 10 + Examples 9-10 + 3 of 4 docs · DELL_SOLUTIONS matrix DEFERRED to rc.10)
+- ~~BUG-063~~ — engagement init residual fields ✅ closed 2026-05-14 (schema relax + factory defaults flip · V-FLOW-INIT-CLEAR-1/2 regression guards)
 
 ---
 
@@ -128,34 +123,46 @@ Last session (2026-05-13) touched these constitutional surfaces (all with proper
 
 ---
 
-## 📜 Commit Ledger · this session · 2 commits (2026-05-14 morning)
+## 📜 Commit Ledger · this session · 11 commits (2026-05-14)
 
-### Theme · Meta-discipline audit + handover template adoption
+### Theme · rc.9 release cycle — Sub-arc C (schema-truthful enumeration) + BUG-063 fix
 
 | Commit | Title | R11 Block 4 evidence | Notes |
 |---|---|---|---|
-| `e058c57` | docs · NEW `docs/HANDOVER_TEMPLATE.md` v1.0 + audit-trail session log | doc-only · 1292/1292 GREEN unchanged · no smoke needed | Audit synthesized 5 foundational discipline layers from ~25 anchor docs; template + audit log committed together |
-| `<this commit>` | docs · adopt `docs/HANDOVER_TEMPLATE.md` v1.0 as `HANDOFF.md` · old 797-line file replaced with filled template instance · historical content lives in session logs | doc-only · 1292/1292 GREEN unchanged · no smoke needed | Template adoption is itself the milestone; the new HANDOFF.md structure starts the rc.9 cycle |
+| `e058c57` | docs · NEW `docs/HANDOVER_TEMPLATE.md` v1.0 + audit-trail session log | doc-only · 1292/1292 GREEN unchanged | Audit synthesized 5 foundational discipline layers from ~25 anchor docs |
+| `87fafc8` | docs · adopt `docs/HANDOVER_TEMPLATE.md` v1.0 as `HANDOFF.md` (797 → 224 lines) | doc-only · 1292/1292 GREEN unchanged | Template adoption · historical content moved to SESSION_LOG files |
+| `d9bca36` | docs · NEW `docs/SESSION_PRIMING_PROMPT.md` v1.0 (fresh-context session pointer) | doc-only · 1292/1292 GREEN unchanged | One-shot priming for new sessions to ack discipline + read HANDOFF first |
+| `<retroactive>` | git tag `v3.0.0-rc.8` created on commit `a322262` + pushed to origin | tag-only operation · no test impact | rc.8 release-close commit was pushed 2026-05-13 but the tag itself was missed in lock-step; coherence restored |
+| `f70cc38` | release · APP_VERSION 3.0.0-rc.8 → 3.0.0-rc.9-dev | 1291/1292 GREEN (python http.server smoke; V-PROXY-LOCAL-B-1 env-only fail unrelated) | First-commit-past-tag bump per R30.1 + PREFLIGHT 1a |
+| `9e85543` | docs/data · eval baseline JSON captured into the repo | doc/data-only · structural JSON validation as smoke | Closes the discipline gap (file was cited everywhere but never committed) |
+| `37356bd` | **[CONSTITUTIONAL TOUCH] Sub-arc C Commit A** · SPEC §S20.4.1.2 + RULES §16 CH37 + ROADMAP + V-AI-EVAL-6/7/8 RED scaffolds | 1291/1295 (4 fail: 3 RED captured + V-PROXY-LOCAL-B-1 env-only) | Preamble + Q&A captured per Rule A; user explicit approval "Go with all proposed answers" |
+| `2f3176f` | **[CONSTITUTIONAL TOUCH] Sub-arc C Commit B** · `systemPromptAssembler.js` Rule 10 + Examples 9 + 10 | 1294/1295 GREEN (RED → GREEN flip · python local env) | Direct prompt-assembly check via dynamic import; all 8 sanity assertions pass |
+| `595264f` | docs · **Sub-arc C Commit C** · 3 author-only docs (CHAT_USER_GUIDE + CURRENT_VS_DESIRED + GAP_TYPE_VS_DISPOSITION) | doc-only · 1294/1295 GREEN unchanged | DELL_SOLUTIONS matrix deferred to rc.10 (SME blocker) |
+| `0e3d0f6` | diagnostic · rc.9 post-Sub-arc-C eval snapshot (8.92/10 · 88% pass · 3 fails) | doc/data-only · diagnostic JSON committed; NOT overwriting baseline.json | GRD-2 5→8 ✅ (Sub-arc C target hit) · regressions traced to BUG-063 + adjacent honesty gap |
+| `b70a96d` | **fix(BUG-063) preamble + RED tests** · V-FLOW-INIT-CLEAR-1/2 RED scaffolds + BUG_LOG status flip | 1291/1295 → +2 RED (V-FLOW-INIT-CLEAR-1/2 captured) | Severity escalated Low-Medium → Medium-High given eval-honesty cost |
+| `9f8436f` | **fix(BUG-063) impl** · schema/customer.js + schema/engagement.js relax + factory defaults flip + 3 collateral test updates | **1297/1297 GREEN ✅** (Docker nginx canonical env) | V-SCH-11 retired-with-inversion · V-PATH-16 + V-SEL-6a explicit-fixture flips |
+| `8aac4c5` | release · rc.9 eval re-baseline GREEN · tests/aiEvals/baseline.json updated | doc/data-only · 1297/1297 GREEN unchanged | **9.32/10 avg · 100% pass (25/25)** · exceeds rc.8 baseline on every dimension target |
+| `<this commit>` | release · rc.9 closing · APP_VERSION rc.9-dev → rc.9 + RELEASE_NOTES_rc.9.md + HANDOFF refresh + SPEC change log + session log + PREFLIGHT 1-8 ticked | doc-only · 1297/1297 GREEN unchanged | Tag-prep commit · awaits user `tag rc.9` / `tag it` call |
 
 Historical commits (rc.8 closure work, 2026-05-13) — see `docs/SESSION_LOG_2026-05-13-final.md` for the full 15-commit ledger.
 
 ---
 
-## 🎯 Session Discipline Record (2026-05-14 morning)
+## 🎯 Session Discipline Record (2026-05-14 · rc.9 cycle)
 
 ### Anchor compliance
 
-- **R11 four-block ritual**: 2/2 commits cite Browser smoke evidence ✓ (both doc-only · no smoke needed per template scope-of-application)
-- **Rule A constitutional pre-auth**: N/A · template adoption is doc-only restructure
-- **Rule B test-mounts-UX**: N/A · no UI tests added
-- **Rule C no-degraded-fallback**: N/A · no new entry points added
-- **Rule D tests-don't-move**: N/A · no test edits
-- **Rule E hidden-risks**: ✓ both commit bodies include section
-- **PREFLIGHT checklist**: N/A · this is not arc-completion or tag-time
+- **R11 four-block ritual**: 11/11 commits cite Browser smoke evidence ✓
+- **Rule A constitutional pre-auth**: 2 constitutional commits (Sub-arc C Commit A `37356bd` + Commit B `2f3176f`) cite the same `[CONSTITUTIONAL TOUCH PROPOSED]` Q&A flow captured in this session (user direction "Go with all proposed answers"). BUG-063 fix commits (b70a96d + 9f8436f) touched schema/*.js — within the constitutional surface scope (schema files for "enum changes, field add/remove/rename") but the change was `.min(1)` relaxation (constraint relaxation, not field add/remove/rename); evaluated as non-constitutional within HANDOFF.md line 41's scope. User direction "go as you recommended" captured prior authorization.
+- **Rule B test-mounts-UX**: N/A · this cycle's new tests are source-grep + factory-contract (V-AI-EVAL-6/7/8 + V-FLOW-INIT-CLEAR-1/2); no UI tests added
+- **Rule C no-degraded-fallback**: N/A · no new entry points
+- **Rule D tests-don't-move**: 3 test updates this cycle (V-SCH-11 + V-PATH-16 + V-SEL-6a). All evaluated against Rule D: V-SCH-11's `.min(1)` contract WAS the bug, so inversion is correct (not a Rule D violation); V-PATH-16 + V-SEL-6a contracts unchanged (binding resolution + view passthrough) — only fixtures flipped from implicit-default to explicit-override. Each documented inline with BUG-063 fix rationale.
+- **Rule E hidden-risks**: ✓ all 11 commit bodies include section
+- **PREFLIGHT checklist**: ✅ items 1-8 all ticked at this release-close commit (see RELEASE_NOTES_rc.9.md table)
 
 ### Drift incidents + corrections (this session)
 
-None.
+None. Every constitutional touch surfaced its preamble + Q&A before code.
 
 ### Drift incidents from previous session (2026-05-13) — recorded for trail
 
@@ -176,7 +183,7 @@ If a fresh-context session needs to fully reload the project's discipline + stat
 7. **`docs/v3.0/SPEC.md`** — change log table at bottom (most recent rows = most recent decisions)
 8. **`docs/BUG_LOG.md`** — open bugs + closed-with-commit-ref entries
 9. **`docs/SESSION_LOG_<latest>.md`** — most recent session narrative + decisions
-10. **`docs/RELEASE_NOTES_rc.8.md`** — last release scope + bug closures + test inventory
+10. **`docs/RELEASE_NOTES_rc.9.md`** — last release scope + bug closures + test inventory (rc.8 release notes preserved at `docs/RELEASE_NOTES_rc.8.md` for back-reference)
 
 (`MEMORY.md` auto-loads on every Claude session and references most of these; the chain above is the explicit human-readable read-order.)
 
@@ -188,17 +195,16 @@ Confirm each before considering the session "ended":
 
 - [x] All commits have `Browser smoke evidence:` block in body (or note doc-only)
 - [x] All commits include `Hidden risks at this layer:` section
-- [x] Any constitutional-surface commits cite a captured `[CONSTITUTIONAL TOUCH PROPOSED]` Q&A
-- [x] Test banner GREEN at session end (`1292/1292 passed ✅`)
-- [x] If past a tag: PREFLIGHT items 1–8 all ticked (handled by rc.8 release-close commit `a322262`)
-- [x] If at-tag: real-LLM smoke completed (N/A · we are post-tag-prep, not at-tag)
+- [x] Any constitutional-surface commits cite a captured `[CONSTITUTIONAL TOUCH PROPOSED]` Q&A (Sub-arc C Commits A + B; BUG-063 schema relaxation evaluated as non-constitutional within HANDOFF.md line 41's enum/field-add scope)
+- [x] Test banner GREEN at session end (`1297/1297 passed ✅` in Docker nginx canonical env)
+- [x] If past a tag: PREFLIGHT items 1–8 all ticked (this rc.9 release-close commit ticks them; see RELEASE_NOTES_rc.9.md table)
+- [x] If at-tag: real-LLM eval re-baseline completed (commit `8aac4c5` · 9.32/10 · 100% pass · 25/25)
 - [x] Working tree clean
 - [x] HANDOFF.md (this template, filled) committed (this commit)
-- [x] Session log written (`docs/SESSION_LOG_2026-05-14-handover-template-audit.md`)
-- [ ] `docs/CHANGELOG_PLAN.md` updated — *(deferred: template-adoption is meta-discipline, not feature work; CHANGELOG_PLAN entry can land at rc.9-dev kickoff if needed)*
-- [x] `docs/BUG_LOG.md` updated — no bugs touched this session
-- [x] Push pending? — yes; user direction "adapt now then push" captured
-- [ ] Tag pending? — yes (rc.8); awaits user `tag rc.8` / `tag it` call separately
+- [x] Session log written (`docs/SESSION_LOG_2026-05-14-rc.9-close.md`)
+- [x] `docs/BUG_LOG.md` updated — BUG-063 IN PROGRESS rc.9 (status + severity + fix-plan + eval evidence in `b70a96d`); BUG-063 effectively CLOSED at `9f8436f` (impl) + validated at `8aac4c5` (eval re-baseline)
+- [x] Push pending? — yes; 11 commits local-only since rc.8 tag; awaits explicit user `push` call
+- [ ] Tag pending? — yes (rc.9); awaits user `tag rc.9` / `tag it` call separately
 
 ---
 
@@ -221,4 +227,4 @@ This `HANDOFF.md` is the filled instance of `docs/HANDOVER_TEMPLATE.md` v1.0.
 
 ---
 
-*End of HANDOFF. Next session resumes at: bump APP_VERSION to `3.0.0-rc.9-dev` (rc.9 kickoff) + surface Sub-arc C scope decision to user.*
+*End of HANDOFF. Next session resumes at: bump APP_VERSION to `3.0.0-rc.10-dev` (rc.10 kickoff per R30.1) + surface Sub-arc D scope decision to user (or pick from the rc.10 candidate list above).*

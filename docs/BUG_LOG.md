@@ -2296,9 +2296,9 @@ Translation:
 
 ---
 
-## BUG-063 · Engagement initialization · residual non-clear fields on fresh-load / cache-clear (e.g. customer.vertical defaults to "Financial Services") (IN PROGRESS rc.9 · 2026-05-14)
+## BUG-063 · Engagement initialization · residual non-clear fields on fresh-load / cache-clear (e.g. customer.vertical defaults to "Financial Services") (CLOSED rc.9 · 2026-05-14)
 
-**Status**: **IN PROGRESS rc.9 · 2026-05-14** · V-FLOW-INIT-CLEAR-1/2 RED scaffolded this commit · schema relax + factory default flip queued next commit · re-baseline eval after fix to confirm DSC-4/APP-4 regressions clear
+**Status**: **CLOSED rc.9 · 2026-05-14** · schema relax + factory defaults flip landed in `9f8436f`; V-FLOW-INIT-CLEAR-1/2 regression guards GREEN; eval re-baseline at `8aac4c5` validated 100% pass with DSC-4 + APP-4 lifted back to 9-10/10. UI follow-up (ContextView.js empty-state dropdown placeholder rendering) deferred to rc.10 UX polish pass per HANDOFF rc.10 candidate list item 8.
 **Reporter**: User (post-2026-05-13 review · superseded the BUG-052 modal-residue test cluster as the more visible symptom · "there are some residual non clear fields when initialize or clear cache memory, for example the client vertical default to financial")
 **Severity**: **Medium-High** (UX correctness AND eval-honesty cost — Sub-arc C eval re-baseline 2026-05-14 traced 3 case regressions DSC-4 10→4 + APP-4 10→5 + APP-5 10→5 to chat treating these defaults as real customer data; cumulative score impact -0.24 avg + -8pp pass rate; rc.8 baseline 9.16/10 → rc.9 8.92/10 entirely from BUG-063 manifestation)
 
