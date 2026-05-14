@@ -15371,15 +15371,23 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assert(EXAMPLE_12_INSTANCE_CUR_RE.test(src),
         "V-AI-EVAL-18 · Guard 2: Example 12 body MUST teach the proposeAction tool call for kind='add-instance-current' (look for 'add-instance-current' within 1500 chars of the Example 12 header). Generic prose-only example fails to teach the structured-emission contract.");
 
-      // Guard 3: header bumped to "12 worked examples". The count
-      // discipline traces: Sub-arc B 6→8 (Examples 7+8 · `4e34d6e`),
-      // Sub-arc C 8→10 (Examples 9+10 · `2f3176f`), Step 3.5 10→11
-      // (Example 11 · `ee42302`), Step 3.7 11→12 (Example 12 retry ·
-      // this arc · Step 3.6 attempt at this bump was reverted at
-      // 58b27c3 due to notation-imitation regression).
-      const HEADER_COUNT_RE = /12 worked examples/;
-      assert(HEADER_COUNT_RE.test(src),
-        "V-AI-EVAL-18 · Guard 3: the example-section header MUST be bumped to '12 worked examples' (was '11 worked examples' at Step 3.5 / post-Step-3.6-revert). V-AI-EVAL-14 Guard 3 (count >= 11 floor) continues to pass; this guard locks the current ceiling.");
+      // Guard 3: header bumped to "12 worked examples" at Step 3.7.
+      // AMENDED 2026-05-14 Step 3.8: assert "at least 12" rather than
+      // "exactly 12" so future arcs adding Examples 13+ don't break
+      // this guard while preserving the floor contract (Step 3.7's
+      // bump from 11 must remain · ie the count can never regress
+      // below 12). V-AI-EVAL-20 Guard 3 asserts the current exact
+      // count (13 at Step 3.8); this guard is the historical floor.
+      // Parallel discipline to V-AI-EVAL-14 Guard 3 amendment at Step
+      // 3.6 impl (count >= 11 floor) · the pattern is: only the
+      // LATEST step's V-* test holds an exact-count guard · prior
+      // steps' guards become floor-only as the count grows. Per the
+      // Step 3.7 hidden-risks note (commit 8c781ae) + Step 3.8 SPEC
+      // amendment.
+      const headerMatch = src.match(/(\d+) worked examples/);
+      const headerCount = headerMatch ? parseInt(headerMatch[1], 10) : 0;
+      assert(headerCount >= 12,
+        "V-AI-EVAL-18 · Guard 3: the example-section header MUST be bumped to AT LEAST '12 worked examples' (Step 3.7 set the floor by bumping from 11 to 12; future arcs may add more examples and bump further · Step 3.8 bumped to 13). Current count: " + headerCount);
     });
 
     it("V-AI-EVAL-19 · Sub-arc D Step 3.7 · services/systemPromptAssembler.js MUST NOT use the Step-3.6 imitation-hazard notation form `*[invokes proposeAction(` (forward-protection · any future maintainer switching back to the verbose inline-args notation gets caught) — RED-first scaffold per Step 3.6 revert (58b27c3) + cdd367a regression learning", async () => {
