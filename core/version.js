@@ -26,6 +26,44 @@
 //
 // ---
 //
+// **3.0.0-rc.10-dev** (2026-05-14 evening) — between v3.0.0-rc.9
+// (TAGGED 2026-05-14 at 1297/1297 GREEN, eval baseline 9.32/10 ·
+// 100% pass rate on 25-case golden set) and the eventual v3.0.0-rc.10
+// tag.
+//
+// In flight (sequenced from HANDOFF.md rc.10 candidate list +
+// docs/SUB_ARC_D_FRAMING_DECISIONS.md):
+//   - Sub-arc D · AI chat action proposals with engineer-conditional
+//     approval. MULTI-MODE capability: Mode 2 (Conversational · D.v1)
+//     first by default · Mode 1 (Workshop Notes · D.v2) second.
+//     Sequencing flips if a live workshop is scheduled within ~3
+//     weeks of rc.10 start. D-Rule LOCKED · engineer-conditional
+//     approval mandatory · separate constitutional flow at preamble
+//     step. Action kinds in v1 scope: add-driver, add-instance-
+//     current, add-instance-desired, close-gap (flip-disposition
+//     deferred to v1.5). New schema/actionProposal.js + provenance
+//     enum extension (aiTag.kind += "discovery-note" + "ai-proposal")
+//     + new preview modal (extends ImportPreviewModal from §S47) +
+//     new orthogonal eval harness (action-correctness rubric · 5
+//     dims). Effort: ~3-4 weeks total for both modes.
+//   - docs/DELL_SOLUTIONS_BY_GAP_TYPE_AND_LAYER.md (4th Sub-arc C
+//     doc deferred from rc.9 · SME blocker)
+//   - Rule 10a candidate (APP-5 residual "inventing example" pattern
+//     · contingent on persistence in future re-captures)
+//   - BUG-061 Save-draft vs Publish lifecycle (Rule A · new locked
+//     enum on schema/skill.js)
+//   - BUG-052 Modal-residue test flake cluster
+//   - gap.closeReason doc-drift (UI_DATA_TRACE Tab 4 §8d · 5-min fix)
+//   - ContextView.js empty-state dropdown rendering (BUG-063 UI
+//     follow-up)
+//   - MULTI-1 slip investigation (judge variance vs real signal)
+//
+// Per RULES §16 CH24 + PREFLIGHT.md item 1a: this is the FIRST commit
+// past the rc.9 tag, so the `-dev` suffix is added now. V-VERSION-2
+// source-grep is the regression guard.
+//
+// ---
+//
 // **3.0.0-rc.9** (TAGGED 2026-05-14) — closes the rc.9 arc. Banner
 // 1297/1297 GREEN ✅ (was 1292 at rc.8 tag; +5 net tests this release:
 // V-AI-EVAL-6/7/8 + V-FLOW-INIT-CLEAR-1/2). Eval baseline: **9.32/10
@@ -452,4 +490,4 @@
 //   - At least one real-customer workshop run against a v3.0 engagement
 //   - Real-Anthropic streaming smoke against a live key
 
-export const APP_VERSION = "3.0.0-rc.9";
+export const APP_VERSION = "3.0.0-rc.10-dev";
