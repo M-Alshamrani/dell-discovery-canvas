@@ -20,6 +20,10 @@ import { selectLinkedComposition }      from "../selectors/linkedComposition.js"
 import { selectProjects }               from "../selectors/projects.js";
 import { getConcept }                   from "../core/conceptManifest.js";
 import { getWorkflow }                  from "../core/appManifest.js";
+// Sub-arc D (rc.10) · proposeAction tool · imports the canonical
+// kind enum from schema/actionProposal.js for single-source-of-truth
+// in the input_schema below. Per RULES §16 CH38(a).
+import { ACTION_KINDS, ACTION_CONFIDENCE_LEVELS, ACTION_SOURCES } from "../schema/actionProposal.js";
 
 export const CHAT_TOOLS = [
   {
@@ -102,6 +106,48 @@ export const CHAT_TOOLS = [
         return { ok: false, error: "Unknown concept id: '" + (id || "(missing)") + "'. Call selectConcept with one of the ids in the TOC." };
       }
       return { ok: true, concept: c };
+    }
+  },
+  // SPEC §S20.4.1.3 + RULES §16 CH38 — Sub-arc D stub-emission tool.
+  // The chat invokes proposeAction when a workshop scenario maps to a
+  // known action-kind (4 v1 kinds: add-driver / add-instance-current /
+  // add-instance-desired / close-gap). The handler does NOT mutate
+  // engagement state; chatService.js captures the tool input into the
+  // envelope.proposedActions[] array for engineer-facing review at
+  // Sub-arc D Step 4 (preview modal + Apply button). At stub stage
+  // there is no Apply UI; proposals just sit in the envelope.
+  // flip-disposition + destructive kinds are DEFERRED to v1.5.
+  // Per feedback_no_mocks.md: every tool invocation is a real-LLM
+  // round-trip; no scripted substrate. input_schema enum on `kind`
+  // uses ACTION_KINDS (single source of truth from schema/
+  // actionProposal.js · no manual duplication of the kind list).
+  {
+    name: "proposeAction",
+    description: "Propose a structured canvas action for engineer review. Invoke this tool when the workshop input maps to one of the v1 action kinds (add-driver, add-instance-current, add-instance-desired, close-gap). The proposal is recorded for engineer review; no canvas state changes until the engineer applies it. Use confidence=HIGH only when the input unambiguously names the entity + supports every payload field; use MEDIUM when one field is inferred; use LOW when multiple fields are inferred or the customer context is ambiguous. Do NOT invoke this tool for free-text suggestions, multi-step plans without clear single-action decomposition, or destructive actions (delete/hide/archive are deferred to v1.5+).",
+    input_schema: {
+      type: "object",
+      properties: {
+        kind:        { type: "string", enum: ACTION_KINDS, description: "The action kind (one of 4 v1 kinds). flip-disposition is deferred to v1.5." },
+        targetState: { type: "string", enum: ["current", "desired"], description: "Optional · only for add-instance-* kinds. Identifies which state the new tile lands in." },
+        payload:     { type: "object", description: "Polymorphic per-kind payload. Shape varies by kind. See schema/actionProposal.js for per-kind structure. Required fields per kind: add-driver:{businessDriverId}; add-instance-current:{layerId,environmentId,label}; add-instance-desired:{layerId,environmentId,label}; close-gap:{gapId,status:'closed'}." },
+        confidence:  { type: "string", enum: ACTION_CONFIDENCE_LEVELS, description: "Chat-emitted confidence about this proposal. HIGH/MEDIUM/LOW. Use HIGH only when input unambiguously supports every field." },
+        rationale:   { type: "string", description: "Natural-language explanation of why this proposal makes sense given the workshop input. The engineer reads this in the preview modal to decide whether to apply." },
+        source:      { type: "string", enum: ACTION_SOURCES, description: "Which mode emitted this proposal. discovery-note (Mode 1 note-taking batch) or ai-proposal (Mode 2 conversational chat-inline · this stub)." }
+      },
+      required: ["kind", "payload", "confidence", "rationale", "source"]
+    },
+    invoke: (engagement, args) => {
+      // Stub handler: acknowledge receipt. Per CH38(c) this tool does
+      // NOT mutate engagement state and does NOT invoke commit-functions.
+      // chatService.js captures the args into envelope.proposedActions[]
+      // via runtime Zod validation against ActionProposalSchema. The
+      // return value here is what the LLM sees in its next round (so it
+      // knows the proposal landed; the chat can continue conversation).
+      const kind = args && args.kind;
+      if (!kind || !ACTION_KINDS.includes(kind)) {
+        return { ok: false, error: "proposeAction received invalid or missing kind. Valid kinds: " + ACTION_KINDS.join(", ") };
+      }
+      return { ok: true, recorded: true, kind: kind, message: "Proposal recorded for engineer review. Continue the conversation as needed." };
     }
   },
   // SPEC §S28 + RULES §16 CH22 — procedural-grounding tool. Fetches

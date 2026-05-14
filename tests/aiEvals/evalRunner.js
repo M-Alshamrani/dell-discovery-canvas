@@ -37,6 +37,15 @@
 import { GOLDEN_SET, GOLDEN_SET_VERSION } from "./goldenSet.js";
 import { RUBRIC_DIMENSIONS, RUBRIC_VERSION, RUBRIC_PASS_THRESHOLD, RUBRIC_TOTAL_MAX } from "./rubric.js";
 import { buildJudgeMessages, JUDGE_PROMPT_VERSION } from "./judgePrompt.js";
+// Sub-arc D (rc.10) · action-correctness harness imports per SPEC
+// §S48.3 + RULES §16 CH38(g). The runner dispatches on
+// { harness: "action-correctness" } to route to these modules
+// instead of the chat-quality defaults above. Both harnesses share
+// the per-case dispatch + judge-call + aggregation infrastructure
+// below; only the golden set + rubric + judge prompt swap.
+import { ACTION_GOLDEN_SET, ACTION_GOLDEN_SET_VERSION } from "./actionGoldenSet.js";
+import { ACTION_RUBRIC_DIMENSIONS, ACTION_RUBRIC_VERSION, ACTION_RUBRIC_PASS_THRESHOLD, ACTION_RUBRIC_TOTAL_MAX } from "./actionRubric.js";
+import { buildActionJudgeMessages, ACTION_JUDGE_PROMPT_VERSION } from "./actionJudgePrompt.js";
 
 import { streamChat } from "../../services/chatService.js";
 import { createRealChatProvider } from "../../services/realChatProvider.js";
@@ -53,23 +62,36 @@ import { clearTranscript } from "../../state/chatMemory.js";
 //   opts.judgeProviderKey? : override for the judge LLM (defaults to
 //                            same active provider as the chat-under-test)
 //   opts.onProgress?       : function({ index, total, caseId, phase }) for UI updates
-//   opts.cases?            : array of golden cases (defaults to GOLDEN_SET)
+//   opts.cases?            : array of golden cases (defaults vary by harness)
+//   opts.harness?          : "chat-quality" (default · §S48.1) or
+//                            "action-correctness" (Sub-arc D · §S48.2);
+//                            selects which goldenSet + rubric + judgePrompt
+//                            triplet drives the run · per §S48.3 dispatch
+//                            convention + RULES §16 CH38(g).
 //
 // Returns: { results: [...per-case...], aggregate: {...stats...} }
 export async function runCanvasAiEvals(opts) {
   opts = opts || {};
-  const cases = opts.cases || GOLDEN_SET;
+  // Sub-arc D (rc.10) · harness dispatch per SPEC §S48.3. Default to
+  // chat-quality for backwards compatibility (rc.8 + rc.9 baseline
+  // capture flow unchanged). action-correctness harness routes to
+  // ACTION_GOLDEN_SET + ACTION_RUBRIC_* + buildActionJudgeMessages.
+  const harness = opts.harness || "chat-quality";
+  const isActionCorrectness = harness === "action-correctness";
+  const defaultCases = isActionCorrectness ? ACTION_GOLDEN_SET : GOLDEN_SET;
+  const cases = opts.cases || defaultCases;
   const onProgress = opts.onProgress || function() {};
 
   const aiCfg = loadAiConfig();
   const activeProviderKey = aiCfg.activeProvider || "anthropic";
   const judgeProviderKey  = opts.judgeProviderKey || activeProviderKey;
 
-  console.log("[AI Evals] starting run · cases=" + cases.length +
+  console.log("[AI Evals] starting run · harness=" + harness +
+              " · cases=" + cases.length +
               " · provider=" + activeProviderKey +
               " · judge=" + judgeProviderKey +
-              " · rubric v" + RUBRIC_VERSION +
-              " · goldenSet v" + GOLDEN_SET_VERSION);
+              " · rubric v" + (isActionCorrectness ? ACTION_RUBRIC_VERSION : RUBRIC_VERSION) +
+              " · goldenSet v" + (isActionCorrectness ? ACTION_GOLDEN_SET_VERSION : GOLDEN_SET_VERSION));
 
   const results = [];
   for (let i = 0; i < cases.length; i++) {

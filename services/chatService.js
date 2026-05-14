@@ -28,6 +28,14 @@
 import { buildSystemPrompt }  from "./systemPromptAssembler.js";
 import { CHAT_TOOLS }         from "./chatTools.js";
 import { getContractChecksum } from "../core/dataContract.js";
+// Sub-arc D (rc.10) · ActionProposalSchema is the canonical Zod schema
+// for validating proposeAction tool args at runtime. Per SPEC §S20.4.1.3
+// + RULES §16 CH38(a): the chat invokes the proposeAction tool with
+// structured args; chatService captures + validates each call's input
+// into the envelope's proposedActions[] field. Bad input is dropped
+// with a console.warn (eval harness detects no-proposal-where-expected
+// as a restraint signal · not a chat-side error).
+import { ActionProposalSchema } from "../schema/actionProposal.js";
 // SPEC §S37 + RULES §16 CH33 — grounding contract recast (rc.6).
 // streamChat invokes the deterministic retrieval router BEFORE
 // assembling the system prompt; selector results are inlined into
@@ -160,6 +168,13 @@ export async function streamChat(opts) {
   let lastTextResponse = "";   // tracks the most recent text-only LLM response (the "answer")
   let allRoundsText  = "";     // accumulated text across all rounds (used if cap is hit with no text-only round)
   let chainCap       = false;  // true if MAX_TOOL_ROUNDS reached without text-only response
+  // Sub-arc D (rc.10 · SPEC §S20.4.1.3 + RULES §16 CH38) · accumulator
+  // for proposeAction tool calls across rounds. Each valid proposal
+  // appended; surfaced in the result envelope as proposedActions[]
+  // for engineer-facing review at Sub-arc D Step 4 (preview modal +
+  // Apply button). At stub stage this array sits in the envelope and
+  // the eval harness reads it.
+  const proposedActions = [];
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     // Per §S34 R34.2 - signal round start to the overlay so it can
     // paint the multi-round badge for round >= 2 (1-indexed user view).
@@ -183,6 +198,22 @@ export async function streamChat(opts) {
     // can paint the per-tool status pill while the tool runs.
     try { onToolUse({ name: result.toolUse.name, args: result.toolUse.input || {} }); }
     catch (e) { console.warn("[chatService] onToolUse threw:", e && e.message); }
+    // Sub-arc D (rc.10) · proposeAction is a structurally-special tool
+    // (records intent rather than fetching data). Capture the validated
+    // args into proposedActions[] for the envelope. Invalid input is
+    // dropped with a console.warn; the eval harness reads
+    // envelope.proposedActions and scores the action-correctness
+    // rubric (§S48.2) · empty array on a case that warranted a
+    // proposal = restraint failure.
+    if (result.toolUse.name === "proposeAction") {
+      const parsed = ActionProposalSchema.safeParse(result.toolUse.input || {});
+      if (parsed.success) {
+        proposedActions.push(parsed.data);
+      } else {
+        console.warn("[chatService] proposeAction received malformed input (dropped from envelope.proposedActions):",
+          JSON.stringify(parsed.error?.issues || parsed.error).slice(0, 500));
+      }
+    }
     const toolResult = tool.invoke(engagement, result.toolUse.input || {});
 
     // Anthropic-shape content blocks (per SPEC §S20.18 + RULES §16 CH19).
@@ -316,7 +347,12 @@ export async function streamChat(opts) {
     console.warn("[chatService] verifyGrounding threw:", e && e.message);
   }
 
-  const result = { response: visibleResponse, provenance, contractAck, groundingViolations };
+  // Sub-arc D (rc.10) · proposedActions[] added to envelope per
+  // SPEC §S20.4.1.3 + RULES §16 CH38(b). Always present; empty array
+  // when the chat did not call proposeAction. Downstream consumers
+  // (eval harness, future preview modal) check proposedActions.length
+  // > 0 to determine emission.
+  const result = { response: visibleResponse, provenance, contractAck, groundingViolations, proposedActions };
   try { onComplete(result); } catch (e) { console.warn("[chatService] onComplete threw:", e && e.message); }
   return result;
 }
