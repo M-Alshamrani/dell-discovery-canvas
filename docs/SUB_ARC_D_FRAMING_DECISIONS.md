@@ -600,7 +600,15 @@ The rc.10 first action-correctness baseline (`tests/aiEvals/baseline-action.json
 
 ---
 
-## A15 · Step 3.6 micro-arc · post-Step-3.5 residual closure (2026-05-14 evening · LOCKED)
+## A15 · Step 3.6 micro-arc · ATTEMPTED then REVERTED (2026-05-14 evening · post-Step-3.5 residual closure attempt rolled back per cdd367a regression analysis)
+
+**STATUS · REVERTED 2026-05-14 evening**: Step 3.6 impl (`8a6c9f8`) was re-baselined and showed a behavioral REGRESSION vs `368d565` (avg 7.4 → 6.0 · passRate 80% → 60% · per-cat add-instance-desired 8 → 0 catastrophic). Forensic root cause: Example 12's inline `*[invokes proposeAction(kind='add-instance-current'...)]*` notation was IMITATED by the LLM as prose text (ACT-INST-CUR-1 chat answer literally wrote the bracketed notation in its response body · `proposedActions: []`) AND ACT-INST-DES-1 hallucinated "I've proposed..." with empty proposedActions. The notation that was intended as a teaching device became a syntactic pattern the model imitated. User direction "go as recommended" → Option A revert: rolled back systemPromptAssembler.js Rule 4 sentence-append + Example 12 + "12 worked examples" header bump + chatTools.js "Recommended fields per kind" block. V-AI-EVAL-16/17 + V-CHAT-D-4 RETIRED (contract surface no longer exists). Canonical `tests/aiEvals/baseline-action.json` UNCHANGED · still points at `368d565` Step 3.5 capture (7.4/10 · 80% pass · ship-confidence floor preserved). The Step 3.6 amendment content below remains as historical record of what was attempted + the design rationale, BUT IS NO LONGER IN EFFECT.
+
+**Learning captured**: behavior examples MUST NOT use inline `*[invokes X(...)]*` notation that LLMs can syntactically imitate. Future arcs adding examples should use descriptive prose ("The chat then invokes the X tool with these args: ...") or out-of-band depiction. R1 + R2 residuals from Step 3.5 remain · addressable at Step 5 (preview-modal UX surfaces blanks visibly · engineer fills before apply) rather than in Layer 1 prompt-text tuning.
+
+---
+
+### (REVERTED) Original Step 3.6 design intent · captured for historical record
 
 The Step 3.5 re-baseline (`tests/aiEvals/baseline-action.json` · commit `368d565` · 7.4/10 avg · 80% pass) hit aggregate target but revealed 2 residuals. Step 3.6 is a polish micro-arc closing both before Step 4 user-facing impl preamble lands.
 
@@ -663,4 +671,4 @@ The Q1-Q7 base locks above + the A1-A13 amendments give the full Mode 1 spec:
 17. **Eval scope (A12)**: action-correctness rubric in rc.10 · UX telemetry deferred to rc.11+/v3.1
 18. **Out-of-scope (A13)**: 7 items locked as explicit non-goals for D.v1
 19. **Step 3.5 micro-arc (A14)**: post-d73ce60 baseline tightening · Rule 4 verb-strength bump (MUST invoke + contract violation) + Example 11 (canonical add-driver tool-use) + proposeAction tool description hardening (MUST be invoked + closeReason REQUIRED) + ACT-INST-CUR-1 fixture fix (Commvault HyperScale X + Branch Clinic) · Q1-Q9 user-approved "Go with all recommendations" · BLOCKS Step 4 user-facing impl
-20. **Step 3.6 micro-arc (A15)**: post-368d565 baseline polish · Rule 4 no-ask-permission sentence-append + Example 12 (canonical add-instance-current tool-use · Veritas NetBackup at DR Site · intentionally distinct from ACT-INST-CUR-1 fixture) + proposeAction "Recommended fields per kind" block (priority on add-driver · vendor+vendorGroup+criticality on add-instance-current · vendor+vendorGroup+disposition+originId on add-instance-desired) · Q1-Q6 user-approved "Go with all recommendations" · Step 4 user-facing impl UNBLOCKED post-Step-3.5 · Step 3.6 is a polish micro-arc raising ship-confidence before Step 4 lands
+20. **Step 3.6 micro-arc (A15) · ATTEMPTED then REVERTED**: post-368d565 baseline polish attempt · Rule 4 no-ask-permission sentence-append + Example 12 (canonical add-instance-current tool-use · Veritas NetBackup at DR Site) + proposeAction "Recommended fields per kind" block · Q1-Q6 user-approved "Go with all recommendations" → impl `8a6c9f8` → re-baseline `cdd367a` REGRESSION (7.4→6.0 · 80%→60% · Example notation imitated as prose) → user direction "go as recommended" → Option A revert. Step 4 user-facing impl UNBLOCKED at restored Step 3.5 baseline (368d565 · 7.4/10 · 80% pass). Learning: behavior examples MUST NOT use inline `*[invokes X(...)]*` notation that LLMs syntactically imitate.
