@@ -556,6 +556,72 @@ Realistic workshop interaction (Northstar Health · session #1) · captured here
 
 ---
 
+## A19 · SUB-ARC D ARCHITECTURE PIVOT · engineer-issued import via Path B (2026-05-15 · LOCKED post-calibration · SUPERSEDES A14 Q4 + portions of A2-A13)
+
+**The pivot in one sentence**: Sub-arc D shifts from "chat autonomously emits `proposeAction` proposals" → "chat structures workshop notes + engineer explicitly commands import via the existing Path B importer." The chat's role narrows from autonomous mutation-proposer to structured-content-author + suggestion-source. The Path B importer (already shipped at SPEC §S47 rc.8 LOCKED 2026-05-12) becomes the canonical engagement-mutation pathway for AI-derived input.
+
+**Rationale (forensic · grounded in 5 baselines + Experiments A+B)**:
+
+The eval-methodology calibration (commit `9edcb36`) revealed three load-bearing findings:
+
+1. **Sampling-noise floor is ±0.3 avg / ±8pp pass** with Claude judge (Experiment A · same-prompt-twice).
+2. **Same-model judge inflation is ~+2 avg / +24pp pass** (Experiment B · Gemini judge). The honest rc.10 baseline by an unbiased judge is ~5.56/10 · 52% pass · NOT the 7.4/76% Claude-judge-canonical.
+3. **The chat layer's autonomous emission is structurally unreliable** at this Layer 1 token density. 95% of observed failures are *detection/decision* failures (chat understands the signal · describes the action in prose · doesn't autonomously fire `proposeAction`) rather than plumbing failures (when chat DOES fire, ActionProposalSchema validates + envelope captures + works).
+
+The prompt-text iteration cycle (Steps 3.5 → 3.6-revert → 3.7 → 3.8-revert) confirmed: we cannot raise autonomous-emission reliability beyond ~76% Claude-judge / ~52% Gemini-judge via prompt-text tuning. The fragility is structural to LLM tool-use adherence at this density.
+
+**Architectural insight (user-surfaced)**: instead of fighting autonomous emission, **let the engineer issue an explicit command** to import the AI-structured notes into the canvas. Reuse the existing Path B importer (§S47) as the transfer mechanism. The chat does what LLMs are *good at* (structure + suggest); the engineer does what engineers are *good at* (review + decide); the importer does what code is *good at* (deterministic mutation via commit functions).
+
+**What changes from A14 + A2-A13**:
+
+- **Q4 (sequencing · Mode 2 first by default)**: SUPERSEDED · Mode 1 (Workshop Notes overlay → Path B import) is now the PRIMARY path. Mode 2 (chat-inline autonomous proposals) becomes OPTIONAL / DEFERRED · no v1 ship requirement.
+- **A2 (Mode 1 dual-pane overlay)**: UNCHANGED · dual-pane design holds. Lower pane = raw bullets · upper pane = AI-structured notes. NEW: upper pane gains an "Import to canvas" button + per-mapping checkboxes (reuses ImportPreviewModal pattern after click).
+- **A3 (push behavior · DELTA-only with Re-evaluate all)**: UNCHANGED · the chat re-structures notes on push · the import step is separate from the push.
+- **A5 (per-row + bulk-apply review)**: UNCHANGED · review/apply now happens via the existing ImportPreviewModal (§S47) AFTER the engineer clicks "Import to canvas" · NOT via a new Sub-arc D preview modal.
+- **Q5 (rubric orthogonality)**: UNCHANGED in shape · but the action-correctness rubric's MEANING shifts from "did the chat autonomously emit?" → "did the chat correctly STRUCTURE the action in its notes output (which the importer can transform)?". The 25-case golden set survives with rubric reinterpretation · the rubric dimensions stay (actionKind / targetState / payloadAccuracy / confidenceCalibration / restraint).
+- **Q6 (Rule 4 amendment)**: UNCHANGED · the chat may still fire `proposeAction` autonomously in Mode 2 chat-inline · the guard scaffolding (Step 3.9 chat-says-vs-chat-does) is now a Mode 2 defensive layer. But Mode 2 is no longer the v1 primary path.
+- **A12 (eval scope · action-correctness in rc.10)**: UNCHANGED in scope · MEANING shifts as noted.
+
+**What stays unchanged**:
+
+- §S20.4.1.3 stub-emission contract (Rule 4 + proposeAction tool registered + envelope.proposedActions[]) · STAYS · supports Mode 2 optional fallback + eval-harness measurement
+- §S20.4.1.4 chat-says-vs-chat-does guard (Step 3.9) · STAYS · defensive UX for any chat-inline emission attempt
+- §S20.4.1.1 + §S20.4.1.2 behavior examples (Examples 1-12) · STAY · teach action-kind vocabulary + ground-cited tool calls
+- ActionProposalSchema · STAYS · becomes the structured shape the Path B importer EXPECTS as input (from the Workshop Notes overlay export)
+- The 25-case action-correctness rubric + golden set · STAY · same dimensions · same cases · rubric INTERPRETATION shifts (not the structure)
+- CH26 amendment (topbar AI Notes button) · STAYS · button opens the Workshop Notes overlay (Mode 1)
+- §S25 aiTag.kind extension ("discovery-note" + "ai-proposal") · STAYS · applied via Path B importer at apply time
+
+**New Sub-arc D commit sequence (post-pivot)**:
+
+| Phase | Commit | Type | Notes |
+|---|---|---|---|
+| Pivot framing | THIS commit | doc-only · constitutional | Framing-doc A19 + SPEC §S20.4.1.5 NEW + §S47 amendment + RULES §16 CH38 amendment |
+| Step 4 preamble | NEXT commit | constitutional doc + RED | Mode 1 overlay surface + Path B adapter contract + V-FLOW-AI-NOTES-* RED scaffolds |
+| Step 4 impl (deferred · DEFERRED to next session) | future | constitutional impl | Mode 1 overlay HTML/JS + Path B adapter + CH26 topbar AI Notes button |
+| Step 5 impl (deferred) | future | constitutional impl | "Import to canvas" command wiring + adapter feeds Path B importer → ImportPreviewModal · engineer review + apply |
+| Step 6 re-eval (deferred · USER-RUN) | future | data | Re-baseline against the pivoted architecture · measures structured-notes quality + adapter throughput · NOT autonomous emission |
+
+**Honest ship-confidence trajectory under the pivot**:
+
+- Pre-pivot (Step 3.7 · canonical 3f8ff07): chat-layer autonomous emission ~5.5/10 honest baseline · 52% pass · NOT workshop-ship-confidence
+- Post-pivot Step 4 + Step 5: chat-layer structured-notes quality ~7-8/10 (Claude-judge equivalent) + Path B importer deterministic mutation = workshop-ship-confidence achievable by combining LLM strengths with deterministic infrastructure
+- The "10/10" goal is achievable because each layer plays to its strength · the architecture stops fighting LLM inconsistency at the prompt level
+
+**User direction captured**: "go Y , lets make it 10/10 this time" (2026-05-15) · pivot to engineer-issued import via Path B · architectural pivot approved + executed.
+
+**Cross-references (post-pivot)**:
+
+- SPEC §S20.4.1.5 NEW (this commit · Workshop Notes overlay → Path B importer flow · primary UX path contract)
+- SPEC §S47 amendment (this commit · Path B accepts Workshop Notes overlay as an input source in addition to file upload)
+- SPEC §S20.4.1.3 (stub-emission contract · Mode 2 optional layer)
+- SPEC §S20.4.1.4 (Step 3.9 chat-says-vs-chat-does guard · Mode 2 defensive layer)
+- RULES §16 CH38 (action-proposal contract · purpose narrows to chat-quality measurement + Mode 2 optional)
+- A14 (Step 3.5) + A15 (Step 3.6 revert) + A16 (Step 3.7) + A17 (Step 3.8 revert) + A18 (Step 3.9 guard) · all PRESERVED as historical discipline trail · NONE retired
+- Calibration evidence: `9edcb36` (3 capture files · sampling-noise + cross-judge contamination findings)
+
+---
+
 ## A14 · Step 3.5 micro-arc · post-baseline tightening (2026-05-14 evening · LOCKED)
 
 The rc.10 first action-correctness baseline (`tests/aiEvals/baseline-action.json` · commit `d73ce60` · 5-case foundation set · 3.8/10 avg · 40% pass rate) surfaced a Step-3.5 micro-arc before Step 4 (user-facing impl) can land. The discipline-order rationale: shipping Apply UI on a chat layer that under-emits `proposeAction` on 3 of 4 emit-cases would mask the underlying defect at Step 6 re-eval (cannot isolate "did the Apply UI help" from "did the chat actually invoke the tool more reliably").
@@ -832,5 +898,6 @@ The Q1-Q7 base locks above + the A1-A13 amendments give the full Mode 1 spec:
 20. **Step 3.6 micro-arc (A15) · ATTEMPTED then REVERTED**: post-368d565 baseline polish attempt · Rule 4 no-ask-permission sentence-append + Example 12 (canonical add-instance-current tool-use · Veritas NetBackup at DR Site) + proposeAction "Recommended fields per kind" block · Q1-Q6 user-approved "Go with all recommendations" → impl `8a6c9f8` → re-baseline `cdd367a` REGRESSION (7.4→6.0 · 80%→60% · Example notation imitated as prose) → user direction "go as recommended" → Option A revert. Step 4 user-facing impl UNBLOCKED at restored Step 3.5 baseline (368d565 · 7.4/10 · 80% pass). Learning: behavior examples MUST NOT use inline `*[invokes X(...)]*` notation that LLMs syntactically imitate.
 21. **D4 golden-set expansion + 25-case re-baseline** (`1168ab9` + `5466ea3`): 5-case foundation graduated to 25 cases (4-6 samples per v1 category · per rc.8 sub-arc A.1→A.2 precedent). Canonical baseline transitioned to 25-case set: 6.68/10 · 68% pass · per-cat 6.8/2.0/6.6/7.5/10.0. Shared-5-case avg held at 7.2 (non-regression). BIG FINDING: add-instance-current SYSTEMICALLY broken (1/5 pass · 4 emit-cases scored 0/10 by no-emission). Root cause: Layer 1 has Example 11 for add-driver but no equivalent for add-instance-current. Positive findings: restraint discipline excellent (6/6 cases 10/10) · multi-emit works · partial-evidence inference works · contradiction surfacing works.
 22. **Step 3.7 micro-arc (A16) · Example 12 RETRY with proven-safe notation**: post-5466ea3 finding (add-instance-current category-wide failure) · Example 12 retry using Example 8's `*[calls X for Y: bullets]*` short-form notation (NOT Step-3.6's verbose inline-args form) · Veritas NetBackup at DR Site fixture (same as Step 3.6 · only notation changed) · 11 → 12 worked examples header bump · V-AI-EVAL-18 (positive guard) + V-AI-EVAL-19 (negative guard against `*[invokes proposeAction(` re-introduction · forward-protection) · Q1-Q5 user-approved "Go with all recommendations". Re-baseline 3f8ff07: avg 6.68→7.4 · pass 68%→76% · add-instance-current 2.0→6.0 (target HIT) · add-instance-desired 6.6→4.0 (REGRESSION revealed). Step 3.7 impl scope EXPANDED to also rewrite Example 11 to safe form (V-AI-EVAL-19 caught Example 11 also used verbose form · scope-expansion documented in 9aea764 hidden-risks).
+25. **SUB-ARC D ARCHITECTURE PIVOT (A19) · engineer-issued import via Path B**: post-calibration `9edcb36` user-approved "go Y , lets make it 10/10 this time" 2026-05-15. Calibration revealed (1) sampling-noise ±0.3 avg · (2) Claude-judge inflation +2 avg vs Gemini · (3) honest baseline ~5.56/10 · 52% pass · BELOW workshop-ship-confidence on chat-layer-alone · (4) chat-layer autonomous emission structurally unreliable at this Layer 1 density. PIVOT: Mode 1 (Workshop Notes overlay → Path B importer) becomes the primary UX path · Mode 2 (chat-inline autonomous proposals) becomes optional / deferred. SPEC §S20.4.1.5 NEW documents primary flow. §S47 amended to accept overlay as second input source. RULES §16 CH38 narrowed (proposeAction tool stays · purpose narrows to chat-quality measurement + Mode 2 fallback + defensive guard). All A14-A18 stays as historical discipline trail · A14 Q4 sequencing decision SUPERSEDED by A19. Step 4 scope shrinks: Mode 1 overlay UI + Path B adapter + CH26 button · NO new preview modal (reuses ImportPreviewModal from §S47) · NO new Apply UX (reuses Path B engineer-review). Architecture plays to each layer's strength: LLM structures + suggests · engineer reviews + decides · code mutates deterministically. The "10/10" goal achievable because architecture stops fighting LLM inconsistency at prompt level. Calibration evidence locked at `tests/aiEvals/calibration-*-2026-05-14T21-*.json`.
 24. **Step 3.9 micro-arc (A18) · chat-says-vs-chat-does guard at chatService layer**: strategic pivot post-Step-3.8 revert · DEFENSIVE UX at application layer · deterministic regex-based detection of hallucination patterns ("I've proposed" · "Proposal submitted" · etc.) when proposedActions.length === 0 · adds envelope field `proposalEmissionWarning = { detected, matchedPhrase, reason } | null` · V-CHAT-D-5 (3 sub-guards) · Q1-Q5 user-approved "Go with all recommendations". NO re-baseline needed (deterministic detection · chat-behavior unchanged). Step 4 user-facing impl preamble UNBLOCKED at 3f8ff07 baseline + Step 3.9 guard scaffold. Eval-methodology calibration (Experiments A+B = sampling-noise + cross-judge tests) is the next USER-RUN step.
 23. **Step 3.8 micro-arc (A17) · ATTEMPTED then REVERTED**: post-3f8ff07 hypothesis confirmation attempt · Example 13 canonical add-instance-desired pattern + "13 worked examples" header bump → impl `abe4982` → 20:19 re-baseline `ae33705` REGRESSION (avg 7.4→5.92 · pass 76%→56% · add-instance-current 6.0→2.2 catastrophic) → user strategic pivot direction → revert + chatService-layer guard + eval-methodology calibration. Prompt-text iteration cycle CLOSED (4 iterations · 2 regressions · diminishing returns). Canonical baseline-action.json stays at 3f8ff07 (7.4/76%). Learning: Layer 1 saturated at ~4100 tokens with 13 examples · "more examples" hypothesis fails past a density threshold · defensive UX at chatService layer is more reliable than prompt-text tuning.
