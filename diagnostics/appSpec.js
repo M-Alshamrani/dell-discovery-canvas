@@ -11557,13 +11557,16 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       assert(result.error.issues.some(i => i.path[0] === "ownerId"),
         "rejection must point at ownerId");
     });
-    it("V-SCH-11 · CustomerSchema rejects empty name", () => {
+    it("V-SCH-11 · RETIRED rc.9 / Sub-arc C BUG-063 fix — was: CustomerSchema rejects empty name (min(1)). Inverted in BUG-063 fix: empty name is now the canonical UNSET sentinel, asserted by V-FLOW-INIT-CLEAR-1/2 above. See schema/customer.js BUG-063 comment + docs/BUG_LOG.md#BUG-063 (rc.9 · 2026-05-14). The original .min(1) constraint was the upstream cause of chat fabricating 'New customer' / 'Financial Services' as real customer data (rc.9 baseline regressions DSC-4 + APP-4 + APP-5).", () => {
+      // Inverted assertion: CustomerSchema MUST now accept empty name
+      // (was: rejects). The schema-relax contract is the V-FLOW-INIT-
+      // CLEAR-2 Guard 1 above. This retired-with-inversion form
+      // matches the project's append-only test contract pattern
+      // (similar to V-FLOW-GROUND-FAIL-* rewrites in Sub-arc B).
       const c = createEmptyCustomer();
       c.name = "";
       const result = CustomerSchema.safeParse(c);
-      assert(result.success === false, "empty name must be rejected (min(1) violated)");
-      assert(result.error.issues.some(i => i.path[0] === "name"),
-        "rejection must point at the name field");
+      assert(result.success === true, "empty name MUST be accepted (BUG-063 fix · schema relaxed from .min(1) to z.string()); see V-FLOW-INIT-CLEAR-2 for the canonical contract assertion");
     });
     it("V-SCH-12 · CustomerSchema rejects extra v2.0 fields (segment/industry) under .strict()", () => {
       const c = createEmptyCustomer();
@@ -12509,15 +12512,24 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 
     // Correctness — selectExecutiveSummaryInputs (V-SEL-6a..6c)
     it("V-SEL-6a · selectExecutiveSummaryInputs.engagementMeta passes through verbatim", () => {
+      // BUG-063 fix (rc.9 · 2026-05-14): fixture sets customer.name +
+      // vertical explicitly rather than relying on factory defaults.
+      // The factory's defaults flipped from "New customer" / "Financial
+      // Services" to "" so the empty state is honest; the binding-
+      // passthrough contract being tested (does engagementMeta surface
+      // customer name + vertical?) is unchanged. See V-PATH-16's sister
+      // update + docs/BUG_LOG.md#BUG-063 (rc.9 · 2026-05-14).
       const eng = createEmptyEngagement({ meta: {
         presalesOwner: "Mahmoud", status: "Draft",
         engagementId: "00000000-0000-4000-8000-000000000abc"
       } });
+      eng.customer.name = "Acme Test Corp";
+      eng.customer.vertical = "Healthcare";
       const view = selectExecutiveSummaryInputs(eng);
       assertEqual(view.engagementMeta.presalesOwner, "Mahmoud", "presalesOwner");
       assertEqual(view.engagementMeta.status, "Draft", "status");
-      assertEqual(view.engagementMeta.customerName, "New customer", "customer name from default");
-      assertEqual(view.engagementMeta.vertical, "Financial Services", "vertical from default");
+      assertEqual(view.engagementMeta.customerName, "Acme Test Corp", "customer name passed through verbatim");
+      assertEqual(view.engagementMeta.vertical, "Healthcare", "vertical passed through verbatim");
     });
     it("V-SEL-6b · drivers.topPriority is the High-priority driver (or first if tied)", () => {
       let eng = createEmptyEngagement();
@@ -12924,10 +12936,20 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
 
     // Run-time resolution (V-PATH-16..30)
     it("V-PATH-16 · resolveTemplate('{{customer.name}}', ctx) returns customer name", () => {
+      // BUG-063 fix (rc.9 · 2026-05-14): fixture explicitly sets
+      // customer.name to a test value rather than relying on the
+      // factory default. The factory default flipped from "New customer"
+      // to "" as part of BUG-063 fix; the binding contract being tested
+      // (does {{customer.name}} resolve to whatever name is set?) is
+      // unchanged, but the fixture had implicitly encoded the old
+      // default. Test fixtures should always set values explicitly
+      // when the binding RESOLUTION (not the default) is what's under
+      // test. See docs/BUG_LOG.md#BUG-063 (rc.9 · 2026-05-14).
       const eng = createEmptyEngagement();
+      eng.customer.name = "Acme Test Corp";
       const ctx = { ...eng, engagement: eng };   // session-wide context
       const out = resolveTemplate("Customer is {{customer.name}}", ctx, { logUndefined: () => {} });
-      assertEqual(out, "Customer is New customer", "customer.name resolved into prompt");
+      assertEqual(out, "Customer is Acme Test Corp", "customer.name resolved into prompt");
     });
     it("V-PATH-17 · resolveTemplate('{{context.driver.outcomes}}', ctx) returns driver outcomes from active entity", () => {
       // Click-to-run context: the linkedComposition wraps context.driver.

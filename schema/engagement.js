@@ -130,11 +130,15 @@ export function createEmptyEngagement(overrides = {}) {
   const meta = createEmptyEngagementMeta(overrides.meta);
   return EngagementSchema.parse({
     meta,
+    // BUG-063 fix (rc.9 · 2026-05-14): customer defaults flipped from
+    // ("New customer" / "Financial Services" / "EMEA") to "" so the
+    // empty state is honest. See schema/customer.js + docs/BUG_LOG.md
+    // BUG-063 for full rationale + eval evidence.
     customer:     overrides.customer ?? {
       engagementId: meta.engagementId,
-      name:         "New customer",
-      vertical:     "Financial Services",
-      region:       "EMEA",
+      name:         "",
+      vertical:     "",
+      region:       "",
       notes:        ""
     },
     drivers:      overrides.drivers      ?? { byId: {}, allIds: [] },
