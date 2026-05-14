@@ -98,7 +98,7 @@ export async function runCanvasAiEvals(opts) {
     const c = cases[i];
     onProgress({ index: i, total: cases.length, caseId: c.id, phase: "starting" });
     try {
-      const r = await runOneCase(c, aiCfg, activeProviderKey, judgeProviderKey, onProgress, i, cases.length);
+      const r = await runOneCase(c, aiCfg, activeProviderKey, judgeProviderKey, onProgress, i, cases.length, isActionCorrectness);
       results.push(r);
     } catch (err) {
       console.error("[AI Evals] case " + c.id + " threw:", err);
@@ -113,15 +113,16 @@ export async function runCanvasAiEvals(opts) {
   }
 
   const aggregate = aggregateResults(results, {
-    rubricVersion:       RUBRIC_VERSION,
-    judgePromptVersion:  JUDGE_PROMPT_VERSION,
-    goldenSetVersion:    GOLDEN_SET_VERSION,
+    rubricVersion:       isActionCorrectness ? ACTION_RUBRIC_VERSION : RUBRIC_VERSION,
+    judgePromptVersion:  isActionCorrectness ? ACTION_JUDGE_PROMPT_VERSION : JUDGE_PROMPT_VERSION,
+    goldenSetVersion:    isActionCorrectness ? ACTION_GOLDEN_SET_VERSION : GOLDEN_SET_VERSION,
     chatProvider:        activeProviderKey,
     judgeProvider:       judgeProviderKey,
     capturedAt:          new Date().toISOString(),
-    rubricPassThreshold: RUBRIC_PASS_THRESHOLD,
-    rubricTotalMax:      RUBRIC_TOTAL_MAX
-  });
+    rubricPassThreshold: isActionCorrectness ? ACTION_RUBRIC_PASS_THRESHOLD : RUBRIC_PASS_THRESHOLD,
+    rubricTotalMax:      isActionCorrectness ? ACTION_RUBRIC_TOTAL_MAX : RUBRIC_TOTAL_MAX,
+    harness:             harness
+  }, isActionCorrectness);
 
   printAggregate(aggregate, results);
   renderResultsPanel(aggregate, results);
@@ -151,7 +152,7 @@ export function installEvalsRunner() {
 
 // ─── Per-case execution ─────────────────────────────────────────────
 
-async function runOneCase(c, aiCfg, chatProviderKey, judgeProviderKey, onProgress, idx, total) {
+async function runOneCase(c, aiCfg, chatProviderKey, judgeProviderKey, onProgress, idx, total, isActionCorrectness) {
   const startMs = Date.now();
 
   // Step 1 · Load the engagement state the case wants.
@@ -167,29 +168,39 @@ async function runOneCase(c, aiCfg, chatProviderKey, judgeProviderKey, onProgres
   const transcript = (c.transcriptPrior || []).slice();
 
   // Step 4 · Call streamChat with the case's prompt.
+  // For action-correctness harness, we ALSO capture envelope.proposedActions[]
+  // (Sub-arc D stub-emission · per SPEC §S20.4.1.3 + RULES §16 CH38(b)).
   onProgress({ index: idx, total: total, caseId: c.id, phase: "asking-chat" });
-  const chatAnswer = await callChatAndCollect(chatProvider, aiCfg, chatProviderKey, eng, transcript, c.prompt);
+  const chatResult = await callChatAndCollect(chatProvider, aiCfg, chatProviderKey, eng, transcript, c.prompt);
+  const chatAnswer = chatResult.text;
+  const proposedActions = chatResult.proposedActions || [];
 
   // Step 5 · Build judge messages + call the judge LLM.
+  // Action-correctness mode: use buildActionJudgeMessages with the
+  // emitted proposedActions[] as the input being scored (chat-quality
+  // mode scores the chat TEXT; action-correctness scores the PROPOSALS).
   onProgress({ index: idx, total: total, caseId: c.id, phase: "judging" });
   const judgeProvider = buildProviderFromConfig(aiCfg, judgeProviderKey);
-  const judgeRaw = await callJudge(judgeProvider, aiCfg, judgeProviderKey, c, chatAnswer);
+  const judgeRaw = isActionCorrectness
+    ? await callActionJudge(judgeProvider, aiCfg, judgeProviderKey, c, proposedActions)
+    : await callJudge(judgeProvider, aiCfg, judgeProviderKey, c, chatAnswer);
 
   // Step 6 · Parse judge JSON output.
-  const parsed = parseJudgeOutput(judgeRaw, c.id);
+  const parsed = parseJudgeOutput(judgeRaw, c.id, isActionCorrectness);
 
   const durationMs = Date.now() - startMs;
   onProgress({ index: idx, total: total, caseId: c.id, phase: "done", scoreTotal: parsed.total, durationMs });
 
   return {
-    caseId:       c.id,
-    category:     c.category,
-    prompt:       c.prompt,
-    chatAnswer:   chatAnswer,
-    judgeRaw:     judgeRaw,
-    judgeParsed:  parsed,
-    durationMs:   durationMs,
-    scored:       parsed.total != null
+    caseId:          c.id,
+    category:        c.category,
+    prompt:          c.prompt,
+    chatAnswer:      chatAnswer,
+    proposedActions: proposedActions, // NEW · Sub-arc D · empty array on chat-quality runs (chatService always emits the field)
+    judgeRaw:        judgeRaw,
+    judgeParsed:     parsed,
+    durationMs:      durationMs,
+    scored:          parsed.total != null
   };
 }
 
@@ -239,8 +250,9 @@ async function callChatAndCollect(provider, aiCfg, providerKey, engagement, tran
       onToken: function(t) { accumulated += t || ""; },
       onComplete: function(envelope) {
         // chatService.streamChat invokes onComplete with the canonical
-        // envelope (chatService.js line 319):
-        //   { response, provenance, contractAck, groundingViolations }
+        // envelope (chatService.js line 319, extended Sub-arc D rc.10):
+        //   { response, provenance, contractAck, groundingViolations,
+        //     proposedActions }
         //
         // BUG fix 2026-05-13 (caught by user post-baseline-capture):
         //   Previous code read `envelope.content` (undefined). Fallback
@@ -255,8 +267,16 @@ async function callChatAndCollect(provider, aiCfg, providerKey, engagement, tran
         //
         // Fix: read envelope.response (canonical field, post-scrub).
         // .content kept as defensive fallback for forward-compat.
+        //
+        // Sub-arc D (rc.10) extension: ALSO capture
+        // envelope.proposedActions[] for action-correctness harness.
+        // chat-quality runs see an empty array (chatService always
+        // emits the field) and ignore it in callJudge.
         const visible = (envelope && (envelope.response || envelope.content)) || accumulated;
-        resolve(visible);
+        const proposedActions = (envelope && Array.isArray(envelope.proposedActions))
+          ? envelope.proposedActions
+          : [];
+        resolve({ text: visible, proposedActions: proposedActions });
       }
     }).catch(reject);
   });
@@ -285,17 +305,53 @@ async function callJudge(provider, aiCfg, providerKey, goldenCase, actualAnswer)
   return (out && (out.text || out.content)) || "";
 }
 
-function parseJudgeOutput(raw, caseId) {
+// Sub-arc D (rc.10) · action-correctness judge call.
+// Mirror of callJudge but uses buildActionJudgeMessages (which scores
+// PROPOSALS against the §S48.2 5-dim action-correctness rubric) instead
+// of buildJudgeMessages (which scores CHAT TEXT against the §S48.1 5-dim
+// chat-quality rubric). Same underlying chatCompletion call shape;
+// different prompt builder.
+async function callActionJudge(provider, aiCfg, providerKey, goldenCase, emittedProposals) {
+  const msgs = buildActionJudgeMessages(goldenCase, emittedProposals, providerKey);
+  const p = aiCfg.providers[providerKey] || {};
+  const out = await chatCompletion({
+    providerKey:    providerKey,
+    baseUrl:        p.baseUrl,
+    model:          p.model,
+    fallbackModels: p.fallbackModels,
+    apiKey:         p.apiKey,
+    messages: [
+      { role: "system", content: msgs.system },
+      { role: "user",   content: msgs.user   }
+    ]
+  });
+  return (out && (out.text || out.content)) || "";
+}
+
+function parseJudgeOutput(raw, caseId, isActionCorrectness) {
   const text = String(raw || "").trim();
   // Strip code fences if the judge wrapped JSON in ```json ... ```
   const stripped = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  // Sub-arc D (rc.10): action-correctness judge returns `dimensions`
+  // (per actionJudgePrompt.js schema); chat-quality judge returns
+  // `scores` (per judgePrompt.js schema). Normalize to `scores` field
+  // on the parsed result so downstream aggregation works uniformly.
+  // The active rubric is chosen by isActionCorrectness for total
+  // computation + pass threshold.
+  const dims = isActionCorrectness ? ACTION_RUBRIC_DIMENSIONS : RUBRIC_DIMENSIONS;
+  const passThreshold = isActionCorrectness ? ACTION_RUBRIC_PASS_THRESHOLD : RUBRIC_PASS_THRESHOLD;
   try {
     const obj = JSON.parse(stripped);
+    // Action-judge emits `dimensions` field; chat-quality judge emits `scores`.
+    // Try both, prefer the harness-matching shape.
+    const scores = isActionCorrectness
+      ? (obj.dimensions || obj.scores || {})
+      : (obj.scores || obj.dimensions || {});
     return {
       caseId:   obj.caseId || caseId,
-      scores:   obj.scores || {},
-      total:    typeof obj.total === "number" ? obj.total : computeTotal(obj.scores),
-      pass:     typeof obj.pass === "boolean" ? obj.pass : (computeTotal(obj.scores) >= RUBRIC_PASS_THRESHOLD),
+      scores:   scores,
+      total:    typeof obj.total === "number" ? obj.total : computeTotalForDims(scores, dims),
+      pass:     typeof obj.pass === "boolean" ? obj.pass : (computeTotalForDims(scores, dims) >= passThreshold),
       comments: obj.comments || {},
       verdict:  obj.verdict || "",
       raw:      text
@@ -313,6 +369,19 @@ function parseJudgeOutput(raw, caseId) {
   }
 }
 
+// Sub-arc D · dim-set-aware total computation. The old computeTotal
+// hardcoded RUBRIC_DIMENSIONS (chat-quality dims). For action-correctness
+// runs we pass ACTION_RUBRIC_DIMENSIONS. computeTotal kept as a thin
+// alias for backwards compatibility.
+function computeTotalForDims(scores, dims) {
+  if (!scores || typeof scores !== "object") return null;
+  let t = 0;
+  (dims || RUBRIC_DIMENSIONS).forEach(function(d) {
+    if (typeof scores[d.id] === "number") t += scores[d.id];
+  });
+  return t;
+}
+
 function computeTotal(scores) {
   if (!scores || typeof scores !== "object") return null;
   let t = 0;
@@ -324,7 +393,7 @@ function computeTotal(scores) {
 
 // ─── Aggregation + display ──────────────────────────────────────────
 
-function aggregateResults(results, meta) {
+function aggregateResults(results, meta, isActionCorrectness) {
   const totalCases = results.length;
   const scoredOk   = results.filter(r => r.scored && r.judgeParsed && typeof r.judgeParsed.total === "number");
   const passed     = scoredOk.filter(r => r.judgeParsed.pass);
@@ -334,9 +403,12 @@ function aggregateResults(results, meta) {
   const sumTotal = scoredOk.reduce((s, r) => s + r.judgeParsed.total, 0);
   const avgTotal = scoredOk.length ? +(sumTotal / scoredOk.length).toFixed(2) : null;
 
-  // Per-dimension average
+  // Per-dimension average · Sub-arc D · iterate over the active rubric
+  // dimensions (chat-quality vs action-correctness). The dim ids are
+  // disjoint so cross-rubric mixing is impossible.
+  const activeDims = isActionCorrectness ? ACTION_RUBRIC_DIMENSIONS : RUBRIC_DIMENSIONS;
   const dims = {};
-  RUBRIC_DIMENSIONS.forEach(d => {
+  activeDims.forEach(d => {
     const scores = scoredOk.map(r => r.judgeParsed.scores[d.id]).filter(x => typeof x === "number");
     dims[d.id] = scores.length ? +(scores.reduce((s, x) => s + x, 0) / scores.length).toFixed(2) : null;
   });
@@ -368,11 +440,17 @@ function aggregateResults(results, meta) {
 }
 
 function printAggregate(agg, results) {
-  console.group("[AI Evals] Results summary");
+  // Sub-arc D · Pull pass threshold + total max from agg.meta so the
+  // print is harness-aware (chat-quality vs action-correctness · though
+  // currently both use 7/10).
+  const passThreshold = (agg.meta && agg.meta.rubricPassThreshold) || RUBRIC_PASS_THRESHOLD;
+  const totalMax = (agg.meta && agg.meta.rubricTotalMax) || RUBRIC_TOTAL_MAX;
+  const harnessLabel = (agg.meta && agg.meta.harness) || "chat-quality";
+  console.group("[AI Evals] Results summary · harness=" + harnessLabel);
   console.log("Total cases:    ", agg.totalCases);
   console.log("Scored:         ", agg.scored, "(errors:", agg.errors + ")");
-  console.log("Passed (≥" + RUBRIC_PASS_THRESHOLD + "/" + RUBRIC_TOTAL_MAX + "):", agg.passed, "/", agg.scored, "(" + agg.passRate + "%)");
-  console.log("Avg score:      ", agg.avgTotalScore, "/", RUBRIC_TOTAL_MAX);
+  console.log("Passed (≥" + passThreshold + "/" + totalMax + "):", agg.passed, "/", agg.scored, "(" + agg.passRate + "%)");
+  console.log("Avg score:      ", agg.avgTotalScore, "/", totalMax);
   console.log("Per-dimension:  ", agg.perDimension);
   console.log("Per-category:   ", agg.perCategory);
   console.groupEnd();
