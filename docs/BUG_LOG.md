@@ -2296,11 +2296,16 @@ Translation:
 
 ---
 
-## BUG-063 · Engagement initialization · residual non-clear fields on fresh-load / cache-clear (e.g. customer.vertical defaults to "Financial Services") (OPEN 2026-05-13)
+## BUG-063 · Engagement initialization · residual non-clear fields on fresh-load / cache-clear (e.g. customer.vertical defaults to "Financial Services") (IN PROGRESS rc.9 · 2026-05-14)
 
-**Status**: **OPEN 2026-05-13** · Scheduled · next housekeeping pass
+**Status**: **IN PROGRESS rc.9 · 2026-05-14** · V-FLOW-INIT-CLEAR-1/2 RED scaffolded this commit · schema relax + factory default flip queued next commit · re-baseline eval after fix to confirm DSC-4/APP-4 regressions clear
 **Reporter**: User (post-2026-05-13 review · superseded the BUG-052 modal-residue test cluster as the more visible symptom · "there are some residual non clear fields when initialize or clear cache memory, for example the client vertical default to financial")
-**Severity**: Low-Medium (UX correctness · misleads engineers about engagement state · could embed wrong vertical into AI prompts + reports if uncaught)
+**Severity**: **Medium-High** (UX correctness AND eval-honesty cost — Sub-arc C eval re-baseline 2026-05-14 traced 3 case regressions DSC-4 10→4 + APP-4 10→5 + APP-5 10→5 to chat treating these defaults as real customer data; cumulative score impact -0.24 avg + -8pp pass rate; rc.8 baseline 9.16/10 → rc.9 8.92/10 entirely from BUG-063 manifestation)
+
+### Eval evidence (rc.9 baseline 2026-05-14T11-48-56-300Z.json)
+- **DSC-4** prompt: *"What gap classes am I likely missing for a public-sector customer?"* — rc.9 chat: *"I see your canvas is fresh — you have a new **Financial Services** customer"* (FABRICATION reading the customer.vertical default; rc.8 had correctly refused: *"the canvas doesn't currently include any drivers or gaps yet"*)
+- **APP-4** prompt: *"Why is the Save context button disabled on Tab 1?"* — rc.9 chat: *"customer name is currently set to 'New customer'..."* (reading the customer.name placeholder as real value)
+- **APP-5** prompt: *"Tab 2 vs Tab 3 difference?"* — rc.9 chat used loaded demo data as illustration without disclaimer (adjacent issue, NOT pure BUG-063; candidate for sibling Rule 10a in a follow-up arc)
 
 ### Repro
 1. Either open a brand-new session OR click "Clear all data" in the footer to wipe localStorage and reload

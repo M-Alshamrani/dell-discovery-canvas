@@ -14943,6 +14943,82 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-AI-EVAL-8 · Guard 3 · CRITICAL: Example 10 MUST cite Rule 10 inline in the assistant's response body (e.g., 'per Rule 10 (quantitative honesty), I'm enumerating rather than computing a percentage because...'). Inline citation is what makes Rule 10 enforcement traceable in the chat's own output to the engineer; without it, the rule is invisible to the user and only enforceable at test time.");
     });
 
+    // -----------------------------------------------------------------
+    // V-FLOW-INIT-CLEAR-1/2 · BUG-063 regression guards · LOCKED 2026-05-14
+    //
+    // BUG-063 (OPEN 2026-05-13): engagement initialization · residual
+    // non-clear fields on fresh-load / cache-clear. Specifically
+    // `customer.vertical` defaults to "Financial Services" (the catalog's
+    // first entry) and `customer.name` defaults to "New customer" on
+    // createEmptyCustomer() / createEmptyEngagement(). These defaults
+    // bleed into the AI prompt's Layer 4 engagement snapshot and the
+    // chat reads them as REAL customer data, fabricating answers off
+    // them on cases meant to test empty-state honesty.
+    //
+    // Eval regression evidence (rc.9 baseline-2026-05-14T11-48-56-300Z.json):
+    //   - DSC-4 ("public-sector customer"): 10/10 -> 4/10
+    //     chat said "you have a new Financial Services customer"
+    //   - APP-4 ("Save context disabled"): 10/10 -> 5/10
+    //     chat said "customer name is currently set to 'New customer'..."
+    //
+    // RED-first scaffold (this commit); impl + schema relax flips GREEN
+    // in the next commit.
+    //
+    // Cross-references: schema/customer.js + schema/engagement.js (both
+    // duplicate the same defaults); docs/BUG_LOG.md#BUG-063 (fix plan);
+    // tests/aiEvals/baseline-2026-05-14T11-48-56-300Z.json (eval evidence)
+    // -----------------------------------------------------------------
+
+    it("V-FLOW-INIT-CLEAR-1 · BUG-063 · createEmptyEngagement().customer has empty name + vertical (NOT 'New customer' / 'Financial Services' catalog-first-entry defaults) — RED-first scaffold per docs/BUG_LOG.md BUG-063 fix plan", async () => {
+      const { createEmptyEngagement } = await import("../schema/engagement.js");
+      const eng = createEmptyEngagement();
+
+      // Guard 1: customer.name MUST NOT be the placeholder string "New customer".
+      // Acceptable empty-state representations: "" (empty string) or null.
+      // Anything else (including "New customer", "Untitled", "default", etc.)
+      // is a fabrication-bait value that the chat will read as real customer data.
+      assert(eng.customer.name === "" || eng.customer.name === null || eng.customer.name === undefined,
+        "V-FLOW-INIT-CLEAR-1 · Guard 1: createEmptyEngagement().customer.name MUST be empty (\"\" / null / undefined) on fresh init. Got: " + JSON.stringify(eng.customer.name) + ". A non-empty default like \"New customer\" bleeds into the AI prompt's Layer 4 engagement snapshot and is read as real customer data (see rc.9 eval baseline APP-4 regression).");
+
+      // Guard 2: customer.vertical MUST NOT be a real catalog value like
+      // "Financial Services". The bug is specifically that vertical's
+      // .default() picks the first catalog entry as the empty-state
+      // representation; that's mass-equivalence-misleading.
+      assert(eng.customer.vertical === "" || eng.customer.vertical === null || eng.customer.vertical === undefined,
+        "V-FLOW-INIT-CLEAR-1 · Guard 2: createEmptyEngagement().customer.vertical MUST be empty (\"\" / null / undefined) on fresh init. Got: " + JSON.stringify(eng.customer.vertical) + ". A real catalog value like \"Financial Services\" is read by the chat as real customer data (see rc.9 eval baseline DSC-4 regression: chat said \"you have a new Financial Services customer\" when engagement was empty).");
+    });
+
+    it("V-FLOW-INIT-CLEAR-2 · BUG-063 · CustomerSchema accepts empty name + empty vertical (the schema must allow truly empty state to round-trip; without this relaxation the factory cannot return empty values without throwing) — RED-first scaffold per docs/BUG_LOG.md BUG-063 fix plan", async () => {
+      const { CustomerSchema, createEmptyCustomer } = await import("../schema/customer.js");
+
+      // The schema currently enforces .min(1) on name + vertical, making
+      // it IMPOSSIBLE for the factory to return empty values without
+      // CustomerSchema.parse() throwing. So a complete BUG-063 fix
+      // requires schema relaxation (allow empty string OR null on these
+      // FIELDS specifically) AND the factory's default update.
+
+      // Guard 1: schema accepts empty name
+      const r1 = CustomerSchema.safeParse({
+        engagementId: "00000000-0000-4000-8000-000000000000",
+        name: "",
+        vertical: "",
+        region: "",
+        notes: ""
+      });
+      assert(r1.success,
+        "V-FLOW-INIT-CLEAR-2 · Guard 1: CustomerSchema MUST accept empty customer.name + customer.vertical to allow a truly-empty initial state to round-trip. Without this relaxation, createEmptyCustomer() cannot return empty values without throwing, and BUG-063 is unfixable. Parse error: " + (r1.success ? "ok" : (r1.error?.issues?.[0]?.message || JSON.stringify(r1.error))));
+
+      // Guard 2: createEmptyCustomer with no overrides returns the empty
+      // shape (this is the factory contract that V-FLOW-INIT-CLEAR-1
+      // tests at the engagement level; here we test the customer-only
+      // factory directly).
+      const c = createEmptyCustomer();
+      assert(c.name === "" || c.name === null || c.name === undefined,
+        "V-FLOW-INIT-CLEAR-2 · Guard 2a: createEmptyCustomer().name MUST be empty. Got: " + JSON.stringify(c.name));
+      assert(c.vertical === "" || c.vertical === null || c.vertical === undefined,
+        "V-FLOW-INIT-CLEAR-2 · Guard 2b: createEmptyCustomer().vertical MUST be empty. Got: " + JSON.stringify(c.vertical));
+    });
+
     it("V-OPS-PAGES-1 · NO production file path has an underscore-prefixed basename (forbidden per GitHub Pages underscore filter) — scans ALL entries in productionFileManifest", async () => {
       const { PRODUCTION_FILES } = await import("./productionFileManifest.js");
       const violators = PRODUCTION_FILES.filter(p => {
