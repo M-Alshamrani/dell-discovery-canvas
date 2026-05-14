@@ -15155,6 +15155,153 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     });
 
     // -----------------------------------------------------------------
+    // V-AI-EVAL-13/14 + V-CHAT-D-3 + V-AI-EVAL-15 · Sub-arc D Step 3.5
+    // micro-arc · Rule 4 tightening + Example 11 + proposeAction tool
+    // description hardening + ACT-INST-CUR-1 fixture fix · LOCKED
+    // 2026-05-14 evening post-d73ce60 baseline analysis
+    //
+    // CONTEXT: rc.10 first action-correctness baseline (d73ce60) revealed
+    // a dominant chat-side defect: under-emission of proposeAction. 3 of
+    // 4 emit-cases scored 0/10 because the chat described the action in
+    // prose without invoking the tool. The Rule 4 amendment text from
+    // 4bcbf06 reads too weakly as a soft "may invoke" rather than a
+    // strong "MUST invoke when input matches a v1 kind." Step 3.5 micro-
+    // arc tightens the prompt + tool description + fixes the ACT-INST-
+    // CUR-1 fixture fidelity bug (demo:northstar-health ships Veeam
+    // pre-populated, contradicting the case hint).
+    //
+    // V-AI-EVAL-13: systemPromptAssembler.js Rule 4 contains "MUST invoke" + "contract violation"
+    // V-AI-EVAL-14: systemPromptAssembler.js carries Example 11 (canonical add-driver tool-use pattern) + header bump to "11 worked examples"
+    // V-CHAT-D-3: chatTools.js proposeAction description contains "MUST be invoked" + "closeReason field is REQUIRED on close-gap"
+    // V-AI-EVAL-15: actionGoldenSet.js ACT-INST-CUR-1 prompt no longer cites Veeam (rewritten to use Commvault HyperScale X at Branch Clinic)
+    //
+    // All four are SOURCE-GREP contracts (same pattern as V-AI-EVAL-6/7/8
+    // for Sub-arc C and V-AI-EVAL-12 + V-CHAT-D-1/2 for Sub-arc D
+    // stub-emission). The runtime end-to-end behavior is measured by
+    // the user-run eval re-baseline against d73ce60 (Step 3.5 commit 3),
+    // not the test banner.
+    //
+    // RED-first scaffolds (this commit); impl commit creates the surface
+    // and these tests flip to GREEN.
+    //
+    // Cross-references: SPEC §S20.4.1.3 amendment + RULES §16 CH38(a)
+    // amendment + tests/aiEvals/baseline-action.json (d73ce60 · the
+    // measurement bar Step 3.5 targets a lift against) + docs/SUB_ARC_D_
+    // FRAMING_DECISIONS.md amendment A14
+    // -----------------------------------------------------------------
+
+    it("V-AI-EVAL-13 · Sub-arc D Step 3.5 · services/systemPromptAssembler.js Layer 1 Rule 4 contains the imperative tightening ('MUST invoke' + 'contract violation' framing) so the model treats proposeAction as mandatory when input matches a v1 kind — RED-first scaffold per SPEC §S20.4.1.3 amendment + RULES §16 CH38(a) amendment + baseline d73ce60 forensic analysis (3 of 4 emit-cases scored 0/10 by no-emission)", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/systemPromptAssembler.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-AI-EVAL-13: services/systemPromptAssembler.js source MUST be readable for source-grep");
+
+      // Guard 1: Rule 4 body contains "MUST invoke" (uppercase imperative)
+      // somewhere in proximity to "proposeAction". The d73ce60 baseline
+      // showed the model treating the rc.10 commit 4bcbf06 phrasing
+      // ("invoke the proposeAction tool") as advisory.
+      const MUST_INVOKE_RE = /MUST\s+invoke[\s\S]{0,200}proposeAction|proposeAction[\s\S]{0,200}MUST\s+invoke/;
+      assert(MUST_INVOKE_RE.test(src),
+        "V-AI-EVAL-13 · Guard 1: Layer 1 Rule 4 MUST contain the literal phrase 'MUST invoke' near 'proposeAction'. Without imperative framing, the model under-emits the tool (d73ce60 baseline · 3 of 4 emit-cases scored 0/10).");
+
+      // Guard 2: Rule 4 contains "contract violation" framing to mark
+      // prose-only description as broken rather than equally valid.
+      const CONTRACT_VIOLATION_RE = /contract\s+violation/i;
+      assert(CONTRACT_VIOLATION_RE.test(src),
+        "V-AI-EVAL-13 · Guard 2: Layer 1 Rule 4 MUST contain the literal phrase 'contract violation' to frame prose-only action description as actively broken (not equally valid to tool-use). Without this framing, the model treats prose-and-tool-use as substitutable paths.");
+    });
+
+    it("V-AI-EVAL-14 · Sub-arc D Step 3.5 · services/systemPromptAssembler.js Layer 1 Role section carries Example 11 (canonical add-driver tool-use pattern · the worked-example steering signal for the rc.10 baseline's 3 zero-score emit-cases) — RED-first scaffold per SPEC §S20.4.1.3 amendment", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/systemPromptAssembler.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-AI-EVAL-14: services/systemPromptAssembler.js source MUST be readable for source-grep");
+
+      // Guard 1: Example 11 marker present (the worked-example header).
+      const EXAMPLE_11_RE = /Example 11/;
+      assert(EXAMPLE_11_RE.test(src),
+        "V-AI-EVAL-14 · Guard 1: Layer 1 Role section MUST carry Example 11 (look for 'Example 11' marker). The canonical add-driver tool-use pattern is the worked-example steering signal addressing the d73ce60 baseline's 3 zero-score emit-cases. Examples 1-10 are present; Example 11 is the Step 3.5 addition.");
+
+      // Guard 2: Example 11 demonstrates the proposeAction tool call
+      // in the assistant response body (the pattern the model learns
+      // from worked examples).
+      const PROPOSE_ACTION_IN_EXAMPLE_RE = /Example 11[\s\S]{0,1500}proposeAction/;
+      assert(PROPOSE_ACTION_IN_EXAMPLE_RE.test(src),
+        "V-AI-EVAL-14 · Guard 2: Example 11 body MUST demonstrate the proposeAction tool call (look for 'proposeAction' within 1500 chars of the Example 11 header). Generic prose-only example without tool-invocation pattern fails to teach the structured-emission contract.");
+
+      // Guard 3: Example header bumped from "10 worked examples" to
+      // "11 worked examples". The count is checked because Sub-arc C's
+      // Example 9+10 addition bumped 8→10; Step 3.5 bumps 10→11.
+      const HEADER_COUNT_RE = /11 worked examples/;
+      assert(HEADER_COUNT_RE.test(src),
+        "V-AI-EVAL-14 · Guard 3: the example-section header MUST be bumped to '11 worked examples' (was '10 worked examples' pre-Step-3.5). The count keeps the assistant prompt-aware of how many patterns it has been shown.");
+    });
+
+    it("V-CHAT-D-3 · Sub-arc D Step 3.5 · services/chatTools.js proposeAction tool description hardened with 'MUST be invoked' + per-kind required-field callout (specifically 'closeReason field is REQUIRED on close-gap' addressing the d73ce60 ACT-CLOSE-1 9/10 payload-completeness miss) — RED-first scaffold per SPEC §S20.4.1.3 amendment + RULES §16 CH38(a) amendment", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/chatTools.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-CHAT-D-3: services/chatTools.js source MUST be readable for source-grep");
+
+      // Guard 1: proposeAction description contains "MUST be invoked"
+      // The tool description is prepended to args every round; this is
+      // the strongest steering signal at the tool-selection layer.
+      const MUST_INVOKED_RE = /MUST\s+be\s+invoked/i;
+      assert(MUST_INVOKED_RE.test(src),
+        "V-CHAT-D-3 · Guard 1: proposeAction tool description MUST contain 'MUST be invoked' (imperative framing). Without this, the model treats prose-description as substitutable (d73ce60 baseline ACT-INST-DES-1: chat wrote 'Proposal submitted ✓' without invoking the tool).");
+
+      // Guard 2: proposeAction description contains "closeReason field is REQUIRED on close-gap"
+      // (addressing the d73ce60 ACT-CLOSE-1 9/10 case where chat put
+      // the close evidence in rationale instead of payload.closeReason).
+      const CLOSE_REASON_REQUIRED_RE = /closeReason[\s\S]{0,100}REQUIRED|REQUIRED[\s\S]{0,100}closeReason/i;
+      assert(CLOSE_REASON_REQUIRED_RE.test(src),
+        "V-CHAT-D-3 · Guard 2: proposeAction tool description MUST flag closeReason as REQUIRED on close-gap kind (with literal 'closeReason' + 'REQUIRED' tokens within 100 chars). Without this callout, the model treats `rationale` as the close-explanation field (d73ce60 baseline ACT-CLOSE-1 9/10 · payload.closeReason missing).");
+    });
+
+    it("V-AI-EVAL-15 · Sub-arc D Step 3.5 · tests/aiEvals/actionGoldenSet.js ACT-INST-CUR-1 prompt rewritten to use a vendor NOT pre-populated in the demo:northstar-health engagement (Commvault HyperScale X · Branch Clinic) — RED-first scaffold per d73ce60 baseline fidelity-bug forensic analysis", async () => {
+      const mod = await import("../tests/aiEvals/actionGoldenSet.js");
+      assert(Array.isArray(mod.ACTION_GOLDEN_SET),
+        "V-AI-EVAL-15: ACTION_GOLDEN_SET MUST be an array (load failed or shape changed)");
+
+      const c = mod.ACTION_GOLDEN_SET.find(x => x && x.id === "ACT-INST-CUR-1");
+      assert(c,
+        "V-AI-EVAL-15 · Guard 0: ACT-INST-CUR-1 case MUST exist in the golden set (the case being rewritten · do NOT delete the case · rewrite its prompt + hint).");
+
+      // Guard 1: prompt no longer cites Veeam (the demo loader pre-
+      // populates Veeam in Main DC's Data Protection layer · which is
+      // why the d73ce60 baseline chat answer said Veeam was already
+      // in the engagement · which contradicts the engagement hint).
+      const VEEAM_RE = /Veeam/i;
+      assert(!VEEAM_RE.test(c.prompt),
+        "V-AI-EVAL-15 · Guard 1: ACT-INST-CUR-1 prompt MUST NOT cite Veeam (demo:northstar-health loader pre-populates Veeam Backup VBR in Main DC, contradicting the case's engagement hint of 'no Veeam instance yet'). Rewrite to use a vendor the demo does NOT ship. Current prompt: " + JSON.stringify(c.prompt).slice(0, 200));
+
+      // Guard 2: prompt cites Commvault HyperScale X (the chosen
+      // replacement target · per Q5b recommendation · not in
+      // the demo loader's instance list).
+      const COMMVAULT_RE = /Commvault\s+HyperScale\s+X/i;
+      assert(COMMVAULT_RE.test(c.prompt),
+        "V-AI-EVAL-15 · Guard 2: ACT-INST-CUR-1 prompt MUST cite 'Commvault HyperScale X' (the Step 3.5 chosen replacement target per Q5b · this vendor is NOT in the demo:northstar-health pre-populated instances · so the chat will correctly propose add-instance-current). Current prompt: " + JSON.stringify(c.prompt).slice(0, 200));
+
+      // Guard 3: targets Branch Clinic environment (not Main DC) so the
+      // case is also disambiguated by environment. The demo loader
+      // ships environments {Main DC, DR Site, Branch Clinic, GCP};
+      // Branch Clinic is the most plausible site for tier-2 backup
+      // without an air-gap.
+      const BRANCH_CLINIC_RE = /Branch\s+Clinic/i;
+      assert(BRANCH_CLINIC_RE.test(c.prompt),
+        "V-AI-EVAL-15 · Guard 3: ACT-INST-CUR-1 prompt MUST target 'Branch Clinic' as the environment (the demo loader has this env defined; tier-2 backup at a branch site is a realistic workshop scenario that fits the v1 add-instance-current case). Current prompt: " + JSON.stringify(c.prompt).slice(0, 200));
+    });
+
+    // -----------------------------------------------------------------
     // V-FLOW-INIT-CLEAR-1/2 · BUG-063 regression guards · LOCKED 2026-05-14
     //
     // BUG-063 (OPEN 2026-05-13): engagement initialization · residual

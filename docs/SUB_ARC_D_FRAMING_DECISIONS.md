@@ -556,6 +556,50 @@ Realistic workshop interaction (Northstar Health · session #1) · captured here
 
 ---
 
+## A14 · Step 3.5 micro-arc · post-baseline tightening (2026-05-14 evening · LOCKED)
+
+The rc.10 first action-correctness baseline (`tests/aiEvals/baseline-action.json` · commit `d73ce60` · 5-case foundation set · 3.8/10 avg · 40% pass rate) surfaced a Step-3.5 micro-arc before Step 4 (user-facing impl) can land. The discipline-order rationale: shipping Apply UI on a chat layer that under-emits `proposeAction` on 3 of 4 emit-cases would mask the underlying defect at Step 6 re-eval (cannot isolate "did the Apply UI help" from "did the chat actually invoke the tool more reliably").
+
+**4 defects this baseline revealed**:
+
+1. **D1 · Rule 4 verb-strength too weak** — current Layer 1 text reads "invoke the `proposeAction` tool" (advisory). The model treats prose-only proposal description as substitutable. 3 of 4 emit-cases (ACT-DRIVER-1 · ACT-INST-CUR-1 · ACT-INST-DES-1) scored 0/10 by no-emission. ACT-INST-DES-1 specifically hallucinated "Proposal submitted ✓" in prose while `proposedActions: []` (tool-invocation hallucination).
+2. **D2 · proposeAction tool description does not enforce payload completeness** — ACT-CLOSE-1 scored 9/10 because the chat put the closeReason in the `rationale` field instead of `payload.closeReason`. Engineer would need light edit before applying.
+3. **D3 · ACT-INST-CUR-1 golden-set fidelity bug** — the case prompt cites Veeam Backup VBR + Main DC, but the demo:northstar-health loader pre-populates Veeam in Main DC's Data Protection layer. The chat correctly read the engagement and said Veeam was already present, contradicting the engagement hint of "no Veeam instance yet."
+4. **D4 · Coverage too thin to ship** — 5 cases · 1 per category · no multi-proposal scenarios · no adversarial inputs · no disposition edge cases · no schema-violation rejection cases. Expansion queued post-Step-3.5 per the rc.8 sub-arc A.1 → A.2 precedent.
+
+**Step 3.5 scope (LOCKED · user-approved "Go with all recommendations" 2026-05-14 evening · 9 design questions Q1..Q9)**:
+
+- **Q1 ✅** — Rule 4 amended to imperative "MUST invoke" + "contract violation" framing for prose-only proposal description (D1 target)
+- **Q2 ✅** — Add Example 11 (canonical add-driver tool-use pattern) · header bumped 10 → 11 worked examples (D1 target · worked-example steering signal)
+- **Q3 ✅** — proposeAction tool description hardened with "MUST be invoked" + per-kind required-field callout (specifically: `closeReason` field marked REQUIRED on `close-gap` kind) (D1 + D2 targets)
+- **Q4 = Q4a** — closeReason stays `.optional()` in `schema/actionProposal.js` (tool description handles the soft-encouragement layer · hard-reject would under-emit even worse)
+- **Q5 = Q5b** — ACT-INST-CUR-1 prompt rewritten to use **Commvault HyperScale X** at **Branch Clinic** (vendor + env combo not pre-populated in the demo loader) (D3 target · preserves workshop-realism flavor)
+- **Q6 = Q6a** — no separate "honest about tool invocation" Rule 11 today (the hallucination is a symptom of weak Rule 4; revisit if persists post-Step-3.5)
+- **Q7 ✅** — 4 RED-first source-grep guards: V-AI-EVAL-13 (Rule 4 MUST invoke + contract violation) + V-AI-EVAL-14 (Example 11 + 11 worked examples header + add-driver tool-use pattern) + V-CHAT-D-3 (proposeAction tool description MUST be invoked + closeReason REQUIRED) + V-AI-EVAL-15 (ACT-INST-CUR-1 no-Veeam + Commvault HyperScale X + Branch Clinic)
+- **Q8 ✅** — SPEC §S20.4.1.3 amendment row + RULES §16 CH38(a) verb-strength amendment + framing-doc A14 (this section)
+- **Q9 = Q9a** — re-baseline IMMEDIATELY after Step 3.5 impl lands (single re-baseline · target the Step 3.5 lift cleanly · no bundling with D4 golden-set expansion)
+
+**Step 3.5 commit sequence**:
+
+| Commit | Type | Surfaces touched |
+|---|---|---|
+| Step 3.5 preamble (this commit) | `[CONSTITUTIONAL TOUCH PROPOSED]` doc + RED | SPEC §S20.4.1.3 amendment + RULES §16 CH38(a) amendment + framing-doc A14 + V-AI-EVAL-13/14 + V-CHAT-D-3 + V-AI-EVAL-15 RED scaffolds |
+| Step 3.5 impl | `[CONSTITUTIONAL TOUCH]` impl | systemPromptAssembler.js Rule 4 + Example 11 + chatTools.js proposeAction description + actionGoldenSet.js ACT-INST-CUR-1 prompt rewrite · RED → GREEN |
+| Step 3.5 re-baseline | `data` (USER-RUN) | tests/aiEvals/baseline-action.json overwrite + new baseline-action-<ts>.json + forensic analysis of lift vs `d73ce60` |
+
+**Expected lift target (Step 6 re-eval at Step 3.5 close)**: per-category averages 0/0/0/9/10 → ~6/6/6/9/10 · passRate 40% → ≥80% · avg score 3.8 → ≥7.0 · per-dimension actionKind + restraint should both lift ≥1.4/2 as the dominant indicators. If Step 3.5 hits these targets, Step 4 preamble can land with confidence that Step 6 measures the user-facing impl correctly.
+
+**What Step 3.5 explicitly does NOT touch**:
+- Tool name (`proposeAction` stays)
+- Envelope shape (`proposedActions[]` stays as-is)
+- ActionProposalSchema (Zod schema stays as-is)
+- The 4-kind enum (`add-driver` · `add-instance-current` · `add-instance-desired` · `close-gap` stays)
+- CH38 sub-rules (b)..(g) (only sub-rule (a) verb-strength tightens)
+- chatService.streamChat plumbing (tool-use loop + validation flow stays)
+- Step 4 user-facing impl scope (preview modal · Apply button · CH26 · §S25 aiTag.kind extension · Mode 1 surface — all queued post-Step-3.5 + re-baseline)
+
+---
+
 ## Updated LOCKED decisions summary
 
 The Q1-Q7 base locks above + the A1-A13 amendments give the full Mode 1 spec:
@@ -578,3 +622,4 @@ The Q1-Q7 base locks above + the A1-A13 amendments give the full Mode 1 spec:
 16. **Resume (A10)**: prompt on overlay reopen if draft exists
 17. **Eval scope (A12)**: action-correctness rubric in rc.10 · UX telemetry deferred to rc.11+/v3.1
 18. **Out-of-scope (A13)**: 7 items locked as explicit non-goals for D.v1
+19. **Step 3.5 micro-arc (A14)**: post-d73ce60 baseline tightening · Rule 4 verb-strength bump (MUST invoke + contract violation) + Example 11 (canonical add-driver tool-use) + proposeAction tool description hardening (MUST be invoked + closeReason REQUIRED) + ACT-INST-CUR-1 fixture fix (Commvault HyperScale X + Branch Clinic) · Q1-Q9 user-approved "Go with all recommendations" · BLOCKS Step 4 user-facing impl
