@@ -514,23 +514,39 @@ function renderResultsPanel(agg, results) {
   });
   panel.appendChild(list);
 
+  // Sub-arc D (rc.10) · download-button label + filename are harness-
+  // aware so action-correctness baselines do not visually conflate with
+  // chat-quality baselines in the user's Downloads folder. Per SPEC
+  // §S48.2 baseline file convention: chat-quality canonical at
+  // `tests/aiEvals/baseline.json` + timestamped historical; action-
+  // correctness canonical at `tests/aiEvals/baseline-action.json` +
+  // timestamped historical with `baseline-action-` prefix.
+  const harnessLabel = (agg.meta && agg.meta.harness) || "chat-quality";
+  const isAction = harnessLabel === "action-correctness";
+  const baselineFilename = isAction ? "baseline-action.json" : "baseline.json";
   const dlBtn = document.createElement("button");
-  dlBtn.textContent = "📥 Download baseline.json";
+  dlBtn.textContent = "📥 Download " + baselineFilename;
   dlBtn.style.cssText = "background:#0078D4;color:#fff;border:0;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600;";
-  dlBtn.onclick = function() { downloadBaseline(agg, results); };
+  dlBtn.onclick = function() { downloadBaseline(agg, results, isAction); };
   panel.appendChild(dlBtn);
 
   document.body.appendChild(panel);
 }
 
-function downloadBaseline(agg, results) {
+function downloadBaseline(agg, results, isAction) {
   const payload = { aggregate: agg, results: results };
   const json = JSON.stringify(payload, null, 2);
   const blob = new Blob([json], { type: "application/json" });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement("a");
   a.href = url;
-  a.download = "baseline-" + (new Date()).toISOString().replace(/[:.]/g, "-") + ".json";
+  // Sub-arc D · prefix action-correctness baselines with `baseline-action-`
+  // so the timestamped historical naming does not collide with chat-
+  // quality `baseline-*` files in the user's Downloads folder. The
+  // canonical (non-timestamped) commit-time rename convention is per
+  // SPEC §S48.2 + tests/aiEvals/baseline.json.HOWTO.md.
+  const prefix = isAction ? "baseline-action-" : "baseline-";
+  a.download = prefix + (new Date()).toISOString().replace(/[:.]/g, "-") + ".json";
   document.body.appendChild(a);
   a.click();
   setTimeout(function() {
