@@ -15412,75 +15412,29 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     });
 
     // -----------------------------------------------------------------
-    // V-AI-EVAL-20 · Sub-arc D Step 3.8 micro-arc · Example 13 canonical
-    // add-instance-desired pattern · LOCKED 2026-05-14 evening post-3f8ff07
-    // 25-case re-baseline (Step 3.7 lifted add-instance-current 2.0→6.0 BUT
-    // regressed add-instance-desired 6.6→4.0 · ACT-INST-DES-1 went 7→0 with
-    // hallucinated "Done, I've proposed..." pattern · ACT-INST-DES-3 went
-    // 8→2 with same hallucination shape).
-    //
-    // The "every emit-kind needs its own canonical worked example" hypothesis
-    // is now well-grounded across 4 baselines (d73ce60 → 368d565 → 5466ea3 →
-    // 3f8ff07): add-driver works because Example 11 teaches it · add-instance-
-    // current works because Example 12 teaches it · add-instance-desired
-    // hallucinates because NO example teaches it · close-gap works without
-    // an example (structurally simpler · 3 required fields).
-    //
-    // Step 3.8 closes the gap: adds Example 13 (canonical add-instance-desired
-    // pattern) using the proven-safe short-form notation. Fixture: PowerScale
-    // H700 replacing HPE 3PAR at DR Site (replace-with-originId pattern ·
-    // intentionally distinct from ACT-INST-DES-1's PowerProtect-DM-replacing-
-    // Veeam fixture to prevent memorized-text matching · same anti-memorization
-    // design as Step 3.7).
-    //
-    // V-AI-EVAL-20: positive guard · Example 13 marker + add-instance-desired
-    //              pattern within 1500 chars + "13 worked examples" header bump
-    //
-    // V-AI-EVAL-19 (negative guard against verbose notation) stays in place.
-    // V-AI-EVAL-14 Guard 3 floor (count >= 11) continues to pass (count=13 ≥ 11).
-    //
-    // SOURCE-GREP contract. Runtime behavior measured by Step 3.8 re-baseline
-    // against the 25-case set (3f8ff07 measurement bar). Expected lift target:
-    // add-instance-desired 4.0 → ≥7.0 · passRate 76% → ≥84% · avg 7.4 → ≥7.8.
-    //
-    // RED-first scaffold (this commit); impl commit flips GREEN.
-    //
-    // Cross-references: SPEC §S20.4.1.3 Step 3.8 amendment + RULES §16
-    // CH38(a) extension + tests/aiEvals/baseline-action.json (3f8ff07 ·
-    // 25-case canonical · the measurement bar Step 3.8 targets lift
-    // against) + docs/SUB_ARC_D_FRAMING_DECISIONS.md A17
+    // V-AI-EVAL-20 RETIRED 2026-05-14 evening (Step 3.8 micro-arc
+    // reverted per the 20:19 25-case re-baseline regression · avg 7.4
+    // → 5.92 · pass 76% → 56% · add-instance-current 6.0 → 2.2 · the
+    // Example 13 addition crashed the Example 12 win for add-instance-
+    // current AND failed to lift add-instance-desired). User direction
+    // chose strategic pivot: revert Step 3.8 + scaffold chat-says-vs-
+    // chat-does guard at chatService layer + calibrate eval methodology
+    // (Experiments A + B = sampling-noise + cross-judge tests) rather
+    // than continue prompt-text iteration. Step 3.8 contract surface
+    // (Example 13) is gone; V-AI-EVAL-20 is removed because its
+    // contract surface no longer exists. V-AI-EVAL-18 Guard 3 future-
+    // proofing (count >= 12) STAYS because it is correct discipline
+    // regardless. V-AI-EVAL-14 Guard 3 future-proofing (count >= 11)
+    // STAYS. V-AI-EVAL-19 negative guard (forbids verbose notation)
+    // STAYS. Canonical baseline-action.json continues to point at
+    // 3f8ff07 (7.4/10 · 76% pass · the last validated improvement).
+    // Discipline trail preserved at SPEC §S20.4.1.3 + RULES §16
+    // CH38(a) + framing-doc A17 (all annotated REVERTED).
+    // Learning captured: prompt-text iteration hits diminishing
+    // returns at this Layer 1 token density. Defensive UX (chat-
+    // says-vs-chat-does guard) is more reliable than fighting LLM
+    // inconsistency at the prompt layer.
     // -----------------------------------------------------------------
-
-    it("V-AI-EVAL-20 · Sub-arc D Step 3.8 · services/systemPromptAssembler.js Layer 1 Role section carries Example 13 (canonical add-instance-desired tool-use pattern · replace-with-originId scenario · PowerScale H700 replacing HPE 3PAR at DR Site · proven-safe short-form notation matching Examples 11/12) + '13 worked examples' header bump — RED-first scaffold per SPEC §S20.4.1.3 Step 3.8 amendment + 3f8ff07 25-case baseline forensic analysis (add-instance-desired 6.6 → 4.0 regression · ACT-INST-DES-1 7→0 hallucination · the kind WITHOUT a worked example)", async () => {
-      let src = "";
-      try {
-        const res = await fetch("/services/systemPromptAssembler.js");
-        if (res.ok) src = await res.text();
-      } catch (_e) { /* fetch failure asserts below */ }
-      assert(src.length > 0,
-        "V-AI-EVAL-20: services/systemPromptAssembler.js source MUST be readable for source-grep");
-
-      // Guard 1: Example 13 marker present.
-      const EXAMPLE_13_RE = /Example 13/;
-      assert(EXAMPLE_13_RE.test(src),
-        "V-AI-EVAL-20 · Guard 1: Layer 1 Role section MUST carry Example 13 (look for 'Example 13' marker). The canonical add-instance-desired tool-use pattern is the worked-example counter to the 3f8ff07 baseline's add-instance-desired regression (6.6→4.0 · ACT-INST-DES-1 7→0 hallucinating 'Done, I've proposed...' without firing).");
-
-      // Guard 2: Example 13 body teaches the add-instance-desired kind
-      // within 1500 chars of the marker (the pattern-by-example).
-      const EXAMPLE_13_INSTANCE_DES_RE = /Example 13[\s\S]{0,1500}add-instance-desired/;
-      assert(EXAMPLE_13_INSTANCE_DES_RE.test(src),
-        "V-AI-EVAL-20 · Guard 2: Example 13 body MUST teach the proposeAction tool call for kind='add-instance-desired' (look for 'add-instance-desired' within 1500 chars of the Example 13 header). Generic prose-only example fails to teach the structured-emission contract.");
-
-      // Guard 3: header bumped to "13 worked examples". The count
-      // discipline traces: Sub-arc B 6→8 (Examples 7+8 · `4e34d6e`),
-      // Sub-arc C 8→10 (Examples 9+10 · `2f3176f`), Step 3.5 10→11
-      // (Example 11 · `ee42302`), Step 3.7 11→12 (Example 12 retry ·
-      // `8c781ae` · Step 3.6 attempt at this bump reverted at 58b27c3),
-      // Step 3.8 12→13 (Example 13 · this arc).
-      const HEADER_COUNT_RE = /13 worked examples/;
-      assert(HEADER_COUNT_RE.test(src),
-        "V-AI-EVAL-20 · Guard 3: the example-section header MUST be bumped to '13 worked examples' (was '12 worked examples' at Step 3.7). V-AI-EVAL-14 Guard 3 (count >= 11 floor) continues to pass; this guard locks the current ceiling at 13.");
-    });
 
     // -----------------------------------------------------------------
     // V-AI-EVAL-16/17 + V-CHAT-D-4 RETIRED 2026-05-14 evening (Step 3.6
