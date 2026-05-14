@@ -26,6 +26,47 @@
 //
 // ---
 //
+// **3.0.0-rc.9-dev** (2026-05-14) — between v3.0.0-rc.8 (TAGGED
+// 2026-05-13 at 1292/1292 GREEN, eval baseline 9.16/10 · 96% pass on
+// 25-case golden set) and the eventual v3.0.0-rc.9 tag.
+//
+// In flight (sequenced from HANDOFF.md open-fix-plans table):
+//   - Sub-arc C · Canvas AI Assist knowledge-base wiring per B.5
+//     audit; 5 scope options on the table, awaits user direction
+//     (B.5 recommends HYBRID: wire Examples 9+10 to systemPrompt-
+//     Assembler + author 4 short user-facing reference docs; expected
+//     eval lift 9.16 → ~9.3-9.4/10)
+//   - Sub-arc D · AI chat action proposals (D-Rule LOCKED · engineer-
+//     conditional approval mandatory; separate constitutional flow
+//     incl. SPEC review + action-correctness eval rubric + confirma-
+//     tion UX)
+//   - BUG-061 Save-draft vs Publish lifecycle (Rule A · new locked
+//     enum on SkillSchema)
+//   - BUG-063 Engagement init residual non-clear fields (2 RED tests
+//     V-FLOW-INIT-CLEAR-1/2 scaffolded)
+//   - BUG-052 Modal-residue test flake cluster (investigation)
+//   - gap.closeReason doc-drift (UI_DATA_TRACE Tab 4 §8d · 5-min fix)
+//
+// Session-handover infrastructure landed 2026-05-14 morning:
+//   - docs/HANDOVER_TEMPLATE.md v1.0 NEW (meta-discipline audit
+//     synthesizing 5 foundational discipline layers + optimal
+//     handover skeleton); commit e058c57
+//   - HANDOFF.md rewritten from template (797 → 224 lines · historical
+//     content into docs/SESSION_LOG_* files); commit 87fafc8
+//   - docs/SESSION_PRIMING_PROMPT.md v1.0 NEW (one-shot fresh-session
+//     pointer); commit d9bca36
+//   - v3.0.0-rc.8 git tag created retroactively on a322262 + pushed
+//     to origin (the rc.8 release-close commit a322262 was pushed
+//     2026-05-13 evening but the git tag itself was missed in lock-
+//     step; APP_VERSION ledger had already claimed "TAGGED 2026-05-13",
+//     so this restores ledger-reality coherence)
+//
+// Per RULES §16 CH24 + PREFLIGHT.md item 1a: this is the FIRST commit
+// past the rc.8 tag, so the `-dev` suffix is added now. V-VERSION-2
+// source-grep is the regression guard.
+//
+// ---
+//
 // **3.0.0-rc.8** (TAGGED 2026-05-13) — closes the rc.8 arc. Banner
 // 1292/1292 GREEN ✅ (was 1196 at rc.7 tag; +96 net tests over rc.8).
 // Eval baseline: 9.16/10 avg · 96% pass rate (24/25 on the 25-case
@@ -289,4 +330,4 @@
 //   - At least one real-customer workshop run against a v3.0 engagement
 //   - Real-Anthropic streaming smoke against a live key
 
-export const APP_VERSION = "3.0.0-rc.8";
+export const APP_VERSION = "3.0.0-rc.9-dev";
