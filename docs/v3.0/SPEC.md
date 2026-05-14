@@ -4882,4 +4882,76 @@ The §S25 contract is extended at commit time of §S47 implementation arc with t
 
 ---
 
+## §S48 · AI evaluation rubrics — chat-quality + action-correctness (rc.8 + rc.10 · LOCKED 2026-05-14 evening)
+
+**Status**: §S48 was QUEUED in rc.8 (commits `ddf10f1` foundation + `4d0257f` 25-case expansion + `5d9737b` + `ca10503` field-read bug fixes). LOCKED in rc.10 alongside the new §S48.2 action-correctness sub-section. The chat-quality harness has been the measurement bar for rc.8 → rc.9 (9.16/10 → 9.32/10 · 100% pass rate); this section formalizes its contract + introduces the orthogonal Sub-arc D harness.
+
+This annex defines the AI evaluation infrastructure under `tests/aiEvals/`. Each rubric scores meta-LLM-judged chat behavior against a fixed golden set of cases. Pass rate + per-dimension + per-category aggregates form the measurement bar against which prompt tuning, schema changes, and new behavioral rules are validated.
+
+### S48.1 · Chat-quality eval rubric (rc.8 foundation · LOCKED)
+
+The chat-quality rubric scores how well a chat response addresses the engineer's question. Defined originally in `tests/aiEvals/rubric.js` (rc.8 sub-arc A foundation); validated against 25-case golden set producing the rc.8 + rc.9 baselines. Locked here.
+
+**Five dimensions** (0-2 scoring per dimension · max 10/case · pass = 7/10):
+
+1. **Grounded** (weight 2) — every claim about the engagement traces back to actual engagement data or documented Canvas concept. Reference data (Dell product taxonomy, business driver labels) used correctly, not as engagement-specific claims.
+2. **Complete** (weight 2) — answer fully addresses the question, covering the elements a presales engineer would expect (per the case's `expected[]` rubric anchors).
+3. **Useful** (weight 2) — answer is immediately actionable; engineer can take a next step or make a decision from it.
+4. **Honest** (weight 2) — answer acknowledges what the canvas doesn't know; refuses to fabricate; cites limits explicitly.
+5. **Concise** (weight 2) — answer is right-sized for the question; not bloated; not too terse.
+
+**Golden set** (`tests/aiEvals/goldenSet.js`): 25 cases across 5 categories (discovery 6 · app-how-to 6 · data-grounding 5 · refusal 4 · multi-turn 4). Each case carries `id`, `category`, `prompt`, `engagementState` (`"empty"` or `"demo:northstar-health"`), `engagementHint` (test-harness context the judge sees), `transcriptPrior[]` (for multi-turn), and `expected[]` (rubric anchors).
+
+**Judge prompt** (`tests/aiEvals/judgePrompt.js`): `buildJudgeMessages(case, answer, providerKind)` returns `{system, user, expectsJsonOutput: true}`. The judge LLM is given the case context + rubric definitions verbatim + the chat answer; emits per-dimension scores + verdict text + pass/fail.
+
+**Runner** (`tests/aiEvals/evalRunner.js`): `window.runCanvasAiEvals(opts)` invokable from devtools or via `?runEvals=1` URL flag. Iterates the golden set with real-LLM chat calls + real-LLM judge calls (per `feedback_no_mocks.md`); produces aggregate + per-case results panel; offers `📥 Download baseline.json` to commit the snapshot.
+
+**Baseline file convention**: canonical at `tests/aiEvals/baseline.json` (overwritten on each re-baseline · used as the comparison reference); timestamped historical snapshots accumulate at `tests/aiEvals/baseline-<ISO-timestamp>.json` for audit trail. Both versions of every baseline are committed.
+
+**Version stamps**: `RUBRIC_VERSION`, `JUDGE_PROMPT_VERSION`, `GOLDEN_SET_VERSION` are exported from their respective modules + embedded in every baseline JSON's `meta` block so cross-version comparison is meaningful. Bumps are versioned commits.
+
+**Pass-rate convention**: a case "passes" when its total ≥ 7/10. The `passRate` aggregate is the percent of golden cases that passed. Both per-dimension and per-category averages are also computed and reported.
+
+### S48.2 · Action-correctness eval rubric (rc.10 Sub-arc D · NEW · LOCKED)
+
+The action-correctness rubric scores how correctly the chat emits structured action proposals (Sub-arc D contract). Authored 2026-05-14 in the eval-build phase per `docs/SUB_ARC_D_FRAMING_DECISIONS.md` Q5 (orthogonal harnesses). Independent of §S48.1; runs alongside it (not replacing).
+
+**Why orthogonal not layered**: §S48.1 measures chat TEXT quality; §S48.2 measures action CORRECTNESS. Layering them into a 10-dim case would add judge complexity, increase parse-error risk, and obscure which axis is improving or regressing. Two harnesses · two independent baselines · cross-cutting analysis post-capture (e.g., correlation between text quality + action correctness) is a post-hoc analysis, not a coupled rubric.
+
+**Five dimensions** (0-2 scoring per dimension · max 10/case · pass = 7/10):
+
+1. **Action-kind correctness** (id: `actionKind`, weight 2) — did the chat pick the right action kind? E.g., `add-instance-current` when the customer describes existing infrastructure vs `add-instance-desired` when the customer describes target architecture. Wrong kind = 0; correct kind but with a sibling-kind option = 1; unambiguously correct = 2.
+2. **Target-state correctness** (id: `targetState`, weight 2) — for instance kinds, did the chat pick the right layer + environment? For close-gap, did it identify the right gap? Wrong target = 0; right target but with a minor sibling miss (e.g., right layer wrong environment) = 1; fully correct = 2.
+3. **Payload accuracy** (id: `payloadAccuracy`, weight 2) — are the field values (vendor, criticality, urgency, label, etc.) reasonable given the workshop context? Fabricated or contradictory = 0; mostly correct with one minor mismatch = 1; all fields support the stated workshop context = 2.
+4. **Confidence calibration** (id: `confidenceCalibration`, weight 2) — does the chat's `confidence` (`HIGH`/`MEDIUM`/`LOW` per the action-proposal schema) match the actual proposal quality? E.g., chat says `HIGH` on a vague-input guess = 0; reasonable but slightly off = 1; well-calibrated = 2.
+5. **Restraint when uncertain** (id: `restraint`, weight 2) — does the chat NOT propose when context is insufficient? Over-proposes from vague input = 0; proposes some but with hedging = 1; correctly surfaces a clarifying question instead of proposing = 2.
+
+**Schema-conditional**: golden set grows as Sub-arc D action kinds expand. v1 covers 4 action kinds (`add-driver`, `add-instance-current`, `add-instance-desired`, `close-gap`) plus restraint. v1.5 adds `flip-disposition` (deferred per Q2) and destructive kinds. v2 adds Mode 2 conversational scenarios (Mode 1 first per Q4 default; Mode 2 alongside when its scope lands).
+
+**Golden set** (`tests/aiEvals/actionGoldenSet.js`): action-correctness-specific cases organized by action-kind category. Each case carries `id`, `category` (one of `add-driver` · `add-instance-current` · `add-instance-desired` · `close-gap` · `restraint`), `prompt` (the chat input that should produce a proposal or restraint), `engagementState`, `engagementHint`, `expectedProposals` (the canonical correct proposal shape · array because some prompts warrant multiple actions), and `rubricAnchors` (per-dimension what scoring 2/2 looks like for this specific case).
+
+**Judge prompt** (`tests/aiEvals/actionJudgePrompt.js`): `buildActionJudgeMessages(case, proposals, providerKind)` returns `{system, user, expectsJsonOutput: true}`. The judge LLM is given the case context + 5-dim rubric definitions verbatim + the chat's emitted proposal list (which may be empty for restraint cases); emits per-dimension scores per proposal (and a top-level scoring for the overall response if multiple proposals were emitted) + verdict text + pass/fail per proposal.
+
+**Rubric** (`tests/aiEvals/actionRubric.js`): mirror of `rubric.js` shape but with the 5 D-specific dimensions. Exports `ACTION_RUBRIC_DIMENSIONS`, `ACTION_RUBRIC_VERSION`, `ACTION_RUBRIC_PASS_THRESHOLD`, `ACTION_RUBRIC_TOTAL_MAX`, `findActionDimension(id)`, `formatActionRubricSummary()`.
+
+**Baseline file convention**: canonical at `tests/aiEvals/baseline-action.json` (separate from chat-quality `baseline.json`); timestamped historical at `tests/aiEvals/baseline-action-<ISO-timestamp>.json`. Both committed at each re-baseline.
+
+### S48.3 · Harness dispatch + cross-harness conventions
+
+**Multi-harness dispatch**: `tests/aiEvals/evalRunner.js` is extended to support `window.runCanvasAiEvals({ harness: "chat-quality" })` (existing default · unchanged behavior) AND `window.runCanvasAiEvals({ harness: "action-correctness" })` (NEW · Sub-arc D). The harness option selects which `goldenSet` + `rubric` + `judgePrompt` modules to use; the rest of the runner (per-case dispatch, baseline aggregation, panel rendering, download flow) is shared infrastructure.
+
+**Provider lock**: both harnesses require the user to pass matching `chatProviderKey` + `judgeProviderKey` for apples-to-apples comparison across re-baselines. The baseline JSON `meta` block records both providers; cross-provider baselines are flagged in the panel as not directly comparable.
+
+**Cross-harness correlation analysis**: post-capture (not at runtime), the user can compare the two baselines for cases that appear in both golden sets (some Mode 2 cases will have both chat text AND action proposals; the chat text scored by §S48.1's harness, the action proposals by §S48.2's harness). The correlation analysis (does high chat-quality predict high action-correctness?) is a post-hoc artifact, not a coupled rubric.
+
+**Rubric evolution discipline**: each rubric dimension can be tightened or new dimensions added (e.g. §S48.2's 5 dims could expand to 6 in a future Sub-arc E). Each change bumps the rubric version stamp; older baselines remain comparable as reference-only (not directly comparable to baselines scored against the bumped rubric). The baseline JSON's `meta.rubricVersion` field carries the version stamp; the evalRunner refuses to compute deltas across mismatched versions.
+
+### S48.4 · Trace
+
+- **Principles**: P3 (presentation derived) — judge verdicts are derived from the rubric + chat response; never re-computed by hand. P5 (atomic operations) — each eval run is a single complete pass; partial runs aren't comparable. P7 (caller-agnostic) — the eval harness doesn't care which mode (chat / note-taking) emitted the chat text or action proposal; same scoring pipeline.
+- **Sections**: §S20.4.1.1 (8 chat-quality examples · trained by §S48.1's harness) · §S20.4.1.2 (Rule 10 quantitative honesty · trained by §S48.1's harness) · §S25 (`aiTag.kind` discriminator the action proposals will use) · §S47 (ImportPreviewModal pattern Sub-arc D's preview modal extends).
+- **Memory anchors**: `feedback_no_mocks.md` (real-LLM only · every eval call is a real anthropic/openai-compat round-trip · no scripted-fixture substrate) · `feedback_spec_and_test_first.md` (this section authored before the action-rubric implementation lands) · `feedback_test_or_it_didnt_ship.md` (V-AI-EVAL-9/10/11 are the regression guards locking the §S48.2 contract).
+
+---
+
 End of SPEC.

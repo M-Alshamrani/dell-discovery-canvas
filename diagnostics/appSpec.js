@@ -14966,6 +14966,113 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     });
 
     // -----------------------------------------------------------------
+    // V-AI-EVAL-9/10/11 · Sub-arc D (rc.10) · action-correctness eval
+    // harness source-grep contracts · LOCKED 2026-05-14 evening
+    //
+    // Per SPEC §S48.2 (LOCKED rc.10) the action-correctness rubric
+    // ships as an ORTHOGONAL harness alongside the existing chat-
+    // quality rubric (§S48.1). New file triplet:
+    //   - tests/aiEvals/actionRubric.js
+    //   - tests/aiEvals/actionJudgePrompt.js
+    //   - tests/aiEvals/actionGoldenSet.js
+    //
+    // RED-first scaffolds (this commit); impl commits create the
+    // files and these tests flip to GREEN.
+    //
+    // Cross-references: docs/SUB_ARC_D_FRAMING_DECISIONS.md Q5 +
+    // SPEC §S48.2 + §S48.3 (harness dispatch convention).
+    // -----------------------------------------------------------------
+
+    it("V-AI-EVAL-9 · Sub-arc D · tests/aiEvals/actionRubric.js exports ACTION_RUBRIC_DIMENSIONS (5 dimensions for action-correctness · ids: actionKind / targetState / payloadAccuracy / confidenceCalibration / restraint) + ACTION_RUBRIC_VERSION + ACTION_RUBRIC_PASS_THRESHOLD · RED-first scaffold per SPEC §S48.2", async () => {
+      let mod;
+      try { mod = await import("/tests/aiEvals/actionRubric.js"); }
+      catch (e) { throw new Error("V-AI-EVAL-9: tests/aiEvals/actionRubric.js MUST exist (load error: " + (e && e.message) + ")"); }
+
+      // Guard 1: ACTION_RUBRIC_DIMENSIONS is a 5-element array
+      assertEqual(Array.isArray(mod.ACTION_RUBRIC_DIMENSIONS) && mod.ACTION_RUBRIC_DIMENSIONS.length === 5, true,
+        "V-AI-EVAL-9 · Guard 1: ACTION_RUBRIC_DIMENSIONS MUST be a 5-element array (one entry per dimension); got: " + (Array.isArray(mod.ACTION_RUBRIC_DIMENSIONS) ? mod.ACTION_RUBRIC_DIMENSIONS.length : typeof mod.ACTION_RUBRIC_DIMENSIONS));
+
+      // Guard 2: dimension ids are exactly the 5 locked per SPEC §S48.2
+      const expectedIds = ["actionKind", "targetState", "payloadAccuracy", "confidenceCalibration", "restraint"];
+      const actualIds = mod.ACTION_RUBRIC_DIMENSIONS.map(d => d.id).sort();
+      assertEqual(actualIds.join(","), expectedIds.slice().sort().join(","),
+        "V-AI-EVAL-9 · Guard 2: ACTION_RUBRIC_DIMENSIONS ids MUST be exactly " + expectedIds.join(",") + "; got: " + actualIds.join(","));
+
+      // Guard 3: ACTION_RUBRIC_VERSION exported as non-empty string
+      assertEqual(typeof mod.ACTION_RUBRIC_VERSION === "string" && mod.ACTION_RUBRIC_VERSION.length > 0, true,
+        "V-AI-EVAL-9 · Guard 3: ACTION_RUBRIC_VERSION MUST be a non-empty string (for cross-version comparison + baseline JSON meta-stamping); got: " + JSON.stringify(mod.ACTION_RUBRIC_VERSION));
+
+      // Guard 4: ACTION_RUBRIC_PASS_THRESHOLD is 7 (consistent with §S48.1)
+      assertEqual(mod.ACTION_RUBRIC_PASS_THRESHOLD, 7,
+        "V-AI-EVAL-9 · Guard 4: ACTION_RUBRIC_PASS_THRESHOLD MUST be 7 (out of 10 · consistent with §S48.1's pass threshold); got: " + JSON.stringify(mod.ACTION_RUBRIC_PASS_THRESHOLD));
+    });
+
+    it("V-AI-EVAL-10 · Sub-arc D · tests/aiEvals/actionJudgePrompt.js exports buildActionJudgeMessages(case, proposals, providerKind) returning {system, user, expectsJsonOutput:true} · RED-first scaffold per SPEC §S48.2", async () => {
+      let mod;
+      try { mod = await import("/tests/aiEvals/actionJudgePrompt.js"); }
+      catch (e) { throw new Error("V-AI-EVAL-10: tests/aiEvals/actionJudgePrompt.js MUST exist (load error: " + (e && e.message) + ")"); }
+
+      // Guard 1: buildActionJudgeMessages is a function
+      assertEqual(typeof mod.buildActionJudgeMessages, "function",
+        "V-AI-EVAL-10 · Guard 1: actionJudgePrompt MUST export buildActionJudgeMessages function (analog of buildJudgeMessages in §S48.1)");
+
+      // Guard 2: returns {system, user, expectsJsonOutput:true} shape
+      const fakeCase = {
+        id: "ACT-PROBE-1",
+        category: "add-driver",
+        prompt: "Customer mentioned compliance concerns",
+        engagementState: "empty",
+        engagementHint: "Fresh empty engagement",
+        expectedProposals: [],
+        rubricAnchors: {}
+      };
+      const fakeProposals = [];
+      const result = mod.buildActionJudgeMessages(fakeCase, fakeProposals, "anthropic");
+      assertEqual(typeof result.system === "string" && result.system.length > 0, true,
+        "V-AI-EVAL-10 · Guard 2a: buildActionJudgeMessages return MUST have a non-empty 'system' string");
+      assertEqual(typeof result.user === "string" && result.user.length > 0, true,
+        "V-AI-EVAL-10 · Guard 2b: buildActionJudgeMessages return MUST have a non-empty 'user' string");
+      assertEqual(result.expectsJsonOutput, true,
+        "V-AI-EVAL-10 · Guard 2c: buildActionJudgeMessages return MUST have expectsJsonOutput===true (the judge emits JSON for deterministic scoring · same pattern as §S48.1)");
+
+      // Guard 3: ACTION_JUDGE_PROMPT_VERSION exported (for baseline meta-stamping)
+      assertEqual(typeof mod.ACTION_JUDGE_PROMPT_VERSION === "string" && mod.ACTION_JUDGE_PROMPT_VERSION.length > 0, true,
+        "V-AI-EVAL-10 · Guard 3: actionJudgePrompt MUST export ACTION_JUDGE_PROMPT_VERSION as a non-empty string (for cross-version comparison + baseline JSON meta-stamping)");
+    });
+
+    it("V-AI-EVAL-11 · Sub-arc D · tests/aiEvals/actionGoldenSet.js exports ACTION_GOLDEN_SET covering at least 4 action-kind categories + restraint with required fields per case · RED-first scaffold per SPEC §S48.2", async () => {
+      let mod;
+      try { mod = await import("/tests/aiEvals/actionGoldenSet.js"); }
+      catch (e) { throw new Error("V-AI-EVAL-11: tests/aiEvals/actionGoldenSet.js MUST exist (load error: " + (e && e.message) + ")"); }
+
+      // Guard 1: ACTION_GOLDEN_SET is a non-empty array
+      assertEqual(Array.isArray(mod.ACTION_GOLDEN_SET) && mod.ACTION_GOLDEN_SET.length >= 5, true,
+        "V-AI-EVAL-11 · Guard 1: ACTION_GOLDEN_SET MUST be an array of >= 5 cases (foundation ships ≥5 covering each action-kind category + restraint; expansion later); got: " + (Array.isArray(mod.ACTION_GOLDEN_SET) ? mod.ACTION_GOLDEN_SET.length : typeof mod.ACTION_GOLDEN_SET));
+
+      // Guard 2: at least 1 case per v1 category (4 action kinds + restraint = 5)
+      const categories = ["add-driver", "add-instance-current", "add-instance-desired", "close-gap", "restraint"];
+      const missing = categories.filter(cat => !mod.ACTION_GOLDEN_SET.some(c => c.category === cat));
+      assertEqual(missing.length, 0,
+        "V-AI-EVAL-11 · Guard 2: ACTION_GOLDEN_SET MUST include at least one case per v1 category (4 action kinds + restraint); missing: " + (missing.length ? missing.join(", ") : "none"));
+
+      // Guard 3: every case has the required fields
+      for (const c of mod.ACTION_GOLDEN_SET) {
+        assertEqual(typeof c.id === "string" && c.id.length > 0, true,
+          "V-AI-EVAL-11 · Guard 3a: each golden case MUST have a non-empty id; missing on: " + JSON.stringify(c).slice(0, 200));
+        assertEqual(typeof c.prompt === "string" && c.prompt.length > 0, true,
+          "V-AI-EVAL-11 · Guard 3b: case " + c.id + " MUST have a non-empty prompt");
+        assertEqual(typeof c.engagementState === "string" && c.engagementState.length > 0, true,
+          "V-AI-EVAL-11 · Guard 3c: case " + c.id + " MUST have engagementState (loader key like 'empty' or 'demo:northstar-health')");
+        assertEqual(Array.isArray(c.expectedProposals), true,
+          "V-AI-EVAL-11 · Guard 3d: case " + c.id + " MUST have expectedProposals[] (array · may be empty for restraint cases)");
+      }
+
+      // Guard 4: ACTION_GOLDEN_SET_VERSION exported (for baseline meta-stamping)
+      assertEqual(typeof mod.ACTION_GOLDEN_SET_VERSION === "string" && mod.ACTION_GOLDEN_SET_VERSION.length > 0, true,
+        "V-AI-EVAL-11 · Guard 4: actionGoldenSet MUST export ACTION_GOLDEN_SET_VERSION as a non-empty string (for cross-version comparison + baseline JSON meta-stamping)");
+    });
+
+    // -----------------------------------------------------------------
     // V-FLOW-INIT-CLEAR-1/2 · BUG-063 regression guards · LOCKED 2026-05-14
     //
     // BUG-063 (OPEN 2026-05-13): engagement initialization · residual
