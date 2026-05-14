@@ -15309,6 +15309,101 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     });
 
     // -----------------------------------------------------------------
+    // V-AI-EVAL-18/19 · Sub-arc D Step 3.7 micro-arc · Example 12
+    // canonical add-instance-current pattern (RETRY with safe notation
+    // after Step 3.6 revert) · LOCKED 2026-05-14 evening post-5466ea3
+    // 25-case baseline finding (add-instance-current category 2.0/10 ·
+    // 1/5 pass · 4 of 5 emit-cases scored 0/10 by no-emission · the
+    // category is systemically broken without a worked example).
+    //
+    // CONTEXT: Step 3.6 attempted Example 12 with inline notation form
+    // `*[invokes proposeAction(kind='X', payload={...}, ...)]*` that the
+    // LLM imitated literally as prose output (ACT-INST-CUR-1 chat answer
+    // wrote the bracketed text verbatim · proposedActions: []). Reverted
+    // at 58b27c3. The 25-case D4 baseline (5466ea3) proved this was a
+    // CATEGORY-WIDE failure, not a case-specific issue.
+    //
+    // Step 3.7 retries Example 12 with the PROVEN-SAFE short-form
+    // notation from Example 8 (`*[calls X]*`) which has been in Layer 1
+    // since Sub-arc B without imitation issues. The discriminator is
+    // short-form `*[calls X for Y: bullets]*` (no inline args, no
+    // function-call mirror syntax) vs Step 3.6's full-args inline form.
+    //
+    // V-AI-EVAL-18: positive guard · Example 12 marker + add-instance-
+    //              current pattern within 1500 chars + "12 worked
+    //              examples" header bump
+    // V-AI-EVAL-19: negative guard · source must NOT contain the
+    //              Step-3.6 imitation-hazard form `*[invokes
+    //              proposeAction(` (forward-protection · any future
+    //              maintainer switching back to the verbose form gets
+    //              caught)
+    //
+    // Both are SOURCE-GREP contracts. Runtime behavior measured by
+    // Step 3.7 re-baseline against the 25-case set (5466ea3 measurement
+    // bar). Expected lift target: add-instance-current category 2.0 →
+    // ≥6.0 · passRate 68% → ≥80% · avg 6.68 → ≥7.5.
+    //
+    // RED-first scaffolds (this commit); impl commit flips GREEN.
+    //
+    // Cross-references: SPEC §S20.4.1.3 Step 3.7 amendment + RULES §16
+    // CH38(a) extension + tests/aiEvals/baseline-action.json (5466ea3 ·
+    // 25-case canonical · the measurement bar Step 3.7 targets lift
+    // against) + docs/SUB_ARC_D_FRAMING_DECISIONS.md A16
+    // -----------------------------------------------------------------
+
+    it("V-AI-EVAL-18 · Sub-arc D Step 3.7 · services/systemPromptAssembler.js Layer 1 Role section carries Example 12 (canonical add-instance-current tool-use pattern · RETRY with proven-safe short-form notation after Step 3.6 imitation-hazard revert) + '12 worked examples' header bump — RED-first scaffold per SPEC §S20.4.1.3 Step 3.7 amendment + 5466ea3 25-case baseline forensic analysis (add-instance-current 1/5 pass · category-wide failure without worked example)", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/systemPromptAssembler.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-AI-EVAL-18: services/systemPromptAssembler.js source MUST be readable for source-grep");
+
+      // Guard 1: Example 12 marker present.
+      const EXAMPLE_12_RE = /Example 12/;
+      assert(EXAMPLE_12_RE.test(src),
+        "V-AI-EVAL-18 · Guard 1: Layer 1 Role section MUST carry Example 12 (look for 'Example 12' marker). The canonical add-instance-current tool-use pattern is the worked-example counter to the 5466ea3 baseline's category-wide failure (4 of 5 emit-cases scored 0/10 by no-emission · including ACT-INST-CUR-3 gold-standard VMware vSphere 7 input).");
+
+      // Guard 2: Example 12 body teaches the add-instance-current kind
+      // within 1500 chars of the marker (the pattern-by-example).
+      const EXAMPLE_12_INSTANCE_CUR_RE = /Example 12[\s\S]{0,1500}add-instance-current/;
+      assert(EXAMPLE_12_INSTANCE_CUR_RE.test(src),
+        "V-AI-EVAL-18 · Guard 2: Example 12 body MUST teach the proposeAction tool call for kind='add-instance-current' (look for 'add-instance-current' within 1500 chars of the Example 12 header). Generic prose-only example fails to teach the structured-emission contract.");
+
+      // Guard 3: header bumped to "12 worked examples". The count
+      // discipline traces: Sub-arc B 6→8 (Examples 7+8 · `4e34d6e`),
+      // Sub-arc C 8→10 (Examples 9+10 · `2f3176f`), Step 3.5 10→11
+      // (Example 11 · `ee42302`), Step 3.7 11→12 (Example 12 retry ·
+      // this arc · Step 3.6 attempt at this bump was reverted at
+      // 58b27c3 due to notation-imitation regression).
+      const HEADER_COUNT_RE = /12 worked examples/;
+      assert(HEADER_COUNT_RE.test(src),
+        "V-AI-EVAL-18 · Guard 3: the example-section header MUST be bumped to '12 worked examples' (was '11 worked examples' at Step 3.5 / post-Step-3.6-revert). V-AI-EVAL-14 Guard 3 (count >= 11 floor) continues to pass; this guard locks the current ceiling.");
+    });
+
+    it("V-AI-EVAL-19 · Sub-arc D Step 3.7 · services/systemPromptAssembler.js MUST NOT use the Step-3.6 imitation-hazard notation form `*[invokes proposeAction(` (forward-protection · any future maintainer switching back to the verbose inline-args notation gets caught) — RED-first scaffold per Step 3.6 revert (58b27c3) + cdd367a regression learning", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/systemPromptAssembler.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-AI-EVAL-19: services/systemPromptAssembler.js source MUST be readable for source-grep");
+
+      // NEGATIVE guard: the Step-3.6 imitation-hazard notation form must
+      // NOT appear anywhere in the source. Step 3.6 used this exact form:
+      //   *[invokes proposeAction(kind='add-instance-current', ...)]*
+      // The LLM imitated it literally as prose output. The Step 3.7 fix
+      // uses Example 8's `*[calls X for Y: bullets]*` short-form instead.
+      // This guard forbids any future "improvement" that re-introduces
+      // the verbose form.
+      const IMITATION_HAZARD_RE = /\*\[invokes proposeAction\(/;
+      assert(!IMITATION_HAZARD_RE.test(src),
+        "V-AI-EVAL-19 · Guard 1: systemPromptAssembler.js MUST NOT contain the literal substring '*[invokes proposeAction(' (the Step-3.6 imitation-hazard notation form that caused the LLM to write the bracketed text as prose output instead of firing the tool · regression captured at cdd367a · reverted at 58b27c3). Use the proven-safe short-form '*[calls proposeAction for X: bullets]*' (Example 8 style) instead.");
+    });
+
+    // -----------------------------------------------------------------
     // V-AI-EVAL-16/17 + V-CHAT-D-4 RETIRED 2026-05-14 evening (Step 3.6
     // micro-arc reverted per cdd367a regression analysis · user direction
     // "go as recommended" → Option A revert). The 3 tests asserted the

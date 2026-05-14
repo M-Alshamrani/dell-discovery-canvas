@@ -600,6 +600,53 @@ The rc.10 first action-correctness baseline (`tests/aiEvals/baseline-action.json
 
 ---
 
+## A16 · Step 3.7 micro-arc · Example 12 retry with proven-safe notation (2026-05-14 evening · LOCKED post-5466ea3 25-case baseline)
+
+The D4 25-case re-baseline (`5466ea3` · `tests/aiEvals/baseline-action.json` canonical · 6.68/10 · 68% pass) revealed that **add-instance-current is systemically broken at the chat layer**: 1/5 pass · 4 emit-cases scored 0/10 by no-emission · including the gold-standard ACT-INST-CUR-3 (VMware vSphere 7 · full payload · vendor + product + version + scope all explicit). The 5-case foundation's 7.4/10/80% pass MASKED this because only 1 of 5 cases was add-instance-current.
+
+**Root cause**: Layer 1 has Example 11 (canonical add-driver tool-use pattern · added Step 3.5 `ee42302`) but NO equivalent worked example for add-instance-current. The model fires add-driver correctly (Example 11 trained it) but has no pattern for add-instance-current. Step 3.6 attempted Example 12 but used inline `*[invokes proposeAction(kind='X', payload={...}, ...)]*` notation that the LLM imitated literally; reverted at `58b27c3`.
+
+**Step 3.7 scope (LOCKED · user-approved "Step 3.7 (recommended)" + "Go with all recommendations" 2026-05-14 evening · 5 design questions Q1..Q5)**:
+
+- **Q1 ✅** — Example 12 notation: **proven-safe short-form** `*[calls proposeAction for X: bullets]*` (Example 8 style). Examples 8 + 9 + 10 use this short-form notation since Sub-arc B + Sub-arc C without imitation issues; the model correctly fires the analytical-view tools (ACT-DRIVER-1 + ACT-CLOSE-1 + ACT-CLOSE-2 all fire while having Examples 8/9/10 in Layer 1). The discriminator from Step 3.6: short-form verb + short description, NO inline JSON-object args, NO function-call mirror syntax.
+- **Q2 ✅** — Fixture: Veritas NetBackup at DR Site, tier-2 backup, Medium criticality. Intentionally distinct from ACT-INST-CUR-1's Commvault HyperScale X / Branch Clinic fixture (same anti-memorization design as Step 3.6 attempt · only the notation was the problem).
+- **Q3 ✅** — RED-first scaffolds: V-AI-EVAL-18 (positive · Example 12 marker + add-instance-current pattern within 1500 chars + "12 worked examples" header · 3 guards) + V-AI-EVAL-19 (negative · forbids `*[invokes proposeAction(` substring · forward-protection · 1 guard).
+- **Q4 ✅** — SPEC §S20.4.1.3 + RULES §16 CH38(a) amendment rows + framing-doc A16 (this section).
+- **Q5 ✅** — Re-baseline IMMEDIATELY against the 25-case canonical (5466ea3) · single cycle.
+
+**Step 3.7 commit sequence**:
+
+| Commit | Type | Surfaces |
+|---|---|---|
+| Step 3.7 preamble (this commit) | `[CONSTITUTIONAL TOUCH]` doc + RED | SPEC §S20.4.1.3 Step 3.7 amendment + RULES §16 CH38(a) extension + framing-doc A16 + V-AI-EVAL-18/19 RED scaffolds |
+| Step 3.7 impl | `[CONSTITUTIONAL TOUCH]` impl | systemPromptAssembler.js Example 12 (safe short-form) + "12 worked examples" header bump · RED → GREEN |
+| Step 3.7 re-baseline | `data` (USER-RUN) | tests/aiEvals/baseline-action.json overwrite + new timestamped historical + forensic lift analysis vs `5466ea3` |
+
+**Expected lift target (Step 3.7 re-eval at close · 25-case canonical)**:
+- add-instance-current category: 2.0 → ≥6.0 (mirror add-driver's Example-11-driven lift)
+- passRate: 68% → ≥80% (4 add-instance-current cases flip from 0 to ≥7)
+- avg score: 6.68 → ≥7.5
+- per-dimension actionKind + targetState + payloadAccuracy should all lift on the add-instance-current category
+
+**What Step 3.7 explicitly does NOT touch**:
+- Tool name (`proposeAction` stays)
+- Envelope shape (`proposedActions[]` stays)
+- ActionProposalSchema (Zod stays · no `originId: string | string[]` for consolidate N→1 · that's a separate v1.5 schema-amendment scope)
+- The 4-kind enum stays
+- CH38 sub-rules (b)..(g) stay
+- Rule 4 wording (NO further amendment · Step 3.5 form is the floor)
+- chatTools.js proposeAction description (Step 3.5 form is the floor · no "Recommended fields" block re-attempt)
+- Other Step-3.6 attempted changes (no-ask-permission sentence-append · Recommended-fields block) stay REVERTED
+
+**What Step 3.7 explicitly DOES NOT address** (deferred to Step 5 UX or v1.5):
+- ACT-DRIVER-5 priority-shift (chat duplicates existing driver) — defer to Step 5 preview-modal (engineer sees + removes duplicate before apply)
+- ACT-DRIVER-4 multi-emit confidence-calibration (4 proposals at 6/10 · likely uniform HIGH when mix was expected) — defer to Step 5 or follow-up
+- ACT-INST-DES-4 consolidate N→1 (schema-edge · would need originId array support) — defer to v1.5 schema amendment
+- ACT-CLOSE-3 ambiguous-which-gap (no proposal AND no clarifying question that judge recognized) — defer to Step 5 or follow-up worked example
+- D4 expansion to >25 cases — deferred (current 25 cases sufficient · further expansion is v1.5 scope)
+
+---
+
 ## A15 · Step 3.6 micro-arc · ATTEMPTED then REVERTED (2026-05-14 evening · post-Step-3.5 residual closure attempt rolled back per cdd367a regression analysis)
 
 **STATUS · REVERTED 2026-05-14 evening**: Step 3.6 impl (`8a6c9f8`) was re-baselined and showed a behavioral REGRESSION vs `368d565` (avg 7.4 → 6.0 · passRate 80% → 60% · per-cat add-instance-desired 8 → 0 catastrophic). Forensic root cause: Example 12's inline `*[invokes proposeAction(kind='add-instance-current'...)]*` notation was IMITATED by the LLM as prose text (ACT-INST-CUR-1 chat answer literally wrote the bracketed notation in its response body · `proposedActions: []`) AND ACT-INST-DES-1 hallucinated "I've proposed..." with empty proposedActions. The notation that was intended as a teaching device became a syntactic pattern the model imitated. User direction "go as recommended" → Option A revert: rolled back systemPromptAssembler.js Rule 4 sentence-append + Example 12 + "12 worked examples" header bump + chatTools.js "Recommended fields per kind" block. V-AI-EVAL-16/17 + V-CHAT-D-4 RETIRED (contract surface no longer exists). Canonical `tests/aiEvals/baseline-action.json` UNCHANGED · still points at `368d565` Step 3.5 capture (7.4/10 · 80% pass · ship-confidence floor preserved). The Step 3.6 amendment content below remains as historical record of what was attempted + the design rationale, BUT IS NO LONGER IN EFFECT.
@@ -672,3 +719,5 @@ The Q1-Q7 base locks above + the A1-A13 amendments give the full Mode 1 spec:
 18. **Out-of-scope (A13)**: 7 items locked as explicit non-goals for D.v1
 19. **Step 3.5 micro-arc (A14)**: post-d73ce60 baseline tightening · Rule 4 verb-strength bump (MUST invoke + contract violation) + Example 11 (canonical add-driver tool-use) + proposeAction tool description hardening (MUST be invoked + closeReason REQUIRED) + ACT-INST-CUR-1 fixture fix (Commvault HyperScale X + Branch Clinic) · Q1-Q9 user-approved "Go with all recommendations" · BLOCKS Step 4 user-facing impl
 20. **Step 3.6 micro-arc (A15) · ATTEMPTED then REVERTED**: post-368d565 baseline polish attempt · Rule 4 no-ask-permission sentence-append + Example 12 (canonical add-instance-current tool-use · Veritas NetBackup at DR Site) + proposeAction "Recommended fields per kind" block · Q1-Q6 user-approved "Go with all recommendations" → impl `8a6c9f8` → re-baseline `cdd367a` REGRESSION (7.4→6.0 · 80%→60% · Example notation imitated as prose) → user direction "go as recommended" → Option A revert. Step 4 user-facing impl UNBLOCKED at restored Step 3.5 baseline (368d565 · 7.4/10 · 80% pass). Learning: behavior examples MUST NOT use inline `*[invokes X(...)]*` notation that LLMs syntactically imitate.
+21. **D4 golden-set expansion + 25-case re-baseline** (`1168ab9` + `5466ea3`): 5-case foundation graduated to 25 cases (4-6 samples per v1 category · per rc.8 sub-arc A.1→A.2 precedent). Canonical baseline transitioned to 25-case set: 6.68/10 · 68% pass · per-cat 6.8/2.0/6.6/7.5/10.0. Shared-5-case avg held at 7.2 (non-regression). BIG FINDING: add-instance-current SYSTEMICALLY broken (1/5 pass · 4 emit-cases scored 0/10 by no-emission). Root cause: Layer 1 has Example 11 for add-driver but no equivalent for add-instance-current. Positive findings: restraint discipline excellent (6/6 cases 10/10) · multi-emit works · partial-evidence inference works · contradiction surfacing works.
+22. **Step 3.7 micro-arc (A16) · Example 12 RETRY with proven-safe notation**: post-5466ea3 finding (add-instance-current category-wide failure) · Example 12 retry using Example 8's `*[calls X for Y: bullets]*` short-form notation (NOT Step-3.6's verbose inline-args form) · Veritas NetBackup at DR Site fixture (same as Step 3.6 · only notation changed) · 11 → 12 worked examples header bump · V-AI-EVAL-18 (positive guard) + V-AI-EVAL-19 (negative guard against `*[invokes proposeAction(` re-introduction · forward-protection) · Q1-Q5 user-approved "Go with all recommendations". Expected lift on 25-case canonical: add-instance-current 2.0→≥6.0 · passRate 68%→≥80% · avg 6.68→≥7.5.
