@@ -338,3 +338,243 @@ No code touches at this stage. This doc is framing-only.
 - `services/systemPromptAssembler.js` (Layer 1 Rule 4 · current text · target of the rc.10 amendment)
 - `tests/aiEvals/baseline.json` (rc.9 chat-quality baseline · the existing measurement bar D's eval RUNS ALONGSIDE not REPLACES)
 - Memory anchors: `feedback_no_mocks.md` (real-LLM only) · `feedback_5_forcing_functions.md` Rule A (constitutional touch flow at preamble step) · `feedback_principal_architect_discipline.md` R11 (four-block ritual at every commit)
+
+---
+
+## AMENDMENTS · 2026-05-14 evening · Mode 1 UX detailed spec + Q1 promotion
+
+Three substantive refinements after additional user direction + walkthrough exercise. The original Q1-Q7 locks above stay valid; the amendments below extend them with concrete Mode 1 UX detail + a Q1 promotion to topbar.
+
+### A1 · Q1 promotion · `AI Notes` topbar button (CH26 amendment territory)
+
+**Refined decision**: Mode 1 invocation surface is promoted from "footer button only" to **topbar button `AI Notes` + footer button + `Cmd+Shift+N` keyboard shortcut**.
+
+**Naming**: `AI Notes` (pairs with existing `AI Assist`; signals AI-driven but non-conversational; concise; memorable).
+
+**Constitutional implication**: CH26 (locked rc.4-dev Arc 2 · "the topbar carries EXACTLY ONE AI affordance `#topbarAiBtn`") gets amended at constitutional preamble time:
+
+> **CH26 (amended rc.10 Sub-arc D)** — the topbar carries TWO AI affordances:
+> - `#topbarAiBtn` (`AI Assist`, sparkle icon, opens Canvas Chat for conversational round-trips · `Cmd+K`)
+> - `#topbarAiNotesBtn` (`AI Notes`, notebook icon, opens Workshop Notes overlay for batched note-taking without proposal-generating round-trips · `Cmd+Shift+N`)
+>
+> Both are AI-driven but serve distinct workflows: AI Assist is real-time conversational; AI Notes is workshop-time batched. The two-affordance pair is intentional and capped at two. Anti-pattern: any third topbar AI affordance, or merging the two into a single button with sub-modes (this would collapse the visual cue that distinguishes the two workflows).
+
+**The amendment lands at constitutional preamble time** (separate session step, after eval-build). This framing doc locks the DECISION to amend; the actual SPEC/RULES change happens at preamble Q&A user-approval time.
+
+### A2 · Mode 1 UX detailed spec · dual-pane overlay
+
+The Mode 1 surface implementation contract (extends Q1 above with concrete UX detail captured from user direction):
+
+**Layout · two-pane vertical split**:
+
+**Upper pane · Processed notes (read-mostly, AI-formatted)**:
+- AI-formatted output of pushed notes
+- Structured-by-topic sections — the AI groups the engineer's raw bullets under canonical headings: `## Customer concerns` · `## Drivers identified` · `## Current state captured` · `## Desired state directions` · `## Gaps proposed` · `## Action items / follow-ups`. This grouping matches the canvas data model and makes the discovery notes file useful for next-session prep
+- Each processed note item has an **expansion icon** revealing canvas mapping details (which drivers, environments, instances, gaps it maps to, with confidence)
+- Rich-text markdown rendering
+- Auto-scrolls to latest content on each push
+- Read-mostly — engineer can scroll/expand/select but doesn't edit directly (the source of truth is the lower pane's raw bullets; the upper pane is regenerated from them)
+
+**Lower pane · Note capture (always-visible, input-focused)**:
+- Auto-bulletpoint editor — `Enter` creates a new bullet · `Tab` indents · `Shift+Tab` outdents
+- Plain structured bullets — no autocomplete, no LLM round-trips during typing (per Q7 lock)
+- Always-visible during the session — push events do NOT disturb this pane
+- Auto-saved to localStorage every keystroke under `workshopNotesDraft_v1` key
+
+**Pane size**: 60% upper / 40% lower default; engineer can drag the divider to resize (persisted in localStorage).
+
+### A3 · Push behavior · DELTA-ONLY by default + explicit "Re-evaluate all" button
+
+**Locked**: each push processes ONLY the new notes since the last push (delta-only · append semantics). Earlier mappings stay stable.
+
+**Why**: matches the user's word "amend"; cheap + fast + predictable for long workshops (2-4 hours). Re-processing the whole 24h block on every push would balloon LLM input tokens + latency as the workshop progresses.
+
+**Escape hatch**: an explicit **`[Re-evaluate all]` button** in the upper-pane toolbar lets the engineer re-process the entire current-day block when they want the AI to revise earlier mappings based on later context. Power-user feature, not the default behavior.
+
+**Push triggers**:
+- Button `[Push notes to AI]` in the lower pane
+- Keyboard shortcut `Cmd+Enter` (or `Ctrl+Enter` on Windows/Linux)
+- Both fire the same action
+
+**On push**:
+- DELTA only: new bullets since last push are sent to the LLM with the existing formatted-notes context as prior turns
+- LLM returns formatted addition + new canvas mappings → appended to upper pane (no replacement of earlier formatted text)
+- Lower pane unchanged
+
+**On `[Re-evaluate all]`** (explicit):
+- Full current-day block re-processed
+- Upper pane regenerated from scratch
+- Earlier mappings may shift → revised mappings get a small `[revised]` indicator next to the mapping row in the expansion view
+- Engineer can accept or override per-mapping
+
+### A4 · Mapping confidence display · text labels + subtle color tinting
+
+**Locked style** for confidence in the expansion-view mapping rows:
+
+- **Text label** in the row: `HIGH` · `MEDIUM` · `LOW`
+- **Subtle color tinting** on the row background:
+  - HIGH: light green tint (`#E8F5E9`-ish · slightly green-tinted neutral)
+  - MEDIUM: light amber tint (`#FFF8E1`-ish)
+  - LOW: light gray tint (`#F5F5F5`-ish · don't use red · LOW is "I'm uncertain", not "this is wrong")
+- **NO numeric percent** — avoids false precision (the LLM doesn't actually emit a calibrated 0-100 score; high/medium/low maps to the chat's qualitative emit per the action-proposal schema)
+
+**Why**: engineers triage faster with discrete labels + at-a-glance color than they do with numbers. Red would imply "rejected/error"; gray is "low confidence, review before applying" — preserves engineer agency.
+
+### A5 · Mapping review · per-row + bulk-apply (both available)
+
+**Per-mapping review** (primary flow):
+- Each processed note has an expansion icon
+- Clicking expands to show: identified canvas data points (drivers, environments, current/desired instances, gaps) + confidence + per-mapping `[Apply]` / `[Reject]` buttons
+- Applied mappings carry `aiTag.kind: "discovery-note"` provenance (per Q3 lock)
+
+**Bulk-apply** (power flow):
+- Toolbar button `[Review all mappings]` in the upper pane opens a sidebar OR modal listing every proposed mapping in a flat list with checkboxes
+- Engineer can multi-select + `[Apply selected]` in one action
+- Useful when engineer wants to triage 20+ proposals from a long workshop fast
+
+### A6 · 24-hour divider · calendar-day boundary in engineer's local timezone
+
+**Locked**: notes file accumulates across sessions. Each calendar-day boundary (midnight in engineer's local timezone) inserts a new divider with metadata stamp on the next push:
+
+```
+─────────────────────────────────────
+Session: 2026-05-15 · Customer: <customer name> · Engineer: <presales owner>
+─────────────────────────────────────
+```
+
+- Within the same calendar day: amend continues (no new divider)
+- After midnight on next push: new divider inserted, then the new processed content
+- Re-processing scope: `[Re-evaluate all]` button operates on the CURRENT DAY's block only · previous days' blocks are locked (treated as historical record · not re-processed by default)
+- Engineer escape: if engineer wants to revisit a previous day's block, they can re-open the file via the export-and-reimport flow (out-of-scope refinement for v1; queued for later)
+
+### A7 · Append-only raw notes · AI never deletes engineer-typed content
+
+**Locked invariant**: the lower pane (raw bullets) is append-only. The AI processes it but never modifies / deletes / rearranges engineer-typed text. If the engineer wants to clean up raw notes, they do it manually before the next push.
+
+### A8 · Export · two formats
+
+**PDF export**: polished, share-with-customer ready. Contents = upper pane (processed notes + metadata + structured headings). Does NOT include raw bullets or mapping internals. Filename convention: `<customer-name-slug>-<YYYY-MM-DD>-discovery-notes.pdf`.
+
+**JSON export**: programmatic, full audit trail. Contents = raw bullets + processed notes + mapping metadata + per-mapping applied/rejected/pending status + timestamps + session metadata. Filename convention: `<customer-name-slug>-<YYYY-MM-DD>-discovery-notes.json`.
+
+Both exports surfaced via toolbar buttons `[📥 Export PDF]` and `[📥 Export JSON]` in the upper pane.
+
+### A9 · Persistence · localStorage + browser file-save
+
+**Locked**:
+- localStorage auto-save every keystroke (under `workshopNotesDraft_v1` key for current session; `workshopNotesHistory_v1` for past sessions or appended-to-history blocks)
+- Browser file-save dialog for explicit PDF/JSON export
+- No server-side persistence (matches existing app architecture; engineer's machine is the source of truth)
+
+### A10 · Resume after browser close
+
+**Locked**: on overlay reopen if `workshopNotesDraft_v1` exists with content:
+- Prompt: *"You have unsaved notes from `<timestamp>`. **Resume** or **Start fresh** (discards draft)?"*
+- Resume restores lower pane + upper pane (the last successful push state)
+- Start fresh confirms before discarding
+
+### A11 · Walkthrough · the canonical Mode 1 scenario
+
+Realistic workshop interaction (Northstar Health · session #1) · captured here for future readers + agent context:
+
+**Step 1 · Customer speaks**: *"We're worried about ransomware impact on the EHR — last quarter we saw a competitor get hit, took them 4 days to recover."*
+
+**Step 2 · Engineer captures fast**:
+- Hits `Cmd+Shift+N` (or clicks `AI Notes` topbar button)
+- Overlay opens in <100ms, cursor ready in the lower pane
+- Header: `AI Notes · Northstar Health Network · 2026-05-14 · session #1`
+- Engineer types raw thoughts (no formatting required):
+  ```
+  - Ransomware in EHR major concern, mentioned competitor 4-day recovery
+  - Need 4hr RTO target on clinical (verify w/ them)
+  - Current: Veeam on Main DC, no air-gap
+  - Thinking PowerProtect DM + Cyber Recovery Vault
+  - PHI sovereignty: HIPAA + Texas state residency
+  ```
+
+**Step 3 · Engineer toggles back to conversation**:
+- Hits `Esc` to dismiss overlay (auto-save fires; notes persist in `localStorage.workshopNotesDraft_v1`)
+- Engineer keeps eye contact with customer, asks "what's your current backup RTO?"
+- Customer answers "we hit 4-hour for tier-1, but tier-2 is overnight"
+- Engineer hits `Cmd+Shift+N` again → overlay reopens with previous notes intact, cursor at end of lower pane
+- Adds: `- Tier-1 RTO confirmed 4hr; tier-2 overnight`
+- Hits `Cmd+Enter` to push → upper pane shows formatted addition (delta-only); earlier processed-note section unchanged
+
+**Step 4 · Workshop wraps**:
+- Engineer clicks `[Re-evaluate all]` (optional · power feature) so AI sees the FULL workshop context for final mapping pass
+- Loading state: "Re-evaluating from full context…" (typing-indicator-style progress)
+- Single anthropic LLM round-trip → returns refined formatted notes + revised mapping list
+
+**Step 5 · Per-mapping review** (engineer expands the proposed-gap row):
+```
+## Gaps proposed
+
+▶ Strengthen ransomware recovery RTO for clinical systems
+  ─────────────────────────────────────────────────────────
+  [HIGH confidence · light green tint]
+  Maps to canvas:
+    gap.gapType = "enhance"
+    gap.urgency = "High"
+    gap.layerId = "dataProtection"
+    gap.affectedEnvironments = ["Main DC"]
+    gap.relatedCurrentInstanceIds = [<Veeam-VBR-uuid>]
+    gap.relatedDesiredInstanceIds = [<PowerProtect-DM-uuid>]
+  Rationale: customer explicitly raised ransomware concern + 4hr tier-1 RTO target
+  [Apply]  [Reject]  [Edit before applying]
+```
+
+**Step 6 · Apply executes**:
+- Engineer clicks `[Apply]` on the gap row, `[Apply]` on the Veeam row, `[Apply]` on the PowerProtect row, `[Reject]` on the Cyber Recovery Vault row (decides to discuss with customer first)
+- 3 canonical commit function calls (`commitGapAdd`, `commitInstanceAdd` × 2)
+- Each applied instance/gap carries `aiTag.kind: "discovery-note"` provenance → tiles render `Note` chip on the matrix
+
+**Step 7 · Engineer exports**:
+- Clicks `[📥 Export PDF]` → downloads `northstar-health-2026-05-14-discovery-notes.pdf` (polished, customer-shareable)
+- Optionally clicks `[📥 Export JSON]` for the full audit trail (raw bullets + processed + applied/rejected status)
+
+**Step 8 · Workshop continues**:
+- Engineer switches to Tab 4 (Gaps), sees the new gap with `Note` chip
+- Can use AI Assist (Mode 2 chat) for follow-up: *"What other ransomware-relevant gaps should I probe for in healthcare?"* — chat reads the freshly-populated engagement and gives grounded suggestions
+
+### A12 · Eval scope clarification
+
+**Locked for rc.10**: action-correctness eval harness (orthogonal to chat-quality harness per Q5) ships with rc.10. 5 dims · automated · separate baseline JSON · runs every prompt-tuning commit.
+
+**Deferred to rc.11+ or v3.1**: UX telemetry capture (open-time · push-to-process latency · apply-rate · edit-rate · discard-rate · resume rate). UX measurement is a different cadence from automated eval (telemetry + qualitative debriefs · not a rubric-driven score). Worth investing in once the rc.10 base ships and we have workshop usage data flowing in.
+
+### A13 · Out-of-scope for D.v1 (Mode 1 ship · explicit)
+
+**Confirmed out-of-scope** to keep the v1 ship lean:
+
+- Auto-suggested mappings inline as engineer types (violates Q7 no-LLM-during-capture)
+- Multi-customer notes in a single overlay session (one customer per session; multi-customer is a v1.5 refinement)
+- Audio capture / transcription
+- Collaborative real-time editing
+- Auto-publish to customer portal
+- Direct edit of upper pane (read-mostly · source of truth is the raw bullets)
+- Re-processing previous days' locked blocks (engineer can re-import via JSON to revisit, but in-app re-processing is v1.5+)
+
+---
+
+## Updated LOCKED decisions summary
+
+The Q1-Q7 base locks above + the A1-A13 amendments give the full Mode 1 spec:
+
+1. **UI surface (Q1 + A1)**: topbar `AI Notes` button + footer button + `Cmd+Shift+N` · NOT a tab · NOT inside Canvas Chat overlay · CH26 amendment at constitutional preamble
+2. **flip-disposition (Q2)**: deferred to v1.5
+3. **Naming (Q3)**: schema `discovery-note` + `ai-proposal` · chips `Note` + `Prop` text-only-no-emoji
+4. **Sequencing (Q4)**: Mode 2 first by default · flips to Mode 1 first if live workshop within ~3 weeks
+5. **Rubric (Q5)**: orthogonal harnesses · separate baselines
+6. **Rule 4 (Q6)**: AMENDED at constitutional preamble · no em dash
+7. **Round-trips (Q7)**: SCOPED · cached-locals OK · LLM-inference NOT OK during note-entry
+8. **Mode 1 layout (A2)**: dual-pane vertical split · upper processed (read-mostly) · lower raw bullets (always-visible)
+9. **Push behavior (A3)**: DELTA-only by default + explicit `[Re-evaluate all]` button for full-block re-processing
+10. **Confidence display (A4)**: HIGH/MEDIUM/LOW text + light green/amber/gray tinting · no numeric percent
+11. **Review flow (A5)**: per-row primary + bulk-apply available
+12. **24h divider (A6)**: calendar-day boundary in engineer local TZ · current day mutable · previous days locked
+13. **Raw notes (A7)**: append-only · AI never deletes
+14. **Export (A8)**: PDF (polished, share-ready) + JSON (full audit trail)
+15. **Persistence (A9)**: localStorage auto-save · browser file-save for export · no server-side
+16. **Resume (A10)**: prompt on overlay reopen if draft exists
+17. **Eval scope (A12)**: action-correctness rubric in rc.10 · UX telemetry deferred to rc.11+/v3.1
+18. **Out-of-scope (A13)**: 7 items locked as explicit non-goals for D.v1
