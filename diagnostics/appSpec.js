@@ -15236,11 +15236,18 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-AI-EVAL-14 · Guard 2: Example 11 body MUST demonstrate the proposeAction tool call (look for 'proposeAction' within 1500 chars of the Example 11 header). Generic prose-only example without tool-invocation pattern fails to teach the structured-emission contract.");
 
       // Guard 3: Example header bumped from "10 worked examples" to
-      // "11 worked examples". The count is checked because Sub-arc C's
-      // Example 9+10 addition bumped 8→10; Step 3.5 bumps 10→11.
-      const HEADER_COUNT_RE = /11 worked examples/;
-      assert(HEADER_COUNT_RE.test(src),
-        "V-AI-EVAL-14 · Guard 3: the example-section header MUST be bumped to '11 worked examples' (was '10 worked examples' pre-Step-3.5). The count keeps the assistant prompt-aware of how many patterns it has been shown.");
+      // "11 worked examples" at Step 3.5. AMENDED 2026-05-14 Step 3.6:
+      // assert "at least 11" rather than "exactly 11" so future arcs
+      // adding Examples 12+ don't break this guard while preserving
+      // the floor contract (Step 3.5's bump from 10 must remain · ie
+      // the count can never regress below 11). V-AI-EVAL-17 Guard 3
+      // asserts the current exact count (12 at Step 3.6); this guard
+      // is the historical floor. Per the Step 3.5 hidden-risks note
+      // (commit 5ec0a65) + Step 3.6 SPEC amendment.
+      const headerMatch = src.match(/(\d+) worked examples/);
+      const headerCount = headerMatch ? parseInt(headerMatch[1], 10) : 0;
+      assert(headerCount >= 11,
+        "V-AI-EVAL-14 · Guard 3: the example-section header MUST be bumped to AT LEAST '11 worked examples' (Step 3.5 set the floor by bumping from 10 to 11; future arcs may add more examples and bump further · Step 3.6 bumped to 12). Current count: " + headerCount);
     });
 
     it("V-CHAT-D-3 · Sub-arc D Step 3.5 · services/chatTools.js proposeAction tool description hardened with 'MUST be invoked' + per-kind required-field callout (specifically 'closeReason field is REQUIRED on close-gap' addressing the d73ce60 ACT-CLOSE-1 9/10 payload-completeness miss) — RED-first scaffold per SPEC §S20.4.1.3 amendment + RULES §16 CH38(a) amendment", async () => {
