@@ -184,29 +184,129 @@ function buildUserPrompt({ bullets, previousProcessed, mode }) {
   return lines.join("\n");
 }
 
+// BUG-WS-2 (2026-05-15) · Attempt to repair common LLM JSON-output failure
+// modes. Returns a repaired-but-still-needs-JSON.parse string · or null
+// when the input is structurally beyond repair. The repair targets the
+// 2 failure modes observed in the user incident:
+//   (1) Truncation mid-string from max_tokens ceiling clip · response ends
+//       inside an unclosed string value · we close the string + close any
+//       open braces/brackets to make a parseable (if incomplete) document.
+//   (2) Literal newlines inside string values · LLM emits a raw \n char
+//       where it should emit the \\n escape · JSON.parse rejects (per spec
+//       newlines must be escaped inside strings) · we escape them.
+//
+// EXPORTED for unit testing (V-FLOW-WS-PARSE-REPAIR-1).
+export function repairTruncatedJson(body) {
+  if (typeof body !== "string" || body.length === 0) return null;
+  let s = body;
+  // Step 1: escape stray literal newlines that appear inside a string.
+  // Heuristic: scan char-by-char tracking whether we're inside a "..."
+  // string · escape any unescaped \n / \r / \t while inside the string.
+  let out = "";
+  let inString = false;
+  let escapeNext = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (escapeNext) { out += c; escapeNext = false; continue; }
+    if (c === "\\") { out += c; escapeNext = true; continue; }
+    if (c === '"') { inString = !inString; out += c; continue; }
+    if (inString && (c === "\n" || c === "\r" || c === "\t")) {
+      out += (c === "\n" ? "\\n" : (c === "\r" ? "\\r" : "\\t"));
+      continue;
+    }
+    out += c;
+  }
+  s = out;
+  // Step 2: if we exited the scan still inside a string, close it.
+  if (inString) s += '"';
+  // Step 3: count unmatched braces / brackets and close them in order.
+  // We track the stack of open structural chars (ignoring those inside
+  // strings since Step 1 already neutralised newlines · strings can still
+  // contain { } [ ] which we must not count). Re-scan with the inString
+  // tracker now correct.
+  const stack = [];
+  inString = false;
+  escapeNext = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (escapeNext) { escapeNext = false; continue; }
+    if (c === "\\") { escapeNext = true; continue; }
+    if (c === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (c === "{" || c === "[") stack.push(c);
+    else if (c === "}" || c === "]") {
+      // Pop matching only · keep stack consistent · if mismatched, bail.
+      const expected = (c === "}") ? "{" : "[";
+      if (stack.length === 0 || stack[stack.length - 1] !== expected) return null;
+      stack.pop();
+    }
+  }
+  // Step 4: close any remaining open structures in LIFO order.
+  while (stack.length > 0) {
+    const open = stack.pop();
+    s += (open === "{") ? "}" : "]";
+  }
+  // Step 5: if the document ends with a trailing comma before our forced
+  // closers, JSON.parse rejects · strip dangling commas before } or ].
+  s = s.replace(/,(\s*[}\]])/g, "$1");
+  return s;
+}
+
 // Parse the LLM's strict-JSON response. Tolerant of leading/trailing
 // whitespace + accidental markdown code fences (some providers wrap
 // JSON in ```json blocks despite the "no fences" instruction).
-function parseLlmResponse(text) {
-  if (typeof text !== "string") return { ok: false, error: "Empty LLM response" };
+//
+// BUG-WS-2 (2026-05-15) · 3-step recovery chain:
+//   Step A · standard JSON.parse on the de-fenced body
+//   Step B · if A throws, attempt repairTruncatedJson + re-parse
+//   Step C · if B throws or repair returns null, return {ok:false} with
+//             engineer-actionable error text + the rawHead for retry
+//             logic in pushNotesToAi to consult
+//
+// EXPORTED for unit testing (V-FLOW-WS-PARSE-1/2/REPAIR-1).
+export function parseLlmResponse(text) {
+  if (typeof text !== "string" || text.trim().length === 0) {
+    return { ok: false, error: "Empty LLM response", repairAttempted: false };
+  }
   let body = text.trim();
-  // Strip markdown code fences if present.
+  // Strip markdown code fences if present (Step 0 · existing behavior).
   if (body.startsWith("```")) {
     body = body.replace(/^```(?:json|javascript|js)?\s*/i, "");
     body = body.replace(/```\s*$/, "");
     body = body.trim();
   }
+  // Step A: standard parse.
   let parsed;
+  let parseErr;
   try { parsed = JSON.parse(body); }
-  catch (e) {
-    return { ok: false, error: "JSON parse failed: " + (e.message || String(e)) + " · raw response head: " + body.slice(0, 200) };
+  catch (e) { parseErr = e; }
+  // Step B: if A failed, attempt repair.
+  let repairAttempted = false;
+  if (parseErr) {
+    repairAttempted = true;
+    const repaired = repairTruncatedJson(body);
+    if (repaired) {
+      try { parsed = JSON.parse(repaired); parseErr = null; }
+      catch (e2) { parseErr = e2; }
+    }
+  }
+  // Step C: if both failed, return engineer-actionable error.
+  if (parseErr) {
+    return {
+      ok: false,
+      error: "JSON parse failed" + (repairAttempted ? " (repair attempted)" : "") +
+             ": " + (parseErr.message || String(parseErr)) +
+             " · raw response head: " + body.slice(0, 200),
+      repairAttempted,
+      rawHead: body.slice(0, 500)
+    };
   }
   if (!parsed || typeof parsed !== "object") {
-    return { ok: false, error: "Parsed JSON is not an object" };
+    return { ok: false, error: "Parsed JSON is not an object", repairAttempted };
   }
   const processedMarkdown = typeof parsed.processedMarkdown === "string" ? parsed.processedMarkdown : "";
   const rawMappings = Array.isArray(parsed.mappings) ? parsed.mappings : [];
-  return { ok: true, processedMarkdown, rawMappings };
+  return { ok: true, processedMarkdown, rawMappings, repairAttempted };
 }
 
 // pushNotesToAi · main exported entry point.
@@ -246,28 +346,76 @@ export async function pushNotesToAi(opts) {
   const systemPrompt = buildWorkshopSystemPrompt(buildEngagementContext(engagement));
   const userPrompt = buildUserPrompt({ bullets, previousProcessed, mode });
 
-  let res;
-  try {
-    res = await chatCompletion({
+  // BUG-WS-2 (2026-05-15) · maxTokens: 8192 gives ample headroom for the
+  // structured JSON envelope · 8x the Anthropic provider default (1024) ·
+  // 2x the OpenAI default (4096). Workshop bullets routinely emit 3000-
+  // 5000 chars of JSON ≈ 750-1250 tokens · the 1024 default was clipping
+  // mid-string and triggering "Unterminated string in JSON" parse errors.
+  // BUG-WS-2 (2026-05-15) · retry-once with stricter prompt when first
+  // parse fails. The retry appends a JSON-discipline reminder to nudge
+  // the LLM toward strict-output form. Cap = 1 retry · no infinite loop.
+  const STRICT_JSON_RETRY_REMINDER =
+    "\n\n[RETRY] The previous response failed JSON parsing. EMIT STRICT JSON ONLY:" +
+    "\n  - NO literal newlines inside string values · use \\n escape" +
+    "\n  - NO trailing commas before } or ]" +
+    "\n  - Close every opening { with a matching } and every [ with a ]" +
+    "\n  - NO markdown code fences · NO prose preamble · just the bare JSON object";
+
+  async function callLlm(extraSystemSuffix) {
+    return chatCompletion({
       providerKey:    providerKey,
       baseUrl:        active.baseUrl,
       model:          active.model,
       fallbackModels: Array.isArray(active.fallbackModels) ? active.fallbackModels : [],
       apiKey:         active.apiKey,
+      maxTokens:      8192,
       messages: [
-        { role: "system", content: systemPrompt },
+        { role: "system", content: systemPrompt + (extraSystemSuffix || "") },
         { role: "user",   content: userPrompt }
       ],
       fetchImpl: opts.fetchImpl,
       waitImpl:  opts.waitImpl
     });
+  }
+
+  let res;
+  try {
+    res = await callLlm("");
   } catch (e) {
     return { ok: false, error: "LLM call failed: " + (e.message || String(e)), providerKey };
   }
 
-  const parsed = parseLlmResponse(res.text || "");
+  let parsed = parseLlmResponse(res.text || "");
+
+  // Retry-once with strict-JSON reminder if first parse failed.
+  let retryUsed = false;
   if (!parsed.ok) {
-    return { ok: false, error: parsed.error, providerKey, modelUsed: res.modelUsed };
+    retryUsed = true;
+    console.warn("[workshopNotesService] first parse failed (" + parsed.error.slice(0, 120) + ") · retrying with strict-JSON reminder");
+    let retryRes;
+    try {
+      retryRes = await callLlm(STRICT_JSON_RETRY_REMINDER);
+    } catch (e) {
+      return {
+        ok: false,
+        error: "LLM call failed on retry: " + (e.message || String(e)) + " · original parse error: " + parsed.error,
+        providerKey,
+        retryUsed
+      };
+    }
+    parsed = parseLlmResponse(retryRes.text || "");
+    if (parsed.ok) res = retryRes;
+  }
+
+  if (!parsed.ok) {
+    return {
+      ok: false,
+      error: parsed.error + (retryUsed ? " (retry-with-strict-JSON also failed · try Re-evaluate all OR simplify your bullets)" : ""),
+      providerKey,
+      modelUsed: res.modelUsed,
+      retryUsed,
+      rawHead: parsed.rawHead
+    };
   }
 
   // Validate each raw mapping via ActionProposalSchema · drop invalid
@@ -301,6 +449,8 @@ export async function pushNotesToAi(opts) {
     mutatedAt:         mutatedAt,
     modelUsed:         res.modelUsed,
     providerKey:       providerKey,
-    droppedCount:      droppedCount
+    droppedCount:      droppedCount,
+    repairAttempted:   !!parsed.repairAttempted,
+    retryUsed:         retryUsed
   };
 }

@@ -15808,6 +15808,157 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     });
 
     // -----------------------------------------------------------------
+    // V-FLOW-WS-{PARSE-1,PARSE-2,PARSE-REPAIR-1} + V-FLOW-WS-ERROR-BANNER-1
+    // + V-FLOW-WS-PUSH-{MAX-TOKENS-1,RETRY-1} · BUG-WS-2 fix regression
+    // tests · LOCKED 2026-05-15 PM
+    //
+    // CONTEXT: User reported (post-Step-5-ship) that real-LLM Push from
+    // Workshop Notes overlay failed with "Unterminated string in JSON at
+    // position 3713 (line 54 column 41)". Root cause: 3 compounding
+    // issues — (a) services/aiService.js Anthropic path hardcoded
+    // max_tokens:1024 with no caller override · (b) parseLlmResponse had
+    // NO repair logic · (c) workshopNotesService had no retry-on-parse-
+    // failure. These tests lock the fix at the source-grep + (in
+    // PARSE-1/2/REPAIR-1) RUNTIME-behavior level for parseLlmResponse.
+    //
+    // The fix is documented at docs/BUG_LOG.md BUG-WS-2 · the architectural
+    // gap acknowledged is that we still lack DOM-mounting integration
+    // tests for the overlay end-to-end flow · deferred to v1.5 polish.
+    //
+    // Cross-references: BUG-WS-2 + BUG-WS-1 in BUG_LOG.md · workshop
+    // notes overlay + service modules · feedback_test_or_it_didnt_ship.md
+    // (every BUG-NNN fix MUST add a test that would have caught the
+    // original incident)
+    // -----------------------------------------------------------------
+
+    it("V-FLOW-WS-PARSE-1 · BUG-WS-2 · parseLlmResponse handles non-JSON input gracefully (returns {ok:false, error:<non-empty>} · no throw) — regression guard", async () => {
+      const mod = await import("/services/workshopNotesService.js");
+      assert(typeof mod.parseLlmResponse === "function",
+        "V-FLOW-WS-PARSE-1: parseLlmResponse MUST be exported from services/workshopNotesService.js for unit testing (BUG-WS-2 made it public).");
+      // Garbage input
+      const r1 = mod.parseLlmResponse("this is not JSON at all");
+      assert(r1 && r1.ok === false && typeof r1.error === "string" && r1.error.length > 0,
+        "V-FLOW-WS-PARSE-1 · Guard 1: parseLlmResponse('not json') MUST return {ok:false, error:<non-empty>} without throwing.");
+      // Empty input
+      const r2 = mod.parseLlmResponse("");
+      assert(r2 && r2.ok === false,
+        "V-FLOW-WS-PARSE-1 · Guard 2: parseLlmResponse('') MUST return {ok:false} without throwing.");
+      // null/undefined input
+      const r3 = mod.parseLlmResponse(null);
+      assert(r3 && r3.ok === false,
+        "V-FLOW-WS-PARSE-1 · Guard 3: parseLlmResponse(null) MUST return {ok:false} without throwing.");
+    });
+
+    it("V-FLOW-WS-PARSE-2 · BUG-WS-2 · parseLlmResponse strips markdown code fences AND parses well-formed JSON inside them — regression guard", async () => {
+      const mod = await import("/services/workshopNotesService.js");
+      // LLM-emitted shape that some providers (Anthropic occasionally) wrap in ```json fences
+      const fenced = '```json\n{"processedMarkdown":"## hdr\\n- bullet","mappings":[]}\n```';
+      const r = mod.parseLlmResponse(fenced);
+      assert(r && r.ok === true,
+        "V-FLOW-WS-PARSE-2 · Guard 1: parseLlmResponse MUST strip ```json fences and parse the inner JSON. Got: " + JSON.stringify(r).slice(0, 200));
+      assert(r.processedMarkdown === "## hdr\n- bullet",
+        "V-FLOW-WS-PARSE-2 · Guard 2: parseLlmResponse MUST preserve processedMarkdown content verbatim after defencing. Got: " + JSON.stringify(r.processedMarkdown));
+      assert(Array.isArray(r.rawMappings) && r.rawMappings.length === 0,
+        "V-FLOW-WS-PARSE-2 · Guard 3: parseLlmResponse MUST return rawMappings as an array (empty here).");
+    });
+
+    it("V-FLOW-WS-PARSE-REPAIR-1 · BUG-WS-2 · parseLlmResponse attempts repair on truncated-mid-string JSON (the user's incident) · returns {ok:true} after repair OR {ok:false, repairAttempted:true} · NEVER throws — regression guard for the exact incident", async () => {
+      const mod = await import("/services/workshopNotesService.js");
+      // Reproduce the user's incident shape · max_tokens clipped mid-string
+      const truncatedMidString = '{"processedMarkdown":"## Customer concerns\\n- HIPAA compliance and data protection requirements must be maintained across all environments\\n- DR site retiring legacy HPE 3PAR storage in Q2 2026 —';
+      const r = mod.parseLlmResponse(truncatedMidString);
+      assert(r && (r.ok === true || (r.ok === false && r.repairAttempted === true)),
+        "V-FLOW-WS-PARSE-REPAIR-1 · Guard 1: parseLlmResponse on truncated-mid-string MUST either succeed via repair OR fail-with-repairAttempted=true · NEVER throw. Got: " + JSON.stringify(r).slice(0, 300));
+      // Whether repair succeeds or not, the function must not throw
+      assert(typeof r === "object" && r !== null,
+        "V-FLOW-WS-PARSE-REPAIR-1 · Guard 2: parseLlmResponse on malformed input MUST return an object (not throw, not undefined). Got: " + typeof r);
+      // Also test repairTruncatedJson is exported
+      assert(typeof mod.repairTruncatedJson === "function",
+        "V-FLOW-WS-PARSE-REPAIR-1 · Guard 3: repairTruncatedJson MUST be exported for direct unit testing per BUG-WS-2 fix scope.");
+    });
+
+    it("V-FLOW-WS-ERROR-BANNER-1 · BUG-WS-1 regression guard (landed at BUG-WS-2 fix per feedback_test_or_it_didnt_ship.md) · WorkshopNotesOverlay.js MUST NOT import notifyError AND MUST define showOverlayError", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/ui/views/WorkshopNotesOverlay.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-WS-ERROR-BANNER-1: ui/views/WorkshopNotesOverlay.js MUST be readable for source-grep");
+
+      // Guard 1: notifyError MUST NOT appear in any import statement.
+      // The full-line import test catches `import { notifyError, ... } from "../components/Notify.js"`.
+      const NOTIFY_ERROR_IMPORT_RE = /import\s+\{[^}]*\bnotifyError\b[^}]*\}\s+from\s+["'][^"']*Notify\.js["']/;
+      assert(!NOTIFY_ERROR_IMPORT_RE.test(src),
+        "V-FLOW-WS-ERROR-BANNER-1 · Guard 1: WorkshopNotesOverlay.js MUST NOT import notifyError (BUG-WS-1: notifyError opens an openOverlay singleton modal which CLOSES the workshop overlay and DESTROYS engineer-typed bullets). Use showOverlayError (inline banner) instead.");
+
+      // Guard 2: showOverlayError MUST be defined.
+      const SHOW_ERR_DEF_RE = /function\s+showOverlayError\s*\(/;
+      assert(SHOW_ERR_DEF_RE.test(src),
+        "V-FLOW-WS-ERROR-BANNER-1 · Guard 2: WorkshopNotesOverlay.js MUST define `function showOverlayError(...)` (the in-overlay error banner that replaces notifyError per BUG-WS-1 fix).");
+
+      // Guard 3: at least one call to showOverlayError must exist (the
+      // function must be USED, not just defined).
+      const SHOW_ERR_CALL_RE = /\bshowOverlayError\s*\(/g;
+      const callMatches = (src.match(SHOW_ERR_CALL_RE) || []).length;
+      // Function definition counts as 1 occurrence · we need at least 2
+      // (1 def + 1 call) and ideally ≥6 (1 def + the 5 replaced sites).
+      assert(callMatches >= 2,
+        "V-FLOW-WS-ERROR-BANNER-1 · Guard 3: WorkshopNotesOverlay.js MUST call showOverlayError at least once (in addition to the definition). Pre-BUG-WS-1 there were 5 notifyError sites · all 5 replaced with showOverlayError calls. Found " + callMatches + " occurrences (need ≥2: 1 def + ≥1 call).");
+    });
+
+    it("V-FLOW-WS-PUSH-MAX-TOKENS-1 · BUG-WS-2 · workshopNotesService passes maxTokens ≥ 4096 to chatCompletion (root-cause fix for the 1024-default-clipping-mid-string failure) — regression guard", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/workshopNotesService.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-WS-PUSH-MAX-TOKENS-1: services/workshopNotesService.js MUST be readable for source-grep");
+
+      // Guard 1: source contains a maxTokens: <number ≥ 4096> assignment.
+      // Accepts maxTokens: 4096 | 8192 | other 4-or-5-digit number ≥ 4096.
+      const MAX_TOKENS_RE = /maxTokens\s*:\s*([4-9]\d{3,4}|[1-9]\d{4,})/;
+      const m = src.match(MAX_TOKENS_RE);
+      assert(m !== null,
+        "V-FLOW-WS-PUSH-MAX-TOKENS-1 · Guard 1: workshopNotesService.js MUST pass maxTokens ≥ 4096 to chatCompletion (BUG-WS-2 fix · the Anthropic provider default 1024 was clipping the structured JSON output mid-string). Recommended: maxTokens: 8192.");
+
+      // Guard 2: source ALSO references chatCompletion (the call site
+      // where maxTokens is passed).
+      assert(/chatCompletion\s*\(/.test(src),
+        "V-FLOW-WS-PUSH-MAX-TOKENS-1 · Guard 2: workshopNotesService.js MUST call chatCompletion (the entry point that receives maxTokens). Without the call site, the maxTokens value is unreachable.");
+    });
+
+    it("V-FLOW-WS-PUSH-RETRY-1 · BUG-WS-2 · workshopNotesService has retry-on-parse-failure logic with strict-JSON reminder — regression guard for the LLM-output-fragility class", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/workshopNotesService.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-WS-PUSH-RETRY-1: services/workshopNotesService.js MUST be readable for source-grep");
+
+      // Guard 1: source references retry-related tracking (retryUsed
+      // variable OR a retry counter).
+      const RETRY_TRACK_RE = /retryUsed|retryCount|retries\s*[<>=]/;
+      assert(RETRY_TRACK_RE.test(src),
+        "V-FLOW-WS-PUSH-RETRY-1 · Guard 1: workshopNotesService.js MUST track retry state (retryUsed flag or retry counter). Without tracking, downstream consumers can't tell whether the response came from the first call or the retry.");
+
+      // Guard 2: source contains a strict-JSON reminder constant or string.
+      // The reminder is the discipline-recovery payload appended to the
+      // system prompt when the first call's response fails parsing.
+      const STRICT_REMINDER_RE = /STRICT\s+JSON|strict-JSON|STRICT[_-]JSON/i;
+      assert(STRICT_REMINDER_RE.test(src),
+        "V-FLOW-WS-PUSH-RETRY-1 · Guard 2: workshopNotesService.js MUST contain a strict-JSON reminder string used on retry (per BUG-WS-2 fix scope · the retry appends an EMIT STRICT JSON discipline reminder to the system prompt).");
+
+      // Guard 3: source contains the JSON-escape guidance the retry uses
+      // (literal-newline-vs-\\n-escape is the dominant LLM failure mode
+      // for unterminated strings).
+      assert(/\\\\n\s+escape|literal\s+newlines/i.test(src),
+        "V-FLOW-WS-PUSH-RETRY-1 · Guard 3: workshopNotesService.js MUST reference literal-newlines / \\n-escape in the retry reminder (the dominant cause of Unterminated-string-in-JSON errors per the user's BUG-WS-2 incident).");
+    });
+
+    // -----------------------------------------------------------------
     // V-CHAT-D-5 · Sub-arc D Step 3.9 micro-arc · chat-says-vs-chat-does
     // guard at chatService layer · LOCKED 2026-05-14 late evening
     //

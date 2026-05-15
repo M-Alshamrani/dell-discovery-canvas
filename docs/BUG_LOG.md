@@ -2332,3 +2332,113 @@ The v3 engagement schema's `.default()` values for `customer.vertical` are kicki
 
 ### Relationship to BUG-052
 BUG-052 (modal-residue test cluster · 6 intermittent test failures tied to overlay/modal teardown ordering) is a SEPARATE concern about test infrastructure that may NOT be production-visible. BUG-063 is the user-visible production symptom of similar "things don't fully clear on transition" patterns. Investigate BUG-063 first; if the underlying root cause turns out to be the same, the two can converge into one fix.
+
+---
+
+## BUG-WS-1 · Workshop Notes overlay destroyed on Push-to-AI error · CLOSED 2026-05-15 (commit `8594288`)
+
+### Severity
+🔴 Critical · data-loss · user-reported as "the worst outcome possible"
+
+### Symptom
+User opened the Workshop Notes overlay (rc.10 Step 4 ship · commit `88f6a32`) · typed customer-workshop bullets · clicked **Push notes to AI** · got an error · the overlay closed · all typed input was lost. localStorage draft DID save the bullets[] but was lossy on indentation and the user reported the immediate post-click experience as "all data inputs lost".
+
+### Root cause
+`notifyError` (in `ui/components/Notify.js`) calls `openOverlay({kind:"notify-error"})` which is a **singleton** per rc.5 §S36.1. The singleton pattern calls `closeOverlay({_allLayers:true})` before opening a new non-stacked overlay. So when `pushNotesToAi` returned `{ok:false}` from the Step 4 handler · my `notifyError` call destroyed the workshop overlay along with its DOM state BEFORE the error modal rendered.
+
+### Why Step 4 / Step 5 browser smoke missed this
+My smoke at `88f6a32` clicked [Import to canvas] with empty mappings → `notifyInfo` toast (SAFE; toasts do NOT touch the openOverlay singleton). The `notifyError`-from-inside-overlay path was never walked. Per `feedback_browser_smoke_required.md` · tests-pass-alone is necessary but NOT sufficient · 1323 source-grep tests were GREEN while the runtime error UX destroyed engineer state.
+
+### Fix (commit `8594288`)
+1. New `showOverlayError(title, body)` function in `WorkshopNotesOverlay.js` · red banner ABOVE the processed-notes pane · Dismiss button · status chip "Error · see banner" · overlay stays open · bullets remain on screen
+2. All 5 `notifyError` call sites in WorkshopNotesOverlay replaced with `showOverlayError` (push failure · adapter-zero-items · parser rejection · drift rejection · partial-import failure)
+3. `notifyError` import REMOVED · `notifyInfo`/`notifySuccess` kept (toast paths are safe from inside overlays)
+4. `saveDraft` / `loadDraft` now persist `rawTextareaText` alongside parsed bullets[] · exact-restore on Resume
+5. Resume prompt now 2-step · secondary confirm before `clearDraft()` fires (single mis-click cannot wipe the draft anymore)
+6. `styles.css` `.workshop-notes-error-banner` CSS block
+
+### Browser smoke verification (Chrome MCP)
+- Reproduced via `window.fetch = () => Promise.reject(new Error("Simulated network failure · provider unreachable"))`
+- After clicking Push: overlay STAYED OPEN · red banner appeared · 4 typed bullets preserved · localStorage `rawTextareaText` length 161 intact · status "ERROR · SEE BANNER"
+- Screenshot `ss_6837fm09x` · 1323/1323 GREEN preserved
+
+### Hidden risks acknowledged at fix-time
+- The 5 notifyError call sites in WorkshopNotesOverlay are FIXED but `notifyError` itself remains in `ui/components/Notify.js` for use from non-overlay contexts. Future refactors that open a Workshop-Notes-Overlay-equivalent from inside another overlay could re-introduce the bug class.
+- A regression test `V-FLOW-WS-ERROR-BANNER-1` was DEFERRED · ack'd as a discipline lapse · landed at BUG-WS-2 fix commit per `feedback_test_or_it_didnt_ship.md`
+- BROADER: Step 4 + Step 5 source-grep tests were file-existence guards · NOT functional tests · the runtime Push → AI → parse → import → apply path had ZERO coverage · this gap led directly to BUG-WS-2
+
+---
+
+## BUG-WS-2 · Workshop Notes Push fails on real-LLM responses with "Unterminated string in JSON" · OPEN 2026-05-15
+
+### Severity
+🔴 Critical · feature is functionally unusable · user-reported as "this feature is defective still"
+
+### Symptom
+User configured a real LLM provider (Anthropic Claude) and pushed real workshop bullets via the post-BUG-WS-1-fix overlay. The LLM call succeeded (the BUG-WS-1 fix held: overlay stayed open · bullets preserved). But `parseLlmResponse` threw `SyntaxError: Unterminated string in JSON at position 3713 (line 54 column 41)`. The error banner rendered correctly but the engineer cannot complete the workshop flow because every Push fails at the JSON parse step.
+
+User-direct quote: *"i still have this error , what are the tests to ensure functionality , sending , returing, injecting into the canvas .. do we have such tests ... fix this issue and document it as bug .. thig feature is defective still"*
+
+The user also raised the test-coverage gap: source-grep tests do NOT prove functional behavior · we have ZERO runtime tests for the LLM-call / parse / import / apply chain.
+
+### Root cause (forensic · 3 issues compound)
+
+**Issue 1 · Anthropic path has `max_tokens: 1024` hardcoded** (`services/aiService.js:332`). The workshop-mode system prompt instructs the LLM to emit a strict JSON object with `{processedMarkdown, mappings[]}`. Real workshop bullets (4-10 customer-language bullets per the user's test) generate ~3000-5000 chars of JSON ≈ 750-1250 tokens. The 1024 cap clips the response MID-STRING. The JSON parser sees a string opening quote without a closing quote · throws "Unterminated string".
+
+**Issue 2 · `parseLlmResponse` has NO repair logic** (`services/workshopNotesService.js`). The parser strips markdown code fences but otherwise relies on `JSON.parse(body)` returning cleanly. There is no truncation recovery (close unterminated strings · close unmatched braces), no retry-with-stricter-prompt loop, no escape-stray-newlines repair (LLMs occasionally emit literal newlines inside string values instead of `\n` escapes).
+
+**Issue 3 · No way for the caller to override `max_tokens`** in `aiService.chatCompletion(opts)`. So workshopNotesService cannot ask for more headroom even when it knows the structured output will exceed 1024 tokens.
+
+### Why the existing test suite missed all 3 issues
+
+| Test | Catches? | Why not |
+|---|---|---|
+| V-FLOW-AI-NOTES-1/2/3 | ❌ | Source-grep on overlay file structure · not on runtime behavior |
+| V-ADAPTER-NOTES-1/WIDEN-1 | ❌ | Source-grep on adapter file · not on parseLlmResponse |
+| V-FLOW-AI-NOTES-IMPORT-1 | ❌ | Source-grep on click handler reference · not on the pipeline |
+| V-FLOW-PATHB-WIDEN-{PARSE,MODAL,DRIFT,APPLY}-1 | ❌ | Source-grep on Path B internals · workshopNotesService is OUTSIDE Path B |
+| V-AITAG-WIDEN-{DRIVER,GAP}-1 + V-AITAG-KIND-WIDEN-1 | ❌ | Schema field source-grep · unrelated to LLM call mechanics |
+| Unit tests for parseLlmResponse | ❌ | **DID NOT EXIST** |
+| Integration tests for pushNotesToAi | ❌ | **DID NOT EXIST** |
+| DOM-mounting tests for overlay end-to-end | ❌ | **DID NOT EXIST** |
+
+The test-coverage gap is **systemic** to the Sub-arc D Step 4/5 ship. Source-grep discipline was a fast file-existence guard that did NOT exercise behavior.
+
+### Fix plan (this commit)
+
+1. **`services/aiService.js`**: add optional `maxTokens` field to `chatCompletion(opts)` · plumbed through Anthropic + OpenAI-compatible + Gemini paths · existing defaults preserved (Anthropic 1024 · OpenAI 4096) for non-overriding callers
+2. **`services/workshopNotesService.js`**: pass `maxTokens: 8192` (8x Anthropic default) for ample structured-output headroom
+3. **`services/workshopNotesService.js`**: 3-step recovery chain in `parseLlmResponse`:
+   - Step A: standard `JSON.parse` (existing)
+   - Step B: on throw, attempt repair (close unterminated strings · close unmatched braces · escape stray newlines) then re-parse
+   - Step C: on Step-B-throw, return `{ok: false, error, repairAttempted: true, rawHead}` · engineer-actionable error text
+4. **`services/workshopNotesService.js`**: retry-once with stricter "EMIT STRICT JSON ONLY · NO LITERAL NEWLINES INSIDE STRINGS · USE \\n ESCAPE" prompt reminder when first parse fails · retry counter cap = 1
+5. **`services/workshopNotesService.js`**: EXPORT `parseLlmResponse` for unit testing (was private)
+
+### Regression tests added at this commit
+
+| ID | Asserts |
+|---|---|
+| V-FLOW-WS-PARSE-1 | `parseLlmResponse("not json")` returns `{ok: false, error: <non-empty>}` · no throw |
+| V-FLOW-WS-PARSE-2 | `parseLlmResponse('\`\`\`json\\n{"processedMarkdown":"foo","mappings":[]}\\n\`\`\`')` strips code fences AND parses |
+| V-FLOW-WS-PARSE-REPAIR-1 | Truncated-mid-string JSON yields `{ok: true}` after repair OR clear `{ok: false, repairAttempted: true}` · NEVER throws |
+| V-FLOW-WS-ERROR-BANNER-1 | `WorkshopNotesOverlay.js` does NOT import `notifyError` AND DOES define `showOverlayError` (regression guard for BUG-WS-1) |
+| V-FLOW-WS-PUSH-MAX-TOKENS-1 | `workshopNotesService.js` passes `maxTokens` ≥ 4096 to `chatCompletion` |
+| V-FLOW-WS-PUSH-RETRY-1 | `workshopNotesService.js` has retry-on-parse-failure code path |
+
+Target banner after fix: **1329/1329 GREEN** (1323 + 6 new tests).
+
+### Architectural follow-ups (NOT in this commit · deferred to v1.5 hardening)
+- **DOM-mounting integration test for overlay end-to-end** · per Rule B (test-mounts-the-UX) · source-grep is NOT a substitute. Open → type → push → handle response → verify mappings render → click [Import to canvas] → verify modal opens → click Apply → verify engagement state mutates → verify aiTag stamped. `feedback_no_mocks.md` constrains this · the test would need real-LLM USER-RUN OR a split (unit-test parseLlmResponse + user-run smoke for the LLM round-trip).
+- **Move workshop output from prose JSON to Anthropic tool-use** · register a `structureWorkshopNotes` tool with Zod-derived JSON-Schema input · provider serializes · eliminates JSON parsing entirely · no truncation-mid-string class possible. v1.5 candidate.
+- **Streaming response with progressive parse** · partial markdown as sections complete · if max_tokens hits, engineer at least sees partial output. v1.5 candidate.
+- **Per-skill maxTokens config in Settings** · engineer-tunable cap.
+
+### Cross-references
+- BUG-WS-1 fix commit `8594288` (the destruction-on-error fix · necessary-but-not-sufficient given BUG-WS-2)
+- Step 4 impl commit `88f6a32` (where the test-coverage gap originated)
+- Step 5 impl commit `ccd23c8` (where the gap propagated)
+- `feedback_test_or_it_didnt_ship.md` (the violated discipline · this commit lands 6 regression tests)
+- `feedback_no_patches_flag_first.md` (root-cause-3-issues fix · not papered-over)
+- `feedback_browser_smoke_required.md` (source-grep does NOT replace smoke)
+- User incident screenshot 2026-05-15 PM (JSON parse failure with raw-response-head preview)

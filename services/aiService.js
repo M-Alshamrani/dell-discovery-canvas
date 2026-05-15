@@ -286,7 +286,11 @@ export function buildRequest(providerKind, opts) {
       messages: oaiMessages,
       // Defensive #4: 4096-token headroom for multi-round prose answers.
       // 1024 was OpenAI's old default; modern models routinely emit longer.
-      max_tokens: 4096,
+      // BUG-WS-2 amendment 2026-05-15: caller may override via opts.maxTokens
+      // when emitting structured output that exceeds the default · workshop
+      // notes (~3000-5000 chars JSON ≈ 750-1250 tokens) was clipping mid-
+      // string and triggering JSON parse failures.
+      max_tokens: (typeof opts.maxTokens === "number" && opts.maxTokens > 0) ? opts.maxTokens : 4096,
       temperature: 0.3
     };
     // SPEC §S26.2 — OpenAI canonical tools shape:
@@ -329,7 +333,12 @@ export function buildRequest(providerKind, opts) {
     });
     var body = {
       model: model,
-      max_tokens: 1024,
+      // BUG-WS-2 amendment 2026-05-15: 1024 default preserved for non-overriding
+      // callers · caller may pass opts.maxTokens to override (workshop-mode
+      // structured output passes 8192 because the JSON envelope routinely
+      // exceeds 1024 tokens · was clipping mid-string and triggering parse
+      // failures).
+      max_tokens: (typeof opts.maxTokens === "number" && opts.maxTokens > 0) ? opts.maxTokens : 1024,
       messages: nonSystem
     };
     if (systemBlocks.length > 0) {
@@ -450,6 +459,13 @@ export function buildRequest(providerKind, opts) {
     });
     var body2 = { contents: contents };
     if (systemContent) body2.systemInstruction = { parts: [{ text: systemContent }] };
+    // BUG-WS-2 amendment 2026-05-15: caller may pass opts.maxTokens to widen
+    // the output ceiling · Gemini uses generationConfig.maxOutputTokens (1024
+    // appears to be the default for most gemini-* models · workshop-mode
+    // structured output passes 8192).
+    if (typeof opts.maxTokens === "number" && opts.maxTokens > 0) {
+      body2.generationConfig = Object.assign({}, body2.generationConfig, { maxOutputTokens: opts.maxTokens });
+    }
     // SPEC §S26.2 — Gemini tools wire shape:
     // tools: [{functionDeclarations: [{name, description, parameters}]}]
     if (Array.isArray(opts.tools) && opts.tools.length > 0) {
