@@ -225,7 +225,8 @@ If a fresh-context session needs to fully reload the project's discipline + stat
 15. **Prior session logs**:
     - `docs/SESSION_LOG_2026-05-14-rc.10-sub-arc-d-steps-1-2.md` (Sub-arc D eval-build + stub-emission · pre this session)
     - `docs/SESSION_LOG_2026-05-14-rc.9-close.md` (rc.9 release · before that)
-16. **`docs/SUB_ARC_D_HANDOFF_PROMPT.md`** — paste-ready prompt for fresh-context Claude (NOTE: pre-pivot · assumes A14 Q4 Mode-2-first · SUPERSEDED by A19 · use the recoverability anchor chain above instead)
+16. **`docs/SUB_ARC_D_HANDOFF_PROMPT_v2.md`** — paste-ready prompt for fresh-context Claude · POST-PIVOT · Step 4 impl scope · 12 required reads + structured ack template + locked architectural decisions + hard rules + most-likely-direction branches · USE THIS for next-session priming
+17. **`docs/SUB_ARC_D_HANDOFF_PROMPT.md`** v1 — SUPERSEDED · pre-pivot · preserved for historical reference only · do NOT use for new-session priming
 
 ---
 

@@ -1,4 +1,14 @@
-# Sub-arc D · rc.10 cycle · handoff prompt v1.0
+# Sub-arc D · rc.10 cycle · handoff prompt v1.0 · SUPERSEDED 2026-05-15
+
+> **STATUS · SUPERSEDED 2026-05-15 by [docs/SUB_ARC_D_HANDOFF_PROMPT_v2.md](SUB_ARC_D_HANDOFF_PROMPT_v2.md)**.
+>
+> This v1 prompt is PRE-PIVOT. It assumes Mode 2 (chat-inline autonomous proposals) ships first by default per the original framing-doc A14 Q4. That decision was SUPERSEDED by framing-doc A19 (commit `662522d` · 2026-05-15) post-eval-methodology-calibration. The new primary UX path is Mode 1 (Workshop Notes overlay → Path B importer · §S20.4.1.5 NEW).
+>
+> **For fresh-context sessions resuming Sub-arc D work, use the v2 prompt instead**: `docs/SUB_ARC_D_HANDOFF_PROMPT_v2.md`. The v2 prompt reflects the pivot + the calibration findings (Claude-judge inflation · sampling-noise floor · prompt-text iteration ceiling) + the Step 4 impl scope under the pivoted architecture.
+>
+> This v1 file is preserved as historical reference only · DO NOT use for new-session priming.
+
+---
 
 Paste this prompt as the FIRST message to a fresh-context Claude (or other agent) to pick up the Sub-arc D arc cleanly at 100% fidelity.
 
