@@ -382,3 +382,102 @@ The broader gap is deferred to v1.5 polish per `feedback_test_or_it_didnt_ship.m
 7. **APP_VERSION bump rc.10-dev → rc.10 + tag rc.10** ONLY after user explicit "ship it / tag rc.10" direction
 
 Working tree clean at session-end-after-Phase-6. **43 commits LOCAL** since rc.9 tag. NOT pushed (user directive holds).
+
+---
+
+## ADDENDUM Phase 7 · BUG-WS-3 + BUG-WS-4 + BUG-WS-5 fix (2026-05-15 PM late · commits `12e178b` + this doc commit)
+
+### Three bugs · one commit · one regression-test extension
+
+User-reported BUG-WS-3 after the BUG-WS-2 ship: real-LLM Push succeeded and structured output reached the upper pane, but clicking **[Import to canvas]** showed the misleading toast *"Push notes to AI first"* — even though the user had JUST pushed. User-direct quote: *"when i push now i get some structred ourput , but when i click import to canvas, it ases me to push to AI first , and i already did .. rpeort bug and fix , thig feature is defective still"*
+
+During the smoke-verification of the BUG-WS-3 fix, **two additional LLM-output fragility bugs surfaced** (BUG-WS-4 dangling-key truncation + BUG-WS-5 trailing-prose-after-valid-JSON). All three were folded into the single commit `12e178b` because they share the same code-path seam (parseLlmResponse pre-parse extraction + post-push state discrimination).
+
+### BUG-WS-3 · misleading "Push first" UX after successful push
+
+**Root cause**: `handleImportToCanvas` collapsed 3 distinct zero-mappings states into a single `notifyInfo` toast that vanished in 3.5s and said the WRONG thing for 2 of the 3 states.
+
+| State | processedMarkdown | mappings | droppedCount | Correct message (post-fix) |
+|---|---|---|---|---|
+| A | empty | 0 | 0 | "Push notes to AI first" (legitimate · toast OK) |
+| B | filled | 0 | 0 | banner: "Import unavailable · AI returned 0 actionable mappings · Push succeeded · structured notes in upper pane · try [Re-evaluate all] with action-form bullets like 'add VMware vSphere to DR site'" |
+| C | filled | 0 | N>0 | banner: "Import unavailable · all N mapping(s) failed validation · console for details · try [Re-evaluate all] OR rephrase your bullets" |
+
+**Fix**: tracked `lastPushedAt` + `lastDroppedCount` in `overlayState` (set on every successful push) + rewrote the zero-mappings branch to discriminate 3 states via `neverPushed` + `droppedCount > 0` checks + use `showOverlayError` (in-overlay banner · persistent) for non-trivial cases instead of `notifyInfo` (3.5s vanishing toast).
+
+### BUG-WS-4 · dangling-key truncation
+
+**Surfaced during BUG-WS-3 smoke**: LLM emitted `{"processedMarkdown":"...", "mappings"` (truncated mid-key). `repairTruncatedJson` Steps 1-5 closed the outer brace but produced `{"processedMarkdown":"...", "mappings"}` which `JSON.parse` rejected (*"Expected ':' after property name"*).
+
+**Fix**: Step 6 added to `repairTruncatedJson` — two regex patterns strip dangling keys:
+- `, "key"` immediately before `}` or `]` (key without colon-value · most common · the user's exact case)
+- `{ "key" }` or `[ "key" ]` (orphan key as only content)
+
+Iterates 3 passes to handle nested orphans · re-runs the trailing-comma strip at the end.
+
+### BUG-WS-5 · valid JSON followed by trailing prose
+
+**Surfaced during BUG-WS-4 verification smoke**: LLM emitted a VALID `{"processedMarkdown": "", "mappings": []}` answer followed by a closing markdown fence + `**Rationale:** ...` block. `JSON.parse` rejected *"Unexpected non-whitespace character after JSON at position 48"*.
+
+**Fix**: NEW `extractFirstBalancedJson(body)` helper · scans for the first `{` or `[` · uses inside-string-aware brace counter to find the matching closer · returns the substring from first opener to its matching closer. Called as Step 0.5 in `parseLlmResponse` (after fence-strip · before Step A standard parse) · truncates the body to the balanced JSON portion before parsing. Returns null on unbalanced input · `repairTruncatedJson` handles the truncation case.
+
+### Regression tests landed at this commit
+
+| ID | Asserts | Guards |
+|---|---|---|
+| V-FLOW-WS-IMPORT-ZERO-MAPPINGS-1 | BUG-WS-3 · 3-state discrimination · lastPushedAt + lastDroppedCount tracking + `showOverlayError` ≥2 calls + actionable remediation hints | 4 |
+| V-FLOW-WS-PARSE-REPAIR-1 (extended from 3 to 10 guards) | BUG-WS-2 truncation-mid-string (Guards 1-3) + BUG-WS-4 dangling-key (Guards 4-6) + BUG-WS-5 trailing-prose + extractFirstBalancedJson export check (Guards 7-10) | 10 |
+
+Banner went 1329 → **1330/1330 GREEN** (+1 test · +7 guards on existing test).
+
+### Browser smoke evidence (Chrome MCP)
+
+**Full State-B end-to-end smoke** verified:
+1. localStorage.removeItem + open overlay
+2. Type `- Customer name is Acme · healthcare · 1000 employees` (context-only bullet · expected to emit 0 mappings)
+3. Click [Push notes to AI] · wait 15s
+4. Status reads "Pushed · 0 mappings" (green · no error)
+5. Click [Import to canvas]
+6. Red in-overlay banner appears:
+   - Title: **"Import unavailable · AI returned 0 actionable mappings"**
+   - Body: *"Push succeeded · the structured notes are in the upper pane. But the AI did not emit any canonical action mappings (add-driver / add-instance-current / add-instance-desired / close-gap). Your bullets may describe context (customer name · environments · drivers) rather than actions. Try [Re-evaluate all] with action-form bullets like 'add VMware vSphere to DR site' or 'we need cybersecurity driver'."*
+   - Dismiss button present
+   - Status chip: "ERROR · SEE BANNER" (red)
+   - Bullet preserved in lower pane
+
+Screenshot `ss_8589wp5gj` is the canonical proof.
+
+**Unit verification** of all 3 LLM-output failure shapes against `parseLlmResponse`:
+- BUG-WS-2 mid-string truncation: `{ok: true, processedMarkdown: "...", repairAttempted: true}`
+- BUG-WS-4 dangling-key: `{ok: true, processedMarkdown: "...", rawMappings: [], repairAttempted: true}` (orphan key stripped)
+- BUG-WS-5 trailing-prose: `{ok: true, processedMarkdown: "", rawMappings: [], repairAttempted: false}` (Step 0.5 extracted balanced JSON · no repair needed)
+
+### Architectural acknowledgment
+
+Three LLM-output-fragility classes found in 2 hours of post-Step-5 user testing (BUG-WS-2 + BUG-WS-4 + BUG-WS-5). The pattern: **the LLM cannot be relied upon to emit strict JSON via its text output**. Each new bug requires another repair heuristic. The architectural fix that would eliminate the entire class is **Anthropic tool-use API** (Zod-derived JSON-Schema input · provider serializes structured args · no JSON parsing on our side · no truncation/dangling-key/trailing-prose risks). Acknowledged-deferred to v1.5 polish (already in BUG-WS-2 architectural follow-ups · re-cited at BUG-WS-5 entry).
+
+### Updated session ledger · 10 commits total this session
+
+| # | Commit | Title | Phase |
+|---|---|---|---|
+| 36 | `2b5ae78` | A20 preamble | Phase 2 |
+| 37 | `88f6a32` | Step 4 impl | Phase 3 |
+| 38 | `ccd23c8` | Step 5 impl | Phase 4 |
+| 39 | `156cb4c` | doc commit · session log + HANDOFF.md | Phase 4 |
+| 40 | `8594288` | BUG-WS-1 fix | Phase 5 |
+| 41 | `c1376d5` | doc commit · Phase 5 addendum | Phase 5 |
+| 42 | `8b845a4` | BUG-WS-2 fix | Phase 6 |
+| 43 | `daaa8bd` | doc commit · Phase 6 addendum | Phase 6 |
+| 44 | `12e178b` | **BUG-WS-3 + BUG-WS-4 + BUG-WS-5 fix · 1330/1330** | **Phase 7 (this addendum)** |
+
+### Updated next-session priority
+
+1. **Real-LLM end-to-end smoke** with action-form bullets that actually emit canonical mappings (e.g. "add VMware vSphere to DR site · current state") · verify the FULL Push → mappings → Import → Preview → Apply chain works against the live provider
+2. **Close-gap slip verification re-run** from Step 6 baselines · still queued (`antrhopic_1.json` showed close-gap dropped 10 → 7.5 · worth one verification before tag)
+3. **PREFLIGHT 1-8 audit** per `docs/PREFLIGHT.md`
+4. **(Optional v1.5) DOM-mounting integration test for overlay end-to-end** · per Rule B · would close the State-C smoke gap (currently source-grep verified only)
+5. **(Optional v1.5) aiTag chip renderer for drivers + gaps** (Tab 1 + Tab 4)
+6. **(Strongly recommended v1.5) Tool-use API migration** · would eliminate the entire LLM-output-fragility bug class (BUG-WS-2/4/5 root cause class)
+7. **APP_VERSION bump rc.10-dev → rc.10 + tag rc.10** ONLY after user explicit "ship it / tag rc.10" direction
+
+Working tree clean at session-end-after-Phase-7. **45 commits LOCAL** since rc.9 tag. NOT pushed (user directive holds).
