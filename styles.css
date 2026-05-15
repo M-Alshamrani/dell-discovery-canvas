@@ -8164,3 +8164,84 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
 /* ════════════════════════════════════════════════════════════════════
    end Workshop Notes overlay block
    ════════════════════════════════════════════════════════════════════ */
+
+
+/* ════════════════════════════════════════════════════════════════════
+   §S47.5 modal · A20 widened kind chip + duplicate indicator
+   ════════════════════════════════════════════════════════════════════ */
+
+.import-preview-kind-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-right: 6px;
+  border: 1px solid var(--border-mid, #C4CDDA);
+  background: var(--surface-2, #F7F9FC);
+  color: var(--text-2, #4B5563);
+}
+
+.import-preview-kind-instance-add {
+  background: #E3F2FD;
+  border-color: #90CAF9;
+  color: #0D47A1;
+}
+
+.import-preview-kind-driver-add {
+  background: #F3E5F5;
+  border-color: #CE93D8;
+  color: #4A148C;
+}
+
+.import-preview-kind-gap-close {
+  background: #FFF3E0;
+  border-color: #FFB74D;
+  color: #E65100;
+}
+
+.import-preview-duplicate {
+  display: inline-block;
+  padding: 2px 6px;
+  background: #FFF8E1;
+  color: #8A6300;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 3px;
+  margin-left: 6px;
+  cursor: help;
+}
+
+.import-preview-scope-helper {
+  font-size: 11px;
+  color: var(--text-3, #6B7A90);
+  font-style: italic;
+}
+
+.import-preview-scope-lede {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-3, #6B7A90);
+  font-style: italic;
+  background: var(--surface-2, #F7F9FC);
+  border-bottom: 1px solid var(--border-soft, #E2E8F0);
+}
+
+.import-preview-cell-textarea {
+  min-width: 240px;
+  font-family: inherit;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.import-preview-cell[readonly] {
+  background: var(--surface-2, #F7F9FC);
+  color: var(--text-3, #6B7A90);
+  cursor: not-allowed;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   end §S47.5 widened modal block
+   ════════════════════════════════════════════════════════════════════ */

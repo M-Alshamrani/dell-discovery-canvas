@@ -17,6 +17,14 @@ import { z } from "zod";
 import { crossCuttingFieldsSchema, defaultCrossCuttingFields } from "./helpers/crossCuttingFields.js";
 import { provenanceWrapper } from "./helpers/provenanceWrapper.js";
 import { ownPath, linkedPath } from "./helpers/pathManifest.js";
+// AiTagSchema lives in schema/helpers/aiTag.js post-A20 (2026-05-15) so
+// the same shape serves instance + driver + gap entities without
+// duplicated Zod declarations. The enum was extended at A20 from
+// ["skill", "external-llm"] to ["skill", "external-llm", "discovery-note",
+// "ai-proposal"] per §S47.9.1b. Re-export so any pre-A20 consumer that
+// imported AiTagSchema from this file keeps working.
+import { AiTagSchema } from "./helpers/aiTag.js";
+export { AiTagSchema };
 
 // Inline schema for the typed payload of aiSuggestedDellMapping. v3.0
 // initial shape; refines as the dell-mapping skill matures.
@@ -30,28 +38,23 @@ const DellMappingSchema = z.object({
 // EITHER mutation policy ('ask' approved or 'auto-tag' immediate); auto-
 // cleared on the next engineer save (instanceActions.updateInstance
 // strips it). Renders as a "Done by AI" badge in MatrixView tile.
-// Scope: instances ONLY (drivers / environments / gaps / customer /
-// engagementMeta are out of scope for v3.0 GA per user direction
-// 2026-05-10).
+//
+// PRE-A20 scope: instances ONLY (drivers / environments / gaps / customer
+// / engagementMeta were out of scope for v3.0 GA per user direction
+// 2026-05-10). POST-A20 (2026-05-15): drivers + gaps GAIN aiTag too per
+// SPEC §S47.9.1a · stamped by services/importApplier.js when the import
+// source is the Workshop Notes overlay. RULES §16 CH36 R7 narrowing
+// amendment 2026-05-15 governs the cross-kind scope. Environments,
+// customer, and engagementMeta stay out of scope (no aiTag fields).
 //
 // [CONSTITUTIONAL AMENDMENT 2026-05-12 · SPEC §S47.9 / §S25 amendment]
-// aiTag.kind discriminator added so the same provenance envelope can
-// represent two distinct mutation origins:
-//   - kind="skill"        · in-app Skills-Builder skill run (uses skillId)
-//   - kind="external-llm" · file-driven import via Dell internal LLM
-//                           (uses source, e.g. "dell-internal")
+// aiTag.kind discriminator added · POST-A20 (2026-05-15) the enum is:
+//   - kind="skill"          · Skills-Builder skill run (uses skillId)
+//   - kind="external-llm"   · Path B file-upload import (uses source)
+//   - kind="discovery-note" · Workshop Notes overlay (A19 + A20)
+//   - kind="ai-proposal"    · Mode 2 chat-inline (reserved · forward compat)
 // Legacy aiTag records without `kind` parse as kind="skill" via the
-// Zod default (R47.9.2 — no DB migration needed). skillId + source
-// are .optional() at the Zod layer; the discriminator invariant
-// (kind="skill" → skillId present; kind="external-llm" → source present)
-// is documentary per SPEC §S47.9.1.
-const AiTagSchema = z.object({
-  kind:      z.enum(["skill", "external-llm"]).default("skill"),
-  skillId:   z.string().optional(),   // present when kind="skill"
-  source:    z.string().optional(),   // present when kind="external-llm" (e.g., "dell-internal")
-  runId:     z.string().min(1),
-  mutatedAt: z.string().min(1)        // ISO instant
-});
+// Zod default (R47.9.2 — no DB migration needed).
 
 export const InstanceSchema = z.object({
   ...crossCuttingFieldsSchema,

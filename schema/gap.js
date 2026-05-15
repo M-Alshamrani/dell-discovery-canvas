@@ -14,6 +14,13 @@ import { z } from "zod";
 import { crossCuttingFieldsSchema, defaultCrossCuttingFields } from "./helpers/crossCuttingFields.js";
 import { provenanceWrapper } from "./helpers/provenanceWrapper.js";
 import { ownPath, linkedPath } from "./helpers/pathManifest.js";
+// aiTag field added 2026-05-15 per SPEC §S47.9.1a (A20 widening · RULES
+// §16 CH36 R7 narrowing). Path B importApplier stamps aiTag.kind =
+// "discovery-note" when a gap.close item from the Workshop Notes overlay
+// mutates the gap's status to "closed". Pre-A20 gaps had no aiTag field
+// per CH36 R7 original "instances ONLY" lock. Shape mirrors
+// instance.aiTag via the shared helper.
+import { AiTagFieldSchema } from "./helpers/aiTag.js";
 
 // Typed payload for aiMappedDellSolutions.
 const DellSolutionListSchema = z.object({
@@ -56,7 +63,13 @@ export const GapSchema = z.object({
   services:                  z.array(z.string()).default([]),         // FKs to SERVICE_TYPES
 
   // AI-authored (SPEC sec S8.1):
-  aiMappedDellSolutions:     provenanceWrapper(DellSolutionListSchema).nullable().default(null)
+  aiMappedDellSolutions:     provenanceWrapper(DellSolutionListSchema).nullable().default(null),
+
+  // A20 (2026-05-15) · AI-mutation provenance (mirrors instance.aiTag).
+  // Stamped by services/importApplier.js when Path B closes a gap from
+  // the Workshop Notes overlay (kind: "gap.close"). Optional · nullable ·
+  // defaults null for backward compatibility with pre-A20 persisted gaps.
+  aiTag:                     AiTagFieldSchema
 }).strict().superRefine((gap, ctx) => {
   // R3.6.G6 — affectedLayers[0] must equal layerId
   if (gap.affectedLayers[0] !== gap.layerId) {
@@ -85,7 +98,8 @@ export function createEmptyGap(overrides = {}) {
     relatedCurrentInstanceIds: overrides.relatedCurrentInstanceIds ?? [],
     relatedDesiredInstanceIds: overrides.relatedDesiredInstanceIds ?? [],
     services:                  overrides.services                  ?? [],
-    aiMappedDellSolutions:     overrides.aiMappedDellSolutions     ?? null
+    aiMappedDellSolutions:     overrides.aiMappedDellSolutions     ?? null,
+    aiTag:                     overrides.aiTag                     ?? null
   });
 }
 

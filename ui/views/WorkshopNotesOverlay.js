@@ -36,7 +36,11 @@
 import { openOverlay, closeOverlay } from "../components/Overlay.js";
 import { pushNotesToAi } from "../../services/workshopNotesService.js";
 import { transformOverlayToImportPayload } from "../../services/workshopNotesImportAdapter.js";
-import { getActiveEngagement } from "../../state/engagementStore.js";
+import { parseImportResponse } from "../../services/importResponseParser.js";
+import { checkImportDrift } from "../../services/importDriftCheck.js";
+import { applyImportItems } from "../../services/importApplier.js";
+import { renderImportPreview } from "../components/ImportPreviewModal.js";
+import { getActiveEngagement, setActiveEngagement } from "../../state/engagementStore.js";
 import { notifyError, notifyInfo, notifySuccess } from "../components/Notify.js";
 
 const LOCAL_STORAGE_DRAFT_KEY = "workshopNotesDraft_v1";
@@ -385,16 +389,28 @@ async function handlePushToAi(mode) {
   setStatus("Pushed · " + (res.mappings || []).length + " mapping" + ((res.mappings || []).length === 1 ? "" : "s") + droppedSuffix, "ok");
 }
 
-// [Import to canvas] click handler. Step 4 scope: transform overlay
-// state into the widened Path B payload via workshopNotesImportAdapter
-// + log/toast the result. Step 5 impl wires the payload through
-// importResponseParser → importDriftCheck → renderImportPreview →
-// importApplier (the existing rc.8 pipeline · widened at Step 5).
+// [Import to canvas] click handler · A20 widened end-to-end flow:
+//   1. workshopNotesImportAdapter.transformOverlayToImportPayload
+//      converts overlay mappings → widened Path B wire payload
+//      (per-item `kind` discriminator · 3 kinds)
+//   2. parseImportResponse validates the widened shape against
+//      WideImportSubsetSchema (services/importResponseParser.js)
+//   3. checkImportDrift validates per-kind FK membership against
+//      the live engagement (env UUIDs for instance.add · gapIds
+//      for gap.close · businessDriverId catalog for driver.add)
+//   4. renderImportPreview opens ImportPreviewModal · engineer
+//      reviews each row (per-kind chip + per-kind editable cells)
+//      + selects which to apply
+//   5. applyImportItems dispatches per kind to the right commit
+//      function (addInstance · addDriver · updateGap) · stamps
+//      aiTag.kind = "discovery-note" via the provenance envelope
+//   6. setActiveEngagement commits the new state to the v3 store
+//      → subscribeActiveEngagement chain re-renders the matrix
 //
 // V-FLOW-AI-NOTES-IMPORT-1 source-grep: this handler MUST reference
-// workshopNotesImportAdapter (by import path OR by the exported
-// function name). Without this, the [Import to canvas] click is a
-// dead-end button.
+// workshopNotesImportAdapter (the source-grep target). Step 5g
+// additionally wires through parser/drift/modal/applier per the
+// Step-5 RED scaffolds.
 function handleImportToCanvas() {
   if (!overlayState) return;
   const mappings = overlayState.mappings || [];
@@ -403,23 +419,92 @@ function handleImportToCanvas() {
     return;
   }
 
+  const runId = overlayState.lastRunId || ("wn-" + Date.now().toString(36));
+  const mutatedAt = new Date().toISOString();
+
+  // Step 1: transform overlay mappings → widened Path B wire payload.
   const payload = transformOverlayToImportPayload({
     mappings:  mappings,
-    runId:     overlayState.lastRunId || "wn-" + Date.now().toString(36),
-    mutatedAt: new Date().toISOString()
+    runId:     runId,
+    mutatedAt: mutatedAt
   });
 
-  // Step 4 scope: log + toast the payload. Step 5 impl wires the
-  // payload through importResponseParser → renderImportPreview →
-  // importApplier. The wire-through path is the Step 5 RED scaffolds
-  // (V-FLOW-PATHB-WIDEN-PARSE-1 + V-FLOW-PATHB-WIDEN-MODAL-1 +
-  // V-FLOW-PATHB-WIDEN-DRIFT-1 + V-FLOW-PATHB-WIDEN-APPLY-1) target.
-  console.log("[WorkshopNotesOverlay] Import to canvas payload (Step 5 will wire through Path B):", payload);
-  const itemCount = payload.items.length;
-  const droppedSuffix = payload.droppedCount > 0 ? " · " + payload.droppedCount + " malformed dropped" : "";
-  notifyInfo({
-    title: "Import payload ready (" + itemCount + " item" + (itemCount === 1 ? "" : "s") + droppedSuffix + ")",
-    body:  "Step 5 will wire this through the Path B importer + ImportPreviewModal. For now, see browser console for the payload."
+  if (!payload.items || payload.items.length === 0) {
+    notifyError({ title: "No valid mappings", body: "All " + mappings.length + " mappings were dropped by the adapter (validation failed). Check console for details." });
+    return;
+  }
+
+  // Step 2: parse + validate the widened payload (defensive · the
+  // adapter already validates · but parser is the canonical gate).
+  const parseResult = parseImportResponse(payload);
+  if (!parseResult.ok) {
+    const firstError = parseResult.errors && parseResult.errors[0];
+    notifyError({
+      title: "Import payload rejected",
+      body:  firstError ? firstError.path + ": " + firstError.message : "Unknown parse error"
+    });
+    return;
+  }
+
+  // Step 3: drift-check (per-kind FK membership).
+  const live = getActiveEngagement();
+  const drift = checkImportDrift(parseResult.parsed, live);
+  if (!drift.ok) {
+    const segments = [];
+    if (drift.missingEnvIds.length > 0)         segments.push(drift.missingEnvIds.length + " env(s)");
+    if (drift.missingGapIds.length > 0)         segments.push(drift.missingGapIds.length + " gap(s)");
+    if (drift.invalidBusinessDriverIds.length > 0) segments.push(drift.invalidBusinessDriverIds.length + " driver(s)");
+    notifyError({
+      title: "Import rejected: drift detected",
+      body:  "Response references " + segments.join(" · ") + " not in this engagement. Re-issue notes or update the engagement first."
+    });
+    return;
+  }
+
+  // Step 4: open the preview modal · per-row review.
+  renderImportPreview(document.body, parseResult.parsed, {
+    defaultScope: "desired",
+    drift:        drift,
+    onApply: function(selectedItems, finalScope) {
+      // Step 5: dispatch through the applier · kind-aware.
+      const res = applyImportItems(live, selectedItems, {
+        scope:      finalScope,
+        provenance: {
+          kind:      "discovery-note",                  // A20 · per SPEC §S47.9.1b
+          source:    "workshop-notes-overlay",          // A20 · per SPEC §S47.9.5
+          runId:     runId,
+          mutatedAt: mutatedAt
+        }
+      });
+      // Step 6: commit to v3 store + notify.
+      if (res.engagement) setActiveEngagement(res.engagement);
+
+      const appliedCount = (res.addedInstanceIds || []).length + (res.addedDriverIds || []).length + (res.closedGapIds || []).length;
+      const errorCount = (res.errors || []).length;
+      if (errorCount > 0) {
+        const failedDetail = res.errors.slice(0, 3).map(function(e) {
+          const firstMsg = (e.errors && e.errors[0] && e.errors[0].message) || "validation error";
+          return "row " + (e.itemIndex + 1) + " (" + e.kind + "): " + firstMsg;
+        }).join("; ");
+        notifyError({
+          title: "Partial import: " + appliedCount + " applied, " + errorCount + " failed",
+          body:  failedDetail + (res.errors.length > 3 ? " (+ " + (res.errors.length - 3) + " more)" : "")
+        });
+      } else {
+        const breakdown = [];
+        if (res.addedInstanceIds.length > 0) breakdown.push(res.addedInstanceIds.length + " instance" + (res.addedInstanceIds.length === 1 ? "" : "s"));
+        if (res.addedDriverIds.length > 0)   breakdown.push(res.addedDriverIds.length + " driver" + (res.addedDriverIds.length === 1 ? "" : "s"));
+        if (res.closedGapIds.length > 0)     breakdown.push(res.closedGapIds.length + " gap closure" + (res.closedGapIds.length === 1 ? "" : "s"));
+        notifySuccess({
+          title: "Imported " + appliedCount + " item" + (appliedCount === 1 ? "" : "s"),
+          body:  breakdown.join(" · ") + " · 'Note' chip auto-clears on engineer save."
+        });
+      }
+    },
+    onCancel: function() {
+      // Preview cancelled · overlay stays open · engineer can re-push or re-import.
+      setStatus("Import cancelled", "info");
+    }
   });
 }
 
