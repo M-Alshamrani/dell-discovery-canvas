@@ -15986,6 +15986,111 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-FLOW-WS-PUSH-RETRY-1 · Guard 3: workshopNotesService.js MUST reference literal-newlines / \\n-escape in the retry reminder (the dominant cause of Unterminated-string-in-JSON errors per the user's BUG-WS-2 incident).");
     });
 
+    // -----------------------------------------------------------------
+    // V-FLOW-WS-UX-{TEXTAREA-RESIZE,SCROLL-CARET,MODAL-STACK,MODAL-ROW-LAYOUT}-1
+    // · BUG-WS-6 fix regression guards · LOCKED 2026-05-15 PM late
+    //
+    // CONTEXT: User reported 4 UX bugs in AI Notes feature:
+    //   (a) Lower-pane textarea didn't auto-scroll to keep the latest
+    //       typed line visible · engineer had to manually scroll to find
+    //       where they were typing
+    //   (b) Textarea was small + not resizable · engineer wanted more
+    //       comfortable typing room
+    //   (c) ImportPreviewModal opened BEHIND the workshop overlay
+    //       (z-index 3000 vs 4600) instead of on top
+    //   (d) ImportPreviewModal cells overflowed visually because the
+    //       11-column grid couldn't fit the 12+ elements A20 widening
+    //       introduced (kind chip · duplicate indicator)
+    //
+    // Fix: CSS changes for (b/c/d) + JS scrollTextareaToCaret helper
+    // for (a). These 4 guards verify the fix surfaces are in place.
+    // -----------------------------------------------------------------
+
+    it("V-FLOW-WS-UX-TEXTAREA-RESIZE-1 · BUG-WS-6 · .workshop-notes-textarea has resize:vertical + min-height for engineer-comfortable typing — regression guard", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/styles.css");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-WS-UX-TEXTAREA-RESIZE-1: styles.css MUST be readable for source-grep");
+
+      // Guard 1: source contains .workshop-notes-textarea declaration with resize:vertical OR resize:both
+      const TEXTAREA_BLOCK_RE = /\.workshop-notes-textarea\s*\{[^}]*resize:\s*(vertical|both)/;
+      assert(TEXTAREA_BLOCK_RE.test(src),
+        "V-FLOW-WS-UX-TEXTAREA-RESIZE-1 · Guard 1: .workshop-notes-textarea MUST have `resize: vertical` (or both) so the engineer can drag the bottom-right corner to make it taller. Pre-fix had `resize: none` which locked the textarea size.");
+
+      // Guard 2: source contains min-height for the textarea
+      const MIN_HEIGHT_RE = /\.workshop-notes-textarea\s*\{[^}]*min-height:\s*\d+/;
+      assert(MIN_HEIGHT_RE.test(src),
+        "V-FLOW-WS-UX-TEXTAREA-RESIZE-1 · Guard 2: .workshop-notes-textarea MUST have min-height to ensure comfortable default typing room.");
+    });
+
+    it("V-FLOW-WS-UX-SCROLL-CARET-1 · BUG-WS-6 · WorkshopNotesOverlay defines scrollTextareaToCaret + calls it after programmatic textarea updates (keeps latest typed line visible) — regression guard", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/ui/views/WorkshopNotesOverlay.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-WS-UX-SCROLL-CARET-1: ui/views/WorkshopNotesOverlay.js MUST be readable for source-grep");
+
+      // Guard 1: function scrollTextareaToCaret is defined
+      const SCROLL_DEF_RE = /function\s+scrollTextareaToCaret\s*\(/;
+      assert(SCROLL_DEF_RE.test(src),
+        "V-FLOW-WS-UX-SCROLL-CARET-1 · Guard 1: WorkshopNotesOverlay.js MUST define function scrollTextareaToCaret (BUG-WS-6 fix · keeps the latest typed line visible after programmatic value updates).");
+
+      // Guard 2: at least 3 call sites (Enter handler + Tab indent + input event · per BUG-WS-6 fix)
+      const CALL_SITES = (src.match(/\bscrollTextareaToCaret\s*\(/g) || []).length;
+      assert(CALL_SITES >= 3,
+        "V-FLOW-WS-UX-SCROLL-CARET-1 · Guard 2: WorkshopNotesOverlay.js MUST call scrollTextareaToCaret at least 3 times (1 definition + ≥2 invocation sites after programmatic value updates: Enter/Tab/input event). Found " + CALL_SITES + " · definition counts as 1.");
+    });
+
+    it("V-FLOW-WS-UX-MODAL-STACK-1 · BUG-WS-6 · .import-preview-modal-overlay z-index > 4600 (ABOVE workshop overlay) so the import preview opens ON TOP when invoked from within the workshop overlay — regression guard", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/styles.css");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-WS-UX-MODAL-STACK-1: styles.css MUST be readable for source-grep");
+
+      // Guard 1: .import-preview-modal-overlay has explicit z-index > 4600
+      // (workshop overlay .overlay is z-index 4600 per styles.css)
+      const MODAL_STACK_RE = /\.import-preview-modal-overlay\s*\{[^}]*z-index:\s*(\d+)/;
+      const m = src.match(MODAL_STACK_RE);
+      assert(m !== null,
+        "V-FLOW-WS-UX-MODAL-STACK-1 · Guard 1a: .import-preview-modal-overlay MUST declare an explicit z-index (BUG-WS-6 fix · pre-fix it inherited z-index 3000 from .dialog-overlay which is BELOW the workshop overlay's 4600 · modal opened behind workshop).");
+      const z = parseInt(m[1], 10);
+      assert(z > 4600,
+        "V-FLOW-WS-UX-MODAL-STACK-1 · Guard 1b: .import-preview-modal-overlay z-index (" + z + ") MUST be > 4600 (the workshop overlay .overlay z-index). Pre-fix was 3000.");
+    });
+
+    it("V-FLOW-WS-UX-MODAL-ROW-LAYOUT-1 · BUG-WS-6 · .import-preview-row uses flex-wrap (responsive cell layout) + cells have min-width:0 (allow shrink) — regression guard for the A20 12-elements-in-11-columns overflow", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/styles.css");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-WS-UX-MODAL-ROW-LAYOUT-1: styles.css MUST be readable for source-grep");
+
+      // Guard 1: .import-preview-row uses flex-wrap (not the rigid grid)
+      const FLEX_WRAP_RE = /\.import-preview-row\s*\{[^}]*display:\s*flex[^}]*flex-wrap:\s*wrap/;
+      assert(FLEX_WRAP_RE.test(src),
+        "V-FLOW-WS-UX-MODAL-ROW-LAYOUT-1 · Guard 1: .import-preview-row MUST use `display: flex` with `flex-wrap: wrap` so the kind chip + 12+ A20-widened elements wrap responsively instead of overflowing. Pre-fix used `display: grid` with a fixed 11-column template that couldn't fit the kind chip + duplicate indicator added at A20.");
+
+      // Guard 2: child cells have min-width:0 so inputs can shrink below their default intrinsic width
+      const MIN_WIDTH_RE = /\.import-preview-row\s*>\s*\*\s*\{[^}]*min-width:\s*0/;
+      assert(MIN_WIDTH_RE.test(src),
+        "V-FLOW-WS-UX-MODAL-ROW-LAYOUT-1 · Guard 2: .import-preview-row > * MUST have min-width: 0 (flex children default to min-width: auto which prevents <input> elements from shrinking below their intrinsic width · causes horizontal overflow on narrow rows).");
+
+      // Guard 3: long-content cells (label/notes/outcomes/closeReason) take their own row via flex:1 1 100%
+      const FULL_ROW_RE = /\.import-preview-cell-(label|notes|outcomes|closeReason)[^{]*\{[\s\S]*?flex:\s*1\s*1\s*100%/;
+      assert(FULL_ROW_RE.test(src),
+        "V-FLOW-WS-UX-MODAL-ROW-LAYOUT-1 · Guard 3: long-content cells (label · notes · outcomes · closeReason) MUST take a full row via `flex: 1 1 100%` so the engineer has comfortable space to read + edit. Without this they'd cram into the same line as the small chips and overflow.");
+    });
+
     it("V-FLOW-WS-IMPORT-ZERO-MAPPINGS-1 · BUG-WS-3 · [Import to canvas] handler discriminates 3 zero-mappings states (never-pushed vs pushed-zero-emitted vs pushed-all-dropped) · does NOT say 'Push notes to AI first' unconditionally · uses showOverlayError (in-overlay banner) for non-trivial cases — regression guard", async () => {
       let src = "";
       try {

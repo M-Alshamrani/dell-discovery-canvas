@@ -7687,6 +7687,12 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
   align-items: flex-start;
   padding: 40px 16px;
   overflow-y: auto;
+  /* BUG-WS-6 (2026-05-15 PM late) · stack ABOVE the workshop overlay
+     (z-index 4600) so when the engineer clicks [Import to canvas] from
+     inside the Workshop Notes overlay, the import preview modal renders
+     ON TOP instead of being occluded behind. Default .dialog-overlay
+     z-index is 3000 · the modal would have been hidden. */
+  z-index: 4800;
 }
 .import-preview-modal-box {
   width: 980px;
@@ -7783,13 +7789,73 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
   overflow-y: auto;
 }
 .import-preview-row {
-  display: grid;
-  grid-template-columns: 24px 110px 90px 80px 1fr 1fr 1fr 1fr 1fr 70px 1fr;
+  /* BUG-WS-6 (2026-05-15 PM late) · flex-wrap replaces the rigid 11-column
+     grid that was originally designed pre-A20. The A20 widening added a
+     kind chip + duplicate indicator (12+ elements in 11 columns) which
+     overflowed visually. Flex-wrap lets small chips stay inline + long
+     cells (label · notes · outcomes · closeReason) wrap to their own line.
+     min-width:0 on cells lets <input> elements shrink below their default
+     intrinsic width inside the flex container. */
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 8px 6px;
+  gap: 6px 8px;
+  padding: 10px 6px;
   border-bottom: 1px solid var(--border, #E4E8EE);
   font-size: 12px;
+}
+.import-preview-row > * {
+  min-width: 0;
+}
+/* Compact chips (checkbox + kind + confidence + hint + disagreement + dup)
+   sit inline at fixed widths · don't stretch · don't wrap by themselves. */
+.import-preview-row .import-preview-row-accept,
+.import-preview-row .import-preview-kind-chip,
+.import-preview-row .import-preview-confidence,
+.import-preview-row .import-preview-llm-state-hint,
+.import-preview-row .import-preview-state-disagreement,
+.import-preview-row .import-preview-duplicate {
+  flex: 0 0 auto;
+}
+/* Default cells take a flexible share but stay reasonable on narrow widths. */
+.import-preview-row .import-preview-cell {
+  flex: 1 1 140px;
+  min-width: 80px;
+}
+/* Long-content cells (free-text · notes · explanations) take their own row
+   so the engineer can read + edit comfortably. */
+.import-preview-row .import-preview-cell-label,
+.import-preview-row .import-preview-cell-notes,
+.import-preview-row .import-preview-cell-outcomes,
+.import-preview-row .import-preview-cell-closeReason {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+.import-preview-row .import-preview-cell-textarea {
+  width: 100%;
+  min-height: 56px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  resize: vertical;
+}
+.import-preview-row .import-preview-cell-gapId {
+  flex: 1 1 100%;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+/* All editable cell inputs share consistent height + padding. */
+.import-preview-row input.import-preview-cell {
+  padding: 6px 8px;
+  border: 1px solid var(--border, #C4CDDA);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--surface, #FFFFFF);
+  font-family: inherit;
+  font-size: 12px;
+}
+.import-preview-row input.import-preview-cell:focus {
+  border-color: var(--dell-blue, #0076CE);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 118, 206, 0.12);
 }
 .import-preview-row:last-child {
   border-bottom: none;
@@ -7952,12 +8018,21 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
 }
 
 .workshop-notes-upper-pane {
-  flex: 0 0 60%;
+  /* BUG-WS-6 (2026-05-15 PM late) · 55/45 split (was 60/40) · gives the
+     lower pane more room for typing · works better with longer bullet
+     lists · the upper pane can scroll internally if structured notes
+     are long. */
+  flex: 1 1 55%;
+  min-height: 0;
   border-bottom: 1px solid var(--border-mid, #C4CDDA);
 }
 
 .workshop-notes-lower-pane {
-  flex: 1 1 40%;
+  /* BUG-WS-6 · lower pane gets generous default + can grow with the
+     resizable textarea inside it. min-height ensures even on small
+     viewports the engineer has comfortable typing room. */
+  flex: 1 1 45%;
+  min-height: 240px;
   background: var(--surface-2, #F7F9FC);
 }
 
@@ -8135,7 +8210,14 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
 }
 
 .workshop-notes-textarea {
-  flex: 1;
+  flex: 1 1 180px;
+  /* BUG-WS-6 (2026-05-15 PM late) · resize:vertical lets the engineer
+     drag the bottom-right corner to grow the textarea when their
+     workshop bullets get long. min-height ensures 9+ bullet lines are
+     comfortable by default. Auto-scroll-to-caret in setupAutoBullet
+     keeps the latest typed line visible without manual scrolling. */
+  resize: vertical;
+  min-height: 180px;
   margin: 0 12px;
   padding: 10px 12px;
   border: 1px solid var(--border-mid, #C4CDDA);
@@ -8145,8 +8227,12 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
   line-height: 1.55;
   background: var(--surface-1, #FFFFFF);
   color: var(--text-1, #1F2937);
-  resize: none;
   outline: none;
+  /* Native textarea will scroll internally when content exceeds visible
+     height · the JS scrollTextareaToCaret helper keeps the caret line
+     within view after programmatic value updates (Enter/Tab/Shift+Tab
+     handlers don't trigger native auto-scroll). */
+  overflow-y: auto;
 }
 
 .workshop-notes-textarea:focus {

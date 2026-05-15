@@ -292,6 +292,38 @@ function buildWorkshopNotesBody() {
   return body;
 }
 
+// BUG-WS-6 (2026-05-15 PM late) · scrollTextareaToCaret keeps the latest
+// typed line within the visible viewport. Native <textarea> auto-scrolls
+// to follow the caret WHEN the user types via keyboard · but programmatic
+// `textarea.value = ...` updates (Enter/Tab/Shift+Tab handlers below)
+// don't trigger native auto-scroll · the caret ends up below the visible
+// area and the engineer has to scroll manually. This helper computes
+// the caret line index · multiplies by line-height · adjusts scrollTop
+// so the caret stays within the viewport with 2-line padding.
+function scrollTextareaToCaret(textarea) {
+  if (!textarea) return;
+  const text = textarea.value;
+  const caret = textarea.selectionStart;
+  const lineIndex = text.slice(0, caret).split("\n").length - 1;
+  const cs = window.getComputedStyle(textarea);
+  const lineHeight = parseFloat(cs.lineHeight) || (parseFloat(cs.fontSize) * 1.55) || 20;
+  const visibleHeight = textarea.clientHeight;
+  const visibleLines = Math.max(1, Math.floor(visibleHeight / lineHeight));
+  // Caret pixel position (top of line) within scrollable content.
+  const caretTop = lineIndex * lineHeight;
+  // Maintain 2-line padding above + below the caret line within the
+  // visible viewport. If the caret is below the visible bottom, scroll
+  // down. If above the visible top, scroll up.
+  const PADDING_LINES = 2;
+  const scrollTopMin = Math.max(0, caretTop - (PADDING_LINES * lineHeight));
+  const scrollTopMax = Math.max(0, caretTop - (visibleLines - PADDING_LINES - 1) * lineHeight);
+  if (textarea.scrollTop > scrollTopMin) {
+    textarea.scrollTop = scrollTopMin;
+  } else if (textarea.scrollTop < scrollTopMax) {
+    textarea.scrollTop = scrollTopMax;
+  }
+}
+
 // Auto-bullet helper for the lower textarea. On Enter without modifier:
 // inserts "- " at the new line if the previous line wasn't blank.
 function setupAutoBullet(textarea) {
@@ -332,6 +364,9 @@ function setupAutoBullet(textarea) {
         textarea.selectionStart = textarea.selectionEnd = selStart + insertion.length;
       }
       onBulletsChanged();
+      // BUG-WS-6 · keep the new caret line within view after programmatic
+      // value update · native auto-scroll doesn't fire for value=...
+      scrollTextareaToCaret(textarea);
       return;
     }
     // Tab to indent · Shift+Tab to outdent
@@ -346,16 +381,24 @@ function setupAutoBullet(textarea) {
           textarea.value = value.slice(0, lineStart) + value.slice(lineStart + 2);
           textarea.selectionStart = textarea.selectionEnd = Math.max(lineStart, selStart - 2);
           onBulletsChanged();
+          scrollTextareaToCaret(textarea);
         }
       } else {
         // Indent: insert 2 spaces at line start.
         textarea.value = value.slice(0, lineStart) + "  " + value.slice(lineStart);
         textarea.selectionStart = textarea.selectionEnd = selStart + 2;
         onBulletsChanged();
+        scrollTextareaToCaret(textarea);
       }
     }
   });
-  textarea.addEventListener("input", onBulletsChanged);
+  textarea.addEventListener("input", function() {
+    onBulletsChanged();
+    // BUG-WS-6 · most natural typing triggers native auto-scroll · but
+    // paste · drag-drop · IME composition · etc don't always · safe to
+    // call here too · the helper is a no-op when caret is already visible.
+    scrollTextareaToCaret(textarea);
+  });
 }
 
 // Parse the lower-pane textarea into a bullets[] array. Splits by line,

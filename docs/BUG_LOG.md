@@ -2601,3 +2601,74 @@ This is the THIRD LLM-output-fragility class found in 2 hours of post-Step-5 use
 - BUG-WS-3 · the user-reported zero-mappings UX bug whose smoke exposed BUG-WS-4 + BUG-WS-5
 - BUG-WS-4 · the previous repair extension (dangling-key strip · same commit as BUG-WS-5)
 - BUG-WS-2 architectural follow-ups · the tool-use API path that would close this bug class
+
+---
+
+## BUG-WS-6 · AI Notes overlay UX polish (4 issues): typing not auto-scrolled · textarea not resizable · ImportPreviewModal opens BEHIND workshop overlay · modal cells overflow · CLOSED 2026-05-15 PM late
+
+### Severity
+🟡 Medium · feature operational post-BUG-WS-3/4/5 but UX is uncomfortable · user-reported as a polish pass before rc.10 tag
+
+### Symptom
+User reported 4 distinct UX bugs in the AI Notes overlay during real-LLM workshop use:
+
+1. **Typing past visible bottom**: when bullets accumulate past the textarea's visible height, the latest typed line is OFF-SCREEN · engineer has to manually scroll the textarea down to find their cursor
+2. **Textarea not resizable**: the lower-pane textarea is small + fixed-size · engineer wants more comfortable typing room for long workshops
+3. **ImportPreviewModal stacking**: when [Import to canvas] is clicked from inside the workshop overlay, the import preview opens BEHIND the workshop overlay (z-index 3000 vs 4600) instead of on top
+4. **Modal cell overflow**: the per-row layout in ImportPreviewModal "overflows" visually · cells aren't aligned + content doesn't wrap nicely
+
+User-direct quote: *"the box themself or working area has to dynamically allign for teh text box when we start typing that the last point in typing to be in a visable location in the box so i dont have to scroll down in the box to find it. also, the box itself can be longer a little and scrollabale , and the boxese can be sized from the corner just to be able to have more comfuratable space. also when i import, the new overlay should be on top and the text inside it has to be ligned and scrollable or wrapped in its cell (nicly sized) if needed. now if feels like it overflows."*
+
+### Root causes (4 distinct issues · 1 commit · 1 BUG entry)
+
+| # | Issue | Root cause |
+|---|---|---|
+| 1 | Latest typed line off-screen | Native `<textarea>` auto-scrolls to the caret on KEYBOARD input · but programmatic `textarea.value = ...` updates (Enter/Tab handlers in `setupAutoBullet`) don't trigger native auto-scroll · caret ends below visible viewport |
+| 2 | Textarea not resizable | `.workshop-notes-textarea` had `resize: none` · explicit override that disabled the browser's default resize handle |
+| 3 | Modal stacking | `.import-preview-modal-overlay` had no explicit z-index · inherited `z-index: 3000` from `.dialog-overlay` parent · workshop overlay's `.overlay` is z-index 4600 · modal opened behind |
+| 4 | Modal cell overflow | `.import-preview-row` used `display: grid` with `grid-template-columns: 24px 110px 90px 80px 1fr 1fr 1fr 1fr 1fr 70px 1fr` (11 columns · designed pre-A20) · A20 widening added a kind chip + duplicate indicator → 12+ elements in 11 columns · cells overflow visually + inputs don't shrink (`<input>` default has `min-width: auto`) |
+
+### Fix (this commit)
+
+**styles.css** (~70 lines edited/added):
+1. `.workshop-notes-textarea`: `resize: vertical` (was `none`) · `min-height: 180px` · `flex: 1 1 180px` · `overflow-y: auto` to ensure native scroll works
+2. `.workshop-notes-lower-pane`: `flex: 1 1 45%` (was 40%) · `min-height: 240px` · gives more typing room
+3. `.workshop-notes-upper-pane`: `flex: 1 1 55%` (was 60%) · `min-height: 0` so it can shrink
+4. `.import-preview-modal-overlay`: explicit `z-index: 4800` (above workshop overlay 4600)
+5. `.import-preview-row`: replaced `display: grid` (rigid 11-col) with `display: flex` + `flex-wrap: wrap` (responsive · small chips inline · long cells on their own line)
+6. `.import-preview-row > *`: `min-width: 0` (allow `<input>` shrinking below intrinsic width)
+7. Compact chips (`row-accept` · `kind-chip` · `confidence` · `llm-state-hint` · `state-disagreement` · `duplicate`) → `flex: 0 0 auto` (no stretch · stay inline)
+8. Default cells (`.import-preview-cell`) → `flex: 1 1 140px` + `min-width: 80px` (flexible but readable)
+9. Long-content cells (`.import-preview-cell-label` / `notes` / `outcomes` / `closeReason`) → `flex: 1 1 100%` (full row · own line)
+10. Textarea cells (`.import-preview-cell-textarea`) → `word-wrap: break-word` + `overflow-wrap: break-word` + `resize: vertical` + `min-height: 56px`
+11. gapId cell → readonly monospace styling
+12. Input cells get consistent border/padding/focus styles
+
+**ui/views/WorkshopNotesOverlay.js** (~40 lines):
+13. NEW `scrollTextareaToCaret(textarea)` function · computes caret line index · multiplies by line-height · adjusts `textarea.scrollTop` with 2-line padding · keeps the latest typed line within view
+14. Called after every programmatic value update in `setupAutoBullet`: Enter handler (3 branches) + Tab indent + Shift+Tab outdent + input event
+15. Comments cite the BUG-WS-6 forensic so the next maintainer understands why
+
+### Regression tests added at this commit
+
+| ID | Asserts |
+|---|---|
+| V-FLOW-WS-UX-TEXTAREA-RESIZE-1 | `.workshop-notes-textarea` has `resize: vertical` AND `min-height: <number>` · 2 guards |
+| V-FLOW-WS-UX-SCROLL-CARET-1 | WorkshopNotesOverlay.js defines `scrollTextareaToCaret` AND has ≥3 occurrences (1 def + ≥2 call sites) · 2 guards |
+| V-FLOW-WS-UX-MODAL-STACK-1 | `.import-preview-modal-overlay` has explicit z-index AND z-index > 4600 · 2 guards |
+| V-FLOW-WS-UX-MODAL-ROW-LAYOUT-1 | `.import-preview-row` uses `flex` + `flex-wrap: wrap` AND `> *` has `min-width: 0` AND long-content cells have `flex: 1 1 100%` · 3 guards |
+
+Total: 4 new tests · 9 guards. Banner target: **1334/1334 GREEN**.
+
+### Architectural follow-ups (NOT in this commit · deferred to v1.5 hardening)
+- **Drag-resizable divider between upper/lower panes** · framing-doc A2 spec mentions it · v1.5 polish item
+- **localStorage-persisted pane sizes** · so engineer's preferred ratio survives sessions · v1.5
+- **Per-kind row layouts in ImportPreviewModal** · currently the flex layout treats all kinds the same · per-kind grid templates (instance-specific · driver-specific · gap-close-specific) could be even more compact for the small-row kinds · v1.5 polish
+- **DOM-mounting integration test for the scroll-to-caret behavior** · per Rule B · currently source-grep only verifies the function exists + is called · doesn't verify it actually moves scrollTop correctly. v1.5 polish.
+
+### Cross-references
+- BUG-WS-3 + BUG-WS-4 + BUG-WS-5 (the feature-correctness fixes that BUG-WS-6 polishes)
+- BUG-WS-1 (BUG-WS-6 uses the same `showOverlayError` pattern indirectly via the modal flow)
+- Step 4 impl commit `88f6a32` (where the original `resize: none` + `display: grid` were authored)
+- A20 widening at `ccd23c8` (where the kind chip + duplicate indicator overran the 11-column grid)
+- User feedback transcript 2026-05-15 PM late ("the box themself ... has to dynamically allign ... resizable from the corner ... text inside it has to be ligned and scrollable or wrapped in its cell")
