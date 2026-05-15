@@ -15560,6 +15560,254 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
     });
 
     // -----------------------------------------------------------------
+    // V-FLOW-AI-NOTES-IMPORT-1 + V-ADAPTER-NOTES-WIDEN-1 + V-FLOW-PATHB-
+    // WIDEN-{PARSE,MODAL,DRIFT,APPLY}-1 + V-AITAG-WIDEN-{DRIVER,GAP}-1 +
+    // V-AITAG-KIND-WIDEN-1 · Sub-arc D Step 4.5 preamble · A20 Path B
+    // widening for 3 entity kinds + aiTag scope extension · LOCKED
+    // 2026-05-15 (post-A19 pivot · pre-Step-4-impl)
+    //
+    // CONTEXT: A19 pivot (commit 662522d) wrote SPEC §S20.4.1.5 with the
+    // phrase "ImportPreviewModal renders the proposed mutations (existing
+    // UX · no new modal needed)" — implying all 4 ActionProposal kinds
+    // would round-trip through the rc.8 Path B importer. But §S47.2
+    // R47.2.1 LOCKED Path B scope to "instance entities only" and the
+    // ImportPreviewModal row shape is rigidly instance-shaped. Add-driver
+    // (businessDriverId+priority+outcomes) and close-gap (gapId+status+
+    // closeReason) cannot be rendered or applied without widening.
+    //
+    // A20 widens Path B to handle 3 entity kinds (instance.add · driver.add
+    // · gap.close) via per-item `kind` discriminator. User-approved 4-
+    // question Q&A 2026-05-15:
+    //   Q1: per-item kind discriminator (flat items[])
+    //   Q2: single mixed list with per-row kind chip; apply-scope picker
+    //       only when ≥1 instance row present
+    //   Q3: extend aiTag to drivers + gaps (schema/driver.js +
+    //       schema/gap.js); AiTagSchema.kind enum extended to
+    //       ["skill", "external-llm", "discovery-note", "ai-proposal"]
+    //   Q4: close-gap MUTATES (gapActions.closeGap); drift validates
+    //       gapId; duplicate rows surface "⚠ already in engagement"
+    //       indicator with engineer override
+    //
+    // V-FLOW-AI-NOTES-IMPORT-1: WorkshopNotesOverlay.js wires the
+    //                          [Import to canvas] click handler to invoke
+    //                          the import adapter (source-grep for adapter
+    //                          invocation in click handler)
+    // V-ADAPTER-NOTES-WIDEN-1: workshopNotesImportAdapter.js produces the
+    //                          widened wire shape · source contains all 3
+    //                          kind discriminators (instance.add ·
+    //                          driver.add · gap.close)
+    // V-FLOW-PATHB-WIDEN-PARSE-1: importResponseParser.js source contains
+    //                             a per-item kind discriminator (Zod
+    //                             discriminatedUnion or equivalent) +
+    //                             references all 3 wire kinds
+    // V-FLOW-PATHB-WIDEN-MODAL-1: ImportPreviewModal.js source contains
+    //                             per-row kind chip rendering + kind-
+    //                             aware row shape markers (driver-specific
+    //                             cells · gap-specific cells)
+    // V-FLOW-PATHB-WIDEN-DRIFT-1: importDriftCheck.js source contains
+    //                             kind-aware logic (gapId membership for
+    //                             gap.close · businessDriverId catalog
+    //                             check for driver.add)
+    // V-FLOW-PATHB-WIDEN-APPLY-1: importApplier.js source contains
+    //                             kind-aware dispatch (3 commit-function
+    //                             paths: addInstance · addDriver ·
+    //                             closeGap) + "discovery-note" stamping
+    // V-AITAG-WIDEN-DRIVER-1: schema/driver.js has optional aiTag field
+    // V-AITAG-WIDEN-GAP-1:    schema/gap.js has optional aiTag field
+    // V-AITAG-KIND-WIDEN-1:   schema/instance.js AiTagSchema.kind enum
+    //                          includes "discovery-note" + "ai-proposal"
+    //
+    // All 9 are SOURCE-GREP contracts at the preamble. Runtime end-to-end
+    // behavior is exercised by browser smoke at Step 5 impl.
+    //
+    // RED-first scaffolds (this commit). Step 4 impl flips
+    // V-FLOW-AI-NOTES-IMPORT-1 + V-ADAPTER-NOTES-WIDEN-1 GREEN (overlay
+    // wires the handler; adapter emits widened shape). Step 5 impl flips
+    // the remaining 7 GREEN.
+    //
+    // Cross-references: framing-doc A20 + SPEC §S20.4.1.5 amendment +
+    // §S47.2/3/5/8.4/9 amendments + RULES §16 CH36 R7 narrowing + CH38
+    // amendment + calibration evidence at tests/aiEvals/calibration-*.json
+    // -----------------------------------------------------------------
+
+    it("V-FLOW-AI-NOTES-IMPORT-1 · Sub-arc D Step 4.5 · WorkshopNotesOverlay.js [Import to canvas] click handler invokes workshopNotesImportAdapter — RED-first scaffold per SPEC §S20.4.1.5 + §S47 + framing-doc A20", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/ui/views/WorkshopNotesOverlay.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-AI-NOTES-IMPORT-1: ui/views/WorkshopNotesOverlay.js MUST exist for source-grep (Step 4 impl creates it).");
+
+      // Guard 1: source references the adapter (either by import path or
+      // by transform function name). The click handler MUST call into
+      // workshopNotesImportAdapter to transform overlay state into Path B
+      // payload before launching the importer / ImportPreviewModal.
+      const ADAPTER_INVOKE_RE = /workshopNotesImportAdapter|transformOverlayToImportPayload|toPathBImportPayload|adaptWorkshopNotes/i;
+      assert(ADAPTER_INVOKE_RE.test(src),
+        "V-FLOW-AI-NOTES-IMPORT-1 · Guard 1: WorkshopNotesOverlay.js MUST reference the workshopNotesImportAdapter (by file name OR by exported function name). Without this wiring, the [Import to canvas] click is a dead-end button — the overlay output never reaches Path B.");
+    });
+
+    it("V-ADAPTER-NOTES-WIDEN-1 · Sub-arc D Step 4.5 · workshopNotesImportAdapter.js produces widened wire shape (3 kinds: instance.add · driver.add · gap.close) per SPEC §S47.3 R47.3.5 + R47.3.6 + framing-doc A20 Q1 — RED-first scaffold", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/workshopNotesImportAdapter.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-ADAPTER-NOTES-WIDEN-1: services/workshopNotesImportAdapter.js MUST exist for source-grep (Step 4 impl creates it).");
+
+      // Guard 1: source contains all 3 widened wire kinds. The adapter
+      // maps ActionProposal kinds to wire kinds:
+      //   add-instance-current / add-instance-desired → "instance.add"
+      //   add-driver                                  → "driver.add"
+      //   close-gap                                   → "gap.close"
+      const INSTANCE_KIND_RE = /["']instance\.add["']/;
+      const DRIVER_KIND_RE   = /["']driver\.add["']/;
+      const GAP_KIND_RE      = /["']gap\.close["']/;
+      assert(INSTANCE_KIND_RE.test(src) && DRIVER_KIND_RE.test(src) && GAP_KIND_RE.test(src),
+        "V-ADAPTER-NOTES-WIDEN-1 · Guard 1: workshopNotesImportAdapter.js MUST reference all 3 widened wire kinds: 'instance.add' + 'driver.add' + 'gap.close' (per SPEC §S47.3 R47.3.5/6 + framing-doc A20 Q1). Without all 3 kinds, the adapter would silently drop ActionProposals of the missing kind(s), violating the A20 widening contract.");
+    });
+
+    it("V-FLOW-PATHB-WIDEN-PARSE-1 · Sub-arc D Step 4.5 · services/importResponseParser.js source contains a per-item kind discriminator + references all 3 wire kinds (Zod discriminatedUnion or equivalent) per SPEC §S47.3 R47.3.5 + framing-doc A20 Q1 — RED-first scaffold (Step 5 impl flips)", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/importResponseParser.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-PATHB-WIDEN-PARSE-1: services/importResponseParser.js MUST be readable for source-grep");
+
+      // Guard 1: source contains all 3 wire kinds AND a discriminator
+      // construct. Zod discriminatedUnion is the canonical shape; literal
+      // checks also accepted (e.g. switch(item.kind)).
+      const INSTANCE_KIND_RE   = /["']instance\.add["']/;
+      const DRIVER_KIND_RE     = /["']driver\.add["']/;
+      const GAP_KIND_RE        = /["']gap\.close["']/;
+      const DISCRIMINATOR_RE   = /discriminatedUnion\s*\(\s*["']kind["']|switch\s*\(\s*\w+\.kind\s*\)|item\.kind\s*===/;
+      assert(INSTANCE_KIND_RE.test(src) && DRIVER_KIND_RE.test(src) && GAP_KIND_RE.test(src),
+        "V-FLOW-PATHB-WIDEN-PARSE-1 · Guard 1a: importResponseParser.js MUST reference all 3 wire kinds 'instance.add' + 'driver.add' + 'gap.close' (per SPEC §S47.3 R47.3.5/6). Without all 3, the parser silently strips kinds it doesn't recognize.");
+      assert(DISCRIMINATOR_RE.test(src),
+        "V-FLOW-PATHB-WIDEN-PARSE-1 · Guard 1b: importResponseParser.js MUST contain a per-item kind discriminator (Zod discriminatedUnion or switch on item.kind). Without discrimination, per-kind payload validation cannot happen.");
+    });
+
+    it("V-FLOW-PATHB-WIDEN-MODAL-1 · Sub-arc D Step 4.5 · ui/components/ImportPreviewModal.js source contains per-row kind chip rendering + kind-aware row shape markers per SPEC §S47.5 + framing-doc A20 Q2 — RED-first scaffold (Step 5 impl flips)", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/ui/components/ImportPreviewModal.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-PATHB-WIDEN-MODAL-1: ui/components/ImportPreviewModal.js MUST be readable for source-grep");
+
+      // Guard 1: source references per-row kind chip rendering. The chip
+      // renders Instance / Driver / Gap labels and is the visual cue that
+      // distinguishes kinds in the mixed-row list. Source-grep accepts
+      // either a data-* hook or a class-* prefix or the chip label
+      // strings.
+      const KIND_CHIP_RE = /data-import-kind|import-preview-kind-chip|import-preview-row-kind|kindChip|kindLabel/i;
+      assert(KIND_CHIP_RE.test(src),
+        "V-FLOW-PATHB-WIDEN-MODAL-1 · Guard 1: ImportPreviewModal.js MUST render a per-row kind chip (data-import-kind or import-preview-kind-chip or similar marker). Without the chip, mixed-kind imports look identical and the engineer can't distinguish a driver row from an instance row.");
+    });
+
+    it("V-FLOW-PATHB-WIDEN-DRIFT-1 · Sub-arc D Step 4.5 · services/importDriftCheck.js source contains kind-aware logic (gapId membership for gap.close · businessDriverId catalog check for driver.add) per SPEC §S47.8.4 + framing-doc A20 Q4 — RED-first scaffold (Step 5 impl flips)", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/importDriftCheck.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-PATHB-WIDEN-DRIFT-1: services/importDriftCheck.js MUST be readable for source-grep");
+
+      // Guard 1: source contains kind-aware logic. Specifically, source-
+      // grep for gapId (close-gap drift membership check) AND a kind
+      // switch / kind comparison.
+      const KIND_AWARE_RE = /item\.kind|kind\s*===\s*["']gap\.close|kind\s*===\s*["']driver\.add|kind\s*===\s*["']instance\.add/;
+      const GAPID_CHECK_RE = /gapId|missingGapIds|gap\.close/i;
+      assert(KIND_AWARE_RE.test(src),
+        "V-FLOW-PATHB-WIDEN-DRIFT-1 · Guard 1a: importDriftCheck.js MUST switch on item.kind (handles instance.add / driver.add / gap.close drift differently). Without kind awareness, gap.close drift would never fire on missing gapIds.");
+      assert(GAPID_CHECK_RE.test(src),
+        "V-FLOW-PATHB-WIDEN-DRIFT-1 · Guard 1b: importDriftCheck.js MUST reference gapId / missingGapIds (the gap.close drift membership check per §S47.8.4 A20 amendment). Without this, close-gap proposals applied against deleted gaps would crash the applier.");
+    });
+
+    it("V-FLOW-PATHB-WIDEN-APPLY-1 · Sub-arc D Step 4.5 · services/importApplier.js source contains kind-aware dispatch (3 commit-function paths) + 'discovery-note' stamping per SPEC §S47.9.1b + R47.9.5 + framing-doc A20 Q3 — RED-first scaffold (Step 5 impl flips)", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/services/importApplier.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-PATHB-WIDEN-APPLY-1: services/importApplier.js MUST be readable for source-grep");
+
+      // Guard 1: source references kind-aware dispatch (addDriver +
+      // closeGap commit functions imported alongside the existing
+      // addInstance).
+      const ADDDRIVER_RE = /addDriver|driverActions/;
+      const CLOSEGAP_RE  = /closeGap|gapActions/;
+      assert(ADDDRIVER_RE.test(src) && CLOSEGAP_RE.test(src),
+        "V-FLOW-PATHB-WIDEN-APPLY-1 · Guard 1a: importApplier.js MUST import addDriver (from driverActions) AND closeGap (from gapActions) to dispatch driver.add + gap.close items. Without both, those kinds silently SKIP at apply time.");
+
+      // Guard 2: source contains the "discovery-note" stamp literal. Path
+      // B import-from-overlay flow stamps aiTag.kind = "discovery-note"
+      // per §S47.9.1b. Pre-A20 the only stamps were "skill" + "external-llm".
+      const DISCOVERY_NOTE_RE = /["']discovery-note["']/;
+      assert(DISCOVERY_NOTE_RE.test(src),
+        "V-FLOW-PATHB-WIDEN-APPLY-1 · Guard 2: importApplier.js MUST stamp aiTag.kind = 'discovery-note' on entities applied via the Workshop Notes overlay (per §S47.9.1b + §S47.9.5 A20 amendment). Without this, AI-imported entities look identical to manually-added ones — engineer loses provenance.");
+    });
+
+    it("V-AITAG-WIDEN-DRIVER-1 · Sub-arc D Step 4.5 · schema/driver.js has optional aiTag field (mirrors instance.aiTag shape) per SPEC §S47.9.1a + framing-doc A20 Q3 — RED-first scaffold (Step 5 impl flips)", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/schema/driver.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-AITAG-WIDEN-DRIVER-1: schema/driver.js MUST be readable for source-grep");
+
+      // Guard 1: source contains an aiTag field declaration. The field is
+      // optional (nullable+default(null)) so existing drivers without
+      // aiTag parse cleanly. Source-grep for aiTag identifier within the
+      // Zod schema scope.
+      const AITAG_FIELD_RE = /aiTag\s*:\s*/;
+      assert(AITAG_FIELD_RE.test(src),
+        "V-AITAG-WIDEN-DRIVER-1 · Guard 1: schema/driver.js MUST declare an aiTag field (per §S47.9.1a A20 amendment). Without it, Path B can't stamp AI-imported drivers and the 'Note' chip never renders on Tab 1 driver tiles.");
+    });
+
+    it("V-AITAG-WIDEN-GAP-1 · Sub-arc D Step 4.5 · schema/gap.js has optional aiTag field (mirrors instance.aiTag shape) per SPEC §S47.9.1a + framing-doc A20 Q3 — RED-first scaffold (Step 5 impl flips)", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/schema/gap.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-AITAG-WIDEN-GAP-1: schema/gap.js MUST be readable for source-grep");
+
+      // Guard 1: source contains an aiTag field declaration. Same shape +
+      // semantics as the driver case.
+      const AITAG_FIELD_RE = /aiTag\s*:\s*/;
+      assert(AITAG_FIELD_RE.test(src),
+        "V-AITAG-WIDEN-GAP-1 · Guard 1: schema/gap.js MUST declare an aiTag field (per §S47.9.1a A20 amendment). Without it, Path B can't stamp AI-applied gap closures and the 'Note' chip never renders on Tab 4 gap detail.");
+    });
+
+    it("V-AITAG-KIND-WIDEN-1 · Sub-arc D Step 4.5 · schema/instance.js AiTagSchema.kind enum includes 'discovery-note' + 'ai-proposal' per SPEC §S47.9.1 + §S47.9.1b + framing-doc A20 Q3 — RED-first scaffold (Step 5 impl flips)", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/schema/instance.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-AITAG-KIND-WIDEN-1: schema/instance.js MUST be readable for source-grep");
+
+      // Guard 1: source contains BOTH new kind enum values. Pre-A20 the
+      // AiTagSchema.kind enum was ["skill", "external-llm"]; A20 extends
+      // to ["skill", "external-llm", "discovery-note", "ai-proposal"].
+      const DISCOVERY_NOTE_RE = /["']discovery-note["']/;
+      const AI_PROPOSAL_RE    = /["']ai-proposal["']/;
+      assert(DISCOVERY_NOTE_RE.test(src) && AI_PROPOSAL_RE.test(src),
+        "V-AITAG-KIND-WIDEN-1 · Guard 1: schema/instance.js AiTagSchema.kind enum MUST include BOTH 'discovery-note' (Workshop Notes overlay path · stamped by importApplier) AND 'ai-proposal' (Mode 2 chat-inline · reserved for forward compatibility) per §S47.9.1b A20 amendment. Without both, Path B can't stamp valid kinds on instances and Zod rejects the apply payload.");
+    });
+
+    // -----------------------------------------------------------------
     // V-CHAT-D-5 · Sub-arc D Step 3.9 micro-arc · chat-says-vs-chat-does
     // guard at chatService layer · LOCKED 2026-05-14 late evening
     //

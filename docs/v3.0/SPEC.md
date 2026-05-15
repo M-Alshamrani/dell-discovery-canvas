@@ -2006,9 +2006,9 @@ Mode 2 is no longer the v1 primary path · but the infrastructure stays:
 
 Engineers using Mode 2 (Canvas Chat overlay direct) would still see autonomous proposals when they happen · the chat-says-vs-chat-does guard surfaces hallucinations · but Mode 2 is OPTIONAL · NOT load-bearing for v1 ship-confidence.
 
-**Path B importer extension** (per §S47 amendment in this commit):
+**Path B importer extension** (per §S47 amendment in this commit · AMENDED 2026-05-15 per A20):
 
-Path B (rc.8 LOCKED 2026-05-12) originally accepted a JSON file upload as the input source. Post-pivot, it ALSO accepts a `WorkshopNotesImportPayload` shape constructed by the Workshop Notes overlay adapter. The shape mirrors the existing import payload structure · so `ImportPreviewModal` rendering + Apply/Reject UX requires NO modifications. The adapter handles the conversion.
+Path B (rc.8 LOCKED 2026-05-12) originally accepted a JSON file upload as the input source · scope was instance entities only per §S47.2 R47.2.1. Post-pivot (A19), it ALSO accepts a `WorkshopNotesImportPayload` shape constructed by the Workshop Notes overlay adapter. **Amendment 2026-05-15 (A20)**: the original A19 framing claim *"the shape mirrors the existing import payload structure · so ImportPreviewModal rendering + Apply/Reject UX requires NO modifications"* was forensically incorrect — the existing modal is rigidly instance-shaped and cannot render driver / gap rows. A20 widens Path B at Step 5 impl to handle 3 entity kinds (`instance.add` · `driver.add` · `gap.close`) via per-item `kind` discriminator (per §S47.3 R47.3.5 + R47.3.6 · per-kind row rendering at §S47.5 · kind-aware drift at §S47.8.4 · `aiTag.kind = "discovery-note"` stamping at §S47.9.1b + R47.9.5). The adapter emits the widened shape from Step 4 impl; the modal + parser + drift + applier widen at Step 5 impl. Reference: framing-doc A20 (the widening Q&A · user-approved 2026-05-15) + RULES §16 CH36 R7 amendment (aiTag scope narrows from "instances only" to "instances by default; Path B imports stamp drivers + gaps too").
 
 **aiTag.kind discrimination at apply time** (per §S25 extension):
 
@@ -4835,9 +4835,13 @@ The importer is the same downstream pipeline regardless of source. Differentiati
 
 **Path B · Footer button workflow** (Dell internal LLM): single footer button "Import data" opens a 2-step modal. Step 1 generates a context-aware `.txt` instructions file. Engineer runs the instructions externally through Dell's internal LLM with their source data. Step 2 accepts the JSON response → shared importer + preview modal → apply.
 
-### S47.2 · Scope (R47.2.1 · LOCKED)
+### S47.2 · Scope (R47.2.1 · LOCKED 2026-05-12 · WIDENED 2026-05-15 per Sub-arc D A20 widening)
 
-This arc handles **instance entities only**. Drivers, gaps, and environments are out of scope for the import flow. Future arcs MAY extend (with explicit SPEC amendments); the convergent design supports extension without redesign.
+**Amendment 2026-05-15 (Sub-arc D A20 · post-A19 pivot · user-approved 4-question Q&A "Go with all recommendations")**: Path B scope WIDENS from "instance entities only" to "instance + driver + gap entities" so all 4 `ActionProposal` kinds emitted by the chat (`add-driver` · `add-instance-current` · `add-instance-desired` · `close-gap`) can flow through the engineer-review pipeline (ImportPreviewModal → Apply via commit functions). Environments stay out of scope (engineer-managed via Tab 1 context). The widening is `[CONSTITUTIONAL TOUCH PROPOSED]` per `feedback_5_forcing_functions.md` Rule A · captured at framing-doc A20 + this section + §S47.3 + §S47.5 + §S47.8.4 + §S47.9 + RULES §16 CH36 R7 + CH38. Pre-A20 file-upload ingress (Path B's original v1) stays functional with `kind: "instance.add"` per-item discriminator (legacy single-kind payloads parse cleanly under the widened discriminated union).
+
+**Post-A20 scope**: this arc handles **instance + driver + gap entities**. Environments stay out of scope. `customer` + `engagementMeta` are out of scope (singleton entities; not import-shaped). The convergent design (one parser → one drift-check → one modal → one applier) extends from 1-kind to 3-kind via a per-item `kind` discriminator (§S47.3) without redesigning the pipeline shape.
+
+**Pre-A20 historical**: this arc originally handled instance entities only. Drivers, gaps, and environments were out of scope for the import flow. The Sub-arc D A19 architecture pivot surfaced the gap (chat emits 4 ActionProposal kinds; Path B accepted only 1) and A20 closes it.
 
 ### S47.3 · Canonical `import-subset` JSON shape
 
@@ -4876,11 +4880,67 @@ The shared schema both paths produce + the importer consumes:
 
 R47.3.1 · `schemaVersion === "1.0"` for this rev. Bumps on shape changes.
 
-R47.3.2 · `engagementContextSnapshot` is REQUIRED on Path B (records env-slot state at instructions-generation time) and OMITTED on Path A (skill runs against live engagement; no snapshot needed).
+R47.3.2 · `engagementContextSnapshot` is REQUIRED on Path B file-upload ingress (records env-slot state at instructions-generation time) and OMITTED on Path A (skill runs against live engagement; no snapshot needed). On the Sub-arc D Workshop Notes overlay ingress (post-A20), `engagementContextSnapshot` is OMITTED because the overlay invokes the LLM against the live engagement (same as Path A skill semantics).
 
-R47.3.3 · Each `items[].data.state` is a HINT from the LLM, never authoritative. The modal's apply-scope picker is the final authority (per S47.5.2).
+R47.3.3 · Each `items[].data.state` is a HINT from the LLM, never authoritative. The modal's apply-scope picker is the final authority (per S47.5.2). State is meaningful only for `kind: "instance.add"` items; driver and gap items have no state.
 
 R47.3.4 · `items[].confidence` is required; enum-validated; surfaced in the preview modal as a colored chip (green=high, amber=medium, red=low).
+
+**Amendment 2026-05-15 (A20 widening · per-item `kind` discriminator)**: the canonical shape changes from a top-level `kind: "instance.add"` (singular kind for the whole payload) to a **per-item `kind` discriminator** (each `items[]` entry carries its own `kind`). Three valid per-item kinds: `instance.add` · `driver.add` · `gap.close`. The top-level `kind` field is RETIRED. Legacy file-upload payloads from the rc.8 pre-A20 era that have top-level `kind: "instance.add"` and per-item entries lacking a `kind` field parse cleanly because the parser injects `kind: "instance.add"` per-item for legacy payloads (back-compat default · §S47.10 parser handles this).
+
+**Post-A20 canonical shape**:
+
+```jsonc
+{
+  "schemaVersion": "1.1",                   // A20 bumps from 1.0
+  "generatedAt": "2026-05-15T10:23:00Z",
+  "engagementContextSnapshot": { ... },     // optional · file-upload only
+  "items": [
+    {
+      "kind": "instance.add",                // per-item discriminator (A20)
+      "confidence": "high",
+      "rationale": "...",
+      "data": {                              // instance shape (unchanged)
+        "state": "desired",
+        "layerId": "compute",
+        "environmentId": "abc-123",
+        "label": "Oracle Production DB",
+        "vendor": "Oracle",
+        "vendorGroup": "nonDell",
+        "criticality": "High",
+        "notes": "..."
+      }
+    },
+    {
+      "kind": "driver.add",                  // NEW post-A20
+      "confidence": "medium",
+      "rationale": "...",
+      "data": {
+        "businessDriverId": "regulatory",    // FK to BUSINESS_DRIVERS catalog
+        "priority": "High",                  // enum: "High" | "Medium" | "Low"
+        "outcomes": "HIPAA + Texas data residency compliance"
+      }
+    },
+    {
+      "kind": "gap.close",                   // NEW post-A20
+      "confidence": "high",
+      "rationale": "Customer confirmed legacy backup retired in Q1 2026",
+      "data": {
+        "gapId": "<uuid of existing gap on live engagement>",
+        "status": "closed",                  // literal — close-gap is the only gap mutation in v1
+        "closeReason": "Customer confirmed retirement of legacy backup system in Q1 2026"
+      }
+    }
+  ]
+}
+```
+
+R47.3.5 (A20) · `items[].kind` is REQUIRED post-A20. Legacy payloads (schemaVersion="1.0", no per-item kind) are accepted with `kind: "instance.add"` injected per-item for back-compat. The Workshop Notes overlay adapter emits `schemaVersion: "1.1"` with explicit per-item `kind`.
+
+R47.3.6 (A20) · `data` payload shape varies by `kind`:
+- `kind: "instance.add"` · `data` = instance shape (unchanged · `{state, layerId, environmentId, label, vendor, vendorGroup, criticality, notes}`)
+- `kind: "driver.add"` · `data` = `{businessDriverId, priority, outcomes}` — `businessDriverId` is FK to `BUSINESS_DRIVERS` catalog (static); `priority` enum (`"High" | "Medium" | "Low"`); `outcomes` is free-text rationale.
+- `kind: "gap.close"` · `data` = `{gapId, status, closeReason}` — `gapId` is FK to a live engagement gap (drift-checked per §S47.8.4); `status` is the literal `"closed"`; `closeReason` is engineer-readable text appended to the gap's `notes` field on apply.
 
 ### S47.4 · Instructions file (Path B only)
 
@@ -4927,22 +4987,29 @@ R47.4.7 · **Phase A · B · C walkthrough contract** (2026-05-13 amendment). Th
 
 The phase boundaries MUST appear as explicit headings in the instructions file (`### Phase A · Extract`, `### Phase B · Confirm with engineer`, `### Phase C · Emit final JSON`) so the LLM cannot collapse them.
 
-### S47.5 · Preview modal (shared between Path A + Path B)
+### S47.5 · Preview modal (shared between Path A + Path B · WIDENED 2026-05-15 per A20)
 
-R47.5.1 · Single modal component (`ui/components/ImportPreviewModal.js`, NEW). Rendered after both paths produce the canonical JSON shape. Layout per the mock in user-confirmed design:
+**Amendment 2026-05-15 (A20 widening · per-kind row rendering)**: the preview modal becomes kind-aware. Each row carries a kind chip (`Instance` / `Driver` / `Gap`) and renders editable cells appropriate to its kind. The apply-scope picker (`current` / `desired` / `both`) renders ONLY when ≥1 `instance.add` row is present (driver and gap rows have no state semantics). When the picker is hidden, a helper line surfaces: *"This import has no instance rows; apply-scope picker is not shown."* Row-level disagreement indicators (R47.5.3) apply only to `instance.add` rows.
 
-- Top bar: apply-scope picker (`◯ Current  ◉ Desired  ◯ Both`)
-- Body: per-row table (one row per `items[]` entry):
+R47.5.1 · Single modal component (`ui/components/ImportPreviewModal.js`). Rendered after Path A / Path B / Workshop Notes overlay (post-A20) produce the canonical JSON shape (§S47.3). Layout (post-A20):
+
+- Top bar: apply-scope picker (`◯ Current  ◉ Desired  ◯ Both`) — ONLY rendered when ≥1 `kind: "instance.add"` row present (A20)
+- Body: per-row table (one row per `items[]` entry · sorted by kind for visual scannability: instance rows first, then driver, then gap):
+  - Kind chip (`Instance` / `Driver` / `Gap`) — NEW post-A20
   - Checkbox (accept/reject toggle; default checked)
   - Confidence chip
-  - LLM-state hint chip (e.g. `LLM: desired`)
-  - Disagreement warning indicator when `data.state` ≠ modal scope (per R47.5.3)
-  - Editable inline cells: label, vendor, vendorGroup, layerLabel, environmentName, criticality, notes
-- Footer: row count summary + `[Apply N selected]` button
+  - LLM-state hint chip (e.g. `LLM: desired`) — only on `instance.add` rows
+  - Disagreement warning indicator when `data.state` ≠ modal scope (per R47.5.3) — only on `instance.add` rows
+  - Duplicate-detection indicator (A20 · Q4 lock) — `⚠ already in engagement` on rows whose data matches a pre-existing entity (instance: same `(layerId, environmentId, label)`; driver: same `businessDriverId`; gap.close: the targeted gapId exists — that's the EXPECTED state and is the GREEN-light indicator for close-gap rows). Engineer can deselect to skip OR proceed (override semantics per kind).
+  - Editable inline cells, kind-conditional:
+    - `instance.add` cells: label, vendor, vendorGroup, layerLabel, environmentName, criticality, notes (unchanged from pre-A20)
+    - `driver.add` cells: businessDriverId (catalog dropdown), priority (High/Medium/Low select), outcomes (textarea · free-text)
+    - `gap.close` cells: gapId (read-only · references existing gap), closeReason (textarea · appended to gap.notes at apply)
+- Footer: row count summary (per-kind breakdown when mixed: e.g. *"3 of 5 selected · 2 instances · 1 driver"*) + `[Apply N selected]` button
 
-R47.5.2 · The apply-scope picker is AUTHORITATIVE. The engineer's final click determines target state at apply time. The LLM's `data.state` hint per row is informational only.
+R47.5.2 · The apply-scope picker is AUTHORITATIVE — but only over `instance.add` rows. Driver and gap rows ignore the picker (drivers have no state; close-gap is a mutate-existing operation). The engineer's final click determines target state for instance rows at apply time.
 
-R47.5.3 · When `items[].data.state` ≠ modal scope (for non-`null` LLM state), inline indicator `⚠ LLM hinted "current"` (or "desired") surfaces on the row. The engineer can deselect the row to skip it OR proceed (modal scope overrides).
+R47.5.3 · When `items[].data.state` ≠ modal scope (for non-`null` LLM state on `instance.add` rows), inline indicator `⚠ LLM hinted "current"` (or "desired") surfaces on the row. The engineer can deselect the row to skip it OR proceed (modal scope overrides). Driver and gap rows have no state and are unaffected by this indicator.
 
 R47.5.4 · Default scope per skill: read from `skill.defaultScope` field (per R47.6.4). Path B default is `"current"` (BUG-054 flip 2026-05-12 · presales workshops typically begin by capturing what the customer has TODAY before mapping the future state).
 
@@ -5008,7 +5075,13 @@ R47.8.2 · Modal layout (single, 2-step, both visible):
 
 R47.8.3 · Strict-match warning text: "Strict matching: the JSON response must reference exactly the environments listed above. If you add/remove environments before importing, the response will be rejected — re-generate instructions."
 
-R47.8.4 · Drift detection on JSON import (Path B only): every `items[].data.environmentId` MUST be present in the LIVE engagement's environments collection. If ANY referenced UUID is missing, the entire import is REJECTED with a 1-line error: "Response references N environment(s) no longer in this engagement. Re-generate instructions and re-run." (No partial-apply, no fuzzy remap — strict per user direction R47.8.3.)
+R47.8.4 · Drift detection on JSON import (Path B + Workshop Notes overlay post-A20): kind-aware drift checking. The original pre-A20 contract (env-UUID membership for `kind: "instance.add"` rows) is preserved; A20 adds:
+- `kind: "instance.add"` rows: every `data.environmentId` MUST be present in the LIVE engagement's environments collection (unchanged from pre-A20).
+- `kind: "driver.add"` rows: `data.businessDriverId` MUST be a valid FK to the `BUSINESS_DRIVERS` catalog (static · catalog membership check · NO live-engagement check).
+- `kind: "gap.close"` rows: `data.gapId` MUST be present in the LIVE engagement's gaps collection (drift if the gap has been deleted since the chat emitted the proposal).
+- Duplicate-detection rows (A20 · per R47.5 modal indicator): drift-check emits a `duplicates[]` array alongside `missingEnvIds`/`missingGapIds`/`invalidBusinessDriverIds` arrays; modal renders the indicator per-row but does NOT reject the import (engineer override semantics per R47.5).
+
+If ANY referenced env UUID or gap UUID is missing OR ANY businessDriverId is invalid, the entire import is REJECTED with a 1-line error: "Response references N entity reference(s) no longer in this engagement (envs: X · gaps: Y · drivers: Z). Re-generate or re-issue notes and re-run." (No partial-apply, no fuzzy remap — strict per user direction R47.8.3 · extended kind-aware in A20.)
 
 R47.8.5 · **Kickoff pane** (2026-05-13 amendment). The modal renders a collapsible pane between the lede and Step 1 containing:
 
@@ -5024,19 +5097,19 @@ R47.8.6 · **Phase B mapping-confirmation contract** (2026-05-13 amendment). The
 - A **naming-confirmation prompt** asking the engineer: *"Should I keep the source labels verbatim, or normalize them (e.g., 'EXCH-PROD-01' → 'Exchange Production 01')?"* The prompt MUST appear in the Phase B section, not in Phase A or C.
 - An **approval-signal vocabulary** the LLM listens for: `"looks good" | "approved" | "ship it" | "go ahead" | "yes"`. Any other engineer response is interpreted as "needs correction" and the LLM iterates on the table.
 
-### S47.9 · Provenance — `aiTag.kind` discriminator (CONSTITUTIONAL AMENDMENT to §S25)
+### S47.9 · Provenance — `aiTag.kind` discriminator (CONSTITUTIONAL AMENDMENT to §S25 · WIDENED 2026-05-15 per A20)
 
 R47.9.1 · `schema/instance.js aiTag` extended (back-compat preserved via discriminator default):
 
 ```js
-// BEFORE
+// BEFORE rc.8 §S47 amendment
 aiTag: z.object({
   skillId:   z.string().min(1),
   runId:     z.string().min(1),
   mutatedAt: z.string().min(1)
 }).nullable().default(null)
 
-// AFTER (S47 constitutional amendment)
+// AFTER rc.8 §S47 amendment (LOCKED 2026-05-12)
 aiTag: z.object({
   kind:      z.enum(["skill", "external-llm"]).default("skill"),
   skillId:   z.string().optional(),       // present when kind="skill"
@@ -5044,18 +5117,37 @@ aiTag: z.object({
   runId:     z.string().min(1),
   mutatedAt: z.string().min(1)
 }).nullable().default(null)
+
+// AFTER Sub-arc D A20 widening (LOCKED 2026-05-15)
+aiTag: z.object({
+  kind:      z.enum(["skill", "external-llm", "discovery-note", "ai-proposal"]).default("skill"),
+  skillId:   z.string().optional(),       // present when kind="skill"
+  source:    z.string().optional(),        // present when kind="external-llm" | "discovery-note" | "ai-proposal"
+  runId:     z.string().min(1),
+  mutatedAt: z.string().min(1)
+}).nullable().default(null)
 ```
 
-R47.9.2 · Migrator behavior: persisted engagements with `aiTag.{skillId, runId, mutatedAt}` and no `kind` field → treated as `kind: "skill"` via Zod default. No DB migration script needed; the default kicks in on next load.
+R47.9.1a (A20) · The `aiTag` field is EXTENDED to drivers + gaps (NEW post-A20 · `schema/driver.js` + `schema/gap.js` each gain an optional `aiTag` field mirroring the instance shape). Pre-A20 drivers + gaps had NO `aiTag` field per RULES §16 CH36 R7 ("instances ONLY"); CH36 R7 narrows 2026-05-15 to permit Path B import stamping on non-instance entities while preserving Skills-Builder skill mutation scope at instance-only (see RULES §16 CH36 R7 amendment 2026-05-15).
 
-R47.9.3 · Tile rendering (`ui/views/MatrixView.js buildTile`): the existing "AI" badge surface stays. Visual differentiation by `kind`:
+R47.9.1b (A20) · `aiTag.kind` enum extension adds two values to the existing pair:
+- `"discovery-note"` — stamped by `services/importApplier.js` when the import source is the Workshop Notes overlay (A19 + A20). Tile chip text: "Note".
+- `"ai-proposal"` — RESERVED for future Mode 2 chat-inline emission (Sub-arc D §S20.4.1.5 · not yet stamped by any production code path; preserved for forward compatibility with the §S20.4.1.5 Mode 2 path).
+
+R47.9.2 · Migrator behavior: persisted engagements with `aiTag.{skillId, runId, mutatedAt}` and no `kind` field → treated as `kind: "skill"` via Zod default. No DB migration script needed; the default kicks in on next load. Drivers and gaps with no `aiTag` field parse to `aiTag: null` (default) — pre-A20 entities load unchanged.
+
+R47.9.3 · Tile rendering (`ui/views/MatrixView.js buildTile` + Tab 1 driver chip + Tab 4 gap chip): the existing "AI" badge surface stays. Visual differentiation by `kind`:
 
 | `aiTag.kind` | Badge label | Background | Tooltip |
 |---|---|---|---|
 | `"skill"` (default) | `AI` | Dell-blue (existing) | "Mutated by skill <skillId> · runId · mutatedAt" |
 | `"external-llm"` | `iLLM` | Amber/orange | "Imported from external LLM (<source>) · runId · mutatedAt" |
+| `"discovery-note"` (A20) | `Note` | Soft-green | "Imported from Workshop Notes (<runId> · mutatedAt)" |
+| `"ai-proposal"` (A20 · reserved) | `Prop` | Soft-violet | "Proposed by chat (<runId> · mutatedAt) · Mode 2 future path" |
 
-R47.9.4 · Auto-clear behavior on next engineer save (existing rc.8.b R7 contract) is preserved for BOTH kinds. `instanceActions.updateInstance` strips `aiTag` regardless of `kind`.
+R47.9.4 · Auto-clear behavior on next engineer save (existing rc.8.b R7 contract) is preserved for ALL kinds. `instanceActions.updateInstance` strips `aiTag` regardless of `kind`. Drivers and gaps gain equivalent auto-clear in `driverActions.updateDriver` + `gapActions.updateGap` at Step 5 impl (A20 widening).
+
+R47.9.5 (A20) · Apply-time stamping (workshopNotesImportAdapter feeds importApplier): items[] entries flow into the applier with `provenance: {kind: "discovery-note", source: "workshop-notes-overlay", runId, mutatedAt}`. The applier stamps each created/mutated entity's `aiTag` from this provenance. Engineer-initiated mutations strip the tag automatically on next save (auto-clear · per existing rc.8.b R7 contract · extended to drivers + gaps in A20).
 
 ### S47.10 · Test contract (V-FLOW-IMPORT-* family · 15 tests)
 

@@ -622,6 +622,97 @@ The prompt-text iteration cycle (Steps 3.5 → 3.6-revert → 3.7 → 3.8-revert
 
 ---
 
+## A20 · Path B widening for 3 entity kinds (2026-05-15 · LOCKED post-A19 · between A19 pivot and Step 4 impl)
+
+**The widening in one sentence**: Path B importer (§S47) is amended to handle three entity kinds — `instance.add` · `driver.add` · `gap.close` — instead of the v1 instance-only scope, so all 4 `ActionProposal` kinds emitted by the chat (add-driver · add-instance-current · add-instance-desired · close-gap) can flow through the same engineer-review pipeline (ImportPreviewModal → engineer review → Apply via commit functions). Without this widening, the Workshop Notes overlay's `[Import to canvas]` button would silently drop add-driver + close-gap proposals, which the user identified as an architectural gap during Step 4 impl planning.
+
+**Authority**: user-approved 4-question Q&A 2026-05-15 (this commit) · all 4 recommendations accepted via "Go with all recommendations" pattern. The widening was surfaced before any Step 4 code touched the keyboard, per `feedback_no_patches_flag_first.md`.
+
+**Why this widening was required (forensic rationale)**:
+
+The original Sub-arc D pivot (A19 · commit `662522d`) wrote SPEC §S20.4.1.5 with the phrase *"ImportPreviewModal renders the proposed mutations (existing UX · no new modal needed)"* — implying that all 4 ActionProposal kinds would round-trip through the pre-existing rc.8 Path B importer. But §S47.2 R47.2.1 LOCKS Path B scope to *"instance entities only. Drivers, gaps, and environments are out of scope for the import flow."* The existing `ImportPreviewModal` row shape is rigidly instance-shaped: `{confidence, rationale, data: {layerId, environmentId, label, vendor, vendorGroup, criticality, notes}}`. Add-driver payload (`{businessDriverId, priority, outcomes}`) and close-gap payload (`{gapId, status, closeReason}`) cannot be rendered or applied without widening.
+
+Without A20, three paths were on the table:
+1. **Filter to instance-only in v1** · adapter routes only add-instance-* through Path B · add-driver + close-gap stay readable in overlay but show "import unavailable in v1" chip · v1.5 widens · no fresh constitutional preamble needed
+2. **Widen Path B at this commit (constitutional)** · A20 · landed now · largest blast radius · all 4 kinds importable in v1
+3. **Two preview modals** · adapter routes instance kinds to existing modal + non-instance kinds to sister modal · doubles surface area · debatable v1 ROI
+
+The user picked option 2 because the chat's autonomous emission of add-driver + close-gap is structurally common (close-gap scored 9-10/10 across BOTH Claude + Gemini judges in calibration evidence `9edcb36` — it's the genuinely-solid emit category). Filtering those rows out would waste the chat's most reliable signal.
+
+**4 design questions LOCKED (Q1–Q4 · user "Go with all recommendations")**:
+
+- **Q1 ✅ · Wire shape**: per-item `kind` discriminator (flat `items[]` array · each item carries `kind: "instance.add" | "driver.add" | "gap.close"` + per-kind `data` payload). Top-level `kind` field at §S47.3 is RETIRED in favor of per-item. **Why**: smaller diff to existing parser · single iteration path · matches Zod `discriminatedUnion("kind", [...])` shape already used by `ActionProposalSchema`.
+- **Q2 ✅ · Modal layout**: single mixed list with per-row kind chip (Instance / Driver / Gap) + kind-specific editable cells. Apply-scope picker (current/desired/both) only renders when ≥1 instance row present, with helper text *"applies to instance rows only"*. **Why**: scannable for low-row imports · DOM count stays low · kind-chip provides clear visual segregation without forcing collapsible sections.
+- **Q3 ✅ · aiTag scope**: extend `aiTag` to drivers + gaps. `schema/driver.js` + `schema/gap.js` get an optional `aiTag` field mirroring `instance.aiTag` shape. Path B stamps `aiTag.kind = "discovery-note"` at apply time. Tab 1 driver chip + Tab 4 gap chip surface a "Note" badge for AI-imported entities. RULES §16 CH36 R7 narrows from "instances only" to "instances by default; Path B imports (kind=discovery-note · kind=ai-proposal) stamp drivers + gaps too. Skill mutations (kind=skill) remain instance-only per CH36 R7 original scope." **Why**: AI-imported drivers + gaps must be visually distinguishable from manual additions; otherwise the engineer loses provenance after apply.
+- **Q4 ✅ · close-gap MUTATES + drift-check warns on dups**: close-gap items mutate existing gap via `gapActions.closeGap` (status: "closed" + closeReason). Drift-check validates `gapId` exists on live engagement. Duplicate add-driver / add-instance rows (matching businessDriverId or matching layer+env+label) get a "⚠ already in engagement" indicator + engineer can override (apply anyway). **Why**: matches existing instance drift pattern + keeps engineer in control of duplicate handling.
+
+**Scope of the widening (constitutional surfaces touched at preamble + impl)**:
+
+| Surface | Layer | Preamble touches | Impl touches |
+|---|---|---|---|
+| `docs/v3.0/SPEC.md` §S20.4.1.5 | SPEC | Amendment paragraph noting modal widens at Step 5 | — |
+| `docs/v3.0/SPEC.md` §S47.2 R47.2.1 | SPEC | Scope amendment: instance-only → instance + driver + gap | — |
+| `docs/v3.0/SPEC.md` §S47.3 | SPEC | Canonical shape amendment: per-item `kind` discriminator | — |
+| `docs/v3.0/SPEC.md` §S47.5 | SPEC | Per-kind row rendering + apply-scope picker conditional | — |
+| `docs/v3.0/SPEC.md` §S47.8.4 | SPEC | Drift-check becomes kind-aware (gapId membership for close-gap) | — |
+| `docs/v3.0/SPEC.md` §S47.9 | SPEC | `aiTag.kind` enum extension: + "discovery-note" + "ai-proposal" | — |
+| `docs/RULES.md` §16 CH36 R7 | RULES | Narrowing amendment | — |
+| `docs/RULES.md` §16 CH38 | RULES | Path B flow note | — |
+| `schema/driver.js` | code | — | Add optional `aiTag` field (mirrors instance.aiTag) |
+| `schema/gap.js` | code | — | Add optional `aiTag` field (mirrors instance.aiTag) |
+| `schema/instance.js` | code | — | Extend `AiTagSchema.kind` enum to add "discovery-note" + "ai-proposal" |
+| `services/importResponseParser.js` | code | — | Discriminated union on per-item `kind` |
+| `services/importDriftCheck.js` | code | — | Kind-aware (gapId membership for close-gap rows) |
+| `services/importApplier.js` | code | — | Kind-aware dispatch (3 commit-function paths) + aiTag.kind stamping |
+| `ui/components/ImportPreviewModal.js` | code | — | Per-row kind chip + kind-aware editable cells + apply-scope conditional |
+| `services/workshopNotesImportAdapter.js` NEW | code | — | Step 4 impl · adapter emits widened shape from the start |
+
+**RED scaffolds (this commit · 9 new RED guards)**:
+
+- `V-FLOW-AI-NOTES-IMPORT-1` · WorkshopNotesOverlay.js wires [Import to canvas] click to invoke the import adapter (source-grep for adapter invocation in click handler)
+- `V-ADAPTER-NOTES-WIDEN-1` · workshopNotesImportAdapter.js produces the widened wire shape (3 kinds: `instance.add` · `driver.add` · `gap.close`)
+- `V-FLOW-PATHB-WIDEN-PARSE-1` · importResponseParser.js source contains discriminated union on `kind` + 3 wire kinds
+- `V-FLOW-PATHB-WIDEN-MODAL-1` · ImportPreviewModal.js source references per-row kind chip + kind-aware row rendering
+- `V-FLOW-PATHB-WIDEN-DRIFT-1` · importDriftCheck.js source contains kind-aware logic (gapId membership for `gap.close`)
+- `V-FLOW-PATHB-WIDEN-APPLY-1` · importApplier.js source contains kind-aware dispatch (3 commit-function paths) + `aiTag.kind = "discovery-note"` conditional
+- `V-AITAG-WIDEN-DRIVER-1` · schema/driver.js has optional `aiTag` field
+- `V-AITAG-WIDEN-GAP-1` · schema/gap.js has optional `aiTag` field
+- `V-AITAG-KIND-WIDEN-1` · schema/instance.js `AiTagSchema.kind` enum extended with "discovery-note" + "ai-proposal"
+
+**Commit sequence (post-A20)**:
+
+| Phase | Commit | Type | Notes |
+|---|---|---|---|
+| Preamble (this commit) | NOW | `[CONSTITUTIONAL TOUCH PROPOSED]` doc + RED | SPEC §S20.4.1.5 + §S47.2/3/5/8.4/9 amendments + RULES §16 CH36 R7 + CH38 amendments + framing-doc A20 + 9 new RED scaffolds |
+| Step 4 impl | NEXT | `[CONSTITUTIONAL TOUCH]` impl | ui/views/WorkshopNotesOverlay.js NEW + services/workshopNotesImportAdapter.js NEW (emits widened shape) + services/workshopNotesService.js NEW (workshop-mode LLM wrapper) + app.js #topbarAiNotesBtn binding · flips V-FLOW-AI-NOTES-1/2/3 + V-ADAPTER-NOTES-1 + V-ADAPTER-NOTES-WIDEN-1 + V-FLOW-AI-NOTES-IMPORT-1 RED → GREEN (6 of 13) |
+| Step 5 impl | AFTER | `[CONSTITUTIONAL TOUCH]` impl | schema/driver.js + schema/gap.js aiTag extension + schema/instance.js AiTagSchema.kind widening + importResponseParser/Drift/Applier widen + ImportPreviewModal widen + [Import to canvas] handler wired end-to-end · flips remaining 7 RED → GREEN (13/13 banner target) |
+
+**Honest ship-confidence trajectory**:
+
+- A19 alone (pre-A20): chat-layer Mode 1 + adapter ship · but `[Import to canvas]` is dead-end for 2 of 4 kinds · workshop-realism degraded
+- A20 widening (post-Step-5-impl): all 4 kinds round-trip through Path B · engineer reviews per-row via ImportPreviewModal · all entity kinds carry `aiTag.kind = "discovery-note"` provenance · workshop-ship-confidence achievable
+- The "10/10" goal (user direction "go Y , lets make it 10/10 this time") requires A20 because the chat's most-reliable categories (close-gap at 9-10/10 across both judges) ship only with widened Path B
+
+**What stays unchanged**:
+- `proposeAction` tool registered + 4 v1 action kinds (CH38)
+- `ActionProposalSchema` (the chat's emission shape · unchanged · single source of truth)
+- Step 3.9 chat-says-vs-chat-does guard (`§S20.4.1.4` · Mode 2 defensive layer)
+- §S25 `aiTag` shape for instances (only EXTENDED · not changed)
+- §S47 file-upload ingress path (rc.8 LOCKED 2026-05-12 · stays functional for non-overlay imports)
+
+**Cross-references**:
+
+- SPEC §S20.4.1.5 amendment paragraph (this commit · clarifies "modal widens at Step 5")
+- SPEC §S47.2/3/5/8.4/9 amendments (this commit · the canonical contract changes)
+- RULES §16 CH36 R7 amendment (this commit · aiTag scope narrowing → broadening)
+- RULES §16 CH38 amendment (this commit · Path B flow note)
+- 9 new V-* RED scaffolds in `diagnostics/appSpec.js` (this commit)
+- A19 (the parent pivot · this widening completes the import-pipeline story A19 started)
+- `feedback_no_patches_flag_first.md` (the discipline anchor that surfaced this widening before Step 4 code touched the keyboard)
+- Memory anchor: `feedback_5_forcing_functions.md` Rule A (user-approved Q&A pre-flight 2026-05-15 · 4 design questions · all approved)
+
+---
+
 ## A14 · Step 3.5 micro-arc · post-baseline tightening (2026-05-14 evening · LOCKED)
 
 The rc.10 first action-correctness baseline (`tests/aiEvals/baseline-action.json` · commit `d73ce60` · 5-case foundation set · 3.8/10 avg · 40% pass rate) surfaced a Step-3.5 micro-arc before Step 4 (user-facing impl) can land. The discipline-order rationale: shipping Apply UI on a chat layer that under-emits `proposeAction` on 3 of 4 emit-cases would mask the underlying defect at Step 6 re-eval (cannot isolate "did the Apply UI help" from "did the chat actually invoke the tool more reliably").
