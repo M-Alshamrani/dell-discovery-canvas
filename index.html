@@ -89,6 +89,21 @@
           </svg>
           <span class="topbar-ai-label">AI Assist</span>
         </button>
+        <!-- rc.10 Sub-arc D Step 4 (CH26 amendment) · second topbar AI
+             affordance · opens the Mode 1 Workshop Notes overlay (per
+             SPEC §S20.4.1.5 · framing-doc A1). Pair with topbarAiBtn:
+             AI Assist is conversational (Cmd+K); AI Notes is workshop-
+             time batched (Cmd+Shift+N). Notebook icon. -->
+        <button id="topbarAiNotesBtn" class="topbar-ai-btn topbar-ai-notes-btn" type="button" aria-label="Open AI Notes">
+          <svg class="topbar-ai-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 4a2 2 0 0 1 2-2h11a1 1 0 0 1 1 1v17a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2V4z"/>
+            <path d="M4 7h14"/>
+            <path d="M4 11h14"/>
+            <path d="M4 15h9"/>
+          </svg>
+          <span class="topbar-ai-label">AI Notes</span>
+        </button>
         <button id="undoBtn" class="undo-chip" type="button" aria-label="Undo last AI change" style="display:none;">
           <svg class="undo-chip-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"
                stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

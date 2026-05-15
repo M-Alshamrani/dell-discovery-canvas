@@ -142,6 +142,8 @@ document.addEventListener("DOMContentLoaded", function() {
   wireUndoBtn();
   wireTopbarAiBtn();
   wireAiAssistShortcut();
+  wireTopbarAiNotesBtn();
+  wireAiNotesShortcut();
   wireTopbarLabBtn();
   // v2.4.13 S2A . repaint the secondary line whenever the save status
   // bus emits, so "Saving..." -> "Saved just now" without a full
@@ -347,6 +349,41 @@ function wireAiAssistShortcut() {
       mod.openCanvasChat();
     } catch (err) {
       console.error("[CanvasChat] failed to open from Cmd+K:", err);
+    }
+  });
+}
+
+// rc.10 Sub-arc D Step 4 · second topbar AI affordance (CH26 amendment).
+// Opens the Mode 1 Workshop Notes overlay (per SPEC §S20.4.1.5 +
+// framing-doc A1). Paired with topbarAiBtn: AI Assist is conversational
+// (Cmd+K); AI Notes is workshop-time batched (Cmd+Shift+N).
+function wireTopbarAiNotesBtn() {
+  var btn = document.getElementById("topbarAiNotesBtn");
+  if (!btn) return;
+  btn.addEventListener("click", async function() {
+    try {
+      var mod = await import("./ui/views/WorkshopNotesOverlay.js");
+      mod.openWorkshopNotesOverlay();
+    } catch (e) {
+      console.error("[WorkshopNotes] failed to open from AI Notes button:", e);
+    }
+  });
+}
+
+// rc.10 Sub-arc D Step 4 · Cmd+Shift+N / Ctrl+Shift+N keyboard shortcut
+// (per framing-doc A1). Opens the same Mode 1 Workshop Notes overlay
+// as the topbar AI Notes button. Registered unconditionally.
+function wireAiNotesShortcut() {
+  document.addEventListener("keydown", async function(e) {
+    var isMod = e.metaKey || e.ctrlKey;
+    if (!isMod || !e.shiftKey) return;
+    if (e.key !== "n" && e.key !== "N") return;
+    e.preventDefault();
+    try {
+      var mod = await import("./ui/views/WorkshopNotesOverlay.js");
+      mod.openWorkshopNotesOverlay();
+    } catch (err) {
+      console.error("[WorkshopNotes] failed to open from Cmd+Shift+N:", err);
     }
   });
 }
