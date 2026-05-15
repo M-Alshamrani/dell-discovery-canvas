@@ -249,7 +249,69 @@ export function repairTruncatedJson(body) {
   // Step 5: if the document ends with a trailing comma before our forced
   // closers, JSON.parse rejects · strip dangling commas before } or ].
   s = s.replace(/,(\s*[}\]])/g, "$1");
+  // Step 6 (BUG-WS-4 · 2026-05-15 PM late): strip dangling-key patterns
+  // where the LLM emitted `"key"}` (key WITHOUT a colon-value) before
+  // truncation forced the closer. JSON.parse rejects `{"a":1,"b"}` and
+  // `{"b"}` · the user's incident emitted `{"processedMarkdown":"...","mappings"}`.
+  // Strip the orphan key entirely (better to lose the empty mappings
+  // field than fail the whole parse). Two patterns handled:
+  //   (a) `, "key"` immediately before a closer `}` or `]` (comma-prefixed
+  //       orphan key · most common · the user's incident shape)
+  //   (b) `{ "key" }` or `[ "key" ]` (orphan key as ONLY content of an
+  //       object/array · rarer · happens when the LLM emits an empty-but-
+  //       broken structure)
+  // Iterate up to 3 passes because closing one orphan may reveal another.
+  for (let pass = 0; pass < 3; pass++) {
+    let next = s;
+    // Pattern (a): strip `, "key"` immediately preceding `}` or `]`.
+    next = next.replace(/,\s*"[^"\\]*(?:\\.[^"\\]*)*"\s*(?=[}\]])/g, "");
+    // Pattern (b): strip a single orphan key as the ONLY content of {...} or [...].
+    next = next.replace(/(\{|\[)\s*"[^"\\]*(?:\\.[^"\\]*)*"\s*(?=[}\]])/g, "$1");
+    if (next === s) break;
+    s = next;
+  }
+  // Re-run the trailing-comma strip in case Step 6 created one.
+  s = s.replace(/,(\s*[}\]])/g, "$1");
   return s;
+}
+
+// BUG-WS-5 (2026-05-15 PM late) · extract the FIRST balanced JSON object
+// or array from `body`. Returns the matched substring (start to closer
+// inclusive) · or null if no balanced structure is found. Used by
+// parseLlmResponse to strip trailing prose · code fences · or rationale
+// blocks the LLM appends AFTER the JSON answer. Inside-string aware so
+// nested quotes/braces/brackets inside string values don't confuse the
+// stack counter.
+//
+// EXPORTED for unit testing (V-FLOW-WS-PARSE-REPAIR-1 BUG-WS-5 guard).
+export function extractFirstBalancedJson(body) {
+  if (typeof body !== "string" || body.length === 0) return null;
+  // Find the first { or [ position.
+  let start = -1;
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === "{" || c === "[") { start = i; break; }
+  }
+  if (start < 0) return null;
+  const stack = [];
+  let inString = false;
+  let escapeNext = false;
+  for (let i = start; i < body.length; i++) {
+    const c = body[i];
+    if (escapeNext) { escapeNext = false; continue; }
+    if (c === "\\") { escapeNext = true; continue; }
+    if (c === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (c === "{" || c === "[") stack.push(c);
+    else if (c === "}" || c === "]") {
+      if (stack.length === 0) return null; // unmatched closer · bail
+      const expected = (c === "}") ? "{" : "[";
+      if (stack[stack.length - 1] !== expected) return null; // mismatch · bail
+      stack.pop();
+      if (stack.length === 0) return body.slice(start, i + 1);
+    }
+  }
+  return null; // unbalanced · let repairTruncatedJson handle truncation
 }
 
 // Parse the LLM's strict-JSON response. Tolerant of leading/trailing
@@ -263,6 +325,12 @@ export function repairTruncatedJson(body) {
 //             engineer-actionable error text + the rawHead for retry
 //             logic in pushNotesToAi to consult
 //
+// BUG-WS-5 (2026-05-15 PM late) · extended Step 0 with balanced-JSON
+// extraction: if the body contains a complete balanced { ... } or [ ... ]
+// followed by trailing prose / closing-fence / rationale block, extract
+// just the balanced portion. Handles the LLM's "rationale appended after
+// JSON" failure mode that markdown-fence stripping alone doesn't cover.
+//
 // EXPORTED for unit testing (V-FLOW-WS-PARSE-1/2/REPAIR-1).
 export function parseLlmResponse(text) {
   if (typeof text !== "string" || text.trim().length === 0) {
@@ -274,6 +342,14 @@ export function parseLlmResponse(text) {
     body = body.replace(/^```(?:json|javascript|js)?\s*/i, "");
     body = body.replace(/```\s*$/, "");
     body = body.trim();
+  }
+  // BUG-WS-5 · Step 0.5 · if there's a balanced JSON object/array followed
+  // by trailing prose (e.g. "**Rationale:** ..." appended after the JSON),
+  // truncate to just the balanced portion. Skip when extraction returns
+  // null (unbalanced · let Step B repair handle it).
+  const extracted = extractFirstBalancedJson(body);
+  if (extracted !== null && extracted.length < body.length) {
+    body = extracted;
   }
   // Step A: standard parse.
   let parsed;

@@ -15862,19 +15862,47 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
         "V-FLOW-WS-PARSE-2 · Guard 3: parseLlmResponse MUST return rawMappings as an array (empty here).");
     });
 
-    it("V-FLOW-WS-PARSE-REPAIR-1 · BUG-WS-2 · parseLlmResponse attempts repair on truncated-mid-string JSON (the user's incident) · returns {ok:true} after repair OR {ok:false, repairAttempted:true} · NEVER throws — regression guard for the exact incident", async () => {
+    it("V-FLOW-WS-PARSE-REPAIR-1 · BUG-WS-2 + BUG-WS-4 · parseLlmResponse attempts repair on TWO truncation modes (mid-string AND dangling-key) · returns {ok:true} after repair OR {ok:false, repairAttempted:true} · NEVER throws — regression guard for both incidents", async () => {
       const mod = await import("/services/workshopNotesService.js");
-      // Reproduce the user's incident shape · max_tokens clipped mid-string
+      // BUG-WS-2 incident · max_tokens clipped mid-string
       const truncatedMidString = '{"processedMarkdown":"## Customer concerns\\n- HIPAA compliance and data protection requirements must be maintained across all environments\\n- DR site retiring legacy HPE 3PAR storage in Q2 2026 —';
-      const r = mod.parseLlmResponse(truncatedMidString);
-      assert(r && (r.ok === true || (r.ok === false && r.repairAttempted === true)),
-        "V-FLOW-WS-PARSE-REPAIR-1 · Guard 1: parseLlmResponse on truncated-mid-string MUST either succeed via repair OR fail-with-repairAttempted=true · NEVER throw. Got: " + JSON.stringify(r).slice(0, 300));
-      // Whether repair succeeds or not, the function must not throw
-      assert(typeof r === "object" && r !== null,
-        "V-FLOW-WS-PARSE-REPAIR-1 · Guard 2: parseLlmResponse on malformed input MUST return an object (not throw, not undefined). Got: " + typeof r);
+      const r1 = mod.parseLlmResponse(truncatedMidString);
+      assert(r1 && (r1.ok === true || (r1.ok === false && r1.repairAttempted === true)),
+        "V-FLOW-WS-PARSE-REPAIR-1 · Guard 1: parseLlmResponse on truncated-mid-string MUST either succeed via repair OR fail-with-repairAttempted=true · NEVER throw. Got: " + JSON.stringify(r1).slice(0, 300));
+      assert(typeof r1 === "object" && r1 !== null,
+        "V-FLOW-WS-PARSE-REPAIR-1 · Guard 2: parseLlmResponse on malformed input MUST return an object (not throw, not undefined). Got: " + typeof r1);
       // Also test repairTruncatedJson is exported
       assert(typeof mod.repairTruncatedJson === "function",
         "V-FLOW-WS-PARSE-REPAIR-1 · Guard 3: repairTruncatedJson MUST be exported for direct unit testing per BUG-WS-2 fix scope.");
+      // BUG-WS-4 incident · LLM emitted complete first key-value + started
+      // second key but truncated before colon-value · `repairTruncatedJson`
+      // Step 6 strips the orphan key. This is the EXACT shape captured at
+      // BUG-WS-3 smoke 2026-05-15 PM late.
+      const danglingKey = '{\n  "processedMarkdown": "## Customer concerns\\n",\n  "mappings"';
+      const r2 = mod.parseLlmResponse(danglingKey);
+      assert(r2 && r2.ok === true,
+        "V-FLOW-WS-PARSE-REPAIR-1 · Guard 4 (BUG-WS-4): parseLlmResponse on dangling-key truncation `{\"key\":\"val\", \"key2\"` MUST repair to {ok:true} by stripping the orphan key. Got: " + JSON.stringify(r2).slice(0, 300));
+      assert(r2.repairAttempted === true,
+        "V-FLOW-WS-PARSE-REPAIR-1 · Guard 5 (BUG-WS-4): parseLlmResponse on dangling-key MUST flag repairAttempted=true so downstream consumers can surface the recovery to the engineer.");
+      assert(typeof r2.processedMarkdown === "string" && r2.processedMarkdown.length > 0,
+        "V-FLOW-WS-PARSE-REPAIR-1 · Guard 6 (BUG-WS-4): parseLlmResponse on dangling-key MUST preserve the SUCCESSFULLY-EMITTED processedMarkdown content · only the orphan unwritten key is stripped. Got processedMarkdown: " + JSON.stringify(r2.processedMarkdown).slice(0, 100));
+
+      // BUG-WS-5 incident (2026-05-15 PM late · captured at BUG-WS-4 smoke) ·
+      // LLM emitted a VALID JSON answer followed by trailing prose (rationale
+      // block or closing code fence). The `extractFirstBalancedJson` Step 0.5
+      // truncates to just the balanced JSON before Step A parses.
+      const trailingProse = '{\n  "processedMarkdown": "",\n  "mappings": []\n}\n```\n\n**Rationale:** The bullets provided are engagement metadata (customer name, vertical, headcount) that belong on Tab 1 of the Canvas UI directly, no canonical action mapping applies.';
+      const r3 = mod.parseLlmResponse(trailingProse);
+      assert(r3 && r3.ok === true,
+        "V-FLOW-WS-PARSE-REPAIR-1 · Guard 7 (BUG-WS-5): parseLlmResponse on valid-JSON-then-trailing-prose MUST extract the balanced JSON and parse it · ignoring the rationale block or closing fence the LLM appended after the answer. Got: " + JSON.stringify(r3).slice(0, 300));
+      assert(Array.isArray(r3.rawMappings),
+        "V-FLOW-WS-PARSE-REPAIR-1 · Guard 8 (BUG-WS-5): parseLlmResponse on trailing-prose MUST preserve the mappings[] array from the actual JSON answer (here · empty array).");
+      // Also verify extractFirstBalancedJson is exported for direct unit testing.
+      assert(typeof mod.extractFirstBalancedJson === "function",
+        "V-FLOW-WS-PARSE-REPAIR-1 · Guard 9 (BUG-WS-5): extractFirstBalancedJson MUST be exported for unit testing.");
+      const ext = mod.extractFirstBalancedJson('garbage prefix {"a":1} trailing prose');
+      assert(ext === '{"a":1}',
+        "V-FLOW-WS-PARSE-REPAIR-1 · Guard 10 (BUG-WS-5): extractFirstBalancedJson MUST return the first balanced JSON substring, stripping prefix + suffix. Got: " + JSON.stringify(ext));
     });
 
     it("V-FLOW-WS-ERROR-BANNER-1 · BUG-WS-1 regression guard (landed at BUG-WS-2 fix per feedback_test_or_it_didnt_ship.md) · WorkshopNotesOverlay.js MUST NOT import notifyError AND MUST define showOverlayError", async () => {
@@ -15956,6 +15984,59 @@ describe("49 · v3.0 data architecture rebuild — RED-first vector scaffold", (
       // for unterminated strings).
       assert(/\\\\n\s+escape|literal\s+newlines/i.test(src),
         "V-FLOW-WS-PUSH-RETRY-1 · Guard 3: workshopNotesService.js MUST reference literal-newlines / \\n-escape in the retry reminder (the dominant cause of Unterminated-string-in-JSON errors per the user's BUG-WS-2 incident).");
+    });
+
+    it("V-FLOW-WS-IMPORT-ZERO-MAPPINGS-1 · BUG-WS-3 · [Import to canvas] handler discriminates 3 zero-mappings states (never-pushed vs pushed-zero-emitted vs pushed-all-dropped) · does NOT say 'Push notes to AI first' unconditionally · uses showOverlayError (in-overlay banner) for non-trivial cases — regression guard", async () => {
+      let src = "";
+      try {
+        const res = await fetch("/ui/views/WorkshopNotesOverlay.js");
+        if (res.ok) src = await res.text();
+      } catch (_e) { /* fetch failure asserts below */ }
+      assert(src.length > 0,
+        "V-FLOW-WS-IMPORT-ZERO-MAPPINGS-1: ui/views/WorkshopNotesOverlay.js MUST be readable for source-grep");
+
+      // Guard 1: handler tracks lastPushedAt OR lastDroppedCount in
+      // overlayState · used to discriminate the 3 zero-mappings states.
+      const STATE_TRACK_RE = /lastPushedAt|lastDroppedCount/;
+      assert(STATE_TRACK_RE.test(src),
+        "V-FLOW-WS-IMPORT-ZERO-MAPPINGS-1 · Guard 1: WorkshopNotesOverlay.js MUST track lastPushedAt or lastDroppedCount in overlayState (BUG-WS-3 · without state tracking the import handler cannot discriminate never-pushed vs pushed-zero-emitted vs pushed-all-dropped · all 3 cases get the same misleading 'Push notes to AI first' message).");
+
+      // Guard 2: handler does NOT route ALL zero-mappings cases to the
+      // hardcoded "Push notes to AI first" message · accepts the legacy
+      // message ONLY in a discriminated branch (state-A · never-pushed).
+      // Source-grep regex: the literal phrase must appear in source · but
+      // there must ALSO exist branching that conditions on lastPushedAt
+      // or lastDroppedCount before the phrase fires. The bug pre-fix had
+      // the phrase as the SOLE error path · post-fix has 3 branches.
+      const NEVER_PUSHED_BRANCH_RE = /neverPushed|!\s*overlayState\.lastPushedAt|lastPushedAt\s*===\s*null|lastPushedAt\s*==\s*null/;
+      assert(NEVER_PUSHED_BRANCH_RE.test(src),
+        "V-FLOW-WS-IMPORT-ZERO-MAPPINGS-1 · Guard 2: WorkshopNotesOverlay.js MUST have a discriminating branch on lastPushedAt (e.g. `const neverPushed = !overlayState.lastPushedAt` OR `lastPushedAt === null` check). Without this, the import handler treats post-push-zero-mappings as never-pushed · which is BUG-WS-3.");
+
+      // Guard 3: handler uses showOverlayError (in-overlay banner) for
+      // at least ONE of the non-trivial zero-mappings cases. The State-A
+      // truly-never-pushed case may stay on notifyInfo · but States B + C
+      // (pushed-zero-emitted · pushed-all-dropped) MUST use the in-overlay
+      // banner per the BUG-WS-1 + BUG-WS-3 in-context-error pattern.
+      // Find the handler block (handleImportToCanvas function body) and
+      // verify it calls showOverlayError at least twice (because there
+      // are 5+ showOverlayError calls overall · we want to confirm the
+      // import handler specifically uses it for the zero-mappings paths).
+      const IMPORT_HANDLER_RE = /function\s+handleImportToCanvas\s*\(\s*\)\s*\{[\s\S]*?(?=\nfunction\s|\nexport\s)/;
+      const handlerMatch = src.match(IMPORT_HANDLER_RE);
+      assert(handlerMatch !== null,
+        "V-FLOW-WS-IMPORT-ZERO-MAPPINGS-1 · Guard 3a: handleImportToCanvas function body MUST be findable for body-scope source-grep.");
+      const handlerBody = handlerMatch[0];
+      const showOverlayErrorCalls = (handlerBody.match(/\bshowOverlayError\s*\(/g) || []).length;
+      assert(showOverlayErrorCalls >= 2,
+        "V-FLOW-WS-IMPORT-ZERO-MAPPINGS-1 · Guard 3b: handleImportToCanvas MUST call showOverlayError at least 2 times within its body (BUG-WS-3 fix replaces the 3.5s vanishing toast with persistent in-overlay banners for the non-trivial zero-mappings cases · pushed-zero-emitted + pushed-all-dropped). Found " + showOverlayErrorCalls + " calls.");
+
+      // Guard 4: handler references actionable remediation hints in the
+      // zero-mappings paths (Re-evaluate all OR action-form bullets OR
+      // validation · the engineer needs to know what to DO when the
+      // import isn't actionable).
+      const REMEDIATION_HINT_RE = /Re-evaluate all|action-form bullets|action-form|all\s+\w+\s+failed\s+validation|simplify your bullets/i;
+      assert(REMEDIATION_HINT_RE.test(handlerBody),
+        "V-FLOW-WS-IMPORT-ZERO-MAPPINGS-1 · Guard 4: handleImportToCanvas MUST reference actionable remediation in the zero-mappings paths (e.g. 'Re-evaluate all' OR 'action-form bullets' OR 'all N failed validation'). The pre-fix message just said 'Push notes to AI first' which is wrong post-push · the engineer needs to know what to do next.");
     });
 
     // -----------------------------------------------------------------

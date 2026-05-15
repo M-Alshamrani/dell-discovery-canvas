@@ -2442,3 +2442,162 @@ Target banner after fix: **1329/1329 GREEN** (1323 + 6 new tests).
 - `feedback_no_patches_flag_first.md` (root-cause-3-issues fix · not papered-over)
 - `feedback_browser_smoke_required.md` (source-grep does NOT replace smoke)
 - User incident screenshot 2026-05-15 PM (JSON parse failure with raw-response-head preview)
+
+---
+
+## BUG-WS-3 · [Import to canvas] says "Push notes to AI first" AFTER successful Push · misleading toast hides 3 distinct zero-mappings states · OPEN 2026-05-15 PM late
+
+### Severity
+🟡 High · feature operational but UX is misleading · engineer cannot tell why Import did nothing · the error message contradicts what they just did
+
+### Symptom
+User pushed workshop bullets to AI (post-BUG-WS-2 fix · the structured upper pane filled with markdown headings and bullets · proof Push succeeded). User then clicked **[Import to canvas]** and got a toast: *"Nothing to import · Push notes to AI first to generate canvas mappings."* — even though they had JUST pushed and the structured output is visible on screen.
+
+User-direct quote: *"when i push now i get some structred ourput , but when i click import to canvas, it ases me to push to AI first , and i already did .. rpeort bug and fix"*
+
+The toast also vanishes after 3.5s · the engineer may not even read it before it disappears.
+
+### Root cause (forensic · 3-state collapse + wrong message + wrong UI surface)
+
+`handleImportToCanvas` in `ui/views/WorkshopNotesOverlay.js` checks ONLY `mappings.length === 0` · branches into a single error message:
+
+```js
+if (mappings.length === 0) {
+  notifyInfo({ title: "Nothing to import", body: "Push notes to AI first to generate canvas mappings." });
+  return;
+}
+```
+
+But there are **THREE distinct ways** to arrive at `mappings.length === 0`, each with a different remediation:
+
+| State | processedMarkdown | mappings | droppedCount | What happened | Correct message |
+|---|---|---|---|---|---|
+| A | empty | 0 | 0 | Never pushed | "Push notes to AI first" ✓ |
+| B | filled | 0 | 0 | LLM produced prose but emitted NO ActionProposal-shaped suggestions (bullets didn't fit the 4 v1 action kinds OR the LLM was conservative) | "AI returned 0 actionable mappings. Try [Re-evaluate all] with action-form bullets like 'we need cybersecurity driver' or 'add VMware vSphere to DR site', OR your bullets may describe context (customer name, env) rather than actions." |
+| C | filled | 0 | N>0 | LLM emitted N mappings but ALL failed ActionProposalSchema.safeParse (e.g. invalid businessDriverId, wrong payload shape, outcomes as string vs array) | "AI emitted N mappings but all failed validation (wrong shape · invalid catalog refs · etc). Check the browser console for details. Try [Re-evaluate all] or simplify your bullets." |
+
+The current code collapses all three into the State-A message. States B + C see the WRONG, misleading message.
+
+The UI surface is also wrong: `notifyInfo` is a toast that vanishes in 3.5s · the engineer needs an in-overlay banner (like the BUG-WS-1 fix's `showOverlayError`) so they can read + act on the actionable text.
+
+### Why existing tests missed this
+Same root cause as BUG-WS-1 + BUG-WS-2: source-grep file-existence tests do NOT exercise the runtime button-click → state-evaluation → message-rendering chain. V-FLOW-AI-NOTES-2 verifies `[Import to canvas]` button hook EXISTS · NOT what the handler does when mappings is empty.
+
+### Fix plan (this commit)
+
+1. **`ui/views/WorkshopNotesOverlay.js` overlayState**: track `lastDroppedCount` + `lastPushedAt` (timestamp) so the handler can differentiate the 3 states
+2. **`handlePushToAi`**: save `res.droppedCount` to `overlayState.lastDroppedCount` and set `overlayState.lastPushedAt = new Date().toISOString()` after every successful push
+3. **`handleImportToCanvas`**: rewrite the zero-mappings branch to differentiate the 3 states · use `showOverlayError` (BUG-WS-1's in-overlay banner) for all non-trivial error paths · keep `notifyInfo` only for the truly-trivial never-pushed-with-no-typing state OR use showOverlayError uniformly for consistency. Adopt showOverlayError uniformly — engineer expectation per BUG-WS-1 pattern is "errors live in the overlay".
+4. **Optional: button hint text** — surface a small "(0 mappings emitted)" suffix on the [Import to canvas] button when mappings are zero post-push · purely informational · doesn't disable the button
+
+### Regression test added at this commit
+
+| ID | Asserts |
+|---|---|
+| V-FLOW-WS-IMPORT-ZERO-MAPPINGS-1 | `handleImportToCanvas` does NOT use the hardcoded "Push notes to AI first" string unconditionally · differentiates the 3 zero-mappings states via either `lastPushedAt`/`lastDroppedCount` tracking OR equivalent state-discrimination logic · uses `showOverlayError` (not `notifyInfo`) for non-trivial cases |
+
+Target banner: **1330/1330 GREEN** (1329 + 1 new).
+
+### Architectural follow-ups (NOT in this commit)
+- **DOM-mounting integration test for the import-flow happy path AND zero-mappings unhappy path** · per Rule B (test-mounts-the-UX) · still v1.5 polish.
+- **Surface dropped-mapping details to the engineer** · currently console.warn only · v1.5 polish could render the dropped raw mappings + Zod error messages in a collapsible section of the upper pane so the engineer can fix the input.
+- **Engagement-level workshop-notes field** · for the case where the LLM produces useful prose but no canonical mappings · engineer should be able to save the prose to the engagement's notes/summary field directly. v1.5 candidate.
+
+### Cross-references
+- BUG-WS-1 (the BUG-WS-1 banner pattern `showOverlayError` is the canonical in-overlay error surface this fix adopts)
+- BUG-WS-2 (the previous push-path fix that made structured output reach the upper pane · which is what exposed BUG-WS-3's misleading message)
+- Step 4 impl commit `88f6a32` (where the original `notifyInfo` "Push first" was authored)
+- `feedback_test_or_it_didnt_ship.md` (regression test landed at this commit per the discipline anchor)
+- User incident transcript 2026-05-15 PM late ("when i push now i get some structred ourput , but when i click import to canvas, it ases me to push to AI first")
+
+---
+
+## BUG-WS-4 · `repairTruncatedJson` doesn't handle dangling-key truncation `{"key":"val", "key2"}` · CLOSED 2026-05-15 PM late (same commit as BUG-WS-3 fix)
+
+### Severity
+🟡 High · feature fails on small-response truncation · surfaced during BUG-WS-3 smoke
+
+### Symptom
+While smoking the BUG-WS-3 fix, the LLM emitted a small response that hit a NEW truncation mode the BUG-WS-2 `repairTruncatedJson` doesn't handle:
+
+```
+{
+  "processedMarkdown": "## Customer concerns\n\n## Drivers identified\n\n## Current state captured\n\n## Desired state directions\n\n## Gaps proposed\n\n## Action items / follow-ups\n",
+  "mappings"
+```
+
+The LLM started emitting the next key `"mappings"` but the response ended before the colon + value (likely an EOS token or stop-sequence quirk on the local provider · max_tokens was 8192 · well above the ~60-token response). `repairTruncatedJson` Steps 1-5 closed the outer `{` correctly, producing:
+
+```
+{"processedMarkdown":"...", "mappings"}
+```
+
+But `JSON.parse` rejects this with *"Unexpected non-whitespace character after JSON at position 207 (line 5 column 1)"* because `"mappings"` is a key without a colon-value. The retry-once with strict-JSON reminder also failed (the LLM repeated the same truncation pattern).
+
+### Root cause
+`repairTruncatedJson` originally handled 5 truncation modes (escape stray newlines · close unterminated strings · close unmatched braces · close unmatched brackets · strip trailing commas) but NOT the "dangling key at end" mode. The 5 steps work for `{"key":"value` (truncated mid-string) but NOT for `{"key":"value", "nextkey"` (truncated between keys).
+
+### Fix (this commit · same as BUG-WS-3 fix)
+Added Step 6 to `repairTruncatedJson`: detect dangling-key patterns where a complete `"string"` appears immediately before a closing `}` or `]` AND the preceding non-whitespace char is `,` or `{` or `[` (proving it's a key position, not a value). Strip the orphan key + its preceding comma. Iterate up to 3 passes to handle nested-orphan-key cases. Re-run the trailing-comma strip in case Step 6 introduces one.
+
+For the user's incident the repaired output is `{"processedMarkdown":"..."}` (orphan `, "mappings"` stripped) which parses cleanly · `parseLlmResponse` returns `{ok: true, processedMarkdown: "...", rawMappings: [], repairAttempted: true}`. The engineer gets the structured notes upper-pane content + the State-B "AI returned 0 actionable mappings" banner from the BUG-WS-3 fix · they can read the markdown · re-evaluate · or simplify bullets.
+
+### Regression test extension
+The V-FLOW-WS-PARSE-REPAIR-1 test was extended to also assert the dangling-key truncation shape reaches `{ok:true}` after repair. Existing PARSE-1/2 + REPAIR-1 + ERROR-BANNER-1 + PUSH-MAX-TOKENS-1 + PUSH-RETRY-1 + IMPORT-ZERO-MAPPINGS-1 unchanged.
+
+### Cross-references
+- BUG-WS-2 · `repairTruncatedJson` original 5-step recovery (this bug extends to 6 steps)
+- BUG-WS-3 · the bug whose smoke exposed BUG-WS-4 (they share a fix commit)
+- User incident shape (the smoke screenshot showing `"mappings"}` as the parse-failure body) preserved in this entry
+
+---
+
+## BUG-WS-5 · `parseLlmResponse` rejects valid JSON followed by trailing prose / rationale block / closing fence · CLOSED 2026-05-15 PM late (same commit as BUG-WS-3 + BUG-WS-4)
+
+### Severity
+🟡 High · push fails on LLM responses that emit valid JSON + appended explanation · captured during BUG-WS-4 verification smoke
+
+### Symptom
+After landing the BUG-WS-4 dangling-key fix, the BUG-WS-3 State-B end-to-end smoke triggered ANOTHER push failure. The LLM emitted:
+
+```
+{
+  "processedMarkdown": "",
+  "mappings": []
+}
+```
+\`\`\`
+
+\*\*Rationale:\*\* The bullets provided are engagement metadata (customer name, vertical, headcount) that belong on Tab 1 of the Canvas UI directly, no canonical action mapping applies.
+
+The JSON object itself is **VALID and parseable**. But the LLM appended:
+1. A closing markdown code fence ` ``` ` (without an opening fence at the top of its response)
+2. A `**Rationale:**` block explaining why no mappings were emitted
+
+`JSON.parse` parsed the balanced `{...}` correctly through position 47 · then hit the closing fence + prose at position 48 · threw *"Unexpected non-whitespace character after JSON at position 48 (line 5 column 1)"*. The retry-once with strict-JSON reminder didn't help (the LLM made the same mistake again with a slightly different rationale).
+
+### Root cause
+`parseLlmResponse`'s Step 0 strip-code-fences logic only fired when the body STARTED with ` ``` `. The LLM's response started directly with `{` and appended the prose AFTER. The existing fence-stripping regex `/```\s*$/` would have matched if the prose followed by a closing fence at end-of-string · but the prose came AFTER the closing fence (which itself was a stray emission since there was no opening fence). The repair logic (Step B) was never invoked because Step A's failure mode is "extra content after JSON" not "incomplete JSON" — `repairTruncatedJson` is for the opposite class.
+
+### Fix (this commit · same as BUG-WS-3 + BUG-WS-4)
+Added Step 0.5 to `parseLlmResponse`: a new exported helper `extractFirstBalancedJson(body)` scans for the first `{` or `[` and uses an inside-string-aware brace counter to find the matching closer. Returns the substring from the first opener to its matching closer (inclusive) · or null if no balanced structure is found (in which case `repairTruncatedJson` handles the truncation case).
+
+For the user's incident the extraction returns `{\n  "processedMarkdown": "",\n  "mappings": []\n}` (just the balanced JSON) · which Step A parses cleanly · `parseLlmResponse` returns `{ok: true, processedMarkdown: "", rawMappings: [], repairAttempted: false}`. The State-B branch in `handleImportToCanvas` then fires the "AI returned 0 actionable mappings" banner from BUG-WS-3 · engineer sees the correct guidance.
+
+### Regression test extension
+V-FLOW-WS-PARSE-REPAIR-1 was extended with 4 new guards:
+- Guard 7: trailing-prose shape parses to `{ok: true}` after Step 0.5 extraction
+- Guard 8: rawMappings array preserved from the extracted JSON
+- Guard 9: `extractFirstBalancedJson` is exported for unit testing
+- Guard 10: extractor strips both prefix and suffix · returns just the balanced substring
+
+Total guards in V-FLOW-WS-PARSE-REPAIR-1 now: 10 (3 for BUG-WS-2 truncation · 3 for BUG-WS-4 dangling-key · 4 for BUG-WS-5 trailing-prose · all in ONE test for forensic clarity).
+
+### Architectural acknowledgment
+This is the THIRD LLM-output-fragility class found in 2 hours of post-Step-5 user testing (BUG-WS-2 truncation-mid-string · BUG-WS-4 dangling-key · BUG-WS-5 trailing-prose). The pattern is clear: **the LLM cannot be relied upon to emit strict JSON via its text output**. Each new bug requires another repair heuristic. The architectural fix that would eliminate the entire class is **Anthropic tool-use API**: register a `structureWorkshopNotes` tool with Zod-derived input schema · the provider's API serializes the structured args · no JSON parsing on our side · no truncation/dangling/trailing-prose risks. This is acknowledged-deferred to v1.5 polish (already in BUG-WS-2 architectural follow-ups) and the heuristic-repair approach is the v1.0 GA strategy.
+
+### Cross-references
+- BUG-WS-2 · introduced `repairTruncatedJson` (5 steps for incomplete-JSON · BUG-WS-4 extended to 6 · BUG-WS-5 adds the PRE-parse `extractFirstBalancedJson`)
+- BUG-WS-3 · the user-reported zero-mappings UX bug whose smoke exposed BUG-WS-4 + BUG-WS-5
+- BUG-WS-4 · the previous repair extension (dangling-key strip · same commit as BUG-WS-5)
+- BUG-WS-2 architectural follow-ups · the tool-use API path that would close this bug class

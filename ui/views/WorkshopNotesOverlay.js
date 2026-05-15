@@ -460,6 +460,16 @@ async function handlePushToAi(mode) {
     overlayState.mappings = (overlayState.mappings || []).concat(res.mappings || []);
   }
   overlayState.lastBulletsText = textareaText;
+  // BUG-WS-3 (2026-05-15 PM late) · track lastPushedAt + lastDroppedCount
+  // so handleImportToCanvas can discriminate the 3 zero-mappings states
+  // (never-pushed vs pushed-zero-emitted vs pushed-all-dropped). Without
+  // these, the import handler defaulted to "Push notes to AI first" even
+  // after a successful push that yielded 0 mappings · misleading UX.
+  overlayState.lastPushedAt    = new Date().toISOString();
+  overlayState.lastDroppedCount = res.droppedCount || 0;
+  // Carry the runId from the LLM call so subsequent [Import to canvas]
+  // and JSON exports reference the same provenance instant.
+  if (res.runId) overlayState.lastRunId = res.runId;
   saveDraft();
   repaintUpperPane();
 
@@ -492,8 +502,42 @@ async function handlePushToAi(mode) {
 function handleImportToCanvas() {
   if (!overlayState) return;
   const mappings = overlayState.mappings || [];
+  // BUG-WS-3 (2026-05-15 PM late) · 3-state discrimination for zero-
+  // mappings · the original code collapsed all 3 into the misleading
+  // "Push notes to AI first" message which appeared EVEN AFTER a
+  // successful push. Now differentiates:
+  //   A · never pushed (lastPushedAt null · processedMarkdown empty)
+  //       → "Push notes to AI first" (the truly never-pushed case)
+  //   B · pushed but 0 mappings emitted (lastPushedAt set · 0 dropped)
+  //       → "AI returned 0 actionable mappings · try Re-evaluate all
+  //         with action-form bullets OR your bullets describe context"
+  //   C · pushed but all emitted mappings failed validation
+  //       (lastPushedAt set · droppedCount > 0)
+  //       → "AI emitted N mappings · all N failed validation · console
+  //         for details · try Re-evaluate all or simplify"
+  // All non-A cases use showOverlayError (in-overlay banner · persistent ·
+  // engineer-readable) instead of notifyInfo (3.5s toast · vanishes).
   if (mappings.length === 0) {
-    notifyInfo({ title: "Nothing to import", body: "Push notes to AI first to generate canvas mappings." });
+    const neverPushed = !overlayState.lastPushedAt;
+    const droppedCount = overlayState.lastDroppedCount || 0;
+    if (neverPushed) {
+      // State A · the truly never-pushed case · toast is fine here.
+      notifyInfo({ title: "Nothing to import", body: "Push notes to AI first to generate canvas mappings." });
+      return;
+    }
+    if (droppedCount > 0) {
+      // State C · LLM emitted N mappings but all failed Zod validation.
+      showOverlayError(
+        "Import unavailable · all " + droppedCount + " mapping(s) failed validation",
+        "AI emitted " + droppedCount + " mapping(s) but all failed ActionProposalSchema validation (wrong shape · invalid catalog refs · etc). Check browser console for per-mapping errors. Try [Re-evaluate all] OR rephrase your bullets · the upper pane prose is preserved."
+      );
+      return;
+    }
+    // State B · LLM produced markdown but emitted zero actionable mappings.
+    showOverlayError(
+      "Import unavailable · AI returned 0 actionable mappings",
+      "Push succeeded · the structured notes are in the upper pane. But the AI did not emit any canonical action mappings (add-driver / add-instance-current / add-instance-desired / close-gap). Your bullets may describe context (customer name · environments · drivers) rather than actions. Try [Re-evaluate all] with action-form bullets like 'add VMware vSphere to DR site' or 'we need cybersecurity driver'."
+    );
     return;
   }
 
@@ -711,7 +755,16 @@ export function openWorkshopNotesOverlay(opts) {
     processedMarkdown: initialProcessedMd,
     mappings:        initialMappings,
     lastBulletsText: initialLastBulletsText,
-    lastRunId:       null
+    lastRunId:       null,
+    // BUG-WS-3 (2026-05-15 PM late) · lastPushedAt + lastDroppedCount
+    // are set by handlePushToAi after every successful push. Used by
+    // handleImportToCanvas to discriminate the 3 zero-mappings states
+    // (never-pushed vs pushed-zero-emitted vs pushed-all-dropped).
+    // On resume-from-draft, these stay null because the draft predates
+    // BUG-WS-3 schema OR the resumed state is from a pre-push snapshot
+    // (mapping-counts only meaningful after a fresh push).
+    lastPushedAt:    null,
+    lastDroppedCount: 0
   };
 
   // BUG-FIX 2026-05-15 PM: seed from rawTextareaText (exact restore)
