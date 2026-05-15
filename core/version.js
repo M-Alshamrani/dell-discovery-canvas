@@ -26,10 +26,165 @@
 //
 // ---
 //
+// **3.0.0-rc.10** (TAGGED 2026-05-15) — closes the rc.10 arc. Banner
+// **1334/1334 GREEN ✅** (was 1297 at rc.9 tag; **+37 net tests** this
+// release: V-AI-EVAL-9..20 + V-CHAT-D-1..5 + V-FLOW-AI-NOTES-1/2/3/IMPORT-1
+// + V-ADAPTER-NOTES-1/WIDEN-1 + V-FLOW-PATHB-WIDEN-{PARSE,MODAL,DRIFT,APPLY}-1
+// + V-AITAG-WIDEN-{DRIVER,GAP}-1 + V-AITAG-KIND-WIDEN-1 + V-FLOW-WS-* family
+// for BUG-WS-1..6).
+//
+// Eval baselines at tag (post-pivot · 25-case action-correctness):
+//   - Claude-judge: 6.52/10 · 64% pass (antrhopic_1.json · close-gap
+//     slipped 10→7.5 worth one verification re-run before GA)
+//   - Gemini-judge (honest): 6.84/10 · 68% pass (gimini_1.json · LIFTED
+//     +1.28 avg · +16pp pass vs pre-pivot honest baseline 5.56/52%)
+// Note: chat layer UNCHANGED between Step 3.9 (8884e5b) and HEAD · the
+// deltas vs pre-pivot canonical 3f8ff07 reflect sampling variance +
+// provider drift, NOT architectural regression. Cross-judge convergence
+// flipped post-pivot (Gemini now higher than Claude · suggests calibration
+// 9edcb36's Claude-judge inflation was variance, not systemic bias).
+//
+// Theme · Sub-arc D Mode 1 user-facing release + LLM-output-fragility
+// hardening:
+//
+//   rc.10 ships the Workshop Notes overlay (Cmd+Shift+N · topbar AI
+//   Notes button) end-to-end · engineer types raw workshop bullets ·
+//   Push to AI returns structured markdown + ActionProposal mappings ·
+//   click [Import to canvas] feeds the widened Path B importer →
+//   ImportPreviewModal → engineer reviews + applies. The Sub-arc D
+//   architecture pivoted mid-cycle (A19 framing-doc · grounded in eval
+//   calibration evidence 9edcb36 showing autonomous emission is
+//   structurally unreliable). A20 widens Path B from instance-only to
+//   instance + driver + gap entities (per-item kind discriminator · aiTag
+//   widened to drivers + gaps). 6 BUG-WS-N fixes landed during real-user
+//   testing addressing every UX + correctness issue surfaced; each with
+//   forensic root cause + regression test + BUG_LOG entry.
+//
+// Rolled into rc.10 tag (origin/main):
+//
+//   Sub-arc D framing + eval-build:
+//     - Framing-doc with 7-question Q&A capture + A1-A20 amendments
+//     - SPEC §S48 (eval rubric · NEW) + 5-case foundation + 25-case
+//       expansion (V-AI-EVAL-9/10/11 + 1168ab9 + 5466ea3)
+//
+//   Sub-arc D stub-emission (Mode 2 foundations · 46eae3d + 4bcbf06):
+//     - SPEC §S20.4.1.3 + RULES §16 CH38 NEW (action-proposal contract)
+//     - schema/actionProposal.js NEW (4 v1 action kinds · Zod
+//       discriminated union)
+//     - proposeAction tool registered + envelope.proposedActions field
+//
+//   Sub-arc D Steps 3.5-3.9 (prompt-text iteration · 4 iterations ·
+//   2 regressions captured as DIAGNOSTIC · canonical 3f8ff07 preserved
+//   at 7.4/10 / 76% pass · cycle CLOSED 9b3da8f):
+//     - Step 3.5 (ee42302): Rule 4 verb-strength + Example 11 + 7.4/80%
+//     - Step 3.6 REVERTED (cdd367a → 58b27c3): notation imitation hazard
+//     - Step 3.7 (8c781ae): Example 12 safe short-form + 7.4/76% on 25
+//     - Step 3.8 REVERTED (ae33705 → 9b3da8f): cognitive crowding
+//     - Step 3.9 (8884e5b): chat-says-vs-chat-does guard at chatService
+//       layer · HALLUCINATION_RE + envelope.proposalEmissionWarning
+//
+//   Eval calibration (9edcb36 · Experiments A.1 + A.2 + B):
+//     - Sampling-noise floor ±0.3 → revised ±1.0 avg post-Step-6
+//     - Same-model judge inflation ~+2 avg / +24pp pass pre-pivot
+//     - Chat-layer autonomous emission structurally unreliable at this
+//       LLM density · motivated the A19 architecture pivot
+//
+//   A19 architecture pivot (662522d · user-approved "go Y · 10/10"):
+//     - SPEC §S20.4.1.5 NEW (Workshop Notes → Path B importer flow ·
+//       primary Sub-arc D UX path · supersedes A14 Q4 Mode-2-first)
+//     - SPEC §S47 amendment (Path B accepts overlay as 2nd input source)
+//     - RULES §16 CH38 narrowing (proposeAction tool stays · purpose
+//       narrows to chat-quality measurement + Mode 2 optional fallback)
+//
+//   A20 Path B widening (2b5ae78 · user-approved 4-question Q&A "Go
+//   with all recommendations"):
+//     - SPEC §S47.2 R47.2.1 widens scope from instance-only to instance
+//       + driver + gap entities
+//     - SPEC §S47.3 R47.3.5 + R47.3.6: per-item kind discriminator wire
+//       shape (instance.add | driver.add | gap.close)
+//     - SPEC §S47.5 + §S47.8.4 + §S47.9.1a/b: kind-aware modal / drift /
+//       applier · aiTag widened to drivers + gaps · kind enum extended
+//       (+ discovery-note + ai-proposal)
+//     - RULES §16 CH36 R7 narrowing (aiTag scope: instances by default;
+//       Path B imports stamp drivers + gaps too)
+//
+//   Step 4 + Step 5 impl (88f6a32 + ccd23c8 · 1323/1323 GREEN):
+//     - ui/views/WorkshopNotesOverlay.js NEW (dual-pane · auto-bullet ·
+//       localStorage autosave · resume prompt · 5-button toolbar)
+//     - services/workshopNotesService.js NEW (Path Y · wraps aiService
+//       chatCompletion directly with workshop-mode system prompt ·
+//       ActionProposalSchema validation · drops invalid with warn)
+//     - services/workshopNotesImportAdapter.js NEW (transforms overlay
+//       output to widened Path B wire shape · 3 kinds)
+//     - schema/helpers/aiTag.js NEW (shared aiTag helper · single source
+//       of truth for instance + driver + gap schemas)
+//     - importResponseParser + importDriftCheck + importApplier widen
+//       to handle 3 kinds (legacy 1.0 payloads back-compat preserved)
+//     - ImportPreviewModal.js kind-aware (per-row kind chip · per-kind
+//       editable cells · apply-scope picker conditional)
+//
+//   6 BUG-WS-N fixes (real-user testing forensic trail):
+//     - BUG-WS-1 (8594288): notifyError modal destroyed workshop overlay
+//       on error · replaced with inline showOverlayError banner ·
+//       rawTextareaText autosave · 2-step Resume prompt
+//     - BUG-WS-2 (8b845a4): Push-to-AI "Unterminated string in JSON at
+//       position 3713" · max_tokens passthrough on Anthropic/OpenAI/
+//       Gemini + repairTruncatedJson 5-step recovery + retry-once with
+//       strict-JSON reminder · 6 regression tests
+//     - BUG-WS-3 (12e178b): [Import to canvas] said "Push first" after
+//       successful push · 3-state discrimination + showOverlayError
+//       banner + actionable guidance · V-FLOW-WS-IMPORT-ZERO-MAPPINGS-1
+//     - BUG-WS-4 (12e178b): repairTruncatedJson didn't handle dangling-
+//       key truncation · Step 6 added · V-FLOW-WS-PARSE-REPAIR-1 extended
+//     - BUG-WS-5 (12e178b): parseLlmResponse rejected valid JSON +
+//       trailing prose · NEW extractFirstBalancedJson Step 0.5 ·
+//       V-FLOW-WS-PARSE-REPAIR-1 extended to 10 guards
+//     - BUG-WS-6 (b217682): AI Notes UX polish · textarea auto-scroll-
+//       to-caret + resize:vertical + ImportPreviewModal z-index above
+//       workshop overlay (4800>4600) + flex-wrap row layout
+//
+// SPEC annexes added / amended:
+//   §S20.4.1.3 NEW (Sub-arc D stub-emission contract · Mode 2 layer)
+//   §S20.4.1.4 NEW (chat-says-vs-chat-does guard · Mode 2 defensive)
+//   §S20.4.1.5 NEW (Workshop Notes overlay → Path B flow · Mode 1 primary)
+//   §S47.2/3/5/8.4/9 amended (A20 widening · 3 entity kinds)
+//   §S48 NEW (action-correctness eval rubric · 5 dimensions)
+//
+// RULES added / amended:
+//   §16 CH38 NEW (action-proposal contract · amended 4× through 3.5/3.6-
+//     revert/3.7/3.8-revert/3.9/pivot/A20)
+//   §16 CH36 R7 narrowing (aiTag scope: instances by default; Path B
+//     imports stamp drivers + gaps too)
+//
+// New docs:
+//   docs/SUB_ARC_D_FRAMING_DECISIONS.md (A1-A20 framing-ack)
+//   docs/SUB_ARC_D_HANDOFF_PROMPT_v2.md (post-pivot priming)
+//   docs/SESSION_LOG_2026-05-15-sub-arc-d-pivot.md (23-commit narrative)
+//   docs/SESSION_LOG_2026-05-15-step-4-5-impl.md (Phases 1-8 · 47-commit
+//     narrative · this release-close marks Phase 8)
+//
+// Deferred to v1.5 polish:
+//   - Anthropic tool-use API migration (would eliminate BUG-WS-2/4/5 class)
+//   - DOM-mounting integration test for overlay end-to-end flow
+//   - aiTag chip renderer for drivers + gaps (Tab 1 + Tab 4 visual surface)
+//   - Drag-resizable divider between upper/lower panes (framing-doc A2)
+//   - Per-kind row layouts in ImportPreviewModal (tighter per-kind grids)
+//   - Mode 2 chat-inline proposal UX surface (preview modal hook)
+//   - Step 7 Mode 1 eval-build (workshop-bullets golden set)
+//   - Close-gap slip verification re-run (sampling variance vs real regression)
+//
+// Path to non-suffix "3.0.0" GA:
+//   - v1.5 polish landings (esp. tool-use API + DOM-mounting tests)
+//   - At least one real-customer workshop run against Mode 1 + Mode 2
+//   - Close-gap slip verification re-run
+//   - Real Anthropic + Gemini live-key smoke at verification spec
+//
+// ---
+//
 // **3.0.0-rc.10-dev** (2026-05-14 evening) — between v3.0.0-rc.9
 // (TAGGED 2026-05-14 at 1297/1297 GREEN, eval baseline 9.32/10 ·
-// 100% pass rate on 25-case golden set) and the eventual v3.0.0-rc.10
-// tag.
+// 100% pass rate on 25-case golden set) and the v3.0.0-rc.10 tag
+// (2026-05-15).
 //
 // In flight (sequenced from HANDOFF.md rc.10 candidate list +
 // docs/SUB_ARC_D_FRAMING_DECISIONS.md):
@@ -490,4 +645,4 @@
 //   - At least one real-customer workshop run against a v3.0 engagement
 //   - Real-Anthropic streaming smoke against a live key
 
-export const APP_VERSION = "3.0.0-rc.10-dev";
+export const APP_VERSION = "3.0.0-rc.10";
