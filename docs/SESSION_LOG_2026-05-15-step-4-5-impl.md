@@ -229,3 +229,75 @@ Sub-arc D's user-facing Mode 1 surface is shipped. The remaining gates before rc
 The "10/10 this time" goal (user direction 2026-05-15) is now ARCHITECTURALLY achievable: each layer plays to its strength. LLM structures + suggests (good at this). Engineer reviews + decides (the ImportPreviewModal). Code mutates deterministically (commit functions). Mode 1 ships end-to-end. Step 6 will tell us whether the architecture also delivers measurably better baseline scores than the autonomous-emission pre-pivot path.
 
 The hardest discipline question for next session: when to TAG rc.10. The Step 6 re-eval is USER-RUN · cost ~$1.50-$3 + 15 minutes per cross-judge run. The honest baseline determines whether v3.0.0 GA is workshop-shippable or whether v1.5 polish is required first. The chip renderer for drivers + gaps (currently deferred · v1.5) is probably the highest-value remaining UX item · v1.5 might land that BEFORE rc.10 tag depending on user direction.
+
+---
+
+## ADDENDUM · Phase 5 BUG-FIX (post-session-log · 2026-05-15 PM) · BUG-WS-1 + Step 6 captures
+
+### BUG-WS-1 · user-reported data-loss incident
+
+User attempted real-LLM Push-to-AI smoke after Step 5 ship: typed bullets into the lower pane, clicked Push, got an error message, **the screen closed and all data inputs were lost**. User-direct quote: *"kinda the worst outcome possiable."*
+
+**Root cause**: `notifyError` (in `ui/components/Notify.js`) calls `openOverlay({kind:"notify-error"})` which is a SINGLETON. The Overlay component's pattern at `closeOverlay({_allLayers:true})` runs before opening a new non-stacked overlay. So when `pushNotesToAi` returned `{ok: false}` (likely due to a provider config issue OR a transient network failure during the smoke), the Step 4 handler called `notifyError` → workshop overlay was destroyed before the error modal rendered. The localStorage draft DID save the bullets[] but was lossy on indentation; the user reported "lost all data" because the immediate post-click experience was: bullets gone from screen + no obvious resume affordance.
+
+**Why Step 4 smoke missed this**: my Step 4 browser smoke at `88f6a32` clicked [Import to canvas] with empty mappings → `notifyInfo` toast (SAFE). I never smoked the `notifyError` path. Per `feedback_browser_smoke_required.md` "tests-pass-alone is necessary but NOT sufficient" — this is a tests-pass-alone failure mode: source-grep V-FLOW-AI-NOTES-* GREEN, but the runtime error path destroyed engineer state.
+
+**Fix** (commit `8594288`):
+
+| Change | What | Why |
+|---|---|---|
+| `showOverlayError(title, body)` NEW in WorkshopNotesOverlay.js | In-overlay red banner rendered above processed-notes pane · aria-role="alert" + Dismiss button · pre-removes prior banner so they never stack · sets status chip "Error · see banner" | Surface errors IN-CONTEXT · workshop overlay stays open · bullets stay on screen · localStorage draft preserved · root-cause fix not a workaround |
+| Replace 5 `notifyError` call sites | handlePushToAi failure · adapter-produced-zero-items · parser rejection · drift-check rejection · partial-import-failure | All 5 paths now use showOverlayError instead |
+| `rawTextareaText` autosave | saveDraft reads `overlayState.lowerTextareaEl.value` and persists alongside the derived bullets[] | Exact-restore on Resume · pre-fix bullets[] was lossy on indentation, blank lines, partial bullets |
+| 2-step Resume prompt | Primary window.confirm: OK=Resume / Cancel=Start-fresh-but-confirm-first · Secondary window.confirm fires only if user picks Cancel · clearDraft fires ONLY after the secondary OK | Pre-fix: one mis-click on Cancel wiped the draft. Post-fix: requires 2 explicit Cancel-then-OK to discard. |
+| styles.css `.workshop-notes-error-banner` block | Red border-left + soft pink background + 2-column grid (title + Dismiss · body row 2) + word-break on long error bodies | Visually distinct from the upper-pane markdown · Dismiss-and-retry workflow |
+
+**Browser smoke evidence** (Chrome MCP @ `localhost:8080`):
+- Banner stayed 1323/1323 GREEN after Docker rebuild (no regressions)
+- Reproduced the user incident via `window.fetch = function() { return Promise.reject(new Error('Simulated network failure · provider unreachable')); }`
+- After clicking [Push notes to AI]: overlay STAYED OPEN · red banner appeared with title "Push to AI failed" and body containing the network error · all 4 typed bullets preserved in lower pane · localStorage draft `rawTextareaText` length 161 chars intact · status chip "ERROR · SEE BANNER"
+- Verdict: "DATA PRESERVED ✓"
+- Inline screenshot ss_6837fm09x
+
+### Step 6 USER-RUN re-baseline (user-captured 2026-05-15 10:06 + 10:16 UTC)
+
+User ran action-correctness eval against both Claude and Gemini judges with the post-Step-5 codebase. Captures saved as `antrhopic_1.json` (Claude-judge) and `gimini_1.json` (Gemini-judge). The chat layer (chatService.js + chatTools.js + systemPromptAssembler.js + actionGoldenSet.js) is **unchanged** between Step 3.9 (`8884e5b`) and HEAD · so any score change vs the pre-pivot canonical `3f8ff07` reflects sampling variance + provider drift, NOT architectural lift/regression at the chat layer.
+
+| Metric | Pre-pivot Claude (`3f8ff07`) | Pre-pivot Gemini (`calibration-B`) | **Step 6 Claude (`antrhopic_1.json`)** | **Step 6 Gemini (`gimini_1.json`)** |
+|---|---|---|---|---|
+| avg | 7.40 | 5.56 | **6.52** (Δ −0.88) | **6.84** (Δ +1.28) |
+| pass | 76% | 52% | **64%** (Δ −12pp) | **68%** (Δ +16pp) |
+| add-driver | 7.0 | 5.0 | 7.0 | 8.6 ↑ |
+| add-instance-current | 6.0 | 2.0 | 4.0 ↓ | 4.8 ↑ |
+| add-instance-desired | 4.0 | 2.0 | 3.6 ↓ | 3.2 ↑ |
+| close-gap | 10.0 | 9.0 | **7.5 ↓** | **7.5 ↓** |
+| restraint | 10.0 | 9.67 | 10.0 | 9.67 |
+
+**Key findings**:
+
+1. **Cross-judge convergence flipped post-pivot** · pre-pivot Claude inflated by +1.84 vs Gemini · this session Gemini is 0.32 HIGHER than Claude (Δ-flip of 2.16). Suggests the Claude-judge inflation observed at calibration `9edcb36` may have been run-to-run variance, not systemic bias.
+2. **Sampling-noise floor is wider than estimated**. Calibration N=2 yielded ±0.3 avg estimate. Step 6 vs pre-pivot deltas show ±1 avg achievable on the SAME chat code. The honest takeaway: prompt-text iteration deltas under ±1 avg should be treated as noise, not signal — which retroactively justifies the A19 pivot decision to STOP tuning prompts.
+3. **close-gap slipped 10 → 7.5 on BOTH judges**. Pre-pivot this was the genuinely-solid category. Worth one verification re-run before rc.10 tag to confirm whether this is sampling variance or a real chat-behavior regression. If real, per-case forensic on the 5 close-gap cases (ACT-CLOSE-1..5) is the next step.
+4. **Honest Gemini baseline LIFTED +1.28 avg / +16pp** over pre-pivot honest baseline. Even if this includes sampling variance, the trend is in the right direction.
+
+**Critical limitation**: the 25-case rubric measures the **chat layer's Mode 2 autonomous emission** of `proposeAction` tool calls. The new **Mode 1 workshop flow** (overlay → adapter → ImportPreviewModal → applier · the primary v1 UX path) is NOT measured by this rubric. A Step 7 eval-build for Mode 1 (workshop-bullets golden set + structured-notes rubric) is queued as v1.5 polish. The Step 6 numbers tell us nothing about Mode 1 effectiveness directly.
+
+### Updated session ledger · 5 commits total this session (39 prior + 2 added by addendum)
+
+| # | Commit | Title | Phase |
+|---|---|---|---|
+| 36 | `2b5ae78` | A20 preamble | Phase 2 |
+| 37 | `88f6a32` | Step 4 impl | Phase 3 |
+| 38 | `ccd23c8` | Step 5 impl · 1323/1323 | Phase 4 |
+| 39 | `156cb4c` | doc commit · session log + HANDOFF.md | Phase 4 |
+| 40 | `8594288` | **BUG-WS-1 fix · in-overlay error banner + rawTextareaText autosave + 2-step Resume prompt** | **Phase 5 (this addendum)** |
+
+### Updated next-session priority
+
+1. **Close-gap slip verification re-run** (one Claude + one Gemini · ~$1.50 · 15 min) to confirm whether the 10→7.5 slip is sampling variance or a real chat-behavior regression
+2. **PREFLIGHT 1-8 audit** per `docs/PREFLIGHT.md`
+3. **(Optional) aiTag chip renderer for drivers + gaps** · highest-value v1.5 polish item · ~1-2 hours · closes the visual-provenance loop on Tab 1 + Tab 4
+4. **(Optional) Regression test V-FLOW-WS-ERROR-BANNER-1** · source-grep guard that WorkshopNotesOverlay.js does NOT import notifyError + DOES define showOverlayError · deferred at the BUG-FIX commit · v1.5 hardening per `feedback_test_or_it_didnt_ship.md`
+5. **APP_VERSION bump rc.10-dev → rc.10 + tag rc.10** ONLY after user explicit "ship it / tag rc.10" direction
+
+Working tree clean at session-end-after-addendum. 41 commits LOCAL since rc.9 tag. NOT pushed (user directive holds).

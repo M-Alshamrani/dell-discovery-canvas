@@ -66,11 +66,11 @@ These files/symbols require `[CONSTITUTIONAL TOUCH PROPOSED]` preamble + Q&A + e
 
 ## 🟢 Current State · 2026-05-15 · **rc.10 cycle in-progress · Sub-arc D Step 4 + Step 5 SHIPPED + A20 widening landed · Mode 1 user-facing surface end-to-end · Step 6 USER-RUN PENDING next session**
 
-**Branch**: `main` · **HEAD**: `ccd23c8` (Step 5 impl · A20 Path B widening complete) · **APP_VERSION**: `"3.0.0-rc.10-dev"` · **Banner**: **1323/1323 GREEN** (all 13 RED scaffolds from the A20 preamble + Step 4 preamble flipped GREEN across Step 4 + Step 5 impl pair · Docker nginx canonical env) · **Eval canonical baseline (action-correctness)**: **3f8ff07 Step 3.7 capture · 7.4/10 Claude-judge · 76% pass · 25-case** (`tests/aiEvals/baseline-action.json` md5 `38f12a900566b5cb1a73ac0ed0358c25` · PRE-PIVOT · NOT yet re-baselined against the post-A19+A20 architecture) · **Honest baseline by unbiased judge (Gemini · Experiment B)**: **5.56/10 · 52% pass** (Claude-judge inflates by ~+2 avg / +24pp pass · per calibration commit `9edcb36`)
+**Branch**: `main` · **HEAD**: `8594288` (BUG-WS-1 fix · Workshop Notes overlay data-loss patched) · **APP_VERSION**: `"3.0.0-rc.10-dev"` · **Banner**: **1323/1323 GREEN** (all 13 RED scaffolds from the A20 preamble + Step 4 preamble flipped GREEN across Step 4 + Step 5 impl pair · BUG-WS-1 fix preserves 1323/1323 · Docker nginx canonical env) · **Eval canonical baseline (action-correctness · pre-pivot)**: **3f8ff07 Step 3.7 capture · 7.4/10 Claude-judge · 76% pass · 25-case** (`tests/aiEvals/baseline-action.json` md5 `38f12a900566b5cb1a73ac0ed0358c25`) · **Honest baseline by unbiased judge (Gemini · Experiment B · pre-pivot)**: **5.56/10 · 52% pass** · **Step 6 USER-RUN re-baseline (2026-05-15 10:06 + 10:16 UTC · chat-layer unchanged from Step 3.9 · so this reflects sampling variance, NOT architectural lift)**: Claude-judge **6.52/64%** (Δ −0.88 avg / −12pp pass · close-gap slip 10→7.5) · Gemini-judge **6.84/68%** (Δ +1.28 avg / +16pp pass vs honest baseline · close-gap slip 10→7.5 same case). **Cross-judge convergence flipped post-pivot**: Gemini now 0.32 HIGHER than Claude (pre-pivot Claude inflated by ~+1.84 vs Gemini). The Claude-judge inflation observed at calibration `9edcb36` may have been run-to-run variance, not systemic bias — sampling-noise floor is wider than the ±0.3 avg estimate (now ±1 avg achievable on same chat behavior). Close-gap slip worth one verification re-run before rc.10 tag.
 
 **Working tree**: clean
-**Push status**: **39 commits LOCAL ONLY** since rc.9 tag (`e706fd2..ccd23c8`) · NOT pushed per user direction "i dont want it to be puplished to git yet" (2026-05-15)
-**Tag status**: `v3.0.0-rc.9` is the latest tag · rc.10 NOT tagged (Step 6 re-eval USER-RUN still queued · won't tag until Step 6 captures the post-pivot baseline + PREFLIGHT 1-8 ticked + user "push/ship/tag" direction)
+**Push status**: **41 commits LOCAL ONLY** since rc.9 tag (`e706fd2..8594288`) · NOT pushed per user direction "i dont want it to be puplished to git yet" (2026-05-15)
+**Tag status**: `v3.0.0-rc.9` is the latest tag · rc.10 NOT tagged (close-gap slip verification + PREFLIGHT 1-8 + user "push/ship/tag" direction still pending)
 
 ---
 
@@ -88,16 +88,22 @@ These files/symbols require `[CONSTITUTIONAL TOUCH PROPOSED]` preamble + Q&A + e
 8. **`ui/views/WorkshopNotesOverlay.js`** — the engineer-facing overlay
 9. **`tests/aiEvals/calibration-*.json`** — calibration evidence for Step 6 re-baselining
 
-**Next action**: **Step 6 re-eval USER-RUN** — capture a post-A19+A20 baseline against the 25-case action-correctness rubric. The pre-pivot canonical `3f8ff07` (Claude-judge 7.4/76%) measures autonomous-emission Mode 2 · the post-pivot architecture serves Mode 1 (workshop overlay → Path B) as primary. The re-eval answers: does the architectural shift deliver measurable lift?
+**Next action**: **Close-gap slip verification + PREFLIGHT 1-8 + rc.10 tag prep**. Step 6 re-eval USER-RUN already executed by user 2026-05-15 10:06+10:16 UTC (captures saved in user's Downloads as `antrhopic_1.json` Claude-judge + `gimini_1.json` Gemini-judge). Findings:
+
+- Honest Gemini baseline LIFTED +1.28 avg / +16pp pass over pre-pivot honest (5.56 → 6.84)
+- Claude-judge regressed -0.88 / -12pp (within new wider sampling-noise estimate · likely run-to-run variance)
+- **close-gap slipped 10 → 7.5 on BOTH judges** · the genuinely-solid pre-pivot category is now mid-tier
+- Cross-judge convergence FLIPPED · Gemini now scores 0.32 HIGHER than Claude (pre-pivot Claude inflated by +1.84) · suggests Claude-judge inflation was variance, not bias
+- Chat layer UNCHANGED between Step 3.9 (`8884e5b`) and HEAD · the eval measures the SAME chat behavior · deltas are NOT architectural
 
 Recommended sequence:
-1. Configure an LLM provider in Settings (anthropic OR gemini · ideally BOTH for cross-judge calibration discipline)
-2. Open Workshop Notes overlay (Cmd+Shift+N or topbar AI Notes button) · do a real Push → AI smoke with a representative workshop bullet set · verify the workshop-mode system prompt produces structured-JSON the parser accepts
-3. Run `window.runCanvasAiEvals({ harness: "action-correctness", judgeProviderKey: "anthropic" })` for Claude-judge baseline · then `judgeProviderKey: "gemini"` for honest cross-judge baseline
-4. Forensic analysis: compare per-category averages vs `3f8ff07` (pre-pivot · Mode 2) AND vs `calibration-B-gemini-judge-*.json` (Gemini honest baseline · pre-pivot)
-5. If Step 6 confirms architectural lift: PREFLIGHT 1-8 audit + APP_VERSION bump rc.10-dev → rc.10 + browser smoke + user push/tag approval
+1. **Close-gap re-baseline run** (one Claude + one Gemini · ~$1.50 · 15 min) to confirm whether 10→7.5 slip is sampling variance or a real regression. If variance: tag rc.10. If real: per-case forensic on the 5 close-gap cases (ACT-CLOSE-1..5) before tag.
+2. **PREFLIGHT 1-8 audit** per `docs/PREFLIGHT.md` · checklist item-by-item
+3. **APP_VERSION bump rc.10-dev → rc.10** at release-close commit
+4. **Tag rc.10** ONLY after user explicit "ship it / tag rc.10" direction
+5. **(Optional) aiTag chip renderer for drivers + gaps** (Tab 1 + Tab 4 · v1.5 polish · would close the visual-provenance loop · ~1-2 hours)
 
-Working LLM provider required for Step 6. Without a key, the re-eval cannot run. The Step 4/5 runtime smoke at this session used synthetic mappings (no real LLM call) · the chat-quality dimension is unmeasured until Step 6.
+The Mode 1 workshop flow itself (overlay → adapter → ImportPreviewModal → applier) is NOT measured by the 25-case rubric (which scores chat-layer Mode 2 autonomous emission). A Step 7 eval-build for Mode 1 (workshop-bullets golden set + structured-notes rubric) is queued as v1.5 polish · out of v1 scope.
 
 ---
 
@@ -124,6 +130,8 @@ Working LLM provider required for Step 6. Without a key, the re-eval cannot run.
 - ~~Sub-arc D Step 4 impl~~ — Mode 1 Workshop Notes overlay + Path Y LLM wrapper + widened-shape adapter + topbar binding ✅ shipped at `88f6a32`
 - ~~Sub-arc D Step 4.5 (A20 widening preamble)~~ — Path B widened to 3 entity kinds + aiTag widened to drivers + gaps ✅ shipped at `2b5ae78`
 - ~~Sub-arc D Step 5 impl~~ — schemas + parser + drift + applier + modal + [Import to canvas] end-to-end wiring ✅ shipped at `ccd23c8` · 1323/1323 GREEN
+- ~~BUG-WS-1 fix~~ — Workshop Notes overlay data-loss on Push-to-AI error · inline error banner replaces destructive notifyError modal · rawTextareaText autosave on every keystroke · 2-step Resume prompt prevents accidental discard ✅ shipped at `8594288`
+- ~~Step 6 USER-RUN re-baseline captured~~ — Claude-judge 6.52/64% + Gemini-judge 6.84/68% · honest baseline LIFTED +1.28/+16pp vs pre-pivot honest · close-gap slip 10→7.5 worth one verification re-run ✅ executed by user 2026-05-15 10:06+10:16 UTC
 
 ### Sub-arc D residuals deferred to Step 5 UX or v1.5
 
@@ -178,13 +186,15 @@ Other commits this session are data-only or non-constitutional · per pattern fr
 
 ---
 
-## 📜 Commit Ledger · this session · 3 commits since prior-session-end (39 total since rc.9 tag)
+## 📜 Commit Ledger · this session · 5 commits since prior-session-end (41 total since rc.9 tag)
 
 | # | Commit | Title | Phase |
 |---|---|---|---|
 | 37 | `2b5ae78` | `[CONSTITUTIONAL TOUCH PROPOSED]` Sub-arc D Step 4.5 preamble · A20 Path B widening for 3 entity kinds + aiTag scope extension + 9 RED scaffolds | **Phase 2** |
 | 38 | `88f6a32` | `[CONSTITUTIONAL TOUCH]` Sub-arc D Step 4 impl · Mode 1 Workshop Notes overlay + Path Y LLM wrapper + widened-shape adapter + topbar binding | **Phase 3** |
 | 39 | `ccd23c8` | `[CONSTITUTIONAL TOUCH]` Sub-arc D Step 5 impl · A20 Path B widening + wire [Import to canvas] end-to-end · 1323/1323 | **Phase 4** |
+| 40 | `156cb4c` | docs · session log NEW + HANDOFF.md refreshed for post-Step-5 state · doc-only | **Phase 4** |
+| 41 | `8594288` | fix · BUG-WS-1 · Workshop Notes overlay data-loss on Push-to-AI error · inline error banner + rawTextareaText autosave + 2-step Resume prompt | **Phase 5 (BUG-FIX)** |
 
 See [`docs/SESSION_LOG_2026-05-15-step-4-5-impl.md`](docs/SESSION_LOG_2026-05-15-step-4-5-impl.md) for the full 3-commit narrative with banner deltas + phase grouping (Phase 1 priming → Phase 4 Step 5 impl).
 
