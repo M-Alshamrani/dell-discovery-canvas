@@ -41,7 +41,23 @@ import { checkImportDrift } from "../../services/importDriftCheck.js";
 import { applyImportItems } from "../../services/importApplier.js";
 import { renderImportPreview } from "../components/ImportPreviewModal.js";
 import { getActiveEngagement, setActiveEngagement } from "../../state/engagementStore.js";
-import { notifyError, notifyInfo, notifySuccess } from "../components/Notify.js";
+import { notifyInfo, notifySuccess } from "../components/Notify.js";
+
+// BUG-FIX 2026-05-15 PM (post-Step-5 user-reported data-loss incident):
+// notifyError MUST NOT be called from inside this overlay. notifyError
+// calls openOverlay({kind:"notify-error"}) which is a SINGLETON · it
+// CLOSES the workshop overlay before opening the error modal · the
+// engineer loses their typed bullets + processed notes + mappings ·
+// localStorage saves the bullets but the user experiences the worst-
+// case "all work disappeared" outcome. Replaced with showOverlayError
+// (inline · in-overlay error banner · overlay stays open · engineer
+// sees the error in context · data is preserved on screen + in
+// localStorage). The toast notifyInfo/notifySuccess paths are SAFE
+// (they create per-instance DOM nodes in #notify-toast-host · do not
+// touch the openOverlay singleton). Per feedback_no_patches_flag_first.md
+// + R11 Rule C ("no degraded fallback"): the error path is fixed at
+// the root cause (don't use openOverlay-based modals from inside an
+// overlay) · not papered-over with a sidePanel:true workaround.
 
 const LOCAL_STORAGE_DRAFT_KEY = "workshopNotesDraft_v1";
 
@@ -58,6 +74,12 @@ function loadDraft() {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return null;
     return {
+      // BUG-FIX 2026-05-15 PM: rawTextareaText is now the SOURCE OF TRUTH
+      // for the lower pane. bullets[] (parsed) and lastBulletsText (push
+      // tracking) are derived. Older drafts that lack rawTextareaText
+      // fall back to reconstructing from bullets[] (lossy on indentation
+      // but engineer-readable).
+      rawTextareaText:   typeof parsed.rawTextareaText === "string" ? parsed.rawTextareaText : "",
       bullets:           Array.isArray(parsed.bullets) ? parsed.bullets : [],
       lastBulletsText:   typeof parsed.lastBulletsText === "string" ? parsed.lastBulletsText : "",
       processedMarkdown: typeof parsed.processedMarkdown === "string" ? parsed.processedMarkdown : "",
@@ -69,8 +91,15 @@ function loadDraft() {
 
 function saveDraft() {
   if (!overlayState) return;
+  // BUG-FIX 2026-05-15 PM: rawTextareaText captures the EXACT current
+  // textarea value (with indentation, blank lines, partial bullets ·
+  // everything). Restored verbatim on resume. The pre-fix bullets[]
+  // (parsed) save was lossy on indentation + blank-line separation.
+  const liveTextarea = overlayState.lowerTextareaEl;
+  const rawTextareaText = liveTextarea ? liveTextarea.value : "";
   try {
     localStorage.setItem(LOCAL_STORAGE_DRAFT_KEY, JSON.stringify({
+      rawTextareaText:   rawTextareaText,
       bullets:           overlayState.bullets,
       lastBulletsText:   overlayState.lastBulletsText,
       processedMarkdown: overlayState.processedMarkdown,
@@ -80,6 +109,54 @@ function saveDraft() {
   } catch (e) {
     console.warn("[WorkshopNotesOverlay] localStorage save failed: " + (e.message || e));
   }
+}
+
+// BUG-FIX 2026-05-15 PM: in-overlay error banner. Renders inside the
+// upper pane (and sets the status chip) WITHOUT calling notifyError /
+// openOverlay (which would close the workshop overlay). The engineer
+// sees the error in context · their typed bullets stay on screen · the
+// localStorage draft is preserved · they can dismiss the banner +
+// retry the push or fix the underlying issue (e.g. configure a
+// provider in Settings) without losing work.
+function showOverlayError(title, body) {
+  if (!overlayState || !overlayState.processedEl) {
+    // Fallback if the overlay isn't fully mounted yet · log so the bug
+    // is debuggable even when DOM isn't ready.
+    console.error("[WorkshopNotesOverlay] error: " + title + " · " + body);
+    return;
+  }
+  setStatus("Error · see banner", "error");
+  const banner = document.createElement("div");
+  banner.className = "workshop-notes-error-banner";
+  banner.setAttribute("role", "alert");
+  banner.setAttribute("aria-live", "assertive");
+  const titleEl = document.createElement("div");
+  titleEl.className = "workshop-notes-error-banner-title";
+  titleEl.textContent = title || "Error";
+  banner.appendChild(titleEl);
+  if (body) {
+    const bodyEl = document.createElement("div");
+    bodyEl.className = "workshop-notes-error-banner-body";
+    bodyEl.textContent = body;
+    banner.appendChild(bodyEl);
+  }
+  const dismissBtn = document.createElement("button");
+  dismissBtn.type = "button";
+  dismissBtn.className = "workshop-notes-error-banner-dismiss";
+  dismissBtn.textContent = "Dismiss";
+  dismissBtn.addEventListener("click", function() {
+    if (banner.parentNode) banner.parentNode.removeChild(banner);
+    setStatus("Ready", "info");
+  });
+  banner.appendChild(dismissBtn);
+
+  // Remove any previously-rendered error banner so we never stack.
+  const existing = overlayState.processedEl.parentNode.querySelector(".workshop-notes-error-banner");
+  if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+
+  // Insert ABOVE the processed-notes pane (after the toolbar · before
+  // the markdown body) so it is immediately visible.
+  overlayState.processedEl.parentNode.insertBefore(banner, overlayState.processedEl);
 }
 
 function clearDraft() {
@@ -364,8 +441,9 @@ async function handlePushToAi(mode) {
   overlayState.toolbarButtons.forEach(b => { b.disabled = false; });
 
   if (!res.ok) {
-    setStatus("Push failed", "error");
-    notifyError({ title: "Push to AI failed", body: res.error || "Unknown error" });
+    // BUG-FIX 2026-05-15 PM: use inline error banner instead of notifyError
+    // (which would close the workshop overlay + lose the typed bullets).
+    showOverlayError("Push to AI failed", res.error || "Unknown error");
     return;
   }
 
@@ -430,7 +508,7 @@ function handleImportToCanvas() {
   });
 
   if (!payload.items || payload.items.length === 0) {
-    notifyError({ title: "No valid mappings", body: "All " + mappings.length + " mappings were dropped by the adapter (validation failed). Check console for details." });
+    showOverlayError("No valid mappings", "All " + mappings.length + " mappings were dropped by the adapter (validation failed). Check console for details.");
     return;
   }
 
@@ -439,10 +517,10 @@ function handleImportToCanvas() {
   const parseResult = parseImportResponse(payload);
   if (!parseResult.ok) {
     const firstError = parseResult.errors && parseResult.errors[0];
-    notifyError({
-      title: "Import payload rejected",
-      body:  firstError ? firstError.path + ": " + firstError.message : "Unknown parse error"
-    });
+    showOverlayError(
+      "Import payload rejected",
+      firstError ? firstError.path + ": " + firstError.message : "Unknown parse error"
+    );
     return;
   }
 
@@ -454,10 +532,10 @@ function handleImportToCanvas() {
     if (drift.missingEnvIds.length > 0)         segments.push(drift.missingEnvIds.length + " env(s)");
     if (drift.missingGapIds.length > 0)         segments.push(drift.missingGapIds.length + " gap(s)");
     if (drift.invalidBusinessDriverIds.length > 0) segments.push(drift.invalidBusinessDriverIds.length + " driver(s)");
-    notifyError({
-      title: "Import rejected: drift detected",
-      body:  "Response references " + segments.join(" · ") + " not in this engagement. Re-issue notes or update the engagement first."
-    });
+    showOverlayError(
+      "Import rejected: drift detected",
+      "Response references " + segments.join(" · ") + " not in this engagement. Re-issue notes or update the engagement first."
+    );
     return;
   }
 
@@ -486,10 +564,10 @@ function handleImportToCanvas() {
           const firstMsg = (e.errors && e.errors[0] && e.errors[0].message) || "validation error";
           return "row " + (e.itemIndex + 1) + " (" + e.kind + "): " + firstMsg;
         }).join("; ");
-        notifyError({
-          title: "Partial import: " + appliedCount + " applied, " + errorCount + " failed",
-          body:  failedDetail + (res.errors.length > 3 ? " (+ " + (res.errors.length - 3) + " more)" : "")
-        });
+        showOverlayError(
+          "Partial import: " + appliedCount + " applied, " + errorCount + " failed",
+          failedDetail + (res.errors.length > 3 ? " (+ " + (res.errors.length - 3) + " more)" : "")
+        );
       } else {
         const breakdown = [];
         if (res.addedInstanceIds.length > 0) breakdown.push(res.addedInstanceIds.length + " instance" + (res.addedInstanceIds.length === 1 ? "" : "s"));
@@ -557,34 +635,52 @@ function handleEsc() {
 export function openWorkshopNotesOverlay(opts) {
   opts = opts || {};
 
-  // Resume prompt (per A10). Only fired when a draft exists and the
-  // caller didn't explicitly opt out (e.g. opts.skipResumePrompt for
-  // test fixtures or programmatic re-open).
+  // Resume prompt (per A10). BUG-FIX 2026-05-15 PM: previously used a
+  // 2-option window.confirm where Cancel = "Start fresh" (irreversibly
+  // discards the draft). That was DESTRUCTIVE-BY-DEFAULT: one mis-click
+  // on the OS confirm dialog wiped engineer work. The new flow defaults
+  // to RESUME (safe option) and only clears the draft after an explicit
+  // secondary confirmation. Restore order: rawTextareaText (exact text)
+  // > lastBulletsText (push history) > bullets[] reconstruction (lossy).
   const existing = loadDraft();
+  let initialRawTextareaText = "";
   let initialBullets = [];
   let initialProcessedMd = "";
   let initialMappings = [];
   let initialLastBulletsText = "";
-  if (existing && (existing.bullets.length > 0 || existing.processedMarkdown.length > 0)) {
+  if (existing && (existing.rawTextareaText.length > 0 || existing.bullets.length > 0 || existing.processedMarkdown.length > 0)) {
+    let resumeChoice = true;  // safe default: resume
     if (!opts.skipResumePrompt) {
       const savedAt = existing.savedAt ? new Date(existing.savedAt).toLocaleString() : "earlier";
-      const resume = window.confirm(
+      // Primary prompt: default to "Resume" · OK button (default-action)
+      // resumes · Cancel offers to start fresh BUT requires a SECOND
+      // confirm before destruction.
+      resumeChoice = window.confirm(
         "You have unsaved Workshop Notes from " + savedAt + ".\n\n" +
-        "Resume previous notes? (Cancel = Start fresh; discards draft)"
+        "[OK] Resume previous notes (preserves all your work)\n" +
+        "[Cancel] Start fresh (you'll be asked again before the draft is discarded)"
       );
-      if (!resume) {
-        clearDraft();
-      } else {
-        initialBullets = existing.bullets;
-        initialProcessedMd = existing.processedMarkdown;
-        initialMappings = existing.mappings;
-        initialLastBulletsText = existing.lastBulletsText || existing.bullets.map(b => "- " + b).join("\n");
+      if (!resumeChoice) {
+        // Secondary confirm before destruction.
+        const reallyStartFresh = window.confirm(
+          "Start fresh will PERMANENTLY DISCARD your saved Workshop Notes (" +
+          (existing.rawTextareaText.length > 0 ? existing.rawTextareaText.split("\n").length + " line(s) of bullets" : existing.bullets.length + " bullet(s)") +
+          ").\n\n[OK] Yes, discard and start fresh\n[Cancel] No, restore my work"
+        );
+        if (!reallyStartFresh) {
+          // User changed their mind · restore work.
+          resumeChoice = true;
+        } else {
+          clearDraft();
+        }
       }
-    } else {
+    }
+    if (resumeChoice || opts.skipResumePrompt) {
+      initialRawTextareaText = existing.rawTextareaText || (existing.lastBulletsText || existing.bullets.map(b => "- " + b).join("\n"));
       initialBullets = existing.bullets;
       initialProcessedMd = existing.processedMarkdown;
       initialMappings = existing.mappings;
-      initialLastBulletsText = existing.lastBulletsText || existing.bullets.map(b => "- " + b).join("\n");
+      initialLastBulletsText = existing.lastBulletsText || initialRawTextareaText;
     }
   }
 
@@ -618,9 +714,14 @@ export function openWorkshopNotesOverlay(opts) {
     lastRunId:       null
   };
 
-  // Seed the textarea with initial bullets (preserve indentation if
-  // we have a lastBulletsText; otherwise reconstruct from bullets[]).
-  if (initialLastBulletsText) {
+  // BUG-FIX 2026-05-15 PM: seed from rawTextareaText (exact restore)
+  // first, then lastBulletsText (lossy on partial bullets), then
+  // bullets[] reconstruction (most lossy). The 3-tier fallback preserves
+  // engineer work even when the localStorage shape is from a pre-fix
+  // session that lacked rawTextareaText.
+  if (initialRawTextareaText) {
+    textarea.value = initialRawTextareaText;
+  } else if (initialLastBulletsText) {
     textarea.value = initialLastBulletsText;
   } else if (initialBullets.length > 0) {
     textarea.value = initialBullets.map(b => "- " + b).join("\n");

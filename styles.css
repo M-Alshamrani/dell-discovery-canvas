@@ -8161,6 +8161,57 @@ body[data-filter-gapType]     .gap-card.filter-match-gapType {
   font-style: italic;
 }
 
+/* BUG-FIX 2026-05-15 PM · in-overlay error banner. Replaces notifyError
+   modal which closed the workshop overlay (destroying engineer work).
+   Rendered ABOVE the processed-notes pane so it is immediately visible
+   without scrolling. Bullets stay on screen in the lower pane. */
+.workshop-notes-error-banner {
+  margin: 8px 12px;
+  padding: 10px 12px;
+  background: #FEE2E2;
+  border: 1px solid #FCA5A5;
+  border-left: 4px solid #DC2626;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 12px;
+  line-height: 1.4;
+  color: #7F1D1D;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "title dismiss" "body body";
+  gap: 6px 12px;
+}
+
+.workshop-notes-error-banner-title {
+  grid-area: title;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.workshop-notes-error-banner-body {
+  grid-area: body;
+  font-size: 12px;
+  color: #991B1B;
+  word-break: break-word;
+}
+
+.workshop-notes-error-banner-dismiss {
+  grid-area: dismiss;
+  align-self: start;
+  background: transparent;
+  border: 1px solid #FCA5A5;
+  color: #7F1D1D;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.workshop-notes-error-banner-dismiss:hover {
+  background: #FCA5A5;
+  color: #FFFFFF;
+}
+
 /* ════════════════════════════════════════════════════════════════════
    end Workshop Notes overlay block
    ════════════════════════════════════════════════════════════════════ */
